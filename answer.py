@@ -9,7 +9,7 @@ API_URL = "https://api.openai.com/v1/"
 #API_URL = "https://api.deepinfra.com/v1/openai/"
 
 MODEL_NAME = "gpt-4o"
-API_KEY = "sk-"
+API_KEY = open("api_key.txt", "r").read()
 
 WAITING_TIME_RETRY = 60
 
