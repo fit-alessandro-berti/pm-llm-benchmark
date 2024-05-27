@@ -33,15 +33,15 @@ Overall leaderboard:
 
 | Model                                           | Score                |
 |-------------------------------------------------|----------------------|
-| gpt-4o (self-evaluation)                        | 43.4 (38 on C1-C6)   |
-| gpt-4-turbo                                     | 42.3 (37.1 on C1-C6) |
+| gpt-4o (20240527; self-evaluation)              | 43.4 (38 on C1-C6)   |
+| gpt-4-turbo (20240527)                          | 42.3 (37.1 on C1-C6) |
 | Mixtral v0.1 8x22b (instruct, 16b quantization) | 34.7                 |
 | Llama 3 70B (instruct, 16b quantization)        | 34.1                 |
-| gpt-3.5-turbo                                   | 32.6                 |
+| gpt-3.5-turbo (20240527)                        | 32.6                 |
 | Mixtral v0.1 8x7b (instruct, 16b quantization)  | 31.6                 |
 | Llama 3 8B (instruct, 16b quantization)         | 30.2                 |
 | Mistral 7B v0.3 (instruct, Q6K quantization)    | 27.2                 |
-| CodeGemma v1.5 7B (instruct, Q6K quantization)    | 22.7                 |
+| CodeGemma v1.5 7B (instruct, Q6K quantization)  | 22.7                 |
 | Mistral 7B v0.3 (instruct, Q3KS quantization)   | 20.9                 |
 
 ### Commercial models
