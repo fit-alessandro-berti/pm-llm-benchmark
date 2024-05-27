@@ -80,7 +80,7 @@ The final score of the benchmark is obtained summing the scores and dividing by 
 
 ### Big Open-source models
 
-### Llama 3 70B (instruct, 16b quantization) => 34,1 (/52) points
+#### Llama 3 70B (instruct, 16b quantization) => 34,1 (/52) points
 
 | Question                               | Score |
 |----------------------------------------|-------|
