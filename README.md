@@ -15,6 +15,16 @@ Procedure for every prompt:
 
 The final score of the benchmark is obtained summing the scores and dividing by 10.0.
 
+Different categories of questions are contained in the benchmark.
+The first category checks the ability to perform process descriptions, anomaly detection and root cause analysis starting from the DFG/variants abstractions of the event logs.
+It also includes object-centric process mining artifacts for testing the object-centric comprehension.
+The second category checks the process mining domain knowledge of the LLM, with open and closed questions regarding process mining and Petri nets.
+The third category checks the ability to generate procedural (process trees, POWLs) and declarative process models (control-flow and temporal) for mainstream processes. Moreover, the ability of proposing constraints given some process data is tested.
+The fourth category checks the ability of understanding some proposed procedural (BPMN) and declarative (such as the Log Skeleton and DECLARE) process models.
+The fifth category tests the ability of the LLM to generate hypotheses over the proposed data and process models.
+The sixth category tests the ability of the LLM to identify sensible event log attributes and to perform a comparison between protected and non-protected groups.
+The seventh category checks the visual capabilities (if supported) of the LLM/LVLM.
+
 ## Preliminary Scores (1-shot, gpt-4o as a judge)
 
 Overall leaderboard:
