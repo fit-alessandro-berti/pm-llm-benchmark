@@ -77,7 +77,7 @@ The final score of the benchmark is obtained summing the scores and dividing by 
 | cat07_05_dfg_ru                        | 9.5   |
 | cat07_06_process_tree_ru               | 8.0   |
 
-#### gpt-3.5-turbo (self-evaluation) => 32,6 (/52) points
+#### gpt-3.5-turbo => 32,6 (/52) points
 
 | Question                               | Score |
 |----------------------------------------|-------|
