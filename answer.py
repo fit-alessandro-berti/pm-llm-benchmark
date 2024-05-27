@@ -2,6 +2,15 @@ import requests
 import os
 import traceback
 import time
+import re
+
+
+def strip_non_unicode_characters(text):
+    # Define a pattern that matches all valid Unicode characters.
+    pattern = re.compile(r'[^\u0000-\uFFFF]', re.UNICODE)
+    # Replace characters not matching the pattern with an empty string.
+    cleaned_text = pattern.sub('', text)
+    return cleaned_text
 
 
 API_URL = "https://api.openai.com/v1/"
@@ -22,7 +31,7 @@ for q in textual_questions:
     if not os.path.exists(answer_path):
         print("Executing", question_path)
 
-        question = open(question_path, "r").read()
+        question = open(question_path, "r", encoding="utf-8").read()
 
         headers = {
             "Content-Type": "application/json",
@@ -44,7 +53,7 @@ for q in textual_questions:
             try:
                 response = requests.post(complete_url, headers=headers, json=payload).json()
 
-                response_message = response["choices"][0]["message"]["content"]
+                response_message = strip_non_unicode_characters(response["choices"][0]["message"]["content"])
 
                 F = open(answer_path, "w")
                 F.write(response_message)
