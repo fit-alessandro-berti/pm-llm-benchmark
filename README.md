@@ -196,7 +196,7 @@ The final score of the benchmark is obtained summing the scores and dividing by 
 | cat07_06_process_tree_ru               |       |
 
 
-### Very Small Models (< 4GB RAM)
+### Small Models (< 8GB RAM)
 
 #### Mistral 7B v0.3 (instruct, Q6K quantization) => 27,2 (/52) points
 
