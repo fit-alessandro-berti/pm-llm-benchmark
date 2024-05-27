@@ -3,6 +3,7 @@ import os
 import traceback
 import time
 import re
+import base64
 
 
 def strip_non_unicode_characters(text):
@@ -10,7 +11,14 @@ def strip_non_unicode_characters(text):
     pattern = re.compile(r'[^\u0000-\uFFFF]', re.UNICODE)
     # Replace characters not matching the pattern with an empty string.
     cleaned_text = pattern.sub('', text)
+    cleaned_text = cleaned_text.encode('cp1252', errors='ignore').decode('cp1252')
+
     return cleaned_text
+
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
 
 
 API_URL = "https://api.openai.com/v1/"
@@ -22,47 +30,58 @@ API_KEY = open("api_key.txt", "r").read()
 
 WAITING_TIME_RETRY = 60
 
-textual_questions = [x for x in os.listdir("questions") if x.endswith(".txt")]
+questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endswith(".png")]
 
-for q in textual_questions:
+for q in questions:
     question_path = os.path.join("questions", q)
-    answer_path = os.path.join("answers", MODEL_NAME.replace("/", "").replace(":", "") + "_" + q)
+    answer_path = os.path.join("answers", MODEL_NAME.replace("/", "").replace(":", "") + "_" + q).replace(".png", ".txt")
 
     if not os.path.exists(answer_path):
         print("Executing", question_path)
-
-        question = open(question_path, "r", encoding="utf-8").read()
 
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {API_KEY}"
         }
 
-        messages = [{"role": "user", "content": question}]
+        payload = None
+        if question_path.endswith(".txt"):
+            question = open(question_path, "r", encoding="utf-8").read()
+            messages = [{"role": "user", "content": question}]
 
-        payload = {
-            "model": MODEL_NAME,
-            "messages": messages,
-        }
+            payload = {
+                "model": MODEL_NAME,
+                "messages": messages,
+            }
+        elif MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision"):
+            base64_image = encode_image(question_path)
+            messages = [{"role": "user", "content": [{"type": "text", "text": "Can you describe the provided visualization?"}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image} "}}]}]
 
-        complete_url = API_URL + "chat/completions"
+            payload = {
+                "model": MODEL_NAME,
+                "messages": messages,
+                "max_tokens": 4096
+            }
 
-        response_message = ""
-        response = None
-        while not response_message:
-            try:
-                response = requests.post(complete_url, headers=headers, json=payload).json()
+        if payload is not None:
+            complete_url = API_URL + "chat/completions"
 
-                response_message = strip_non_unicode_characters(response["choices"][0]["message"]["content"])
+            response_message = ""
+            response = None
+            while not response_message:
+                try:
+                    response = requests.post(complete_url, headers=headers, json=payload).json()
 
-                F = open(answer_path, "w")
-                F.write(response_message)
-                F.close()
-            except:
-                print(response)
+                    response_message = strip_non_unicode_characters(response["choices"][0]["message"]["content"])
 
-                traceback.print_exc()
+                    F = open(answer_path, "w")
+                    F.write(response_message)
+                    F.close()
+                except:
+                    print(response)
 
-                print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
+                    traceback.print_exc()
 
-                time.sleep(WAITING_TIME_RETRY)
+                    print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
+
+                    time.sleep(WAITING_TIME_RETRY)
