@@ -17,6 +17,18 @@ The final score of the benchmark is obtained summing the scores and dividing by 
 
 ## Preliminary Scores (1-shot, gpt-4o as a judge)
 
+Overall leaderboard:
+
+| Model                                             | Score |
+|---------------------------------------------------|-------|
+| gpt-4o (self-evaluation)                          | 43.4  |
+| Mixtral v0.1 8x22b (instruct, 16b quantization)   | 34.7  |
+| Llama 3 70B (instruct, 16b quantization)          | 34.1  |
+| gpt-3.5-turbo                                      | 32.6  |
+| Mixtral v0.1 8x7b (instruct, 16b quantization)    | 31.6  |
+| Llama 3 8B (instruct, 16b quantization)           | 30.2  |
+| Mistral 7B v0.3 (instruct, Q6K quantization)      | 27.2  |
+
 ### Commercial models
 
 
