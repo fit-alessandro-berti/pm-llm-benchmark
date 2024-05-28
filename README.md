@@ -38,6 +38,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 |-------------------------------------------------|----------------|----------------------|
 | gpt-4o-20240513 (self-evaluation)               | 128K           | 43.4 (38 on C1-C6)   |
 | gpt-4-turbo-20240409                            | 128K           | 42.3 (37.1 on C1-C6) |
+| Google Gemini                                   | ??             | 38.9 (34.9 on C1-C6) |
 | Mixtral v0.1 8x22b (instruct, 16b quantization) | 32K            | 34.7                 |
 | WizardLM v2 8x22b (16b quantization)            | 64K            | 34.5                 |
 | Llama 3 70B (instruct, 16b quantization)        | 8K             | 34.1                 |
@@ -167,6 +168,64 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_04_credit-score                  | 9.0   |
 | cat07_05_dfg_ru                        | 8.0   |
 | cat07_06_process_tree_ru               | 8.0   |
+
+
+#### Google Gemini (20240528) => 38,9 (/52) points
+
+| Question                               | Score |
+|----------------------------------------|-------|
+| cat01_01_variants_bpic2020_rca         | 8.0   |
+| cat01_02_variants_roadtraffic_anomalies| 7.5   |
+| cat01_03_bpic2020_var_descr            | 10.0  |
+| cat01_04_roadtraffic_var_descr         | 8.0   |
+| cat01_05_bpic2020_dfg_descr            | 8.0   |
+| cat01_06_roadtraffic_dfg_descr         | 6.5   |
+| cat01_07_ocel_container_description    | 6.0   |
+| cat01_08_ocel_logistics_description    | 6.5   |
+| cat01_09_ocel_container_rca            | 7.0   |
+| cat01_10_ocel_logistics_rca            | 6.5   |
+| cat02_01_open_event_abstraction        | 8.5   |
+| cat02_02_open_process_cubes            | 9.0   |
+| cat02_03_open_decomposition_strategies | 7.0   |
+| cat02_04_open_trace_clustering         | 9.0   |
+| cat02_05_open_rpa                      | 9.0   |
+| cat02_06_open_anomaly_detection        | 9.0   |
+| cat02_07_open_process_enhancement      | 9.0   |
+| cat02_08_closed_process_mining         | 10.0  |
+| cat02_09_closed_petri_nets             | 8.0   |
+| cat03_01_temp_profile_generation       | 9.0   |
+| cat03_02_declare_generation            | 6.0   |
+| cat03_03_log_skeleton_generation       | 10.0  |
+| cat03_04_process_tree_generation       | 6.0   |
+| cat03_05_powl_generation               | 5.8   |
+| cat03_06_temp_profile_discovery        | 7.3   |
+| cat03_07_declare_discovery             | 7.5   |
+| cat03_08_log_skeleton_discovery        | 5.5   |
+| cat04_01_bpmn_xml_tasks                | 8.5   |
+| cat04_02_bpmn_json_description         | 6.0   |
+| cat04_03_bpmn_simp_xml_description     | 8.0   |
+| cat04_04_declare_description           | 6.0   |
+| cat04_05_declare_anomalies             | 6.0   |
+| cat04_06_log_skeleton_description      | 9.0   |
+| cat04_07_log_skeleton_anomalies        | 6.0   |
+| cat05_01_hypothesis_bpic2020           | 8.0   |
+| cat05_02_hypothesis_roadtraffic        | 8.0   |
+| cat05_03_hypothesis_bpmn_json          | 4.0   |
+| cat05_04_hypothesis_bpmn_simpl_xml     | 1.0   |
+| cat06_01_renting_attributes            | 9.0   |
+| cat06_02_hiring_attributes             | 10.0  |
+| cat06_03_lending_attributes            | 9.0   |
+| cat06_04_hospital_attributes           | 8.0   |
+| cat06_05_renting_prot_comp             | 7.8   |
+| cat06_06_hiring_prot_comp              | 8.0   |
+| cat06_07_lending_prot_comp             | 9.0   |
+| cat06_08_hospital_prot_comp            | 8.0   |
+| cat07_01_dotted_chart                  | 8.0   |
+| cat07_02_perf_spectrum                 | 7.0   |
+| cat07_03_running-example               | 8.0   |
+| cat07_04_credit-score                  | 8.0   |
+| cat07_05_dfg_ru                        | 3.0   |
+| cat07_06_process_tree_ru               | 6.0   |
 
 
 #### gpt-3.5-turbo-0125 => 32,6 (/52) points
