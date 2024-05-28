@@ -17,6 +17,9 @@ Procedure for every prompt:
 
 The final score of the benchmark is obtained by summing the scores and dividing by 10.0.
 
+Some scripts to execute and evaluate the questions against OpenAI's APIs are available in **answer.py** and **evaluation.py**.
+The API key should be configured inside **api_key.txt**. The responding model (and the API URL) can be configured inside the corresponding scripts.
+
 Different categories of questions are contained in the benchmark.
 The first category checks the ability to perform process descriptions, anomaly detection, and root cause analysis starting from the DFG/variants abstractions of the event logs.
 It also includes object-centric process mining artifacts for testing object-centric comprehension.
@@ -29,7 +32,7 @@ The seventh category checks the visual capabilities (if supported) of the LLM/LV
 
 ## Preliminary Scores (1-shot, gpt-4o-20240513 as a judge)
 
-Overall leaderboard (a score in the range **27-34** is considered **sufficient**; a score **34-45** is considered **good**; a score **>45** is considered **excellent**):
+Overall leaderboard (a score in the range **27-34** is considered **sufficient**; a score in the range **34-45** is considered **good**; a score **>45** is considered **excellent**):
 
 | Model                                           | Context Length | Score                |
 |-------------------------------------------------|----------------|----------------------|
