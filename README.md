@@ -27,24 +27,25 @@ The fifth category tests the ability of the LLM to generate hypotheses over the 
 The sixth category tests the ability of the LLM to identify sensible event log attributes and to perform a comparison between protected and non-protected groups.
 The seventh category checks the visual capabilities (if supported) of the LLM/LVLM.
 
-## Preliminary Scores (1-shot, gpt-4o as a judge)
+## Preliminary Scores (1-shot, gpt-4o-20240513 as a judge)
 
-Overall leaderboard:
+Overall leaderboard (a score in the range **27-34** is considered **sufficient**; a score **34-45** is considered **good**; a score **>45** is considered **excellent**):
 
-| Model                                           | Score                |
-|-------------------------------------------------|----------------------|
-| gpt-4o-20240513 (self-evaluation)               | 43.4 (38 on C1-C6)   |
-| gpt-4-turbo-20240409                            | 42.3 (37.1 on C1-C6) |
-| Mixtral v0.1 8x22b (instruct, 16b quantization) | 34.7                 |
-| Llama 3 70B (instruct, 16b quantization)        | 34.1                 |
-| gpt-3.5-turbo-0125                              | 32.6                 |
-| Mixtral v0.1 8x7b (instruct, 16b quantization)  | 31.6                 |
-| Llama 3 8B (instruct, 16b quantization)         | 30.2                 |
-| Llama 3 8B (instruct, Q6K quantization)         | 27.3                 |
-| Mistral 7B v0.3 (instruct, Q6K quantization)    | 27.2                 |
-| CodeGemma v1.5 7B (instruct, Q6K quantization)  | 22.7                 |
-| Mistral 7B v0.3 (instruct, Q3KS quantization)   | 20.9                 |
-| Qwen 4B v1.5 (text, Q6K quantization)           | 11.6                 |
+| Model                                           | Context Length | Score                |
+|-------------------------------------------------|----------------|----------------------|
+| gpt-4o-20240513 (self-evaluation)               | 128K           | 43.4 (38 on C1-C6)   |
+| gpt-4-turbo-20240409                            | 128K           | 42.3 (37.1 on C1-C6) |
+| Mixtral v0.1 8x22b (instruct, 16b quantization) | 32K            | 34.7                 |
+| Llama 3 70B (instruct, 16b quantization)        | 8K             | 34.1                 |
+| gpt-3.5-turbo-0125                              | 16K            | 32.6                 |
+| Mixtral v0.1 8x7b (instruct, 16b quantization)  | 32K            | 31.6                 |
+| Llama 3 8B (instruct, 16b quantization)         | 8K             | 30.2                 |
+| Llama 3 8B (instruct, Q6K quantization)         | 8K             | 27.3                 |
+| Mistral 7B v0.3 (instruct, Q6K quantization)    | 32K            | 27.2                 |
+| CodeGemma v1.5 7B (instruct, Q6K quantization)  | 8K             | 22.7                 |
+| Mistral 7B v0.3 (instruct, Q3KS quantization)   | 32K            | 20.9                 |
+| Qwen 4B v1.5 (text, Q6K quantization)           | 32K            | 11.6                 |
+
 
 ### Commercial models
 
