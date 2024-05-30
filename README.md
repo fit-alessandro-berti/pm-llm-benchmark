@@ -40,7 +40,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | gpt-4-turbo-20240409                            | 128K           | 42.3 (37.1 on C1-C6) |
 | claude-3-sonnet                                 | ??             | 40.5 (35.6 on C1-C6) |
 | Google Gemini                                   | ??             | 38.9 (34.9 on C1-C6) |
-| Mixtral v0.1 8x22b (instruct, 16b quantization) | 32K            | 34.7                 |
+| Mixtral v0.1 8x22b (instruct, 16b quantization) | 64K            | 34.7                 |
 | WizardLM v2 8x22b (16b quantization)            | 64K            | 34.5                 |
 | Llama 3 70B (instruct, 16b quantization)        | 8K             | 34.1                 |
 | gpt-3.5-turbo-0125                              | 16K            | 32.6                 |
