@@ -39,7 +39,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | gpt-4o-20240513 (self-evaluation)               | 128K           | 43.4 (38 on C1-C6)   |
 | gpt-4-turbo-20240409                            | 128K           | 42.3 (37.1 on C1-C6) |
 | claude-3-sonnet                                 | ??             | 40.5 (35.6 on C1-C6) |
-| Qwen v2.0 72B (instruct, fp16 quantization)     | 32K            | 35.0                 |
+| Qwen v2.0 72B (instruct, fp16 quantization)     | 128K           | 35.0                 |
 | Google Gemini                                   | ??             | 38.9 (34.9 on C1-C6) |
 | Mixtral v0.1 8x22b (instruct, 16b quantization) | 64K            | 34.7                 |
 | WizardLM v2 8x22b (16b quantization)            | 64K            | 34.5                 |
@@ -50,12 +50,12 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | Llama 3 8B (instruct, 16b quantization)         | 8K             | 30.2                 |
 | Llama 3 70B (instruct, Q4_0 quantization)       | 8K             | 30.2                 |
 | OpenChat 3.6 8B (16b quantization)              | 8K             | 29.9                 |
-| Qwen v2.0 7B (instruct, Q6K quantization)       | 32K            | 29.8                 |
+| Qwen v2.0 7B (instruct, Q6K quantization)       | 128K           | 29.8                 |
 | Llama 3 8B (instruct, Q6K quantization)         | 8K             | 27.3                 |
 | Mistral 7B v0.3 (instruct, Q6K quantization)    | 32K            | 27.2                 |
 | WizardLM v2 7b (Q6K quantization)               | 32K            | 27.0                 |
 | CodeGemma v1.5 7B (instruct, Q6K quantization)  | 8K             | 22.7                 |
-| Qwen v2.0 7B (instruct, Q2K quantization)       | 32K            | 21.3                 |
+| Qwen v2.0 7B (instruct, Q2K quantization)       | 128K           | 21.3                 |
 | Mistral 7B v0.3 (instruct, Q3KS quantization)   | 32K            | 20.9                 |
 | Gemma v1.0 7B (instruct, Q6K quantization)      | 8K             | 20.8                 |
 | Gemma v1.0 2B (instruct, Q6K quantization)      | 8K             | 18.4                 |
