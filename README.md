@@ -214,26 +214,26 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat03_06_temp_profile_discovery        | 6.5   |
 | cat03_07_declare_discovery             | 7.5   |
 | cat03_08_log_skeleton_discovery        | 7.0   |
-| cat04_01_bpmn_xml_tasks                |       |
-| cat04_02_bpmn_json_description         |       |
-| cat04_03_bpmn_simp_xml_description     |       |
-| cat04_04_declare_description           |       |
-| cat04_05_declare_anomalies             |       |
-| cat04_06_log_skeleton_description      |       |
-| cat04_07_log_skeleton_anomalies        |       |
-| cat05_01_hypothesis_bpic2020           |       |
-| cat05_02_hypothesis_roadtraffic        |       |
-| cat05_03_hypothesis_bpmn_json          |       |
-| cat05_04_hypothesis_bpmn_simpl_xml     |       |
-| cat06_01_renting_attributes            |       |
-| cat06_02_hiring_attributes             |       |
-| cat06_03_lending_attributes            |       |
-| cat06_04_hospital_attributes           |       |
-| cat06_05_renting_prot_comp             |       |
-| cat06_06_hiring_prot_comp              |       |
-| cat06_07_lending_prot_comp             |       |
-| cat06_08_hospital_prot_comp            |       |
-| cat07_01_dotted_chart                  |       |
+| cat04_01_bpmn_xml_tasks                | 9.0   |
+| cat04_02_bpmn_json_description         | 8.5   |
+| cat04_03_bpmn_simp_xml_description     | 8.0   |
+| cat04_04_declare_description           | 7.0   |
+| cat04_05_declare_anomalies             | 8.0   |
+| cat04_06_log_skeleton_description      | 9.2   |
+| cat04_07_log_skeleton_anomalies        | 8.5   |
+| cat05_01_hypothesis_bpic2020           | 8.5   |
+| cat05_02_hypothesis_roadtraffic        | 8.5   |
+| cat05_03_hypothesis_bpmn_json          | 8.5   |
+| cat05_04_hypothesis_bpmn_simpl_xml     | 9.5   |
+| cat06_01_renting_attributes            | 9.5   |
+| cat06_02_hiring_attributes             | 8.0   |
+| cat06_03_lending_attributes            | 8.1   |
+| cat06_04_hospital_attributes           | 9.5   |
+| cat06_05_renting_prot_comp             | 9.0   |
+| cat06_06_hiring_prot_comp              | 7.5   |
+| cat06_07_lending_prot_comp             | 8.5   |
+| cat06_08_hospital_prot_comp            | 8.0   |
+| cat07_01_dotted_chart                  | 9.0   |
 | cat07_02_perf_spectrum                 |       |
 | cat07_03_running-example               |       |
 | cat07_04_credit-score                  |       |
