@@ -51,30 +51,31 @@ for q in questions:
 
         payload = None
 
-        if question_path.endswith(".txt"):
-            question = open(question_path, "r", encoding="utf-8").read()
+        if answer is not None and answer:
+            if question_path.endswith(".txt"):
+                question = open(question_path, "r", encoding="utf-8").read()
 
-            inquiry = ["Given the following question:\n\n"]
-            inquiry.append(question)
-            inquiry.append("\n\nHow would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)?\n\n")
-            inquiry.append(answer)
-            messages = [{"role": "user", "content": "".join(inquiry)}]
+                inquiry = ["Given the following question:\n\n"]
+                inquiry.append(question)
+                inquiry.append("\n\nHow would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)?\n\n")
+                inquiry.append(answer)
+                messages = [{"role": "user", "content": "".join(inquiry)}]
 
-            payload = {
-                "model": EVALUATING_MODEL_NAME,
-                "messages": messages,
-            }
-        elif EVALUATING_MODEL_NAME.startswith("gpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4-turbo") or EVALUATING_MODEL_NAME.startswith("gpt-4-vision"):
-            base64_image = encode_image(question_path)
-            inquiry = ["Given the attached image, how would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)?\n\n"]
-            inquiry.append(answer)
-            messages = [{"role": "user", "content": [{"type": "text", "text": "".join(inquiry)}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image} "}}]}]
+                payload = {
+                    "model": EVALUATING_MODEL_NAME,
+                    "messages": messages,
+                }
+            elif EVALUATING_MODEL_NAME.startswith("gpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4-turbo") or EVALUATING_MODEL_NAME.startswith("gpt-4-vision"):
+                base64_image = encode_image(question_path)
+                inquiry = ["Given the attached image, how would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)?\n\n"]
+                inquiry.append(answer)
+                messages = [{"role": "user", "content": [{"type": "text", "text": "".join(inquiry)}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image} "}}]}]
 
-            payload = {
-                "model": EVALUATING_MODEL_NAME,
-                "messages": messages,
-                "max_tokens": 4096
-            }
+                payload = {
+                    "model": EVALUATING_MODEL_NAME,
+                    "messages": messages,
+                    "max_tokens": 4096
+                }
 
         if payload is not None:
             complete_url = API_URL + "chat/completions"
