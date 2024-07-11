@@ -713,7 +713,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               |       |
 
 
-### Codestral 22B (Q6K quantization) => 30,9 (/52) points
+#### Codestral 22B (Q6K quantization) => 30,9 (/52) points
 
 | Question                               | Score |
 |----------------------------------------|-------|
@@ -887,7 +887,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               |       |
 
 
-### OpenChat 3.6 8B (16b quantization) => 29,9 (/52) points
+#### OpenChat 3.6 8B (16b quantization) => 29,9 (/52) points
 
 | Question                               | Score |
 |----------------------------------------|-------|
@@ -948,7 +948,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 ### Small Models (< 8GB RAM)
 
 
-### Qwen v2.0 7B (instruct, Q6K quantization) => 29,8 (/52) points
+#### Qwen v2.0 7B (instruct, Q6K quantization) => 29,8 (/52) points
 
 | Question                               | Score |
 |----------------------------------------|-------|
@@ -1180,7 +1180,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               |       |
 
 
-### Gemma v2.0 9B (instruct, Q6K quantization) => 26,4 (/52) points
+#### Gemma v2.0 9B (instruct, Q6K quantization) => 26,4 (/52) points
 
 | Question                               | Score |
 |----------------------------------------|-------|
@@ -1356,7 +1356,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 
 ### Very Small Models (< 4GB RAM)
 
-### Qwen v2.0 7B (instruct, Q2K quantization) => 21,3 (/52) points
+#### Qwen v2.0 7B (instruct, Q2K quantization) => 21,3 (/52) points
 
 | Question                               | Score |
 |----------------------------------------|-------|
@@ -1530,7 +1530,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               |       |
 
 
-### Qwen v2.0 1.5B (instruct, Q6K quantization) => 17,4 (/52) points
+#### Qwen v2.0 1.5B (instruct, Q6K quantization) => 17,4 (/52) points
 
 
 | Question                               | Score |
@@ -1589,7 +1589,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               |       |
 
 
-### Qwen v2.0 0.5B (instruct, Q6K quantization) => 14,2 (/52) points
+#### Qwen v2.0 0.5B (instruct, Q6K quantization) => 14,2 (/52) points
 
 | Question                               | Score |
 |----------------------------------------|-------|
