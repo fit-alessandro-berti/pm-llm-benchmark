@@ -29,6 +29,7 @@ API_URL = "https://api.openai.com/v1/"
 ANSWERING_MODEL_NAME = "gpt-4o" if len(sys.argv) < 3 else sys.argv[1]
 EVALUATING_MODEL_NAME = "gpt-4o" if len(sys.argv) < 3 else sys.argv[2]
 INCLUDE_EVALUATING_MNAME_IN_EVALUATION = False if len(sys.argv) < 3 else True
+CONTINUE_TRYING = True if len(sys.argv) < 3 else False
 
 API_KEY = open("api_key.txt", "r").read()
 
@@ -107,10 +108,13 @@ for q in questions:
                     F.write(response_message)
                     F.close()
                 except:
-                    print(response)
+                    if CONTINUE_TRYING:
+                        print(response)
 
-                    traceback.print_exc()
+                        traceback.print_exc()
 
-                    print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
+                        print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
 
-                    time.sleep(WAITING_TIME_RETRY)
+                        time.sleep(WAITING_TIME_RETRY)
+                    else:
+                        break
