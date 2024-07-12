@@ -5,6 +5,6 @@ models = ["meta-llama/Meta-Llama-3-70B-Instruct", "Qwen/Qwen2-72B-Instruct", "mi
 os.chdir("..")
 
 for i in range(len(models)):
-    for j in range(i, len(models)):
+    for j in range(len(models)):
         print("\n\n#### ", models[i], models[j])
         os.system("python evaluation.py "+models[i]+" "+models[j])
