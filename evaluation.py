@@ -28,6 +28,7 @@ API_URL = "https://api.openai.com/v1/"
 
 ANSWERING_MODEL_NAME = "gpt-4o" if len(sys.argv) < 3 else sys.argv[1]
 EVALUATING_MODEL_NAME = "gpt-4o" if len(sys.argv) < 3 else sys.argv[2]
+INCLUDE_EVALUATING_MNAME_IN_EVALUATION = False if len(sys.argv) < 3 else True
 
 API_KEY = open("api_key.txt", "r").read()
 
@@ -45,7 +46,11 @@ for q in questions:
     answer_path = os.path.join("answers", answer_path)
     answer_path = answer_path.replace(".png", ".txt")
 
-    evaluation_path = m_name + "_" + q
+    if INCLUDE_EVALUATING_MNAME_IN_EVALUATION:
+        evaluation_path = m_name + "__" + e_m_name + "__" + q
+    else:
+        evaluation_path = m_name + "_" + q
+
     evaluation_path = os.path.join("evaluation", evaluation_path)
     evaluation_path = evaluation_path.replace(".png", ".txt")
 
