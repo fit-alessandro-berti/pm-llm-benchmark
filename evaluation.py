@@ -4,6 +4,7 @@ import traceback
 import time
 import re
 import base64
+import sys
 
 
 def strip_non_unicode_characters(text):
@@ -25,8 +26,9 @@ API_URL = "https://api.openai.com/v1/"
 #API_URL = "http://127.0.0.1:11434/v1/"
 #API_URL = "https://api.deepinfra.com/v1/openai/"
 
-ANSWERING_MODEL_NAME = "gpt-4o"
-EVALUATING_MODEL_NAME = "gpt-4o"
+ANSWERING_MODEL_NAME = "gpt-4o" if len(sys.argv) < 3 else sys.argv[1]
+EVALUATING_MODEL_NAME = "gpt-4o" if len(sys.argv) < 3 else sys.argv[2]
+
 API_KEY = open("api_key.txt", "r").read()
 
 WAITING_TIME_RETRY = 60
@@ -35,9 +37,17 @@ questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endsw
 
 for q in questions:
     m_name = ANSWERING_MODEL_NAME.replace("/", "").replace(":", "")
+    e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
+
     question_path = os.path.join("questions", q)
-    answer_path = os.path.join("answers",  m_name + "_" + q).replace(".png", ".txt")
-    evaluation_path = os.path.join("evaluation", m_name + "_" + q).replace(".png", ".txt")
+
+    answer_path = m_name + "_" + q
+    answer_path = os.path.join("answers", answer_path)
+    answer_path = answer_path.replace(".png", ".txt")
+
+    evaluation_path = m_name + "_" + q
+    evaluation_path = os.path.join("evaluation", evaluation_path)
+    evaluation_path = evaluation_path.replace(".png", ".txt")
 
     if os.path.exists(answer_path) and not os.path.exists(evaluation_path):
         print("Evaluating:", answer_path)
