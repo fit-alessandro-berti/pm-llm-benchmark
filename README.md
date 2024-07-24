@@ -38,6 +38,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 |-------------------------------------------------|----------------|----------------------|
 | claude-3.5-sonnet                               | ??             | 43.5 (38.1 on C1-C6) |
 | gpt-4o-20240513 (self-evaluation)               | 128K           | 43.4 (38 on C1-C6)   |
+| gpt-4o-mini-20240718                            | 128K           | 43.0 (37.8 on C1-C6) |
 | gpt-4-turbo-20240409                            | 128K           | 42.3 (37.1 on C1-C6) |
 | claude-3-sonnet                                 | ??             | 40.5 (35.6 on C1-C6) |
 | Qwen v2.0 72B (instruct, fp16 quantization)     | 128K           | 35.0                 |
@@ -243,7 +244,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               | 8.0   |
 
 
-## gpt-4o-mini => (/52) points
+#### gpt-4o-mini-20240718 => 43.0 (/52) points
 
 | Question                               | Score |
 |----------------------------------------|-------|
