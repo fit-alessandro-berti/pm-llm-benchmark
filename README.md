@@ -47,7 +47,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | Llama 3.1 405B (instruct, 16b quantization)     | 32K            | 34.9                 |
 | Mixtral v0.1 8x22b (instruct, 16b quantization) | 64K            | 34.7                 |
 | WizardLM v2 8x22b (16b quantization)            | 64K            | 34.5                 |
-| Llama 3.1 70B (instruct, 16b quantization)      | 32K            | 34.1                 |
+| Llama 3.1 70B (instruct, 16b quantization)      | 128K           | 34.1                 |
 | Llama 3 70B (instruct, 16b quantization)        | 8K             | 34.1                 |
 | gpt-3.5-turbo-0125                              | 16K            | 32.6                 |
 | Mixtral v0.1 8x7b (instruct, 16b quantization)  | 32K            | 31.6                 |
@@ -56,7 +56,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | Llama 3 70B (instruct, Q4_0 quantization)       | 8K             | 30.2                 |
 | OpenChat 3.6 8B (16b quantization)              | 8K             | 29.9                 |
 | Qwen v2.0 7B (instruct, Q6K quantization)       | 128K           | 29.8                 |
-| Llama 3.1 8B (instruct, 16b quantization)       | 32K            | 29.7                 |
+| Llama 3.1 8B (instruct, 16b quantization)       | 128K           | 29.7                 |
 | Llama 3 8B (instruct, Q6K quantization)         | 8K             | 27.3                 |
 | Mistral 7B v0.3 (instruct, Q6K quantization)    | 32K            | 27.2                 |
 | WizardLM v2 7b (Q6K quantization)               | 32K            | 27.0                 |
