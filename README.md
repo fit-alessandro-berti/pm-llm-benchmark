@@ -38,7 +38,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 |-------------------------------------------------|----------------|----------------------|
 | claude-3.5-sonnet                               | ??             | 43.5 (38.1 on C1-C6) |
 | gpt-4o-20240513 (self-evaluation)               | 128K           | 43.4 (38 on C1-C6)   |
-| gpt-4o-mini-20240718 3                          | 128K           | 43.0 (37.8 on C1-C6) |
+| gpt-4o-mini-20240718                            | 128K           | 43.0 (37.8 on C1-C6) |
 | gpt-4-turbo-20240409                            | 128K           | 42.3 (37.1 on C1-C6) |
 | gpt-4-0613                                      | 8K             | 36.4                 |
 | claude-3-sonnet                                 | ??             | 40.5 (35.6 on C1-C6) |
