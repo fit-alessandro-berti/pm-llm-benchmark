@@ -889,7 +889,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               |       |
 
 
-## Consumer-Grade Open-Source Models (> 8GB RAM)
+### Consumer-Grade Open-Source Models (> 8GB RAM)
 
 
 #### Mixtral v0.1 8x7b (instruct, 16b quantization) => 31,6 (/52) points
