@@ -53,7 +53,15 @@ for q in questions:
     else:
         evaluation_path = m_name + "_" + q
 
-    evaluation_path = os.path.join("evaluation", evaluation_path)
+    if "gpt-4o" in e_m_name:
+        base_evaluation_path = "evaluation"
+    else:
+        base_evaluation_path = "evaluation-"+e_m_name
+
+    if not os.path.exists(base_evaluation_path):
+        os.mkdir(base_evaluation_path)
+
+    evaluation_path = os.path.join(base_evaluation_path, evaluation_path)
     evaluation_path = evaluation_path.replace(".png", ".txt")
 
     if os.path.exists(answer_path) and not os.path.exists(evaluation_path):
