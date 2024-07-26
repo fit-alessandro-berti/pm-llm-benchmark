@@ -2,7 +2,7 @@ import os
 import numpy as np
 
 
-contents = open("../README.md", "r").readlines()
+contents = open("../leaderboard_gpt-4o_2024_05_13.md", "r").readlines()
 
 open = False
 debug = False
@@ -19,7 +19,7 @@ question = None
 for row in contents:
     row = row.strip()
 
-    if "Preliminary Scores" in row:
+    if "Leaderboard" in row:
         open = True
 
     if open:
