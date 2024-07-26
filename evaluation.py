@@ -27,7 +27,7 @@ API_URL = "https://api.openai.com/v1/"
 #API_URL = "https://api.deepinfra.com/v1/openai/"
 
 ANSWERING_MODEL_NAME = "gpt-4o" if len(sys.argv) < 3 else sys.argv[1]
-EVALUATING_MODEL_NAME = "gpt-4o" if len(sys.argv) < 3 else sys.argv[2]
+EVALUATING_MODEL_NAME = "gpt-4o-2024-05-13" if len(sys.argv) < 3 else sys.argv[2]
 INCLUDE_EVALUATING_MNAME_IN_EVALUATION = False if len(sys.argv) < 3 else True
 CONTINUE_TRYING = True if len(sys.argv) < 3 else False
 
