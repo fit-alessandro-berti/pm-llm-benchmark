@@ -24,6 +24,7 @@ def encode_image(image_path):
 API_URL = "https://api.openai.com/v1/"
 #API_URL = "http://127.0.0.1:11434/v1/"
 #API_URL = "https://api.deepinfra.com/v1/openai/"
+#API_URL = "https://api.mistral.ai/v1/"
 
 MODEL_NAME = "gpt-4o"
 API_KEY = open("api_key.txt", "r").read()
