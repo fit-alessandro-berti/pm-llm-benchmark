@@ -40,7 +40,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | gpt-4o-20240513 (self-evaluation)               | 128K           | 43.4 (38 on C1-C6)   |
 | gpt-4o-mini-20240718                            | 128K           | 43.0 (37.8 on C1-C6) |
 | gpt-4-turbo-20240409                            | 128K           | 42.3 (37.1 on C1-C6) |
-| Mistral 2 Large (20240726)                      | 128K           | 36.9                 |
+| Mistral Large 2 (20240724)                      | 128K           | 36.9                 |
 | gpt-4-0613                                      | 8K             | 36.4                 |
 | claude-3-sonnet                                 | ??             | 40.5 (35.6 on C1-C6) |
 | Qwen v2.0 72B (instruct, fp16 quantization)     | 128K           | 35.0                 |
@@ -308,7 +308,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               | 8.0   |
 
 
-#### Mistral 2 Large (20240726) => 36.9 (/52) points
+#### Mistral Large 2 (20240724) => 36.9 (/52) points
 
 | Question                               | Score |
 |----------------------------------------|-------|
