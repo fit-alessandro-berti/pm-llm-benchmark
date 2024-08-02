@@ -2,13 +2,12 @@
 
 Overall leaderboard (a score in the range **27-34** is considered **sufficient**; a score in the range **34-45** is considered **good**; a score **>45** is considered **excellent**):
 
-*# measured on the target judge after 01/08/2024
 
 | Model                                              | Context Length | Score                |
 |----------------------------------------------------|----------------|----------------------|
-| Gemini-1.5-Pro-Exp-0801 *#                         | ??             | 45.6 (40.2 on C1-C6) |
-| gpt-4-1106-preview *#                              | 128K           | 38.4                 |
-| gpt-4-0125-preview *#                              | 128K           | 38.4                 |
+| Gemini-1.5-Pro-Exp-0801                            | ??             | 45.6 (40.2 on C1-C6) |
+| gpt-4-1106-preview                                 | 128K           | 38.4                 |
+| gpt-4-0125-preview                                 | 128K           | 38.4                 |
 | claude-3.5-sonnet                                  | ??             | 43.5 (38.1 on C1-C6) |
 | gpt-4o-20240513 (self-evaluation)                  | 128K           | 43.4 (38 on C1-C6)   |
 | gpt-4o-mini-20240718                               | 128K           | 43.0 (37.8 on C1-C6) |
