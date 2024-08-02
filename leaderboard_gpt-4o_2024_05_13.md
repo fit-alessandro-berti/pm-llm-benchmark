@@ -14,8 +14,8 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | gpt-4-turbo-20240409                                                  | 128K           | 42.3 (37.1 on C1-C6) |
 | Mistral Large 2 123B (20240724, fp16 quantization)                    | 128K           | 36.9                 |
 | gpt-4-0613                                                            | 8K             | 36.4                 |
-| claude-3-sonnet                                                       | ??             | 40.5 (35.6 on C1-C6) |
 | Mixtral v0.1 8x22b @MistralPlateforme (instruct, 16b quantization)    | 64K            | 35.9                 |
+| claude-3-sonnet                                                       | ??             | 40.5 (35.6 on C1-C6) |
 | Qwen v2.0 72B (instruct, fp16 quantization)                           | 128K           | 35.0                 |
 | Google Gemini                                                         | ??             | 38.9 (34.9 on C1-C6) |
 | Llama 3.1 405B (instruct, 16b quantization)                           | 32K            | 34.9                 |
