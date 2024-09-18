@@ -147,7 +147,7 @@ for q in questions:
                     #query_text_chain_reasoning(question_path, complete_url, answer_path, callback_write)
                     query_text_simple(question_path, complete_url, answer_path, callback_write)
                     break
-                elif MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision"):
+                elif MODEL_NAME.startswith("chatgpt-4o") or MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision"):
                     query_image_simple(question_path, complete_url, answer_path, callback_write)
                     break
             except:
