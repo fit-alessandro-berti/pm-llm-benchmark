@@ -40,8 +40,11 @@ def query_text_simple(question_path, complete_url, target_file, callback):
     }
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
-    response_message = response["choices"][0]["message"]["content"]
-
+    try:
+        response_message = response["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(response)
+        raise Exception(e)
     callback(response_message, target_file)
 
 
@@ -58,8 +61,11 @@ def query_image_simple(question_path, complete_url, target_file, callback):
     }
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
-    response_message = response["choices"][0]["message"]["content"]
-
+    try:
+        response_message = response["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(response)
+        raise Exception(e)
     callback(response_message, target_file)
 
 
@@ -149,6 +155,8 @@ for q in questions:
                     break
                 elif MODEL_NAME.startswith("chatgpt-4o") or MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision"):
                     query_image_simple(question_path, complete_url, answer_path, callback_write)
+                    break
+                else:
                     break
             except:
                 traceback.print_exc()
