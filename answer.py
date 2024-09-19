@@ -52,12 +52,12 @@ def query_image_simple(question_path, complete_url, target_file, callback):
     base64_image = encode_image(question_path)
     messages = [{"role": "user", "content": [{"type": "text", "text": "Can you describe the provided visualization?"},
                                              {"type": "image_url",
-                                              "image_url": {"url": f"data:image/jpeg;base64,{base64_image} "}}]}]
+                                              "image_url": {"url": f"data:image/png;base64,{base64_image}"}}]}]
 
     payload = {
         "model": MODEL_NAME,
         "messages": messages,
-        "max_tokens": 4096
+        "max_tokens": 4096,
     }
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
@@ -153,8 +153,11 @@ for q in questions:
                     #query_text_chain_reasoning(question_path, complete_url, answer_path, callback_write)
                     query_text_simple(question_path, complete_url, answer_path, callback_write)
                     break
-                elif MODEL_NAME.startswith("chatgpt-4o") or MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision"):
-                    query_image_simple(question_path, complete_url, answer_path, callback_write)
+                elif MODEL_NAME.startswith("pixtral") or MODEL_NAME.startswith("chatgpt-4o") or MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision"):
+                    try:
+                        query_image_simple(question_path, complete_url, answer_path, callback_write)
+                    except:
+                        traceback.print_exc()
                     break
                 else:
                     break

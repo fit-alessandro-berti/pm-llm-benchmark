@@ -90,11 +90,11 @@ for q in questions:
                     "model": EVALUATING_MODEL_NAME,
                     "messages": messages,
                 }
-            elif EVALUATING_MODEL_NAME.startswith("chatgpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4-turbo") or EVALUATING_MODEL_NAME.startswith("gpt-4-vision"):
+            elif EVALUATING_MODEL_NAME.startswith("pixtral") or EVALUATING_MODEL_NAME.startswith("chatgpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4-turbo") or EVALUATING_MODEL_NAME.startswith("gpt-4-vision"):
                 base64_image = encode_image(question_path)
                 inquiry = ["Given the attached image, how would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)?\n\n"]
                 inquiry.append(answer)
-                messages = [{"role": "user", "content": [{"type": "text", "text": "".join(inquiry)}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image} "}}]}]
+                messages = [{"role": "user", "content": [{"type": "text", "text": "".join(inquiry)}, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}]}]
 
                 payload = {
                     "model": EVALUATING_MODEL_NAME,
