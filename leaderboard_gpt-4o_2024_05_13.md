@@ -22,7 +22,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | Qwen v2.5 72B (instruct, fp16 quantization)                        | 128K           | 35.2                 |
 | Qwen v2.0 72B (instruct, fp16 quantization)                        | 128K           | 35.0                 |
 | Google Gemini (20240528)                                           | ??             | 38.9 (34.9 on C1-C6) |
-| Pixtral 12B @MistralPlateforme                                     | 128K           | 38.9 (34.9 on C1-C6) |
+| Pixtral 12B (1209) @MistralPlateforme                              | 128K           | 38.9 (34.9 on C1-C6) |
 | Llama 3.1 405B (instruct, 16b quantization)                        | 32K            | 34.9                 |
 | Mistral Medium                                                     | 32K            | 34.8                 |
 | Mixtral v0.1 8x22b @Deepinfra (instruct, 16b quantization)         | 64K            | 34.7                 |
@@ -1279,7 +1279,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               |       |
 
 
-#### Pixtral 12B @MistralPlateforme => 38.9 (/52) points
+#### Pixtral 12B (1209) @MistralPlateforme => 38.9 (/52) points
 
 | Question                               | Score |
 |----------------------------------------|-------|
