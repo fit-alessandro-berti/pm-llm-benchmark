@@ -157,7 +157,7 @@ API_URL = "https://api.openai.com/v1/"
 #API_URL = "https://api.deepinfra.com/v1/openai/"
 #API_URL = "https://api.mistral.ai/v1/"
 
-MODEL_NAME = "gpt-4o-mini"
+MODEL_NAME = "gpt-4o"
 API_KEY = open("api_key.txt", "r").read()
 
 WAITING_TIME_RETRY = 60
@@ -181,7 +181,7 @@ for q in questions:
             try:
                 if question_path.endswith(".txt"):
                     #query_text_chain_reasoning(question_path, complete_url, answer_path, callback_write)
-                    #query_text_simple(question_path, complete_url, answer_path, callback_write)
+                    query_text_simple(question_path, complete_url, answer_path, callback_write)
                     break
                 elif MODEL_NAME.startswith("pixtral") or MODEL_NAME.startswith("chatgpt-4o") or MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision"):
                     try:
