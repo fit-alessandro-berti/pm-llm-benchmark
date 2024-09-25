@@ -118,38 +118,47 @@ def query_text_chain_reasoning(question_path, complete_url, target_file, callbac
     while n_steps < max_steps:
         n_steps += 1
 
-        payload = {
-            "model": MODEL_NAME,
-            "messages": messages,
-        }
-        response = requests.post(complete_url, headers=headers, json=payload).json()
-        response_message = response["choices"][0]["message"]["content"]
-        response_message = response_message.split("```json")[-1].split("```")[0]
-        response = json.loads(response_message)
+        try:
+            payload = {
+                "model": MODEL_NAME,
+                "messages": messages,
+            }
+            dump_payload(payload, target_file)
 
-        print(n_steps, response_message)
+            response = requests.post(complete_url, headers=headers, json=payload).json()
+            response_message = response["choices"][0]["message"]["content"]
+            response_message = response_message.split("```json")[-1].split("```")[0]
+            response = json.loads(response_message)
 
-        messages.append({"role": "assistant", "content": response_message})
+            print(n_steps, response_message)
 
-        if response["next_action"] == "final_answer":
-            break
+            messages.append({"role": "assistant", "content": response_message})
+
+            if response["next_action"] == "final_answer":
+                break
+        except:
+            pass
 
     messages.append({"role": "user", "content": "Please provide the final answer based on your reasoning above."})
     payload = {
         "model": MODEL_NAME,
         "messages": messages,
     }
-
     dump_payload(payload, target_file)
-    response = requests.post(complete_url, headers=headers, json=payload).json()
-    dump_response(response, target_file)
 
-    response_message = response["choices"][0]["message"]["content"]
-    response_message = response_message.split("```json")[-1].split("```")[0]
-    response = json.loads(response_message)
-    response_message = str(response["content"])
+    while n_steps < max_steps + 1:
+        n_steps += 1
 
-    callback(response_message, target_file)
+        try:
+            response = requests.post(complete_url, headers=headers, json=payload).json()
+            dump_response(response, target_file)
+            response_message = response["choices"][0]["message"]["content"]
+            response_message = response_message.split("```json")[-1].split("```")[0]
+            response = json.loads(response_message)
+            response_message = str(response["content"])
+            callback(response_message, target_file)
+        except:
+            pass
 
 
 API_URL = "https://api.openai.com/v1/"
@@ -157,7 +166,7 @@ API_URL = "https://api.openai.com/v1/"
 #API_URL = "https://api.deepinfra.com/v1/openai/"
 #API_URL = "https://api.mistral.ai/v1/"
 
-MODEL_NAME = "gpt-4o"
+MODEL_NAME = "gpt-4o-mini"
 API_KEY = open("api_key.txt", "r").read()
 
 WAITING_TIME_RETRY = 60
