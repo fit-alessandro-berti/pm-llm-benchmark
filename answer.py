@@ -4,6 +4,7 @@ import traceback
 import time
 import re
 import json
+import sys
 import base64
 
 
@@ -30,6 +31,26 @@ def callback_write(response_message, answer_path):
     F.close()
 
 
+def dump_payload(payload, target_file):
+    target_file = target_file.replace("answers", "json_payload")
+    #print(target_file)
+
+    try:
+        json.dump(payload, open(target_file, "w"), indent=2)
+    except:
+        print("payload dumping failed")
+
+
+def dump_response(response, target_file):
+    target_file = target_file.replace("answers", "json_resp")
+    #print(target_file)
+
+    try:
+        json.dump(response, open(target_file, "w"), indent=2)
+    except:
+        print("response dumping failed")
+
+
 def query_text_simple(question_path, complete_url, target_file, callback):
     question = open(question_path, "r", encoding="utf-8").read()
     messages = [{"role": "user", "content": question}]
@@ -39,7 +60,10 @@ def query_text_simple(question_path, complete_url, target_file, callback):
         "messages": messages,
     }
 
+    dump_payload(payload, target_file)
     response = requests.post(complete_url, headers=headers, json=payload).json()
+    dump_response(response, target_file)
+
     try:
         response_message = response["choices"][0]["message"]["content"]
     except Exception as e:
@@ -61,6 +85,8 @@ def query_image_simple(question_path, complete_url, target_file, callback):
     }
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
+    dump_response(response, target_file)
+
     try:
         response_message = response["choices"][0]["message"]["content"]
     except Exception as e:
@@ -113,7 +139,11 @@ def query_text_chain_reasoning(question_path, complete_url, target_file, callbac
         "model": MODEL_NAME,
         "messages": messages,
     }
+
+    dump_payload(payload, target_file)
     response = requests.post(complete_url, headers=headers, json=payload).json()
+    dump_response(response, target_file)
+
     response_message = response["choices"][0]["message"]["content"]
     response_message = response_message.split("```json")[-1].split("```")[0]
     response = json.loads(response_message)
@@ -127,7 +157,7 @@ API_URL = "https://api.openai.com/v1/"
 #API_URL = "https://api.deepinfra.com/v1/openai/"
 #API_URL = "https://api.mistral.ai/v1/"
 
-MODEL_NAME = "gpt-4o"
+MODEL_NAME = "gpt-4o-mini"
 API_KEY = open("api_key.txt", "r").read()
 
 WAITING_TIME_RETRY = 60
@@ -151,17 +181,20 @@ for q in questions:
             try:
                 if question_path.endswith(".txt"):
                     #query_text_chain_reasoning(question_path, complete_url, answer_path, callback_write)
-                    query_text_simple(question_path, complete_url, answer_path, callback_write)
+                    #query_text_simple(question_path, complete_url, answer_path, callback_write)
                     break
                 elif MODEL_NAME.startswith("pixtral") or MODEL_NAME.startswith("chatgpt-4o") or MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision"):
                     try:
                         query_image_simple(question_path, complete_url, answer_path, callback_write)
                     except:
                         traceback.print_exc()
+                    sys.exit(0)
                     break
                 else:
                     break
-            except:
+            except SystemExit as e:
+                sys.exit(0)
+            except Exception as e:
                 traceback.print_exc()
 
                 print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
