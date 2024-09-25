@@ -7,8 +7,8 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 |--------------------------------------------------------------------|----------------|----------------------|
 | Gemini-1.5-Pro-Exp-0801                                            | ??             | 45.6 (40.2 on C1-C6) |
 | Gemini-1.5-Pro-Exp-0827                                            | ??             | 44.8 (39.5 on C1-C6) |
-| o1-preview-2024-09-12                                              | ??             | 39.0                 |
-| o1-mini (20240917)                                                 | ??             | 38.3                 |
+| o1-preview-2024-09-12                                              | 128K           | 39.0                 |
+| o1-mini (20240917)                                                 | 128K           | 38.3                 |
 | claude-3.5-sonnet                                                  | ??             | 43.5 (38.1 on C1-C6) |
 | gpt-4o-20240513 (self-evaluation)                                  | 128K           | 43.4 (38 on C1-C6)   |
 | gpt-4o-mini-20240718                                               | 128K           | 43.0 (37.8 on C1-C6) |
