@@ -48,6 +48,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | WizardLM v2 7b (Q6K quantization)                          | 32K            | 27.0                 |
 | Gemma v2.0 9B (instruct, Q6K quantization)                 | 8K             | 26.4                 |
 | Qwen v2.5 3B (instruct, Q8_0 quantization)                 | 32K            | 25.2                 |
+| Llama 3.2 3B (instruct, Q8_0 quantization)                 | 128K           | 22.8                 |
 | CodeGemma v1.5 7B (instruct, Q6K quantization)             | 8K             | 22.7                 |
 | Qwen v2.0 7B (instruct, Q2K quantization)                  | 128K           | 21.3                 |
 | Mistral 7B v0.3 (instruct, Q3KS quantization)              | 32K            | 20.9                 |
