@@ -67,8 +67,7 @@ def query_text_simple(question_path, complete_url, target_file, callback):
     try:
         response_message = response["choices"][0]["message"]["content"]
     except Exception as e:
-        print(response)
-        raise Exception(e)
+        raise Exception(str(response))
     callback(response_message, target_file)
 
 
@@ -166,7 +165,7 @@ API_URL = "https://api.openai.com/v1/"
 #API_URL = "https://api.deepinfra.com/v1/openai/"
 #API_URL = "https://api.mistral.ai/v1/"
 
-MODEL_NAME = "gpt-4o-mini"
+MODEL_NAME = "gpt-4o"
 API_KEY = open("api_key.txt", "r").read()
 
 WAITING_TIME_RETRY = 60
@@ -197,13 +196,15 @@ for q in questions:
                         query_image_simple(question_path, complete_url, answer_path, callback_write)
                     except:
                         traceback.print_exc()
-                    sys.exit(0)
                     break
                 else:
                     break
             except SystemExit as e:
                 sys.exit(0)
             except Exception as e:
+                if "context length" in str(e):
+                    break
+
                 traceback.print_exc()
 
                 print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
