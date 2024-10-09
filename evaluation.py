@@ -91,7 +91,7 @@ while True:
                         "model": EVALUATING_MODEL_NAME,
                         "messages": messages,
                     }
-                elif EVALUATING_MODEL_NAME.startswith("pixtral") or EVALUATING_MODEL_NAME.startswith("chatgpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4-turbo") or EVALUATING_MODEL_NAME.startswith("gpt-4-vision"):
+                elif EVALUATING_MODEL_NAME.startswith("pixtral") or EVALUATING_MODEL_NAME.startswith("chatgpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4-turbo") or EVALUATING_MODEL_NAME.startswith("gpt-4-vision") or EVALUATING_MODEL_NAME.startswith("meta-llama/Llama-3.2-11B") or EVALUATING_MODEL_NAME.startswith("meta-llama/Llama-3.2-90B"):
                     base64_image = encode_image(question_path)
                     inquiry = ["Given the attached image, how would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)?\n\n"]
                     inquiry.append(answer)
