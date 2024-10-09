@@ -83,7 +83,7 @@ while True:
 
                     inquiry = ["Given the following question:\n\n"]
                     inquiry.append(question)
-                    inquiry.append("\n\nHow would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)? Please put the grade at the beginning of the answer.\n\n")
+                    inquiry.append("\n\nHow would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)? Please put the grade at the beginning of the response.\n\n")
                     inquiry.append(answer)
                     messages = [{"role": "user", "content": "".join(inquiry)}]
 
