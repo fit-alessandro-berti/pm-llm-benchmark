@@ -35,4 +35,3 @@ The seventh category checks the visual capabilities (if supported) of the LLM/LV
 The leaderboards include the results of the benchmark, as evaluated by the considered judge LLM:
 
 * [gpt-4o-2024-05-13](leaderboard_gpt-4o_2024_05_13.md)
-* [mistral-large-2407](leaderboard_mistral-large-2407.md)
