@@ -5,7 +5,7 @@ import re
 import pandas as pd
 
 evaluation_folder = "../evaluation"
-pattern = r'[-+]?\d*\.\d+'g
+pattern = r'[-+]?\d*\.\d+'
 reg_expr = re.compile(pattern)
 
 
