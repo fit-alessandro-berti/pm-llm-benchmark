@@ -4,65 +4,67 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 
 
 | Model                                                      | Context Length | Score                |
-|------------------------------------------------------------|---------------|----------------------|
-| Gemini-1.5-Pro-002                                         | ??            | 45.2 (39.9 on C1-C6) |
-| chatgpt-4o-latest (20240926)                               | 128K          | 44.9 (39.5 on C1-C6) |
-| o1-preview-2024-09-12                                      | 128K          | 39.0                 |
-| Gemini-1.5-Flash-002                                       | ??            | 44.0 (38.8 on C1-C6) |
-| o1-mini (20240917)                                         | 128K          | 38.3                 |
-| claude-3.5-sonnet                                          | ??            | 43.5 (38.1 on C1-C6) |
-| gpt-4o-20240513 (self-evaluation)                          | 128K          | 43.4 (38 on C1-C6)   |
-| Gemini-1.5-Flash-8B                                        | ??            | 43.3 (37.9 on C1-C6) |
-| gpt-4o-mini-20240718                                       | 128K          | 43.0 (37.8 on C1-C6) |
-| gpt-4o-2024-08-06                                          | 128K          | 42.8 (37.8 on C1-C6) |
-| gpt-4-turbo-20240409                                       | 128K          | 42.3 (37.1 on C1-C6) |
-| Mistral Large 2 123B @MistralPlateforme                    | 128K          | 36.9                 |
-| gpt-4-0613                                                 | 8K            | 36.4                 |
-| Mixtral 8x22b @MistralPlateforme                           | 64K           | 35.9                 |
-| claude-3-sonnet                                            | ??            | 40.5 (35.6 on C1-C6) |
-| Llama 3.2 90B (instruct, 16b quantization)                 | 8K            | 40.1 (35.4 on C1-C6) |
-| Qwen v2.5 72B (instruct, fp16 quantization)                | 128K          | 35.2                 |
-| Mistral Small (2409) @MistralPlateforme                    | 128K          | 35.1                 |
-| Qwen v2.0 72B (instruct, fp16 quantization)                | 128K          | 35.0                 |
-| Google Gemini (20240528)                                   | ??            | 38.9 (34.9 on C1-C6) |
-| Pixtral 12B (1209) @MistralPlateforme                      | 128K          | 38.9 (34.9 on C1-C6) |
-| Llama 3.1 405B (instruct, 16b quantization)                | 32K           | 34.9                 |
-| Mistral Medium                                             | 32K           | 34.8                 |
-| Mixtral v0.1 8x22b @Deepinfra (instruct, 16b quantization) | 64K           | 34.7                 |
-| WizardLM v2 8x22b (16b quantization)                       | 64K           | 34.5                 |
-| Llama 3.1 70B (instruct, 16b quantization)                 | 128K          | 34.1                 |
-| Llama 3 70B (instruct, 16b quantization)                   | 8K            | 34.1                 |
-| Mistral Small (20240224)                                   | 32K           | 33.9                 |
-| Mistral Nemo 12B @MistralPlateforme                        | 32K           | 33.1                 |
-| gpt-3.5-turbo-0125                                         | 16K           | 32.6                 |
-| Mixtral v0.1 8x7b (instruct, 16b quantization)             | 32K           | 31.6                 |
-| Codestral 22B (Q6K quantization)                           | 32K           | 30.9                 |
-| Mistral Small (2409) @OLLAMA (instruct, fp16)              | 128K          | 30.7                 |
-| Qwen v2.5 32B @OLLAMA (instruct, fp16 quantization)        | 128K          | 30.4                 |
-| Qwen v2.5 14B @OLLAMA (instruct, fp16 quantization)        | 128K          | 30.3                 |
-| Llama 3.2 11B (instruct, 16b quantization)                 | 128K          | 34.5 (30.3 on C1-C6) |
-| Llama 3 8B (instruct, 16b quantization)                    | 8K            | 30.2                 |
-| Llama 3 70B (instruct, Q4_0 quantization)                  | 8K            | 30.2                 |
-| OpenChat 3.6 8B (16b quantization)                         | 8K            | 29.9                 |
-| Qwen v2.0 7B (instruct, Q6K quantization)                  | 128K          | 29.8                 |
-| Llama 3.1 8B (instruct, 16b quantization)                  | 128K          | 29.7                 |
-| Mistral Nemo 12B OLLAMA (instruct, 2407, fp16)             | 128K          | 27.8                 |
-| Llama 3 8B (instruct, Q6K quantization)                    | 8K            | 27.3                 |
-| Mistral 7B v0.3 (instruct, Q6K quantization)               | 32K           | 27.2                 |
-| WizardLM v2 7b (Q6K quantization)                          | 32K           | 27.0                 |
-| Gemma v2.0 9B (instruct, Q6K quantization)                 | 8K            | 26.4                 |
-| Qwen v2.5 3B (instruct, Q8_0 quantization)                 | 32K           | 25.2                 |
-| Llama 3.2 3B (instruct, Q8_0 quantization)                 | 128K          | 22.8                 |
-| CodeGemma v1.5 7B (instruct, Q6K quantization)             | 8K            | 22.7                 |
-| Qwen v2.0 7B (instruct, Q2K quantization)                  | 128K          | 21.3                 |
-| Mistral 7B v0.3 (instruct, Q3KS quantization)              | 32K           | 20.9                 |
-| Gemma v1.0 7B (instruct, Q6K quantization)                 | 8K            | 20.8                 |
-| Qwen v2.5 1.5B (instruct, Q6K quantization)                | 32K           | 20.0                 |
-| Gemma v1.0 2B (instruct, Q6K quantization)                 | 8K            | 18.4                 |
-| Llama 3.2 1B (instruct, Q6K quantization)                  | 128K          | 17.9                 |
-| Qwen v2.0 1.5B (instruct, Q6K quantization)                | 32K           | 17.4                 |
-| Qwen v2.0 0.5B (instruct, Q6K quantization)                | 32K           | 14.2                 |
-| Qwen 4B v1.5 (text, Q6K quantization)                      | 32K           | 11.6                 |
+|------------------------------------------------------------|----------------|----------------------|
+| Gemini-1.5-Pro-002                                         | ??             | 45.2 (39.9 on C1-C6) |
+| chatgpt-4o-latest (20240926)                               | 128K           | 44.9 (39.5 on C1-C6) |
+| o1-preview-2024-09-12                                      | 128K           | 39.0                 |
+| Gemini-1.5-Flash-002                                       | ??             | 44.0 (38.8 on C1-C6) |
+| o1-mini (20240917)                                         | 128K           | 38.3                 |
+| claude-3.5-sonnet                                          | ??             | 43.5 (38.1 on C1-C6) |
+| gpt-4o-20240513 (self-evaluation)                          | 128K           | 43.4 (38 on C1-C6)   |
+| Gemini-1.5-Flash-8B                                        | ??             | 43.3 (37.9 on C1-C6) |
+| gpt-4o-mini-20240718                                       | 128K           | 43.0 (37.8 on C1-C6) |
+| gpt-4o-2024-08-06                                          | 128K           | 42.8 (37.8 on C1-C6) |
+| gpt-4-turbo-20240409                                       | 128K           | 42.3 (37.1 on C1-C6) |
+| Mistral Large 2 123B @MistralPlateforme                    | 128K           | 36.9                 |
+| gpt-4-0613                                                 | 8K             | 36.4                 |
+| Mixtral 8x22b @MistralPlateforme                           | 64K            | 35.9                 |
+| claude-3-sonnet                                            | ??             | 40.5 (35.6 on C1-C6) |
+| Llama 3.2 90B (instruct, 16b quantization)                 | 8K             | 40.1 (35.4 on C1-C6) |
+| Qwen v2.5 72B (instruct, fp16 quantization)                | 128K           | 35.2                 |
+| Mistral Small (2409) @MistralPlateforme                    | 128K           | 35.1                 |
+| Qwen v2.0 72B (instruct, fp16 quantization)                | 128K           | 35.0                 |
+| Google Gemini (20240528)                                   | ??             | 38.9 (34.9 on C1-C6) |
+| Pixtral 12B (1209) @MistralPlateforme                      | 128K           | 38.9 (34.9 on C1-C6) |
+| Llama 3.1 405B (instruct, 16b quantization)                | 32K            | 34.9                 |
+| Mistral Medium                                             | 32K            | 34.8                 |
+| Mixtral v0.1 8x22b @Deepinfra (instruct, 16b quantization) | 64K            | 34.7                 |
+| WizardLM v2 8x22b (16b quantization)                       | 64K            | 34.5                 |
+| Llama 3.1 70B (instruct, 16b quantization)                 | 128K           | 34.1                 |
+| Llama 3 70B (instruct, 16b quantization)                   | 8K             | 34.1                 |
+| Mistral Small (20240224)                                   | 32K            | 33.9                 |
+| Mistral Nemo 12B @MistralPlateforme                        | 32K            | 33.1                 |
+| gpt-3.5-turbo-0125                                         | 16K            | 32.6                 |
+| Mixtral v0.1 8x7b (instruct, 16b quantization)             | 32K            | 31.6                 |
+| Codestral 22B (Q6K quantization)                           | 32K            | 30.9                 |
+| Mistral Small (2409) @OLLAMA (instruct, fp16)              | 128K           | 30.7                 |
+| Qwen v2.5 32B @OLLAMA (instruct, fp16 quantization)        | 128K           | 30.4                 |
+| Qwen v2.5 14B @OLLAMA (instruct, fp16 quantization)        | 128K           | 30.3                 |
+| Llama 3.2 11B (instruct, 16b quantization)                 | 128K           | 34.5 (30.3 on C1-C6) |
+| Llama 3 8B (instruct, 16b quantization)                    | 8K             | 30.2                 |
+| Llama 3 70B (instruct, Q4_0 quantization)                  | 8K             | 30.2                 |
+| OpenChat 3.6 8B (16b quantization)                         | 8K             | 29.9                 |
+| Qwen v2.0 7B (instruct, Q6K quantization)                  | 128K           | 29.8                 |
+| Llama 3.1 8B (instruct, 16b quantization)                  | 128K           | 29.7                 |
+| Mistral Nemo 12B OLLAMA (instruct, 2407, fp16)             | 128K           | 27.8                 |
+| Ministral 8B 24.10 @ @MistralPlateforme                    | 128K           | 27.5                 |
+| Llama 3 8B (instruct, Q6K quantization)                    | 8K             | 27.3                 |
+| Mistral 7B v0.3 (instruct, Q6K quantization)               | 32K            | 27.2                 |
+| WizardLM v2 7b (Q6K quantization)                          | 32K            | 27.0                 |
+| Gemma v2.0 9B (instruct, Q6K quantization)                 | 8K             | 26.4                 |
+| Qwen v2.5 3B (instruct, Q8_0 quantization)                 | 32K            | 25.2                 |
+| Ministral 3B 24.10 @ @MistralPlateforme                    | 128K           | 23.8                 |
+| Llama 3.2 3B (instruct, Q8_0 quantization)                 | 128K           | 22.8                 |
+| CodeGemma v1.5 7B (instruct, Q6K quantization)             | 8K             | 22.7                 |
+| Qwen v2.0 7B (instruct, Q2K quantization)                  | 128K           | 21.3                 |
+| Mistral 7B v0.3 (instruct, Q3KS quantization)              | 32K            | 20.9                 |
+| Gemma v1.0 7B (instruct, Q6K quantization)                 | 8K             | 20.8                 |
+| Qwen v2.5 1.5B (instruct, Q6K quantization)                | 32K            | 20.0                 |
+| Gemma v1.0 2B (instruct, Q6K quantization)                 | 8K             | 18.4                 |
+| Llama 3.2 1B (instruct, Q6K quantization)                  | 128K           | 17.9                 |
+| Qwen v2.0 1.5B (instruct, Q6K quantization)                | 32K            | 17.4                 |
+| Qwen v2.0 0.5B (instruct, Q6K quantization)                | 32K            | 14.2                 |
+| Qwen 4B v1.5 (text, Q6K quantization)                      | 32K            | 11.6                 |
 
 
 ### Commercial models
@@ -2687,6 +2689,58 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               |       |
 
 
+#### Ministral 8B 24.10 @ @MistralPlateforme => 27.5 (/52) points
+
+| Question                                | Score |
+|-----------------------------------------|-------|
+| cat01_01_variants_bpic2020_rca          | 6.0   |
+| cat01_02_variants_roadtraffic_anomalies | 6.0   |
+| cat01_03_bpic2020_var_descr             | 5.0   |
+| cat01_04_roadtraffic_var_descr          | 6.0   |
+| cat01_05_bpic2020_dfg_descr             | 2.0   |
+| cat01_06_roadtraffic_dfg_descr          | 3.0   |
+| cat01_07_ocel_container_description     | 4.0   |
+| cat01_08_ocel_logistics_description     | 6.0   |
+| cat01_09_ocel_container_rca             | 6.0   |
+| cat01_10_ocel_logistics_rca             | 7.5   |
+| cat02_01_open_event_abstraction         | 8.5   |
+| cat02_02_open_process_cubes             | 9.0   |
+| cat02_03_open_decomposition_strategies  | 9.0   |
+| cat02_04_open_trace_clustering          | 8.0   |
+| cat02_05_open_rpa                       | 9.0   |
+| cat02_06_open_anomaly_detection         | 8.5   |
+| cat02_07_open_process_enhancement       | 9.0   |
+| cat02_08_closed_process_mining          | 7.5   |
+| cat02_09_closed_petri_nets              | 5.5   |
+| cat03_01_temp_profile_generation        | 8.5   |
+| cat03_02_declare_generation             | 5.0   |
+| cat03_03_log_skeleton_generation        | 3.0   |
+| cat03_04_process_tree_generation        | 7.0   |
+| cat03_05_powl_generation                | 1.0   |
+| cat03_06_temp_profile_discovery         | 2.0   |
+| cat03_07_declare_discovery              | 1.0   |
+| cat03_08_log_skeleton_discovery         | 1.0   |
+| cat04_01_bpmn_xml_tasks                 | 9.0   |
+| cat04_02_bpmn_json_description          | 9.0   |
+| cat04_03_bpmn_simp_xml_description      | 7.0   |
+| cat04_04_declare_description            | 5.0   |
+| cat04_05_declare_anomalies              | 7.5   |
+| cat04_06_log_skeleton_description       | 2.5   |
+| cat04_07_log_skeleton_anomalies         | 2.0   |
+| cat05_01_hypothesis_bpic2020            | 7.0   |
+| cat05_02_hypothesis_roadtraffic         | 2.0   |
+| cat05_03_hypothesis_bpmn_json           | 4.5   |
+| cat05_04_hypothesis_bpmn_simpl_xml      | 8.0   |
+| cat06_01_renting_attributes             | 8.0   |
+| cat06_02_hiring_attributes              | 8.0   |
+| cat06_03_lending_attributes             | 8.0   |
+| cat06_04_hospital_attributes            | 8.0   |
+| cat06_05_renting_prot_comp              | 8.0   |
+| cat06_06_hiring_prot_comp               | 8.0   |
+| cat06_07_lending_prot_comp              | 6.0   |
+| cat06_08_hospital_prot_comp             | 3.0   |
+
+
 #### Mistral 7B v0.3 (instruct, Q6K quantization) => 27,2 (/52) points
 
 | Question                               | Score |
@@ -3036,6 +3090,58 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_04_credit-score                  |       |
 | cat07_05_dfg_ru                        |       |
 | cat07_06_process_tree_ru               |       |
+
+
+#### Ministral 3B 24.10 @ @MistralPlateforme => 23.8 (/52) points
+
+| Question                                | Score |
+|-----------------------------------------|-------|
+| cat01_01_variants_bpic2020_rca          | 6.0   |
+| cat01_02_variants_roadtraffic_anomalies | 3.0   |
+| cat01_03_bpic2020_var_descr             | 7.0   |
+| cat01_04_roadtraffic_var_descr          | 7.0   |
+| cat01_05_bpic2020_dfg_descr             | 3.0   |
+| cat01_06_roadtraffic_dfg_descr          | 2.0   |
+| cat01_07_ocel_container_description     | 3.0   |
+| cat01_08_ocel_logistics_description     | 4.0   |
+| cat01_09_ocel_container_rca             | 6.0   |
+| cat01_10_ocel_logistics_rca             | 2.0   |
+| cat02_01_open_event_abstraction         | 9.0   |
+| cat02_02_open_process_cubes             | 8.5   |
+| cat02_03_open_decomposition_strategies  | 9.0   |
+| cat02_04_open_trace_clustering          | 9.0   |
+| cat02_05_open_rpa                       | 9.0   |
+| cat02_06_open_anomaly_detection         | 8.5   |
+| cat02_07_open_process_enhancement       | 8.5   |
+| cat02_08_closed_process_mining          | 8.0   |
+| cat02_09_closed_petri_nets              | 7.0   |
+| cat03_01_temp_profile_generation        | 8.0   |
+| cat03_02_declare_generation             | 2.0   |
+| cat03_03_log_skeleton_generation        | 1.0   |
+| cat03_04_process_tree_generation        | 3.0   |
+| cat03_05_powl_generation                | 2.0   |
+| cat03_06_temp_profile_discovery         | 2.0   |
+| cat03_07_declare_discovery              | 4.0   |
+| cat03_08_log_skeleton_discovery         | 2.0   |
+| cat04_01_bpmn_xml_tasks                 | 10.0  |
+| cat04_02_bpmn_json_description          | 3.0   |
+| cat04_03_bpmn_simp_xml_description      | 4.0   |
+| cat04_04_declare_description            | 2.0   |
+| cat04_05_declare_anomalies              | 6.0   |
+| cat04_06_log_skeleton_description       | 8.5   |
+| cat04_07_log_skeleton_anomalies         | 4.0   |
+| cat05_01_hypothesis_bpic2020            | 4.0   |
+| cat05_02_hypothesis_roadtraffic         | 3.0   |
+| cat05_03_hypothesis_bpmn_json           | 7.0   |
+| cat05_04_hypothesis_bpmn_simpl_xml      | 2.0   |
+| cat06_01_renting_attributes             | 8.0   |
+| cat06_02_hiring_attributes              | 8.0   |
+| cat06_03_lending_attributes             | 9.0   |
+| cat06_04_hospital_attributes            | 3.0   |
+| cat06_05_renting_prot_comp              | 3.0   |
+| cat06_06_hiring_prot_comp               | 3.0   |
+| cat06_07_lending_prot_comp              | 4.0   |
+| cat06_08_hospital_prot_comp             | 3.0   |
 
 
 #### Llama 3.2 3B (instruct, Q8_0 quantization) => 22.8 (/52) points
