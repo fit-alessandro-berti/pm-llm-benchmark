@@ -47,13 +47,13 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | Qwen v2.0 7B (instruct, Q6K quantization)                  | 128K           | 29.8                 |
 | Llama 3.1 8B (instruct, 16b quantization)                  | 128K           | 29.7                 |
 | Mistral Nemo 12B OLLAMA (instruct, 2407, fp16)             | 128K           | 27.8                 |
-| Ministral 8B 24.10 @ @MistralPlateforme                    | 128K           | 27.5                 |
+| Ministral 8B 24.10 @MistralPlateforme                      | 128K           | 27.5                 |
 | Llama 3 8B (instruct, Q6K quantization)                    | 8K             | 27.3                 |
 | Mistral 7B v0.3 (instruct, Q6K quantization)               | 32K            | 27.2                 |
 | WizardLM v2 7b (Q6K quantization)                          | 32K            | 27.0                 |
 | Gemma v2.0 9B (instruct, Q6K quantization)                 | 8K             | 26.4                 |
 | Qwen v2.5 3B (instruct, Q8_0 quantization)                 | 32K            | 25.2                 |
-| Ministral 3B 24.10 @ @MistralPlateforme                    | 128K           | 23.8                 |
+| Ministral 3B 24.10 @MistralPlateforme                      | 128K           | 23.8                 |
 | Llama 3.2 3B (instruct, Q8_0 quantization)                 | 128K           | 22.8                 |
 | CodeGemma v1.5 7B (instruct, Q6K quantization)             | 8K             | 22.7                 |
 | Qwen v2.0 7B (instruct, Q2K quantization)                  | 128K           | 21.3                 |
@@ -2689,7 +2689,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               |       |
 
 
-#### Ministral 8B 24.10 @ @MistralPlateforme => 27.5 (/52) points
+#### Ministral 8B 24.10 @MistralPlateforme => 27.5 (/52) points
 
 | Question                                | Score |
 |-----------------------------------------|-------|
@@ -3092,7 +3092,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat07_06_process_tree_ru               |       |
 
 
-#### Ministral 3B 24.10 @ @MistralPlateforme => 23.8 (/52) points
+#### Ministral 3B 24.10 @MistralPlateforme => 23.8 (/52) points
 
 | Question                                | Score |
 |-----------------------------------------|-------|
