@@ -30,32 +30,34 @@ def encode_image(image_path):
         return base64.b64encode(image_file.read()).decode('utf-8')
 
 
-def callback_write(response_message, answer_path):
+def callback_write(response_message, target_path):
     response_message = strip_non_unicode_characters(response_message)
 
-    F = open(answer_path, "w")
+    F = open(target_path, "w")
     F.write(response_message)
     F.close()
 
 
 def dump_payload(payload, target_file):
-    target_file = target_file.replace("answers", "json_payload")
-    #print(target_file)
+    if "answers" in target_file:
+        target_file = target_file.replace("answers", "json_payload")
+        #print(target_file)
 
-    try:
-        json.dump(payload, open(target_file, "w"), indent=2)
-    except:
-        print("payload dumping failed")
+        try:
+            json.dump(payload, open(target_file, "w"), indent=2)
+        except:
+            print("payload dumping failed")
 
 
 def dump_response(response, target_file):
-    target_file = target_file.replace("answers", "json_resp")
-    #print(target_file)
+    if "answers" in target_file:
+        target_file = target_file.replace("answers", "json_resp")
+        #print(target_file)
 
-    try:
-        json.dump(response, open(target_file, "w"), indent=2)
-    except:
-        print("response dumping failed")
+        try:
+            json.dump(response, open(target_file, "w"), indent=2)
+        except:
+            print("response dumping failed")
 
 
 def query_text_simple_generic(question, api_url, target_file):
