@@ -1,5 +1,6 @@
 import os
 import traceback
+import time
 from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, \
     encode_image, set_api_key
 
@@ -71,6 +72,6 @@ while True:
                 except:
                     traceback.print_exc()
 
-    break
+    #break
     time.sleep(15)
     # print("nextit")

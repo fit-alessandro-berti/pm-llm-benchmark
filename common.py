@@ -14,18 +14,21 @@ API_URL = "https://api.openai.com/v1/"
 ANSWERING_MODEL_NAME = "gpt-4o-2024-05-13"
 
 # judge model
-EVALUATING_MODEL_NAME = "gpt-4o-2024-08-06"
+EVALUATING_MODEL_NAME = "gpt-4o-2024-05-13"
 
 
 class Shared:
     API_KEY = None
+    MODEL_NAME = None
 
 
 def set_api_key(type_key):
     if type_key == "answer":
         Shared.API_KEY = open("answering_api_key.txt", "r").read().strip()
+        Shared.MODEL_NAME = ANSWERING_MODEL_NAME
     else:
         Shared.API_KEY = open("judge_api_key.txt", "r").read().strip()
+        Shared.MODEL_NAME = EVALUATING_MODEL_NAME
 
 
 def strip_non_unicode_characters(text):
@@ -84,7 +87,7 @@ def query_text_simple_generic(question, api_url, target_file):
     }
 
     payload = {
-        "model": ANSWERING_MODEL_NAME,
+        "model": Shared.MODEL_NAME,
         "messages": messages,
     }
     dump_payload(payload, target_file)
@@ -112,7 +115,7 @@ def query_text_simple_anthropic(question, api_url, target_file):
     }
 
     payload = {
-        "model": ANSWERING_MODEL_NAME,
+        "model": Shared.MODEL_NAME,
         "max_tokens": 8192
     }
 
@@ -131,7 +134,7 @@ def query_text_simple_anthropic(question, api_url, target_file):
 
 
 def query_text_simple_google(question, api_url, target_file):
-    complete_url = api_url + "models/" + ANSWERING_MODEL_NAME + ":generateContent?key=" + Shared.API_KEY
+    complete_url = api_url + "models/" + Shared.MODEL_NAME + ":generateContent?key=" + Shared.API_KEY
 
     headers = {
         "Content-Type": "application/json",
@@ -179,7 +182,7 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
                                               "image_url": {"url": f"data:image/png;base64,{base64_image}"}}]}]
 
     payload = {
-        "model": ANSWERING_MODEL_NAME,
+        "model": Shared.MODEL_NAME,
         "messages": messages,
         "max_tokens": 4096,
     }
@@ -222,7 +225,7 @@ def query_image_simple_anthropic(base64_image, api_url, target_file, text):
     }
 
     payload = {
-        "model": ANSWERING_MODEL_NAME,
+        "model": Shared.MODEL_NAME,
         "max_tokens": 8192
     }
 
@@ -240,7 +243,7 @@ def query_image_simple_anthropic(base64_image, api_url, target_file, text):
 
 
 def query_image_simple_google(base64_image, api_url, target_file, text):
-    complete_url = api_url + "models/" + ANSWERING_MODEL_NAME + ":generateContent?key=" + Shared.API_KEY
+    complete_url = api_url + "models/" + Shared.MODEL_NAME + ":generateContent?key=" + Shared.API_KEY
 
     headers = {
         "Content-Type": "application/json",
