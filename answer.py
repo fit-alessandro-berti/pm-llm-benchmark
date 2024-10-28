@@ -78,6 +78,36 @@ def query_text_simple_generic(question, api_url, target_file):
     return response_message
 
 
+def query_text_simple_anthropic(question, api_url, target_file):
+    complete_url = api_url + "messages"
+
+    messages = [{"role": "user", "content": question}]
+
+    headers = {
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "x-api-key": API_KEY
+    }
+
+    payload = {
+        "model": MODEL_NAME,
+        "max_tokens": 8192
+    }
+
+    payload["messages"] = messages
+    dump_payload(payload, target_file)
+
+    response = requests.post(complete_url, headers=headers, json=payload).json()
+    dump_response(response, target_file)
+
+    try:
+        response_message = response["content"][0]["text"]
+    except Exception as e:
+        raise Exception(str(response))
+
+    return response_message
+
+
 def query_text_simple_google(question, api_url, target_file):
     complete_url = api_url + "models/" + MODEL_NAME + ":generateContent?key=" + API_KEY
 
@@ -110,6 +140,8 @@ def query_text_simple(question_path, api_url, target_file, callback):
 
     if "googleapis" in api_url:
         response_message = query_text_simple_google(question, api_url, target_file)
+    elif "anthropic" in api_url:
+        response_message = query_text_simple_anthropic(question, api_url, target_file)
     else:
         response_message = query_text_simple_generic(question, api_url, target_file)
 
@@ -142,6 +174,44 @@ def query_image_simple_generic(base64_image, api_url, target_file):
     except Exception as e:
         print(response)
         raise Exception(e)
+
+    return response_message
+
+
+def query_image_simple_anthropic(base64_image, api_url, target_file):
+    complete_url = api_url + "messages"
+
+    messages = [
+        {"role": "user", "content": [
+            {"type": "text", "text": "Can you describe the provided visualization?"},
+            {"type": "image", "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": base64_image
+            }}
+        ]}
+    ]
+
+    headers = {
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "x-api-key": API_KEY
+    }
+
+    payload = {
+        "model": MODEL_NAME,
+        "max_tokens": 8192
+    }
+
+    payload["messages"] = messages
+
+    response = requests.post(complete_url, headers=headers, json=payload).json()
+    dump_response(response, target_file)
+
+    try:
+        response_message = response["content"][0]["text"]
+    except Exception as e:
+        raise Exception(str(response))
 
     return response_message
 
@@ -181,6 +251,8 @@ def query_image_simple(question_path, api_url, target_file, callback):
 
     if "googleapis" in api_url:
         response_message = query_image_simple_google(base64_image, api_url, target_file)
+    elif "anthropic" in api_url:
+        response_message = query_image_simple_anthropic(base64_image, api_url, target_file)
     else:
         response_message = query_image_simple_generic(base64_image, api_url, target_file)
 
@@ -192,8 +264,9 @@ API_URL = "https://api.openai.com/v1/"
 #API_URL = "https://api.deepinfra.com/v1/openai/"
 #API_URL = "https://api.mistral.ai/v1/"
 #API_URL = "https://generativelanguage.googleapis.com/v1beta/"
+#API_URL = "https://api.anthropic.com/v1/"
 
-MODEL_NAME = "gpt-4o-2024-08-06"
+MODEL_NAME = "gpt-4o"
 API_KEY = open("api_key.txt", "r").read().strip()
 
 WAITING_TIME_RETRY = 60
@@ -210,9 +283,9 @@ for q in questions:
         while not os.path.exists(answer_path):
             try:
                 if question_path.endswith(".txt"):
-                    query_text_simple(question_path, API_URL, answer_path, callback_write)
+                    #query_text_simple(question_path, API_URL, answer_path, callback_write)
                     break
-                elif MODEL_NAME.startswith("pixtral") or MODEL_NAME.startswith("chatgpt-4o") or MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision") or MODEL_NAME.startswith("meta-llama/Llama-3.2-11B") or MODEL_NAME.startswith("meta-llama/Llama-3.2-90B") or MODEL_NAME.startswith("gemini-"):
+                elif MODEL_NAME.startswith("pixtral") or MODEL_NAME.startswith("chatgpt-4o") or MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision") or MODEL_NAME.startswith("meta-llama/Llama-3.2-11B") or MODEL_NAME.startswith("meta-llama/Llama-3.2-90B") or MODEL_NAME.startswith("gemini-")  or MODEL_NAME.startswith("claude-"):
                     try:
                         query_image_simple(question_path, API_URL, answer_path, callback_write)
                     except:
