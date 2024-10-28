@@ -1,47 +1,17 @@
-import requests
 import os
 import traceback
-import time
-import re
-import base64
-import sys
+from common import MODEL_NAME, query_text_simple, query_image_simple, callback_write, encode_image
 
 
-def strip_non_unicode_characters(text):
-    # Define a pattern that matches all valid Unicode characters.
-    pattern = re.compile(r'[^\u0000-\uFFFF]', re.UNICODE)
-    # Replace characters not matching the pattern with an empty string.
-    cleaned_text = pattern.sub('', text)
-    cleaned_text = cleaned_text.encode('cp1252', errors='ignore').decode('cp1252')
-
-    return cleaned_text
-
-
-def encode_image(image_path):
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode('utf-8')
-
-
-API_URL = "https://api.openai.com/v1/"
-#API_URL = "http://127.0.0.1:11434/v1/"
-#API_URL = "https://api.deepinfra.com/v1/openai/"
-#API_URL = "https://api.mistral.ai/v1/"
-
-ANSWERING_MODEL_NAME = "gpt-4o" if len(sys.argv) < 3 else sys.argv[1]
-EVALUATING_MODEL_NAME = "gpt-4o-2024-05-13" if len(sys.argv) < 3 else sys.argv[2]
-INCLUDE_EVALUATING_MNAME_IN_EVALUATION = False if len(sys.argv) < 3 else True
-CONTINUE_TRYING = True if len(sys.argv) < 3 else False
-
-API_KEY = open("api_key.txt", "r").read()
-
-WAITING_TIME_RETRY = 60
-
+ANSWERING_MODEL_NAME = "gpt-4o-2024-08-06"
 questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endswith(".png")]
+INCLUDE_EVALUATING_MNAME_IN_EVALUATION = False
+
 
 while True:
     for q in questions:
         m_name = ANSWERING_MODEL_NAME.replace("/", "").replace(":", "")
-        e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
+        e_m_name = MODEL_NAME.replace("/", "").replace(":", "")
 
         question_path = os.path.join("questions", q)
 
@@ -70,64 +40,26 @@ while True:
 
             answer = open(answer_path, "r").read()
 
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {API_KEY}"
-            }
-
-            payload = None
-
             if answer is not None and answer:
-                if question_path.endswith(".txt"):
-                    question = open(question_path, "r", encoding="utf-8").read()
+                try:
+                    if question_path.endswith(".txt"):
+                        question = open(question_path, "r", encoding="utf-8").read()
 
-                    inquiry = ["Given the following question:\n\n"]
-                    inquiry.append(question)
-                    inquiry.append("\n\nHow would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)? Please put the grade at the beginning of the response.\n\n")
-                    inquiry.append(answer)
-                    messages = [{"role": "user", "content": "".join(inquiry)}]
+                        inquiry = ["Given the following question:\n\n"]
+                        inquiry.append(question)
+                        inquiry.append("\n\nHow would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)? Please put the grade at the beginning of the response.\n\n")
+                        inquiry.append(answer)
+                        inquiry = ",".join(inquiry)
 
-                    payload = {
-                        "model": EVALUATING_MODEL_NAME,
-                        "messages": messages,
-                    }
-                elif EVALUATING_MODEL_NAME.startswith("pixtral") or EVALUATING_MODEL_NAME.startswith("chatgpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4-turbo") or EVALUATING_MODEL_NAME.startswith("gpt-4-vision") or EVALUATING_MODEL_NAME.startswith("meta-llama/Llama-3.2-11B") or EVALUATING_MODEL_NAME.startswith("meta-llama/Llama-3.2-90B"):
-                    base64_image = encode_image(question_path)
-                    inquiry = ["Given the attached image, how would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)?\n\n"]
-                    inquiry.append(answer)
-                    messages = [{"role": "user", "content": [{"type": "text", "text": "".join(inquiry)}, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}]}]
-
-                    payload = {
-                        "model": EVALUATING_MODEL_NAME,
-                        "messages": messages,
-                        "max_tokens": 4096
-                    }
-
-            if payload is not None:
-                complete_url = API_URL + "chat/completions"
-
-                response_message = ""
-                response = None
-                while not response_message:
-                    try:
-                        response = requests.post(complete_url, headers=headers, json=payload).json()
-
-                        response_message = strip_non_unicode_characters(response["choices"][0]["message"]["content"])
-
-                        F = open(evaluation_path, "w")
-                        F.write(response_message)
-                        F.close()
-                    except:
-                        if CONTINUE_TRYING:
-                            print(response)
-
-                            traceback.print_exc()
-
-                            print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
-
-                            time.sleep(WAITING_TIME_RETRY)
-                        else:
-                            break
+                        query_text_simple(None, evaluation_path, callback_write, question=inquiry)
+                    elif MODEL_NAME.startswith("pixtral") or MODEL_NAME.startswith("chatgpt-4o") or MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision") or MODEL_NAME.startswith("meta-llama/Llama-3.2-11B") or MODEL_NAME.startswith("meta-llama/Llama-3.2-90B") or MODEL_NAME.startswith("gemini-")  or MODEL_NAME.startswith("claude-"):
+                        base64_image = encode_image(question_path)
+                        inquiry = ["Given the attached image, how would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)?\n\n"]
+                        inquiry.append(answer)
+                        inquiry = "".join(inquiry)
+                        query_image_simple(None, evaluation_path, callback_write, base64_image=base64_image, text=inquiry)
+                except:
+                    traceback.print_exc()
 
     break
     time.sleep(15)

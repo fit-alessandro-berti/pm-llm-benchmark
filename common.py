@@ -144,8 +144,9 @@ def query_text_simple_google(question, api_url, target_file):
     return response_message
 
 
-def query_text_simple(question_path, target_file, callback):
-    question = open(question_path, "r", encoding="utf-8").read()
+def query_text_simple(question_path, target_file, callback, question=None):
+    if question is None:
+        question = open(question_path, "r", encoding="utf-8").read()
 
     if "googleapis" in API_URL:
         response_message = query_text_simple_google(question, API_URL, target_file)
@@ -157,10 +158,10 @@ def query_text_simple(question_path, target_file, callback):
     callback(response_message, target_file)
 
 
-def query_image_simple_generic(base64_image, api_url, target_file):
+def query_image_simple_generic(base64_image, api_url, target_file, text):
     complete_url = api_url + "chat/completions"
 
-    messages = [{"role": "user", "content": [{"type": "text", "text": "Can you describe the provided visualization?"},
+    messages = [{"role": "user", "content": [{"type": "text", "text": text},
                                              {"type": "image_url",
                                               "image_url": {"url": f"data:image/png;base64,{base64_image}"}}]}]
 
@@ -187,12 +188,12 @@ def query_image_simple_generic(base64_image, api_url, target_file):
     return response_message
 
 
-def query_image_simple_anthropic(base64_image, api_url, target_file):
+def query_image_simple_anthropic(base64_image, api_url, target_file, text):
     complete_url = api_url + "messages"
 
     messages = [
         {"role": "user", "content": [
-            {"type": "text", "text": "Can you describe the provided visualization?"},
+            {"type": "text", "text": text},
             {"type": "image", "source": {
                 "type": "base64",
                 "media_type": "image/png",
@@ -225,7 +226,7 @@ def query_image_simple_anthropic(base64_image, api_url, target_file):
     return response_message
 
 
-def query_image_simple_google(base64_image, api_url, target_file):
+def query_image_simple_google(base64_image, api_url, target_file, text):
     complete_url = api_url + "models/" + MODEL_NAME + ":generateContent?key=" + API_KEY
 
     headers = {
@@ -235,7 +236,7 @@ def query_image_simple_google(base64_image, api_url, target_file):
     payload = {
         "contents": [
             {"parts": [
-                {"text": "Can you describe the provided visualization?"},
+                {"text": text},
                 {"inline_data": {
                     "mime_type": "image/png",
                     "data": base64_image
@@ -255,14 +256,18 @@ def query_image_simple_google(base64_image, api_url, target_file):
     return response_message
 
 
-def query_image_simple(question_path, target_file, callback):
-    base64_image = encode_image(question_path)
+def query_image_simple(question_path, target_file, callback, base64_image=None, text=None):
+    if text is None:
+        text = "Can you describe the provided visualization?"
+
+    if base64_image is None:
+        base64_image = encode_image(question_path)
 
     if "googleapis" in API_URL:
-        response_message = query_image_simple_google(base64_image, API_URL, target_file)
+        response_message = query_image_simple_google(base64_image, API_URL, target_file, text)
     elif "anthropic" in API_URL:
-        response_message = query_image_simple_anthropic(base64_image, API_URL, target_file)
+        response_message = query_image_simple_anthropic(base64_image, API_URL, target_file, text)
     else:
-        response_message = query_image_simple_generic(base64_image, API_URL, target_file)
+        response_message = query_image_simple_generic(base64_image, API_URL, target_file, text)
 
     callback(response_message, target_file)

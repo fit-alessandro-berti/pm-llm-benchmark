@@ -19,7 +19,7 @@ for q in questions:
         while not os.path.exists(answer_path):
             try:
                 if question_path.endswith(".txt"):
-                    query_text_simple(question_path, answer_path, callback_write)
+                    #query_text_simple(question_path, answer_path, callback_write)
                     break
                 elif MODEL_NAME.startswith("pixtral") or MODEL_NAME.startswith("chatgpt-4o") or MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision") or MODEL_NAME.startswith("meta-llama/Llama-3.2-11B") or MODEL_NAME.startswith("meta-llama/Llama-3.2-90B") or MODEL_NAME.startswith("gemini-")  or MODEL_NAME.startswith("claude-"):
                     try:
