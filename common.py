@@ -3,13 +3,12 @@ import re
 import json
 import base64
 
-
 API_URL = "https://api.openai.com/v1/"
-#API_URL = "http://127.0.0.1:11434/v1/"
-#API_URL = "https://api.deepinfra.com/v1/openai/"
-#API_URL = "https://api.mistral.ai/v1/"
-#API_URL = "https://generativelanguage.googleapis.com/v1beta/"
-#API_URL = "https://api.anthropic.com/v1/"
+# API_URL = "http://127.0.0.1:11434/v1/"
+# API_URL = "https://api.deepinfra.com/v1/openai/"
+# API_URL = "https://api.mistral.ai/v1/"
+# API_URL = "https://generativelanguage.googleapis.com/v1beta/"
+# API_URL = "https://api.anthropic.com/v1/"
 
 # the model used to respond to the questions
 ANSWERING_MODEL_NAME = "gpt-4o-2024-05-13"
@@ -20,6 +19,7 @@ EVALUATING_MODEL_NAME = "gpt-4o-2024-08-06"
 
 class Shared:
     API_KEY = None
+
 
 def set_api_key(type_key):
     if type_key == "answer":
@@ -54,7 +54,7 @@ def callback_write(response_message, target_path):
 def dump_payload(payload, target_file):
     if "answers" in target_file:
         target_file = target_file.replace("answers", "json_payload")
-        #print(target_file)
+        # print(target_file)
 
         try:
             json.dump(payload, open(target_file, "w"), indent=2)
@@ -65,7 +65,7 @@ def dump_payload(payload, target_file):
 def dump_response(response, target_file):
     if "answers" in target_file:
         target_file = target_file.replace("answers", "json_resp")
-        #print(target_file)
+        # print(target_file)
 
         try:
             json.dump(response, open(target_file, "w"), indent=2)
