@@ -1,7 +1,8 @@
 import os
 import traceback
-from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, encode_image
+from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, encode_image, set_api_key
 
+set_api_key("evaluation")
 
 questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endswith(".png")]
 INCLUDE_EVALUATING_MNAME_IN_EVALUATION = False

@@ -2,9 +2,9 @@ import os
 import traceback
 import time
 import sys
-from common import ANSWERING_MODEL_NAME, query_text_simple, query_image_simple, callback_write
+from common import ANSWERING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, set_api_key
 
-
+set_api_key("answer")
 WAITING_TIME_RETRY = 60
 
 questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endswith(".png")]

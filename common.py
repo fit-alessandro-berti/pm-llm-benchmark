@@ -18,7 +18,14 @@ ANSWERING_MODEL_NAME = "gpt-4o-2024-05-13"
 EVALUATING_MODEL_NAME = "gpt-4o-2024-08-06"
 
 
-API_KEY = open("api_key.txt", "r").read().strip()
+class Shared:
+    API_KEY = None
+
+def set_api_key(type_key):
+    if type_key == "answer":
+        Shared.API_KEY = open("answering_api_key.txt", "r").read().strip()
+    else:
+        Shared.API_KEY = open("judge_api_key.txt", "r").read().strip()
 
 
 def strip_non_unicode_characters(text):
@@ -73,7 +80,7 @@ def query_text_simple_generic(question, api_url, target_file):
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}"
+        "Authorization": f"Bearer {Shared.API_KEY}"
     }
 
     payload = {
@@ -101,7 +108,7 @@ def query_text_simple_anthropic(question, api_url, target_file):
     headers = {
         "content-type": "application/json",
         "anthropic-version": "2023-06-01",
-        "x-api-key": API_KEY
+        "x-api-key": Shared.API_KEY
     }
 
     payload = {
@@ -124,7 +131,7 @@ def query_text_simple_anthropic(question, api_url, target_file):
 
 
 def query_text_simple_google(question, api_url, target_file):
-    complete_url = api_url + "models/" + ANSWERING_MODEL_NAME + ":generateContent?key=" + API_KEY
+    complete_url = api_url + "models/" + ANSWERING_MODEL_NAME + ":generateContent?key=" + Shared.API_KEY
 
     headers = {
         "Content-Type": "application/json",
@@ -179,7 +186,7 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}"
+        "Authorization": f"Bearer {Shared.API_KEY}"
     }
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
@@ -211,7 +218,7 @@ def query_image_simple_anthropic(base64_image, api_url, target_file, text):
     headers = {
         "content-type": "application/json",
         "anthropic-version": "2023-06-01",
-        "x-api-key": API_KEY
+        "x-api-key": Shared.API_KEY
     }
 
     payload = {
@@ -233,7 +240,7 @@ def query_image_simple_anthropic(base64_image, api_url, target_file, text):
 
 
 def query_image_simple_google(base64_image, api_url, target_file, text):
-    complete_url = api_url + "models/" + ANSWERING_MODEL_NAME + ":generateContent?key=" + API_KEY
+    complete_url = api_url + "models/" + ANSWERING_MODEL_NAME + ":generateContent?key=" + Shared.API_KEY
 
     headers = {
         "Content-Type": "application/json",
