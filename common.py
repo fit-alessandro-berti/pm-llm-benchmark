@@ -11,7 +11,13 @@ API_URL = "https://api.openai.com/v1/"
 #API_URL = "https://generativelanguage.googleapis.com/v1beta/"
 #API_URL = "https://api.anthropic.com/v1/"
 
-MODEL_NAME = "gpt-4o-2024-08-06"
+# the model used either to respond to the questions, or to evaluate the answers (judge)
+MODEL_NAME = "gpt-4o-2024-05-13"
+
+# model under evaluation (by the judge)
+ANSWERING_MODEL_NAME = "gpt-4o-2024-08-06"
+
+
 API_KEY = open("api_key.txt", "r").read().strip()
 
 

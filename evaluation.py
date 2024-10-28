@@ -1,9 +1,8 @@
 import os
 import traceback
-from common import MODEL_NAME, query_text_simple, query_image_simple, callback_write, encode_image
+from common import MODEL_NAME, ANSWERING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, encode_image
 
 
-ANSWERING_MODEL_NAME = "gpt-4o-2024-08-06"
 questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endswith(".png")]
 INCLUDE_EVALUATING_MNAME_IN_EVALUATION = False
 
