@@ -42,6 +42,7 @@ if __name__ == "__main__":
 
         evaluations.append({"Question": question, "Score": numb})
 
+    evaluations = sorted(evaluations, key=lambda x: x["Question"])
     evaluations = pd.DataFrame(evaluations)
     evaluations = evaluations.to_markdown(index=False)
 
