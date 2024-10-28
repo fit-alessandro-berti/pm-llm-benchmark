@@ -11,11 +11,11 @@ API_URL = "https://api.openai.com/v1/"
 #API_URL = "https://generativelanguage.googleapis.com/v1beta/"
 #API_URL = "https://api.anthropic.com/v1/"
 
-# the model used either to respond to the questions, or to evaluate the answers (judge)
-MODEL_NAME = "gpt-4o-2024-05-13"
+# the model used to respond to the questions
+ANSWERING_MODEL_NAME = "gpt-4o-2024-05-13"
 
-# model under evaluation (by the judge)
-ANSWERING_MODEL_NAME = "gpt-4o-2024-08-06"
+# judge model
+EVALUATING_MODEL_NAME = "gpt-4o-2024-08-06"
 
 
 API_KEY = open("api_key.txt", "r").read().strip()
@@ -77,7 +77,7 @@ def query_text_simple_generic(question, api_url, target_file):
     }
 
     payload = {
-        "model": MODEL_NAME,
+        "model": ANSWERING_MODEL_NAME,
         "messages": messages,
     }
     dump_payload(payload, target_file)
@@ -105,7 +105,7 @@ def query_text_simple_anthropic(question, api_url, target_file):
     }
 
     payload = {
-        "model": MODEL_NAME,
+        "model": ANSWERING_MODEL_NAME,
         "max_tokens": 8192
     }
 
@@ -124,7 +124,7 @@ def query_text_simple_anthropic(question, api_url, target_file):
 
 
 def query_text_simple_google(question, api_url, target_file):
-    complete_url = api_url + "models/" + MODEL_NAME + ":generateContent?key=" + API_KEY
+    complete_url = api_url + "models/" + ANSWERING_MODEL_NAME + ":generateContent?key=" + API_KEY
 
     headers = {
         "Content-Type": "application/json",
@@ -172,7 +172,7 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
                                               "image_url": {"url": f"data:image/png;base64,{base64_image}"}}]}]
 
     payload = {
-        "model": MODEL_NAME,
+        "model": ANSWERING_MODEL_NAME,
         "messages": messages,
         "max_tokens": 4096,
     }
@@ -215,7 +215,7 @@ def query_image_simple_anthropic(base64_image, api_url, target_file, text):
     }
 
     payload = {
-        "model": MODEL_NAME,
+        "model": ANSWERING_MODEL_NAME,
         "max_tokens": 8192
     }
 
@@ -233,7 +233,7 @@ def query_image_simple_anthropic(base64_image, api_url, target_file, text):
 
 
 def query_image_simple_google(base64_image, api_url, target_file, text):
-    complete_url = api_url + "models/" + MODEL_NAME + ":generateContent?key=" + API_KEY
+    complete_url = api_url + "models/" + ANSWERING_MODEL_NAME + ":generateContent?key=" + API_KEY
 
     headers = {
         "Content-Type": "application/json",

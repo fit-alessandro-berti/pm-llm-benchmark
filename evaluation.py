@@ -1,6 +1,6 @@
 import os
 import traceback
-from common import MODEL_NAME, ANSWERING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, encode_image
+from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, encode_image
 
 
 questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endswith(".png")]
@@ -10,7 +10,7 @@ INCLUDE_EVALUATING_MNAME_IN_EVALUATION = False
 while True:
     for q in questions:
         m_name = ANSWERING_MODEL_NAME.replace("/", "").replace(":", "")
-        e_m_name = MODEL_NAME.replace("/", "").replace(":", "")
+        e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
 
         question_path = os.path.join("questions", q)
 
@@ -51,7 +51,7 @@ while True:
                         inquiry = ",".join(inquiry)
 
                         query_text_simple(None, evaluation_path, callback_write, question=inquiry)
-                    elif MODEL_NAME.startswith("pixtral") or MODEL_NAME.startswith("chatgpt-4o") or MODEL_NAME.startswith("gpt-4o") or MODEL_NAME.startswith("gpt-4-turbo") or MODEL_NAME.startswith("gpt-4-vision") or MODEL_NAME.startswith("meta-llama/Llama-3.2-11B") or MODEL_NAME.startswith("meta-llama/Llama-3.2-90B") or MODEL_NAME.startswith("gemini-")  or MODEL_NAME.startswith("claude-"):
+                    elif EVALUATING_MODEL_NAME.startswith("pixtral") or EVALUATING_MODEL_NAME.startswith("chatgpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4o") or EVALUATING_MODEL_NAME.startswith("gpt-4-turbo") or EVALUATING_MODEL_NAME.startswith("gpt-4-vision") or EVALUATING_MODEL_NAME.startswith("meta-llama/Llama-3.2-11B") or EVALUATING_MODEL_NAME.startswith("meta-llama/Llama-3.2-90B") or EVALUATING_MODEL_NAME.startswith("gemini-")  or EVALUATING_MODEL_NAME.startswith("claude-"):
                         base64_image = encode_image(question_path)
                         inquiry = ["Given the attached image, how would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)?\n\n"]
                         inquiry.append(answer)
