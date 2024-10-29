@@ -1,8 +1,34 @@
 import os
 import traceback
 import time
+import datetime
 from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, \
     encode_image, set_api_key
+
+
+def files_modified_last_hour(folder_path, m_name):
+    # Get the current time
+    now = datetime.datetime.now()
+    # Calculate the time one hour ago
+    one_hour_ago = now - datetime.timedelta(hours=1)
+
+    # List to store files modified in the last hour
+    modified_files = []
+
+    # Iterate through all files in the folder
+    for filename in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, filename)
+        if filename.startswith(m_name):
+            # Check if it's a file (not a directory)
+            if os.path.isfile(file_path):
+                # Get the last modified time of the file
+                file_mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
+                # Check if the file was modified within the last hour
+                if file_mod_time > one_hour_ago:
+                    modified_files.append(filename)
+
+    return modified_files
+
 
 set_api_key("evaluation")
 
@@ -10,6 +36,7 @@ questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endsw
 INCLUDE_EVALUATING_MNAME_IN_EVALUATION = False
 
 while True:
+    missing = False
     for q in questions:
         m_name = ANSWERING_MODEL_NAME.replace("/", "").replace(":", "")
         e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
@@ -37,6 +64,7 @@ while True:
         evaluation_path = evaluation_path.replace(".png", ".txt")
 
         if os.path.exists(answer_path) and not os.path.exists(evaluation_path):
+            missing = True
             print("Evaluating:", answer_path)
 
             answer = open(answer_path, "r").read()
@@ -72,6 +100,11 @@ while True:
                 except:
                     traceback.print_exc()
 
-    #break
+    last_hour_answers = files_modified_last_hour("answers", m_name)
+    last_hour_evaluations = files_modified_last_hour(base_evaluation_path, m_name)
+
+    if (not missing) or (not last_hour_answers and not last_hour_evaluations):
+        break
+
     time.sleep(15)
-    # print("nextit")
+
