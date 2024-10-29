@@ -1,12 +1,18 @@
 import os
 import pyperclip
 import subprocess
+import sys
 
 questions_folder = "../questions"
 answers_folder = "../answers"
 
 questions = [x for x in os.listdir(questions_folder) if x.endswith("txt")]
 graphical_questions = [x for x in os.listdir(questions_folder) if x.endswith("png")]
+
+print("!!!=== GUIDED GENERATION SCRIPT !!!===")
+response = input("Do you want to generate a serie of TXT scripts? (y/n) ->")
+if response.lower() != "y":
+    sys.exit(0)
 
 model_name = input("Give me the name of the model that you are testing -> ")
 

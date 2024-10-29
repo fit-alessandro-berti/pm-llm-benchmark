@@ -1,16 +1,18 @@
 import os
 import numpy as np
 import re
+import sys
 
 import pandas as pd
 
-evaluation_folder = "../evaluation"
+evaluation_folder = "../evaluation" if len(sys.argv) < 3 else sys.argv[2]
 pattern = r'[-+]?\d*\.\d+'
 reg_expr = re.compile(pattern)
 
 
 if __name__ == "__main__":
-    model_name = ""
+    model_name = "" if len(sys.argv) < 2 else sys.argv[1]
+
     while not model_name:
         model_name = input("Please insert the name of the model -> ")
 
@@ -51,5 +53,5 @@ if __name__ == "__main__":
     total_score /= 10
     score_textual /= 10
 
-    print("Total score", total_score)
-    print("C1-C6", score_textual)
+    print("\n==OVERALL SCORES==", "\t", score_textual, "\t", total_score)
+
