@@ -2,6 +2,7 @@ import os
 from collections import Counter
 import evalscript
 from common import EVALUATING_MODEL_NAME
+from utils import overall_table
 
 
 answers = os.listdir("../answers")
@@ -19,5 +20,7 @@ evaluations_models = Counter([x.split("_cat")[0] for x in evaluations])
 for m in answers_models:
     if evaluations_models[m] != answers_models[m]:
         print(m, answers_models[m], evaluations_models[m])
+        markdown = overall_table.execute_script()
+        print(markdown)
         continue
         evalscript.perform_evaluation(m)
