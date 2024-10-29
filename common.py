@@ -1,3 +1,5 @@
+import os.path
+
 import requests
 import re
 import json
@@ -25,10 +27,12 @@ class Shared:
 
 def set_api_key(type_key):
     if type_key == "answer":
-        Shared.API_KEY = open("answering_api_key.txt", "r").read().strip()
+        answering_api_key_path = "answering_api_key.txt" if os.path.exists("answering_api_key.txt") else "../answering_api_key.txt"
+        Shared.API_KEY = open(answering_api_key_path, "r").read().strip()
         Shared.MODEL_NAME = ANSWERING_MODEL_NAME
     else:
-        Shared.API_KEY = open("judge_api_key.txt", "r").read().strip()
+        judge_api_key_path = "judge_api_key.txt" if os.path.exists("judge_api_key.txt") else "../judge_api_key.txt"
+        Shared.API_KEY = open(judge_api_key_path, "r").read().strip()
         Shared.MODEL_NAME = EVALUATING_MODEL_NAME
 
 
