@@ -17,7 +17,7 @@ Procedure for every prompt:
 
 The final score of the benchmark is obtained by summing the scores and dividing by 10.0.
 
-Some scripts to execute and evaluate the questions against OpenAI's APIs are available in **answer.py** and **evaluation.py**.
+Some scripts to execute and evaluate the questions against OpenAI's APIs are available in **answer.py** and **evalscript.py**.
 The API key should be configured inside **api_key.txt**. The responding model (and the API URL) can be configured inside the corresponding scripts.
 
 Different categories of questions are contained in the benchmark.
