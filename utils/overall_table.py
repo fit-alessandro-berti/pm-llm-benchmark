@@ -5,12 +5,11 @@ from utils.table_per_model import execute_script
 from common import EVALUATING_MODEL_NAME
 
 
-def execute_script():
+def execute(evaluation_folder):
     e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
-    evaluation_folder = "../evaluation" if "gpt-4o" in EVALUATING_MODEL_NAME else "../evaluation-" + e_m_name
 
     files = os.listdir(evaluation_folder)
-    models = Counter([f.split("_cat")[0] for f in files])
+    models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
     models = {x: y for x, y in models.items() if y == 52 or y == 46}
 
     results = []
@@ -53,4 +52,6 @@ def execute_script():
 
 
 if __name__ == "__main__":
-    execute_script()
+    e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
+    evaluation_folder = "../evaluation" if "gpt-4o" in EVALUATING_MODEL_NAME else "../evaluation-" + e_m_name
+    execute(evaluation_folder)
