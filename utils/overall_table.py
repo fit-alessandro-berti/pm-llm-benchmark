@@ -4,7 +4,7 @@ from collections import Counter
 from utils.table_per_model import execute_script
 
 
-EVALUATING_MODEL_NAME = "gpt-4o"
+EVALUATING_MODEL_NAME = "chatgpt-4o-latest"
 
 e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
 evaluation_folder = "../evaluation" if EVALUATING_MODEL_NAME.startswith(
