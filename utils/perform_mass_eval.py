@@ -19,8 +19,7 @@ evaluations_models = Counter([x.split("_cat")[0] for x in evaluations])
 
 for m in answers_models:
     if evaluations_models[m] != answers_models[m]:
-        print(m, answers_models[m], evaluations_models[m])
-        markdown = overall_table.execute_script()
-        print(markdown)
-        continue
+        print(m)
         evalscript.perform_evaluation(m)
+        markdown = overall_table.execute_script()
+
