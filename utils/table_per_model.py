@@ -1,8 +1,6 @@
 import os
-import numpy as np
 import re
 import sys
-
 import pandas as pd
 
 evaluation_folder = "../evaluation" if len(sys.argv) < 3 else sys.argv[2]
