@@ -2,6 +2,7 @@ import requests
 import re
 import json
 import base64
+import sys
 
 API_URL = "https://api.openai.com/v1/"
 # API_URL = "http://127.0.0.1:11434/v1/"
@@ -11,10 +12,10 @@ API_URL = "https://api.openai.com/v1/"
 # API_URL = "https://api.anthropic.com/v1/"
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "gpt-4o-2024-05-13"
+ANSWERING_MODEL_NAME = "gpt-4o-2024-05-13" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
-EVALUATING_MODEL_NAME = "gpt-4o-2024-05-13"
+EVALUATING_MODEL_NAME = "gpt-4o-2024-05-13" if len(sys.argv) < 3 else sys.argv[2]
 
 
 class Shared:
