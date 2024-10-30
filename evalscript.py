@@ -66,12 +66,12 @@ def perform_evaluation(answering_model_name=None):
             evaluation_path = evaluation_path.replace(".png", ".txt")
 
             if os.path.exists(answer_path) and not os.path.exists(evaluation_path):
-                missing = True
                 print("Evaluating:", answer_path)
 
                 answer = open(answer_path, "r").read()
 
                 if answer is not None and answer:
+                    missing = True
                     try:
                         if question_path.endswith(".txt"):
                             question = open(question_path, "r", encoding="utf-8").read()
