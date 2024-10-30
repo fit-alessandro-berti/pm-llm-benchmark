@@ -4,9 +4,9 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 
 | Model                                   | Overall Score        |
 |:----------------------------------------|:---------------------|
-| gemini-1.5-pro-002                      | 44.1 (38.9 on C1-C6) |
+| gemini-1.5-pro-002                      | 44.8 (39.5 on C1-C6) |
 | Gemini-1.5-Flash-002                    | 43.9 (38.8 on C1-C6) |
-| chatgpt-4o-latest-2024-09-03            | 42.6 (38.1 on C1-C6) |
+| chatgpt-4o-latest-2024-09-03            | 42.9 (38.1 on C1-C6) |
 | claude-3-5-sonnet-20241022              | 43.0 (37.7 on C1-C6) |
 | Gemini-1.5-Flash-8B                     | 42.0 (37.1 on C1-C6) |
 | claude-3-5-sonnet-20240620              | 42.1 (36.9 on C1-C6) |
@@ -18,11 +18,11 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | meta-llamaLlama-3.2-11B-Vision-Instruct | 30.2 (26.4 on C1-C6) |
 | llama38b-instruct-q6_K                  | 25.4                 |
 | gemma29b-instruct-q6_K                  | 24.2                 |
-| llama3.23b-instruct-q8_0                | 19.2                 |
+| llama3.23b-instruct-q8_0                | 19.4                 |
 | codegemma7b-instruct-q6_K               | 18.6                 |
 | llama3.21b-instruct-q6_K                | 14.5                 |
 
-### gemini-1.5-pro-002   => 44.1 (/52) points
+### gemini-1.5-pro-002   => 44.8 (/52) points
 
 | Question                                |   Score |
 |:----------------------------------------|--------:|
@@ -61,7 +61,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat04_06_log_skeleton_description       |     8   |
 | cat04_07_log_skeleton_anomalies         |     8.5 |
 | cat05_01_hypothesis_bpic2020            |     9   |
-| cat05_02_hypothesis_roadtraffic         |     1   |
+| cat05_02_hypothesis_roadtraffic         |     8   |
 | cat05_03_hypothesis_bpmn_json           |     8   |
 | cat05_04_hypothesis_bpmn_simpl_xml      |     8   |
 | cat06_01_renting_attributes             |     9   |
@@ -140,7 +140,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 
 
 
-### chatgpt-4o-latest-2024-09-03   => 42.6 (/52) points
+### chatgpt-4o-latest-2024-09-03   => 42.9 (/52) points
 
 | Question                                |   Score |
 |:----------------------------------------|--------:|
@@ -190,7 +190,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat06_06_hiring_prot_comp               |     9.5 |
 | cat06_07_lending_prot_comp              |     9.5 |
 | cat06_08_hospital_prot_comp             |     9.2 |
-| cat07_01_dotted_chart                   |     1   |
+| cat07_01_dotted_chart                   |     4   |
 | cat07_02_perf_spectrum                  |     9   |
 | cat07_03_running-example                |     9   |
 | cat07_04_credit-score                   |     9   |
@@ -824,7 +824,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 
 
 
-### llama3.23b-instruct-q8_0   => 19.2 (/52) points
+### llama3.23b-instruct-q8_0   => 19.4 (/52) points
 
 | Question                                |   Score |
 |:----------------------------------------|--------:|
@@ -864,7 +864,7 @@ Overall leaderboard (a score in the range **27-34** is considered **sufficient**
 | cat04_07_log_skeleton_anomalies         |     4   |
 | cat05_01_hypothesis_bpic2020            |     3   |
 | cat05_02_hypothesis_roadtraffic         |     3   |
-| cat05_03_hypothesis_bpmn_json           |     1   |
+| cat05_03_hypothesis_bpmn_json           |     3   |
 | cat05_04_hypothesis_bpmn_simpl_xml      |     3   |
 | cat06_01_renting_attributes             |     3   |
 | cat06_02_hiring_attributes              |     4   |
