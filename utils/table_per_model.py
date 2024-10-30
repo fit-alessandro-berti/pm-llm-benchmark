@@ -3,8 +3,17 @@ import re
 import sys
 import pandas as pd
 
-pattern = r'[-+]?\d*\.\d+'
+pattern = r'(?P<sign>[-+]?)(?:\d*\.\d+|(?P<numerator>\d+)/(?P<denominator>\d+))'
 reg_expr = re.compile(pattern)
+
+def match_regex(text):
+    for match in reg_expr.finditer(text):
+        if match.group('numerator'):
+            numerator = int(match.group('numerator'))
+            return numerator
+        else:
+            number = float(match.group(0))
+            return number
 
 
 def execute_script(evaluation_folder, model_name):
@@ -22,14 +31,8 @@ def execute_script(evaluation_folder, model_name):
 
         contents = open(target_path, "r").read()
 
-        numbers = reg_expr.findall(contents)
-        numb = 1.0
-
-        if numbers:
-            numb = float(numbers[0])
-            if numb < 1.0 or numb > 10.0:
-                numb = 1.0
-
+        numbers = match_regex(contents)
+        numb = float(numbers) if numbers is not None else 1.0
 
         total_score += numb
 
