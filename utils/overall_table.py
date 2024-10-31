@@ -19,7 +19,7 @@ def execute(evaluation_folder):
         table = res.split("==OVERALL SCORES==")[0]
         scores = res.split("==OVERALL SCORES==")[1].split("\t")
 
-        results.append((m, float(scores[1]), float(scores[2]), table))
+        results.append((m, float(scores[1]), float(scores[2]), table, float(scores[3]), float(scores[4]), float(scores[5]), float(scores[6]), float(scores[7]), float(scores[8]), float(scores[9])))
 
     results.sort(key=lambda x: (x[1], x[2], x[0]), reverse=True)
 
@@ -27,11 +27,13 @@ def execute(evaluation_folder):
 
     for m in results:
         if m[1] == m[2]:
-            overall_table.append({"Model": m[0], "Overall Score": "%.1f" % (m[1])})
+            entry = {"Model": m[0], "Overall Score": "%.1f" % (m[1]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         else:
-            overall_table.append({"Model": m[0], "Overall Score": "%.1f (%.1f on C1-C6)" % (m[2], m[1])})
+            entry = {"Model": m[0], "Overall Score": "%.1f (%.1f on C1-C6)" % (m[2], m[1]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+        overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
+    overall_table.columns = ["Model", "Overall Score", "C1", "C2", "C3", "C4", "C5", "C6", "C7"]
     overall_table = overall_table.to_markdown(index=False)
 
     output = ["## Leaderboard (1-shot; %s used as a judge)" % (EVALUATING_MODEL_NAME)]
