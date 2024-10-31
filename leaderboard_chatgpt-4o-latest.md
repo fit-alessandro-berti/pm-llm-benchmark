@@ -2,64 +2,64 @@
 
 Overall leaderboard (a score in the range **27-34** is considered **sufficient**; a score in the range **34-45** is considered **good**; a score **>45** is considered **excellent**):
 
-| Model                                   | Overall Score        |
-|:----------------------------------------|:---------------------|
-| gemini-1.5-pro-002                      | 44.8 (39.5 on C1-C6) |
-| o1-preview-2024-09-12                   | 39.4                 |
-| Gemini-1.5-Flash-002                    | 43.9 (38.8 on C1-C6) |
-| chatgpt-4o-latest-2024-09-03            | 42.9 (38.1 on C1-C6) |
-| claude-3-5-sonnet-20241022              | 43.0 (37.7 on C1-C6) |
-| gpt-4o-2024-08-06                       | 42.1 (37.1 on C1-C6) |
-| Gemini-1.5-Flash-8B                     | 42.0 (37.1 on C1-C6) |
-| nvidiaLlama-3.1-Nemotron-70B-Instruct   | 37.1                 |
-| claude-3-5-sonnet-20240620              | 42.1 (36.9 on C1-C6) |
-| gpt-4o-2024-05-13                       | 40.8 (36.2 on C1-C6) |
-| o1-mini-2024-09-12                      | 36.0                 |
-| gpt-4-turbo-2024-04-09                  | 41.0 (35.8 on C1-C6) |
-| gpt-4o-mini-2024-07-18                  | 40.4 (35.5 on C1-C6) |
-| gpt-4-0613                              | 35.1                 |
-| claude-3-sonnet                         | 38.9 (35.0 on C1-C6) |
-| mistral-small-2402                      | 35.0                 |
-| mistral-large-2407                      | 34.7                 |
-| open-mixtral-8x22b                      | 33.5                 |
-| QwenQwen2.5-72B-Instruct                | 33.5                 |
-| meta-llamaMeta-Llama-3.1-70B-Instruct   | 33.4                 |
-| meta-llamaMeta-Llama-3.1-405B-Instruct  | 33.4                 |
-| mistral-medium-2407                     | 32.8                 |
-| QwenQwen2-72B-Instruct                  | 32.5                 |
-| meta-llamaLlama-3.2-90B-Vision-Instruct | 36.4 (32.4 on C1-C6) |
-| open-mistral-nemo-2407                  | 32.3                 |
-| mistral-small-2409                      | 32.1                 |
-| meta-llamaMeta-Llama-3-70B-Instruct     | 32.1                 |
-| gpt-3.5-turbo                           | 31.3                 |
-| ministral-8b-2410                       | 31.1                 |
-| mistralaiMixtral-8x22B-Instruct-v0.1    | 30.8                 |
-| mistralaiMixtral-8x7B-Instruct-v0.1     | 30.3                 |
-| ministral-3b-2410                       | 29.6                 |
-| microsoftWizardLM-2-8x22B               | 29.1                 |
-| meta-llamaMeta-Llama-3-8B-Instruct      | 27.8                 |
-| qwen27b-instruct-q6_K                   | 27.6                 |
-| openchatopenchat-3.6-8b                 | 27.3                 |
-| mistral-small22b-instruct-2409-fp16     | 26.6                 |
-| meta-llamaMeta-Llama-3.1-8B-Instruct    | 26.6                 |
-| meta-llamaLlama-3.2-11B-Vision-Instruct | 30.2 (26.4 on C1-C6) |
-| mistral-nemo12b-instruct-2407-fp16      | 26.4                 |
-| QwenQwen2-7B-Instruct                   | 26.4                 |
-| wizardlm27b-q6_K                        | 26.0                 |
-| llama38b-instruct-q6_K                  | 25.4                 |
-| mistral7b-instruct-v0.3-q6_K            | 25.2                 |
-| qwen2.514b-instruct-fp16                | 24.6                 |
-| gemma29b-instruct-q6_K                  | 24.2                 |
-| qwen2.53b-instruct-q8_0                 | 22.5                 |
-| llama3.23b-instruct-q8_0                | 19.4                 |
-| codegemma7b-instruct-q6_K               | 18.6                 |
-| mistral7b-instruct-q3_K_S               | 18.5                 |
-| qwen27b-instruct-q2_K                   | 17.8                 |
-| qwen2.51.5b-instruct-q6_K               | 16.4                 |
-| meta-llamaLlama-3.2-1B-Instruct         | 14.6                 |
-| llama3.21b-instruct-q6_K                | 14.5                 |
-| qwen21.5b-instruct-q6_K                 | 13.7                 |
-| qwen20.5b-instruct-q6_K                 | 12.6                 |
+| Model                                   | Overall Score        |   C1 |   C2 |   C3 |   C4 |   C5 |   C6 |   C7 |
+|:----------------------------------------|:---------------------|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
+| gemini-1.5-pro-002                      | 44.8 (39.5 on C1-C6) |  8.7 |  8.2 |    6 |  6.2 |  3.3 |  7   |  5.2 |
+| o1-preview-2024-09-12                   | 39.4                 |  8.1 |  8.1 |    6 |  6.2 |  3.4 |  7.3 |  0   |
+| Gemini-1.5-Flash-002                    | 43.9 (38.8 on C1-C6) |  8.3 |  8.1 |    6 |  6   |  3.2 |  7   |  5.1 |
+| chatgpt-4o-latest-2024-09-03            | 42.9 (38.1 on C1-C6) |  8.3 |  8.2 |    6 |  5.7 |  3.2 |  7.1 |  4.8 |
+| claude-3-5-sonnet-20241022              | 43.0 (37.7 on C1-C6) |  8.5 |  7.5 |    6 |  6   |  3.3 |  6.8 |  5.3 |
+| gpt-4o-2024-08-06                       | 42.1 (37.1 on C1-C6) |  8.2 |  8.1 |    6 |  5.7 |  3.1 |  6.5 |  5   |
+| Gemini-1.5-Flash-8B                     | 42.0 (37.1 on C1-C6) |  8   |  8.2 |    5 |  5.8 |  3.2 |  6.7 |  4.8 |
+| nvidiaLlama-3.1-Nemotron-70B-Instruct   | 37.1                 |  8.2 |  7.8 |    5 |  6   |  3.3 |  6.5 |  0   |
+| claude-3-5-sonnet-20240620              | 42.1 (36.9 on C1-C6) |  7.8 |  7.9 |    5 |  5.8 |  3.3 |  7   |  5.3 |
+| gpt-4o-2024-05-13                       | 40.8 (36.2 on C1-C6) |  7.9 |  8.1 |    5 |  5.2 |  3.1 |  6.8 |  4.5 |
+| o1-mini-2024-09-12                      | 36.0                 |  7.3 |  7.8 |    5 |  5.8 |  3.2 |  6.9 |  0   |
+| gpt-4-turbo-2024-04-09                  | 41.0 (35.8 on C1-C6) |  7.2 |  8   |    6 |  5.3 |  2.8 |  6.7 |  5.2 |
+| gpt-4o-mini-2024-07-18                  | 40.4 (35.5 on C1-C6) |  7.4 |  8.2 |    5 |  5.2 |  2.9 |  6.7 |  4.8 |
+| gpt-4-0613                              | 35.1                 |  7.3 |  7.6 |    5 |  5.4 |  3   |  6.5 |  0   |
+| claude-3-sonnet                         | 38.9 (35.0 on C1-C6) |  7.1 |  7.8 |    6 |  5.3 |  3.1 |  6.2 |  3.9 |
+| mistral-small-2402                      | 35.0                 |  7.5 |  7.7 |    5 |  4.8 |  3.2 |  6.4 |  0   |
+| mistral-large-2407                      | 34.7                 |  7.4 |  8   |    4 |  5.3 |  2.8 |  6.8 |  0   |
+| open-mixtral-8x22b                      | 33.5                 |  7   |  7.7 |    5 |  4.8 |  2.9 |  6.1 |  0   |
+| QwenQwen2.5-72B-Instruct                | 33.5                 |  6.5 |  7.8 |    5 |  5.5 |  2.8 |  6.2 |  0   |
+| meta-llamaMeta-Llama-3.1-70B-Instruct   | 33.4                 |  6.5 |  7.4 |    5 |  5.3 |  3.2 |  6   |  0   |
+| meta-llamaMeta-Llama-3.1-405B-Instruct  | 33.4                 |  6.8 |  7.5 |    5 |  5.2 |  3.2 |  5.8 |  0   |
+| mistral-medium-2407                     | 32.8                 |  6.7 |  7.7 |    4 |  4.9 |  3.3 |  6   |  0   |
+| QwenQwen2-72B-Instruct                  | 32.5                 |  6.8 |  7.5 |    4 |  5.6 |  2.4 |  6.4 |  0   |
+| meta-llamaLlama-3.2-90B-Vision-Instruct | 36.4 (32.4 on C1-C6) |  6.4 |  7   |    5 |  4.8 |  3.3 |  6.3 |  4   |
+| open-mistral-nemo-2407                  | 32.3                 |  6.5 |  7.6 |    5 |  5.3 |  2.6 |  5.4 |  0   |
+| mistral-small-2409                      | 32.1                 |  6   |  8   |    4 |  5.6 |  2.1 |  6.1 |  0   |
+| meta-llamaMeta-Llama-3-70B-Instruct     | 32.1                 |  6.8 |  7.7 |    4 |  5.2 |  2.5 |  5.5 |  0   |
+| gpt-3.5-turbo                           | 31.3                 |  7   |  6.9 |    4 |  4.5 |  3   |  5.7 |  0   |
+| ministral-8b-2410                       | 31.1                 |  6.3 |  7.5 |    3 |  4.2 |  2.9 |  6.8 |  0   |
+| mistralaiMixtral-8x22B-Instruct-v0.1    | 30.8                 |  6.5 |  7.1 |    4 |  4.5 |  3.1 |  6.1 |  0   |
+| mistralaiMixtral-8x7B-Instruct-v0.1     | 30.3                 |  6.1 |  7.3 |    3 |  4   |  3.2 |  6.2 |  0   |
+| ministral-3b-2410                       | 29.6                 |  6.5 |  7.7 |    3 |  5   |  2.7 |  4.8 |  0   |
+| microsoftWizardLM-2-8x22B               | 29.1                 |  5.5 |  7.4 |    3 |  5   |  1.5 |  6.8 |  0   |
+| meta-llamaMeta-Llama-3-8B-Instruct      | 27.8                 |  5.8 |  7.2 |    4 |  3.8 |  2.1 |  5.3 |  0   |
+| qwen27b-instruct-q6_K                   | 27.6                 |  5.6 |  7.7 |    4 |  3   |  2.7 |  4.7 |  0   |
+| openchatopenchat-3.6-8b                 | 27.3                 |  5.7 |  7.1 |    3 |  4.3 |  3.1 |  4.1 |  0   |
+| mistral-small22b-instruct-2409-fp16     | 26.6                 |  5.7 |  8.1 |    4 |  3.3 |  3   |  3   |  0   |
+| meta-llamaMeta-Llama-3.1-8B-Instruct    | 26.6                 |  5.5 |  7.1 |    3 |  4.4 |  1.2 |  5   |  0   |
+| meta-llamaLlama-3.2-11B-Vision-Instruct | 30.2 (26.4 on C1-C6) |  5.8 |  7   |    3 |  3.8 |  1.7 |  5.2 |  3.8 |
+| mistral-nemo12b-instruct-2407-fp16      | 26.4                 |  4.8 |  7.9 |    3 |  3.1 |  3.4 |  3.8 |  0   |
+| QwenQwen2-7B-Instruct                   | 26.4                 |  5.5 |  7   |    3 |  4.1 |  1.5 |  5.1 |  0   |
+| wizardlm27b-q6_K                        | 26.0                 |  6.4 |  7.7 |    3 |  3.2 |  2.9 |  3.2 |  0   |
+| llama38b-instruct-q6_K                  | 25.4                 |  5.1 |  7.1 |    3 |  3.3 |  2.4 |  4.4 |  0   |
+| mistral7b-instruct-v0.3-q6_K            | 25.2                 |  5.1 |  7.7 |    3 |  2.8 |  2.4 |  4.2 |  0   |
+| qwen2.514b-instruct-fp16                | 24.6                 |  4.8 |  7   |    5 |  3.2 |  2.2 |  2.6 |  0   |
+| gemma29b-instruct-q6_K                  | 24.2                 |  5.5 |  7.9 |    4 |  1.8 |  1.3 |  3.5 |  0   |
+| qwen2.53b-instruct-q8_0                 | 22.5                 |  5.2 |  7   |    3 |  2.6 |  1.5 |  3.3 |  0   |
+| llama3.23b-instruct-q8_0                | 19.4                 |  4.1 |  5.6 |    3 |  2.6 |  1.2 |  3.4 |  0   |
+| codegemma7b-instruct-q6_K               | 18.6                 |  3   |  6.8 |    3 |  1.9 |  1.8 |  2.3 |  0   |
+| mistral7b-instruct-q3_K_S               | 18.5                 |  3.2 |  6.2 |    2 |  1.8 |  2.7 |  2.8 |  0   |
+| qwen27b-instruct-q2_K                   | 17.8                 |  3.2 |  5.8 |    2 |  2.2 |  1.8 |  2.4 |  0   |
+| qwen2.51.5b-instruct-q6_K               | 16.4                 |  2.8 |  5.6 |    2 |  2.8 |  1.5 |  2.3 |  0   |
+| meta-llamaLlama-3.2-1B-Instruct         | 14.6                 |  2.3 |  5.3 |    1 |  2.6 |  1.1 |  1.8 |  0   |
+| llama3.21b-instruct-q6_K                | 14.5                 |  2.4 |  6   |    1 |  1.5 |  1.5 |  1.8 |  0   |
+| qwen21.5b-instruct-q6_K                 | 13.7                 |  2.6 |  5.7 |    1 |  1.4 |  0.9 |  1.8 |  0   |
+| qwen20.5b-instruct-q6_K                 | 12.6                 |  2.5 |  4   |    1 |  1.7 |  0.9 |  2.3 |  0   |
 
 ### gemini-1.5-pro-002   => 44.8 (/52) points
 
