@@ -10,7 +10,7 @@ def execute(evaluation_folder):
 
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
-    models = {x: y for x, y in models.items() if y == 52 or y == 46}
+    models = {x: y for x, y in models.items() if y >= 44}
 
     results = []
 
