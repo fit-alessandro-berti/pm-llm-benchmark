@@ -34,5 +34,4 @@ The seventh category checks the visual capabilities (if supported) of the LLM/LV
 
 The leaderboards include the results of the benchmark, as evaluated by the considered judge LLM:
 
-* [chatgpt-4o-latest](leaderboard_chatgpt-4o-latest.md)
-* [gpt-4o-2024-05-13](leaderboard_gpt-4o_2024_05_13.md) (DEPRECATED)
+* (2024-10-31 TO NOW) [chatgpt-4o-latest](leaderboard_chatgpt-4o-latest.md)
