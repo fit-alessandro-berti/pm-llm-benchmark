@@ -105,7 +105,7 @@ def perform_evaluation(answering_model_name=None):
         last_hour_answers = files_modified_last_hour("answers", m_name)
         last_hour_evaluations = files_modified_last_hour(base_evaluation_path, m_name)
 
-        if (not missing) or (not last_hour_answers and not last_hour_evaluations):
+        if (not missing) and (not last_hour_answers and not last_hour_evaluations):
             break
 
         time.sleep(15)
