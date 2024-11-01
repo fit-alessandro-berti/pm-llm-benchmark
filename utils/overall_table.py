@@ -37,7 +37,7 @@ def execute(evaluation_folder):
     overall_table = overall_table.to_markdown(index=False)
 
     output = ["## Leaderboard (1-shot; %s used as a judge)" % (EVALUATING_MODEL_NAME)]
-    output.append("Overall leaderboard (a score in the range **27-34** is considered **sufficient**; a score in the range **34-45** is considered **good**; a score **>45** is considered **excellent**):")
+    output.append("Overall leaderboard (a score in the range **27-33** is considered **sufficient**; a score in the range **33-45** is considered **good**; a score **>45** is considered **excellent**):")
     output.append(overall_table)
 
     for m in results:
