@@ -7,7 +7,7 @@ import base64
 import sys
 
 API_URL = "https://api.openai.com/v1/"
-# API_URL = "http://127.0.0.1:11434/v1/"
+# API_URL = "http://137.226.117.70:11434/v1/"
 # API_URL = "https://api.deepinfra.com/v1/openai/"
 # API_URL = "https://api.mistral.ai/v1/"
 # API_URL = "https://generativelanguage.googleapis.com/v1beta/"
@@ -95,15 +95,35 @@ def query_text_simple_generic(question, api_url, target_file):
         "model": Shared.MODEL_NAME,
         "messages": messages,
     }
-    dump_payload(payload, target_file)
 
-    response = requests.post(complete_url, headers=headers, json=payload).json()
-    dump_response(response, target_file)
+    if "11434" in api_url:
+        # OLLAMA
+        payload = {
+            "model": Shared.MODEL_NAME,
+            "prompt": question,
+            "options": {"num_ctx": 8192}
+        }
 
-    try:
-        response_message = response["choices"][0]["message"]["content"]
-    except Exception as e:
-        raise Exception(str(response))
+        complete_url = complete_url.replace("v1/chat/completions", "api/generate")
+        response0 = requests.post(complete_url, headers=headers, json=payload).text
+        response0 = [x.strip() for x in response0.split("\n")]
+        response = []
+        for el in response0:
+            try:
+                response.append(json.loads(el))
+            except:
+                pass
+        response_message = "".join(x["response"] for x in response)
+    else:
+        dump_payload(payload, target_file)
+
+        response = requests.post(complete_url, headers=headers, json=payload).json()
+        dump_response(response, target_file)
+
+        try:
+            response_message = response["choices"][0]["message"]["content"]
+        except Exception as e:
+            raise Exception(str(response))
 
     return response_message
 
