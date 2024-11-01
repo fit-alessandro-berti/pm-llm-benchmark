@@ -98,10 +98,14 @@ def query_text_simple_generic(question, api_url, target_file):
 
     if "11434" in api_url:
         # OLLAMA
+        options = {"num_ctx": 8192}
+        if "stral" in Shared.MODEL_NAME:
+            options["temperature"] = 0.3
+
         payload = {
             "model": Shared.MODEL_NAME,
             "prompt": question,
-            "options": {"num_ctx": 8192}
+            "options": options
         }
 
         complete_url = complete_url.replace("v1/chat/completions", "api/generate")
