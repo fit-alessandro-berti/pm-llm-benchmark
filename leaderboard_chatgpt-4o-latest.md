@@ -36,6 +36,7 @@ Overall leaderboard (a score in the range **27-33** is considered **sufficient**
 | meta-llamaMeta-Llama-3-70B-Instruct     | 32.1                 |  6.8 |  7.7 |    4 |  5.2 |  2.5 |  5.5 |  0   |
 | qwen2.57b-instruct-q6_K                 | 31.6                 |  6.2 |  7.8 |    5 |  4.8 |  2   |  6   |  0   |
 | gpt-3.5-turbo                           | 31.3                 |  7   |  6.9 |    4 |  4.5 |  3   |  5.7 |  0   |
+| open-mixtral-8x7b                       | 31.2                 |  6   |  7.5 |    4 |  4.3 |  2.9 |  6.2 |  0   |
 | ministral-8b-2410                       | 31.1                 |  6.3 |  7.5 |    3 |  4.2 |  2.9 |  6.8 |  0   |
 | ministral-3b-2410                       | 29.6                 |  6.5 |  7.7 |    3 |  5   |  2.7 |  4.8 |  0   |
 | microsoftWizardLM-2-8x22B               | 29.1                 |  5.5 |  7.4 |    3 |  5   |  1.5 |  6.8 |  0   |
@@ -1818,6 +1819,59 @@ Overall leaderboard (a score in the range **27-33** is considered **sufficient**
 | cat06_06_hiring_prot_comp               |     3   |
 | cat06_07_lending_prot_comp              |     7.5 |
 | cat06_08_hospital_prot_comp             |     4   |
+
+
+
+### open-mixtral-8x7b   => 31.2 (/52) points
+
+| Question                                |   Score |
+|:----------------------------------------|--------:|
+| cat01_01_variants_bpic2020_rca          |     6   |
+| cat01_02_variants_roadtraffic_anomalies |     5   |
+| cat01_03_bpic2020_var_descr             |     7.5 |
+| cat01_04_roadtraffic_var_descr          |     8.5 |
+| cat01_05_bpic2020_dfg_descr             |     8.5 |
+| cat01_06_roadtraffic_dfg_descr          |     6.5 |
+| cat01_07_ocel_container_description     |     5.5 |
+| cat01_08_ocel_logistics_description     |     4   |
+| cat01_09_ocel_container_rca             |     6   |
+| cat01_10_ocel_logistics_rca             |     3   |
+| cat02_01_open_event_abstraction         |     8.5 |
+| cat02_02_open_process_cubes             |     8   |
+| cat02_03_open_decomposition_strategies  |     8.5 |
+| cat02_04_open_trace_clustering          |     9   |
+| cat02_05_open_rpa                       |     9   |
+| cat02_06_open_anomaly_detection         |     9.5 |
+| cat02_07_open_process_enhancement       |     8.5 |
+| cat02_08_closed_process_mining          |     8.5 |
+| cat02_09_closed_petri_nets              |     6   |
+| cat03_01_temp_profile_generation        |     8   |
+| cat03_02_declare_generation             |     5   |
+| cat03_03_log_skeleton_generation        |     7   |
+| cat03_04_process_tree_generation        |     8   |
+| cat03_05_powl_generation                |     7   |
+| cat03_06_temp_profile_discovery         |     2   |
+| cat03_07_declare_discovery              |     1   |
+| cat03_08_log_skeleton_discovery         |     4   |
+| cat04_01_bpmn_xml_tasks                 |     5   |
+| cat04_02_bpmn_json_description          |     9.5 |
+| cat04_03_bpmn_simp_xml_description      |     7   |
+| cat04_04_declare_description            |     3   |
+| cat04_05_declare_anomalies              |     7   |
+| cat04_06_log_skeleton_description       |     5   |
+| cat04_07_log_skeleton_anomalies         |     7   |
+| cat05_01_hypothesis_bpic2020            |     6.5 |
+| cat05_02_hypothesis_roadtraffic         |     8   |
+| cat05_03_hypothesis_bpmn_json           |     8   |
+| cat05_04_hypothesis_bpmn_simpl_xml      |     6.5 |
+| cat06_01_renting_attributes             |     9   |
+| cat06_02_hiring_attributes              |     9   |
+| cat06_03_lending_attributes             |     9   |
+| cat06_04_hospital_attributes            |     9   |
+| cat06_05_renting_prot_comp              |     8   |
+| cat06_06_hiring_prot_comp               |     7   |
+| cat06_07_lending_prot_comp              |     8   |
+| cat06_08_hospital_prot_comp             |     3   |
 
 
 
