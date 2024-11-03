@@ -99,8 +99,10 @@ def query_text_simple_generic(question, api_url, target_file):
     if "11434" in api_url:
         # OLLAMA
         options = {"num_ctx": 8192}
-        if "stral" in Shared.MODEL_NAME:
+        if "mistral" in Shared.MODEL_NAME.lower():
             options["temperature"] = 0.3
+            if "7b" in Shared.MODEL_NAME.lower():
+                options["temperature"] = 1.0
 
         payload = {
             "model": Shared.MODEL_NAME,
