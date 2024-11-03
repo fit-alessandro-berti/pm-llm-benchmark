@@ -27,9 +27,9 @@ def execute(evaluation_folder):
 
     for m in results:
         if m[1] == m[2]:
-            entry = {"Model": m[0], "Overall Score": "%.1f" % (m[1]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+            entry = {"Model": m[0], "Overall Score": "**%.1f**" % (m[1]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         else:
-            entry = {"Model": m[0], "Overall Score": "%.1f (%.1f on C1-C6)" % (m[2], m[1]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+            entry = {"Model": m[0], "Overall Score": "**%.1f** (**%.1f** on C1-C6)" % (m[2], m[1]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
