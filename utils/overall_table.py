@@ -1,4 +1,5 @@
 import os
+import json
 import pandas as pd
 from collections import Counter
 from utils.table_per_model import execute_script
@@ -13,11 +14,13 @@ def execute(evaluation_folder):
     models = {x: y for x, y in models.items() if y >= 44}
 
     results = []
+    all_jsons = {}
 
     for m in models:
-        res = execute_script(evaluation_folder, m)
+        res, this_json = execute_script(evaluation_folder, m)
         table = res.split("==OVERALL SCORES==")[0]
         scores = res.split("==OVERALL SCORES==")[1].split("\t")
+        all_jsons[m] = this_json
 
         results.append((m, float(scores[1]), float(scores[2]), table, float(scores[3]), float(scores[4]), float(scores[5]), float(scores[6]), float(scores[7]), float(scores[8]), float(scores[9])))
 
@@ -50,7 +53,9 @@ def execute(evaluation_folder):
     F.write(output)
     F.close()
 
-    return output
+    #print(json.dumps(all_jsons, indent=2))
+
+    return output, all_jsons
 
 
 if __name__ == "__main__":

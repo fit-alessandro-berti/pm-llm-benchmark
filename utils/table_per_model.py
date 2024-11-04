@@ -30,6 +30,8 @@ def execute_script(evaluation_folder, model_name):
     score_c6 = 0.0
     score_c7 = 0.0
 
+    this_json = {"score_questions": []}
+
     for resp in responses:
         question = resp.split(model_name + "_")[1].split(".")[0]
         target_path = os.path.join(evaluation_folder, resp)
@@ -63,6 +65,7 @@ def execute_script(evaluation_folder, model_name):
             score_c7 += numb
 
         evaluations.append({"Question": question, "Score": numb})
+        this_json["score_questions"].append([question, numb])
 
     evaluations = sorted(evaluations, key=lambda x: x["Question"])
     evaluations = pd.DataFrame(evaluations)
@@ -81,9 +84,20 @@ def execute_script(evaluation_folder, model_name):
     score_c6 /= 10
     score_c7 /= 10
 
+    this_json["score_questions"].sort(key=lambda x: x[0])
+    this_json["total_score"] = total_score
+    this_json["score_textual"] = score_textual
+    this_json["score_c1"] = score_c1
+    this_json["score_c2"] = score_c2
+    this_json["score_c3"] = score_c3
+    this_json["score_c4"] = score_c4
+    this_json["score_c5"] = score_c5
+    this_json["score_c6"] = score_c6
+    this_json["score_c7"] = score_c7
+
     result.append("==OVERALL SCORES==\t%.1f\t%.1f\t%.1f\t%.1f\t%1.f\t%.1f\t%.1f\t%.1f\t%.1f" % (score_textual, total_score, score_c1, score_c2, score_c3, score_c4, score_c5, score_c6, score_c7))
 
-    return "\n\n".join(result)
+    return "\n\n".join(result), this_json
 
 
 if __name__ == "__main__":
@@ -95,6 +109,6 @@ if __name__ == "__main__":
         model_name = input("Please insert the name of the model -> ")
 
     model_name = model_name.replace("/", "").replace(":", "")
-    result = execute_script(evaluation_folder, model_name)
+    result, this_json = execute_script(evaluation_folder, model_name)
 
     print(result)
