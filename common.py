@@ -131,6 +131,11 @@ def query_text_simple_generic(question, api_url, target_file):
                 pass
         response_message = "".join(x["response"] for x in response)
     else:
+        if "mistral" in Shared.MODEL_NAME.lower():
+            payload["temperature"] = 0.3
+            if "7b" in Shared.MODEL_NAME.lower():
+                payload["temperature"] = 1.0
+
         dump_payload(payload, target_file)
 
         response = requests.post(complete_url, headers=headers, json=payload).json()
@@ -232,6 +237,11 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
         "Content-Type": "application/json",
         "Authorization": f"Bearer {Shared.API_KEY}"
     }
+
+    if "mistral" in Shared.MODEL_NAME.lower():
+        payload["temperature"] = 0.3
+        if "7b" in Shared.MODEL_NAME.lower():
+            payload["temperature"] = 1.0
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
     dump_response(response, target_file)
