@@ -25,6 +25,16 @@ class Shared:
     MODEL_NAME = None
 
 
+def is_visual_model(model_name):
+    patterns = ["pixtral", "gpt-4o", "gpt-4-turbo", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-"]
+
+    for p in patterns:
+        if p.lower() in model_name.lower():
+            return True
+
+    return False
+
+
 def set_api_key(type_key):
     if type_key == "answer":
         answering_api_key_path = "answering_api_key.txt" if os.path.exists("answering_api_key.txt") else "../answering_api_key.txt"

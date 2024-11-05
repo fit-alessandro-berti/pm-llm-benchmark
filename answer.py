@@ -2,7 +2,7 @@ import os
 import traceback
 import time
 import sys
-from common import ANSWERING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, set_api_key
+from common import ANSWERING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, set_api_key, is_visual_model
 
 set_api_key("answer")
 WAITING_TIME_RETRY = 60
@@ -22,13 +22,7 @@ for q in questions:
                 if question_path.endswith(".txt"):
                     query_text_simple(question_path, answer_path, callback_write)
                     break
-                elif ANSWERING_MODEL_NAME.startswith("pixtral") or ANSWERING_MODEL_NAME.startswith(
-                        "chatgpt-4o") or ANSWERING_MODEL_NAME.startswith("gpt-4o") or ANSWERING_MODEL_NAME.startswith(
-                        "gpt-4-turbo") or ANSWERING_MODEL_NAME.startswith(
-                        "gpt-4-vision") or ANSWERING_MODEL_NAME.startswith(
-                        "meta-llama/Llama-3.2-11B") or ANSWERING_MODEL_NAME.startswith(
-                        "meta-llama/Llama-3.2-90B") or ANSWERING_MODEL_NAME.startswith(
-                        "gemini-") or ANSWERING_MODEL_NAME.startswith("claude-"):
+                elif is_visual_model(ANSWERING_MODEL_NAME):
                     try:
                         query_image_simple(question_path, answer_path, callback_write)
                     except:

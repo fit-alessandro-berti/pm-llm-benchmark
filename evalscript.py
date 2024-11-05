@@ -3,7 +3,7 @@ import traceback
 import time
 import datetime
 from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, \
-    encode_image, set_api_key
+    encode_image, set_api_key, is_visual_model
 
 
 def files_modified_last_hour(folder_path, m_name):
@@ -84,14 +84,7 @@ def perform_evaluation(answering_model_name=None):
                             inquiry = ",".join(inquiry)
 
                             query_text_simple(None, evaluation_path, callback_write, question=inquiry)
-                        elif EVALUATING_MODEL_NAME.startswith("pixtral") or EVALUATING_MODEL_NAME.startswith(
-                                "chatgpt-4o") or EVALUATING_MODEL_NAME.startswith(
-                            "gpt-4o") or EVALUATING_MODEL_NAME.startswith(
-                            "gpt-4-turbo") or EVALUATING_MODEL_NAME.startswith(
-                            "gpt-4-vision") or EVALUATING_MODEL_NAME.startswith(
-                            "meta-llama/Llama-3.2-11B") or EVALUATING_MODEL_NAME.startswith(
-                            "meta-llama/Llama-3.2-90B") or EVALUATING_MODEL_NAME.startswith(
-                            "gemini-") or EVALUATING_MODEL_NAME.startswith("claude-"):
+                        elif is_visual_model(EVALUATING_MODEL_NAME):
                             base64_image = encode_image(question_path)
                             inquiry = [
                                 "Given the attached image, how would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)?\n\n"]
