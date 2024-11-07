@@ -72,10 +72,12 @@ def callback_write(response_message, target_path):
 
 
 def get_llm_specific_settings() -> Dict[str, Any]:
+    model_name = Shared.MODEL_NAME.lower()
     options = {}
-    if "mistral" in Shared.MODEL_NAME.lower():
+
+    if "mistral" in model_name:
         options["temperature"] = 0.3
-        if "7b" in Shared.MODEL_NAME.lower():
+        if "7b" in model_name:
             options["temperature"] = 1.0
 
     return options
