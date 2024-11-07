@@ -6,6 +6,8 @@ import json
 import base64
 import sys
 
+from typing import Dict, Any
+
 API_URL = "https://api.openai.com/v1/"
 # API_URL = "http://137.226.117.70:11434/v1/"
 # API_URL = "https://api.deepinfra.com/v1/openai/"
@@ -69,6 +71,16 @@ def callback_write(response_message, target_path):
     F.close()
 
 
+def get_llm_specific_settings() -> Dict[str, Any]:
+    options = {}
+    if "mistral" in Shared.MODEL_NAME.lower():
+        options["temperature"] = 0.3
+        if "7b" in Shared.MODEL_NAME.lower():
+            options["temperature"] = 1.0
+
+    return options
+
+
 def dump_payload(payload, target_file):
     if "answers" in target_file:
         target_file = target_file.replace("answers", "json_payload")
@@ -109,10 +121,7 @@ def query_text_simple_generic(question, api_url, target_file):
     if "11434" in api_url:
         # OLLAMA
         options = {"num_ctx": 8192}
-        if "mistral" in Shared.MODEL_NAME.lower():
-            options["temperature"] = 0.3
-            if "7b" in Shared.MODEL_NAME.lower():
-                options["temperature"] = 1.0
+        options.update(get_llm_specific_settings())
 
         payload = {
             "model": Shared.MODEL_NAME,
@@ -131,10 +140,7 @@ def query_text_simple_generic(question, api_url, target_file):
                 pass
         response_message = "".join(x["response"] for x in response)
     else:
-        if "mistral" in Shared.MODEL_NAME.lower():
-            payload["temperature"] = 0.3
-            if "7b" in Shared.MODEL_NAME.lower():
-                payload["temperature"] = 1.0
+        payload.update(get_llm_specific_settings())
 
         dump_payload(payload, target_file)
 
@@ -238,10 +244,7 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
         "Authorization": f"Bearer {Shared.API_KEY}"
     }
 
-    if "mistral" in Shared.MODEL_NAME.lower():
-        payload["temperature"] = 0.3
-        if "7b" in Shared.MODEL_NAME.lower():
-            payload["temperature"] = 1.0
+    payload.update(get_llm_specific_settings())
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
     dump_response(response, target_file)
