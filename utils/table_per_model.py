@@ -95,7 +95,7 @@ def execute_script(evaluation_folder, model_name):
     this_json["score_c6"] = score_c6
     this_json["score_c7"] = score_c7
 
-    result.append("==OVERALL SCORES==\t%.1f\t%.1f\t%.1f\t%.1f\t%1.f\t%.1f\t%.1f\t%.1f\t%.1f" % (score_textual, total_score, score_c1, score_c2, score_c3, score_c4, score_c5, score_c6, score_c7))
+    result.append("==OVERALL SCORES==\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f" % (score_textual, total_score, score_c1, score_c2, score_c3, score_c4, score_c5, score_c6, score_c7))
 
     return "\n\n".join(result), this_json
 
