@@ -2,6 +2,8 @@ import os
 import re
 import sys
 import pandas as pd
+from common import ANSWERING_MODEL_NAME
+
 
 pattern = r'(?P<sign>[-+]?)(?:\d*\.\d+|(?P<numerator>\d+)/(?P<denominator>\d+))'
 reg_expr = re.compile(pattern)
@@ -103,10 +105,7 @@ def execute_script(evaluation_folder, model_name):
 if __name__ == "__main__":
     evaluation_folder = "../evaluation" if len(sys.argv) < 3 else sys.argv[2]
 
-    model_name = "" if len(sys.argv) < 2 else sys.argv[1]
-
-    while not model_name:
-        model_name = input("Please insert the name of the model -> ")
+    model_name = ANSWERING_MODEL_NAME
 
     model_name = model_name.replace("/", "").replace(":", "")
     result, this_json = execute_script(evaluation_folder, model_name)
