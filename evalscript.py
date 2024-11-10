@@ -6,6 +6,10 @@ from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simpl
     encode_image, set_api_key, is_visual_model
 
 
+class Shared:
+    MASS_EVAL = True
+
+
 def files_modified_last_hour(folder_path, m_name):
     # Get the current time
     now = datetime.datetime.now()
@@ -98,7 +102,12 @@ def perform_evaluation(answering_model_name=None):
         last_hour_answers = files_modified_last_hour("answers", m_name)
         last_hour_evaluations = files_modified_last_hour(base_evaluation_path, m_name)
 
-        if (not missing) or (not last_hour_answers and not last_hour_evaluations):
+        if Shared.MASS_EVAL:
+            break_condition = (not missing) or (not last_hour_answers and not last_hour_evaluations)
+        else:
+            break_condition = (not missing) and (not last_hour_answers and not last_hour_evaluations)
+
+        if break_condition:
             break
 
         time.sleep(15)
@@ -106,4 +115,6 @@ def perform_evaluation(answering_model_name=None):
 
 set_api_key("evaluation")
 if __name__ == "__main__":
+    Shared.MASS_EVAL = False
+
     perform_evaluation()
