@@ -14,6 +14,7 @@ API_URL = "https://api.openai.com/v1/"
 # API_URL = "https://api.mistral.ai/v1/"
 # API_URL = "https://generativelanguage.googleapis.com/v1beta/"
 # API_URL = "https://api.anthropic.com/v1/"
+# API_URL = "https://api.groq.com/openai/v1/"
 
 # the model used to respond to the questions
 ANSWERING_MODEL_NAME = "chatgpt-4o-latest" if len(sys.argv) < 3 else sys.argv[1]
