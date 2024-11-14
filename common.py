@@ -81,6 +81,9 @@ def get_llm_specific_settings() -> Dict[str, Any]:
         if "7b" in model_name:
             options["temperature"] = 1.0
 
+    if "deepinfra" in API_URL:
+        options["max_tokens"] = 4096
+
     return options
 
 
