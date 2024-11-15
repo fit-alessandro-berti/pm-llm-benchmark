@@ -7,7 +7,7 @@ Overall leaderboard (a score in the range **27-33** is considered **sufficient**
 | gemini-1.5-pro-002                      | **44.8** (**39.5** on C1-C6) |  8.7 |  8.2 |  6.2 |  6.2 |  3.3 |  7   |  5.2 |
 | o1-preview-2024-09-12                   | **39.4**                     |  8.1 |  8.1 |  6.2 |  6.2 |  3.4 |  7.3 |  0   |
 | Gemini-1.5-Flash-002                    | **43.9** (**38.8** on C1-C6) |  8.3 |  8.1 |  6   |  6   |  3.2 |  7   |  5.1 |
-| Gemini-Exp-1114                         | **43.9** (**38.5** on C1-C6) |  7.8 |  7.8 |  5.8 |  6.3 |  3.5 |  7   |  5.4 |
+| Gemini-Exp-1114-TEMP1                   | **43.9** (**38.5** on C1-C6) |  7.8 |  7.8 |  5.8 |  6.3 |  3.5 |  7   |  5.4 |
 | chatgpt-4o-latest-2024-09-03            | **42.9** (**38.1** on C1-C6) |  8.3 |  8.2 |  5.5 |  5.7 |  3.2 |  7.1 |  4.8 |
 | claude-3-5-sonnet-20241022              | **43.0** (**37.7** on C1-C6) |  8.5 |  7.5 |  5.5 |  6   |  3.3 |  6.8 |  5.3 |
 | nvidiaLlama-3.1-Nemotron-70B-Instruct   | **37.2**                     |  8.2 |  7.5 |  5.8 |  5.7 |  3.4 |  6.6 |  0   |
@@ -228,7 +228,7 @@ Overall leaderboard (a score in the range **27-33** is considered **sufficient**
 
 
 
-### Gemini-Exp-1114   => 43.9 (/52) points
+### Gemini-Exp-1114-TEMP1   => 43.9 (/52) points
 
 | Question                                |   Score |
 |:----------------------------------------|--------:|
