@@ -76,10 +76,11 @@ def get_llm_specific_settings() -> Dict[str, Any]:
     model_name = Shared.MODEL_NAME.lower()
     options = {}
 
-    if "mistral" in model_name:
-        options["temperature"] = 0.3
-        if "7b" in model_name:
-            options["temperature"] = 1.0
+    if "api.mistral" not in API_URL:
+        if "mistral" in model_name:
+            options["temperature"] = 0.3
+            if "7b" in model_name:
+                options["temperature"] = 1.0
 
     if "deepinfra" in API_URL:
         options["max_tokens"] = 4096
