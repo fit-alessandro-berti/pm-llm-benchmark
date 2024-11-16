@@ -19,7 +19,7 @@ def match_regex(text):
 
 
 def execute_script(evaluation_folder, model_name):
-    responses = [x for x in os.listdir(evaluation_folder) if x.startswith(model_name)]
+    responses = [x for x in os.listdir(evaluation_folder) if x.startswith(model_name+"_")]
 
     evaluations = []
     total_score = 0.0
