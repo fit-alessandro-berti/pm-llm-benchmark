@@ -2,14 +2,14 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 ## Open-Source Vision Leaderboard (1-shot; chatgpt-4o-latest used as a judge)
 
-| Model                                   | Total Score               | OS                 | PMI                  | DK                   | PMO                  | PQ                   | HG                   | FA                   | VI                   |
-|:----------------------------------------|:--------------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| pixtral-large-2411                      | **41.0** (C1-6: **36.0**) | :white_check_mark: | 7.1                  | :mage_woman: **8.1** | :mage_woman: **5.1** | :mage_woman: **5.8** | :mage_woman: **3.1** | :mage_woman: **6.8** | :mage_woman: **5.0** |
-| meta-llamaLlama-3.2-90B-Vision-Instruct | **39.1** (C1-6: **35.2**) | :white_check_mark: | :mage_woman: **7.7** | 7.7                  | **4.8**              | 5.3                  | :mage_woman: **3.1** | **6.5**              | 4.0                  |
-| pixtral-12b-2409                        | **36.2** (C1-6: **32.4**) | :white_check_mark: | 7.2                  | **7.8**              | 3.7                  | **5.5**              | **2.9**              | 5.3                  | 3.9                  |
-| mistralaiPixtral-12B-2409               | **35.6** (C1-6: **31.9**) | :white_check_mark: | 7.2                  | :mage_woman: **8.1** | 4.3                  | 4.2                  | 1.8                  | 6.4                  | 3.6                  |
-| meta-llamaLlama-3.2-11B-Vision-Instruct | **29.5** (C1-6: **25.9**) | :white_check_mark: | 6.0                  | 6.5                  | 2.9                  | 3.2                  | 2.0                  | 5.2                  | 3.6                  |
-| QwenQwen2-VL-7B-Instruct                | **25.2** (C1-6: **21.8**) | :white_check_mark: | 4.3                  | 6.0                  | 3.0                  | 3.0                  | 1.1                  | 4.3                  | 3.4                  |
+| Model                                   | Score(C1-C6)   | OS                 | PMI                  | DK                   | PMO                  | PQ                   | HG                   | FA                   | VI                   |
+|:----------------------------------------|:---------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
+| pixtral-large-2411                      | **36.0**       | :white_check_mark: | 7.1                  | :mage_woman: **8.1** | :mage_woman: **5.1** | :mage_woman: **5.8** | :mage_woman: **3.1** | :mage_woman: **6.8** | :mage_woman: **5.0** |
+| meta-llamaLlama-3.2-90B-Vision-Instruct | **35.2**       | :white_check_mark: | :mage_woman: **7.7** | 7.7                  | **4.8**              | 5.3                  | :mage_woman: **3.1** | **6.5**              | 4.0                  |
+| pixtral-12b-2409                        | **32.4**       | :white_check_mark: | 7.2                  | **7.8**              | 3.7                  | **5.5**              | **2.9**              | 5.3                  | 3.9                  |
+| mistralaiPixtral-12B-2409               | **31.9**       | :white_check_mark: | 7.2                  | :mage_woman: **8.1** | 4.3                  | 4.2                  | 1.8                  | 6.4                  | 3.6                  |
+| meta-llamaLlama-3.2-11B-Vision-Instruct | **25.9**       | :white_check_mark: | 6.0                  | 6.5                  | 2.9                  | 3.2                  | 2.0                  | 5.2                  | 3.6                  |
+| QwenQwen2-VL-7B-Instruct                | **21.8**       | :white_check_mark: | 4.3                  | 6.0                  | 3.0                  | 3.0                  | 1.1                  | 4.3                  | 3.4                  |
 
 ### pixtral-large-2411   => 41.0 (/52) points
 

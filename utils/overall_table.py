@@ -32,7 +32,8 @@ def format_is_open_source(m_name):
         return ":x:"
 
 
-def execute(evaluation_folder, target_file, include_closed_source=True, require_vision=False, leaderboard_title="Overall Leaderboard"):
+def execute(evaluation_folder, target_file, include_closed_source=True, require_vision=False,
+            leaderboard_title="Overall Leaderboard"):
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
     models = {x: y for x, y in models.items() if y >= 44}
@@ -85,25 +86,31 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
         score_c6 = format_numb_in_table(this_json["score_c6"], max_c6)
         score_c7 = format_numb_in_table(this_json["score_c7"], max_c7)
 
-        results.append((m, this_json["score_textual"], this_json["total_score"], table, score_c1, score_c2, score_c3, score_c4, score_c5, score_c6, score_c7))
+        results.append((m, this_json["score_textual"], this_json["total_score"], table, score_c1, score_c2, score_c3,
+                        score_c4, score_c5, score_c6, score_c7))
 
-    results.sort(key=lambda x: (x[1], x[2], x[0]), reverse=True)
+    results.sort(key=lambda x: (
+    x[1], x[2], this_json["score_c1"], this_json["score_c2"], this_json["score_c3"], this_json["score_c4"],
+    this_json["score_c5"], x[0]), reverse=True)
 
     overall_table = []
 
     for m in results:
         if m[1] == m[2]:
-            entry = {"Model": m[0], "Overall Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+            entry = {"Model": m[0], "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
+                     "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         else:
-            entry = {"Model": m[0], "Overall Score": "**%.1f** (C1-6: **%.1f**)" % (m[2], m[1]), "OS": format_is_open_source(m[0]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+            entry = {"Model": m[0], "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
+                     "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Total Score", "OS", "PMI", "DK", "PMO", "PQ", "HG", "FA", "VI"]
+    overall_table.columns = ["Model", "Score(C1-C6)", "OS", "PMI", "DK", "PMO", "PQ", "HG", "FA", "VI"]
     overall_table = overall_table.to_markdown(index=False)
 
     output = []
-    output.append("A score in the range **27-33** is considered **sufficient**; a score in the range **33-45** is considered **good**; a score **>45** is considered **excellent**.")
+    output.append(
+        "A score in the range **27-33** is considered **sufficient**; a score in the range **33-45** is considered **good**; a score **>45** is considered **excellent**.")
     output.append("## %s (1-shot; %s used as a judge)" % (leaderboard_title, EVALUATING_MODEL_NAME))
     output.append(overall_table)
 
@@ -123,7 +130,11 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 if __name__ == "__main__":
     e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
     evaluation_folder = "../evaluation" if "gpt-4o" in EVALUATING_MODEL_NAME else "../evaluation-" + e_m_name
-    execute(evaluation_folder, "../leaderboard_"+e_m_name+".md", include_closed_source=True, require_vision=False, leaderboard_title="Overall Leaderboard")
-    execute(evaluation_folder, "../leaderboard_os_"+e_m_name+".md", include_closed_source=False, require_vision=False, leaderboard_title="Open-Source Leaderboard")
-    execute(evaluation_folder, "../leaderboard_vis_"+e_m_name+".md", include_closed_source=True, require_vision=True, leaderboard_title="Vision Leaderboard")
-    execute(evaluation_folder, "../leaderboard_os_vis_"+e_m_name+".md", include_closed_source=False, require_vision=True, leaderboard_title="Open-Source Vision Leaderboard")
+    execute(evaluation_folder, "../leaderboard_" + e_m_name + ".md", include_closed_source=True, require_vision=False,
+            leaderboard_title="Overall Leaderboard")
+    execute(evaluation_folder, "../leaderboard_os_" + e_m_name + ".md", include_closed_source=False,
+            require_vision=False, leaderboard_title="Open-Source Leaderboard")
+    execute(evaluation_folder, "../leaderboard_vis_" + e_m_name + ".md", include_closed_source=True,
+            require_vision=True, leaderboard_title="Vision Leaderboard")
+    execute(evaluation_folder, "../leaderboard_os_vis_" + e_m_name + ".md", include_closed_source=False,
+            require_vision=True, leaderboard_title="Open-Source Vision Leaderboard")
