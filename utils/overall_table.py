@@ -95,17 +95,33 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
     overall_table = []
 
+    target_len = 29
     for m in results:
+        m_n = m[0]
+        if len(m_n) > target_len:
+            spli = m_n.split("-")
+            news = ""
+            i = 0
+            while i < len(spli):
+                if i == 0 or len(news)+len(spli[i])+1 <= target_len:
+                    if i > 0:
+                        news += "-"
+                    news += spli[i]
+                else:
+                    break
+                i = i + 1
+            m_n = news[0:min(target_len+1, len(news))]
+
         if m[1] == m[2]:
-            entry = {"Model": m[0], "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
+            entry = {"Model": m_n, "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
                      "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         else:
-            entry = {"Model": m[0], "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
+            entry = {"Model": m_n, "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
                      "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Score", "OS", "PMI", "DK", "PMO", "PQ", "HG", "FA", "VI"]
+    overall_table.columns = ["Model", "Score(C1-C6)", "OS", "PMI", "DK", "PMO", "PQ", "HG", "FA", "VI"]
     overall_table = overall_table.to_markdown(index=False)
 
     output = []
