@@ -111,6 +111,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
                     break
                 i = i + 1
             m_n = news[0:min(target_len+1, len(news))]
+        #m_n = m_n.capitalize()
 
         if m[1] == m[2]:
             entry = {"Model": m_n, "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
@@ -121,7 +122,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Score(C1-C6)", "OS", "PMI", "DK", "PMO", "PQ", "HG", "FA", ":nerd_face: VI"]
+    overall_table.columns = ["Model", "Score(C1-C6)", "OS", "PMi", "DK", "PMo", "PQ", "HG", "FA", ":nerd_face: VI"]
     overall_table = overall_table.to_markdown(index=False)
 
     output = []

@@ -2,7 +2,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 ## Vision Leaderboard (1-shot; chatgpt-4o-latest used as a judge)
 
-| Model                        | Score(C1-C6)   | OS                 | PMI                  | DK                   | PMO                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
+| Model                        | Score(C1-C6)   | OS                 | PMi                  | DK                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:-----------------------------|:---------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
 | gemini-1.5-pro-002           | **39.5**       | :x:                | :mage_woman: **8.7** | :mage_woman: **8.2** | :mage_woman: **6.2** | **6.2**              | **3.3**              | :mage_woman: **7.0** | **5.2**              |
 | Gemini-1.5-Flash-002         | **38.8**       | :x:                | 8.3                  | **8.1**              | **6.0**              | **6.0**              | **3.2**              | :mage_woman: **7.0** | 5.1                  |

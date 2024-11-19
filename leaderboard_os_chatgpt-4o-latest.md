@@ -2,7 +2,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 ## Open-Source Leaderboard (1-shot; chatgpt-4o-latest used as a judge)
 
-| Model                         | Score(C1-C6)   | OS                 | PMI                  | DK                   | PMO                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
+| Model                         | Score(C1-C6)   | OS                 | PMi                  | DK                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:------------------------------|:---------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
 | nvidiaLlama-3.1-Nemotron-70B  | **37.2**       | :white_check_mark: | :mage_woman: **8.2** | 7.5                  | :mage_woman: **5.8** | **5.7**              | :mage_woman: **3.4** | 6.6                  | 0.0                  |
 | nemotron70b-instruct-q8_0     | **36.5**       | :white_check_mark: | **8.0**              | :mage_woman: **8.2** | 5.2                  | **5.5**              | 2.8                  | :mage_woman: **6.9** | 0.0                  |

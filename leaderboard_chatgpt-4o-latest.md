@@ -2,7 +2,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 ## Overall Leaderboard (1-shot; chatgpt-4o-latest used as a judge)
 
-| Model                         | Score(C1-C6)   | OS                 | PMI                  | DK                   | PMO                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
+| Model                         | Score(C1-C6)   | OS                 | PMi                  | DK                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:------------------------------|:---------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
 | gemini-1.5-pro-002            | **39.5**       | :x:                | :mage_woman: **8.7** | :mage_woman: **8.2** | :mage_woman: **6.2** | **6.2**              | **3.3**              | **7.0**              | **5.2**              |
 | o1-preview-2024-09-12         | **39.4**       | :x:                | 8.1                  | **8.1**              | :mage_woman: **6.2** | **6.2**              | **3.4**              | :mage_woman: **7.3** | 0.0                  |
