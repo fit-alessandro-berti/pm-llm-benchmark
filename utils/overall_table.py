@@ -8,9 +8,9 @@ from common import EVALUATING_MODEL_NAME
 
 def format_numb_in_table(score, max_score, good_diff=0.3):
     if score == max_score:
-        return "<span style=\"color:violet\">**%.1f**</span>" % (score)
+        return ":mage_woman: **%.1f**" % (score)
     elif score >= max_score - good_diff:
-        return "<span style=\"color:green\">%.1f</span>" % (score)
+        return "**%.1f**" % (score)
     return "%.1f" % (score)
 
 
