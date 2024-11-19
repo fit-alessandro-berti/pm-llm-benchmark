@@ -32,15 +32,16 @@ def execute(evaluation_folder):
         if m[1] == m[2]:
             entry = {"Model": m[0], "Overall Score": "**%.1f**" % (m[1]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         else:
-            entry = {"Model": m[0], "Overall Score": "**%.1f**(C1-6: **%.1f**)" % (m[2], m[1]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+            entry = {"Model": m[0], "Overall Score": "**%.1f** (C1-6: **%.1f**)" % (m[2], m[1]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Total Score", "C1(PMI)", "C2(DK)", "C3(PMO)", "C4(PQ)", "C5(HG)", "C6(FA)", "C7(VI)"]
+    overall_table.columns = ["Model", "Total Score", "PMI", "DK", "PMO", "PQ", "HG", "FA", "VI"]
     overall_table = overall_table.to_markdown(index=False)
 
-    output = ["## Leaderboard (1-shot; %s used as a judge)" % (EVALUATING_MODEL_NAME)]
-    output.append("Overall leaderboard (a score in the range **27-33** is considered **sufficient**; a score in the range **33-45** is considered **good**; a score **>45** is considered **excellent**):")
+    output = []
+    output.append("A score in the range **27-33** is considered **sufficient**; a score in the range **33-45** is considered **good**; a score **>45** is considered **excellent**.")
+    output.append("## Leaderboard (1-shot; %s used as a judge)" % (EVALUATING_MODEL_NAME))
     output.append(overall_table)
 
     for m in results:
