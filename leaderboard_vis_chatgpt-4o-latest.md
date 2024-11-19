@@ -20,7 +20,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | claude-3-sonnet              | **35.0**       | :x:                | 7.1                  | 7.8                  | 5.5                  | 5.3                  | 3.1                  | 6.2                  | 3.9                  |
 | pixtral-12b-2409             | **32.4**       | :white_check_mark: | 7.2                  | 7.8                  | 3.7                  | 5.5                  | 2.9                  | 5.3                  | 3.9                  |
 | mistralaiPixtral-12B-2409    | **31.9**       | :white_check_mark: | 7.2                  | **8.1**              | 4.3                  | 4.2                  | 1.8                  | 6.4                  | 3.6                  |
-| QwenQwen2-VL-72B-Instruct    | **28.6**       | :x:                | 5.8                  | 6.8                  | 3.4                  | 4.5                  | 2.8                  | 5.2                  | 4.7                  |
+| QwenQwen2-VL-72B-Instruct    | **28.6**       | :white_check_mark: | 5.8                  | 6.8                  | 3.4                  | 4.5                  | 2.8                  | 5.2                  | 4.7                  |
 | meta-llamaLlama-3.2-11B      | **25.9**       | :white_check_mark: | 6.0                  | 6.5                  | 2.9                  | 3.2                  | 2.0                  | 5.2                  | 3.6                  |
 | QwenQwen2-VL-7B-Instruct     | **21.8**       | :white_check_mark: | 4.3                  | 6.0                  | 3.0                  | 3.0                  | 1.1                  | 4.3                  | 3.4                  |
 
