@@ -36,7 +36,7 @@ def execute(evaluation_folder):
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Overall Score", "C1", "C2", "C3", "C4", "C5", "C6", "C7"]
+    overall_table.columns = ["Model", "Total Score", "C1(PMI)", "C2(DK)", "C3(PMO)", "C4(PQ)", "C5(HG)", "C6(FA)", "C7(VI)"]
     overall_table = overall_table.to_markdown(index=False)
 
     output = ["## Leaderboard (1-shot; %s used as a judge)" % (EVALUATING_MODEL_NAME)]
