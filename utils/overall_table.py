@@ -16,7 +16,7 @@ def format_numb_in_table(score, max_score, good_diff=0.3):
 
 def is_open_source(m_name):
     m_name = m_name.lower()
-    patterns = ["gpt", "claude", "gemini", "o1", "ministral-3b"]
+    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1", "ministral-3b"]
 
     for p in patterns:
         if p in m_name:
