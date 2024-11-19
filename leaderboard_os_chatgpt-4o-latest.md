@@ -1,4 +1,4 @@
-A score in the range **27-33** is considered **sufficient**; a score in the range **33-45** is considered **good**; a score **>45** is considered **excellent**.
+A score in the range **27-33** is considered **sufficient**; a score in the range **33-39** is considered **good**; a score **>39** is considered **excellent**.
 
 ## Open-Source Leaderboard (1-shot; chatgpt-4o-latest used as a judge)
 
