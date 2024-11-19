@@ -25,6 +25,13 @@ def is_open_source(m_name):
     return True
 
 
+def format_is_open_source(m_name):
+    if is_open_source(m_name):
+        return ":white_check_mark:"
+    else:
+        return ":x:"
+
+
 def execute(evaluation_folder, target_file, include_closed_source=True, require_vision=False, leaderboard_title="Overall Leaderboard"):
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
@@ -86,13 +93,13 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
     for m in results:
         if m[1] == m[2]:
-            entry = {"Model": m[0], "Overall Score": "**%.1f**" % (m[1]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+            entry = {"Model": m[0], "Overall Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         else:
-            entry = {"Model": m[0], "Overall Score": "**%.1f** (C1-6: **%.1f**)" % (m[2], m[1]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+            entry = {"Model": m[0], "Overall Score": "**%.1f** (C1-6: **%.1f**)" % (m[2], m[1]), "OS": format_is_open_source(m[0]), "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Total Score", "PMI", "DK", "PMO", "PQ", "HG", "FA", "VI"]
+    overall_table.columns = ["Model", "Total Score", "OS", "PMI", "DK", "PMO", "PQ", "HG", "FA", "VI"]
     overall_table = overall_table.to_markdown(index=False)
 
     output = []
