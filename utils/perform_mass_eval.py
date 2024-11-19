@@ -24,6 +24,6 @@ evaluations_models = Counter([x.split("_cat")[0] for x in evaluations])
 for m in answers_models:
     if evaluations_models[m] != answers_models[m]:
         print(m)
-        markdown, all_jsons = overall_table.execute(base_evaluation_path)
+        markdown, all_jsons = overall_table.execute(base_evaluation_path, "leaderboard_"+e_m_name+".md")
         evalscript.perform_evaluation(m)
-        markdown, all_jsons = overall_table.execute(base_evaluation_path)
+        markdown, all_jsons = overall_table.execute(base_evaluation_path, "leaderboard_"+e_m_name+".md")
