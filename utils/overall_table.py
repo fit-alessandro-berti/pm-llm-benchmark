@@ -121,7 +121,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Score(C1-C6)", "OS", "PMI", "DK", "PMO", "PQ", "HG", "FA", "VI"]
+    overall_table.columns = ["Model", "Score(C1-C6)", "OS", "PMI", "DK", "PMO", "PQ", "HG", "FA", ":nerd_face: VI"]
     overall_table = overall_table.to_markdown(index=False)
 
     output = []
