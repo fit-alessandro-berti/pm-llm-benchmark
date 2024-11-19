@@ -26,6 +26,7 @@ EVALUATING_MODEL_NAME = "chatgpt-4o-latest" if len(sys.argv) < 3 else sys.argv[2
 class Shared:
     API_KEY = None
     MODEL_NAME = None
+    MAX_REQUESTED_TOKENS = 4096
 
 
 def is_visual_model(model_name):
@@ -83,7 +84,7 @@ def get_llm_specific_settings() -> Dict[str, Any]:
                 options["temperature"] = 1.0
 
     if "deepinfra" in API_URL:
-        options["max_tokens"] = 4096
+        options["max_tokens"] = Shared.MAX_REQUESTED_TOKENS
 
     return options
 
@@ -175,7 +176,7 @@ def query_text_simple_anthropic(question, api_url, target_file):
 
     payload = {
         "model": Shared.MODEL_NAME,
-        "max_tokens": 8192
+        "max_tokens": Shared.MAX_REQUESTED_TOKENS
     }
 
     payload["messages"] = messages
@@ -243,7 +244,7 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
     payload = {
         "model": Shared.MODEL_NAME,
         "messages": messages,
-        "max_tokens": 4096,
+        "max_tokens": Shared.MAX_REQUESTED_TOKENS,
     }
 
     headers = {
@@ -287,7 +288,7 @@ def query_image_simple_anthropic(base64_image, api_url, target_file, text):
 
     payload = {
         "model": Shared.MODEL_NAME,
-        "max_tokens": 8192
+        "max_tokens": Shared.MAX_REQUESTED_TOKENS
     }
 
     payload["messages"] = messages
