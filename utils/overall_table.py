@@ -6,6 +6,14 @@ from utils.table_per_model import execute_script
 from common import EVALUATING_MODEL_NAME
 
 
+def format_numb_in_table(score, max_score, good_diff=0.3):
+    if score == max_score:
+        return "<span style=\"color:violet\">**%.1f**</span>" % (score)
+    elif score >= max_score - good_diff:
+        return "<span style=\"color:green\">%.1f</span>" % (score)
+    return "%.1f" % (score)
+
+
 def execute(evaluation_folder):
     e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
 
@@ -13,16 +21,54 @@ def execute(evaluation_folder):
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
     models = {x: y for x, y in models.items() if y >= 44}
 
+    temp = {}
     results = []
     all_jsons = {}
 
+    max_c1 = 0.0
+    max_c2 = 0.0
+    max_c3 = 0.0
+    max_c4 = 0.0
+    max_c5 = 0.0
+    max_c6 = 0.0
+    max_c7 = 0.0
+
     for m in models:
         res, this_json = execute_script(evaluation_folder, m)
-        table = res.split("==OVERALL SCORES==")[0]
-        scores = res.split("==OVERALL SCORES==")[1].split("\t")
+        temp[m] = res
+
+        this_json["score_c1"] = round(this_json["score_c1"], 1)
+        this_json["score_c2"] = round(this_json["score_c2"], 1)
+        this_json["score_c3"] = round(this_json["score_c3"], 1)
+        this_json["score_c4"] = round(this_json["score_c4"], 1)
+        this_json["score_c5"] = round(this_json["score_c5"], 1)
+        this_json["score_c6"] = round(this_json["score_c6"], 1)
+        this_json["score_c7"] = round(this_json["score_c7"], 1)
+
+        max_c1 = max(max_c1, this_json["score_c1"])
+        max_c2 = max(max_c2, this_json["score_c2"])
+        max_c3 = max(max_c3, this_json["score_c3"])
+        max_c4 = max(max_c4, this_json["score_c4"])
+        max_c5 = max(max_c5, this_json["score_c5"])
+        max_c6 = max(max_c6, this_json["score_c6"])
+        max_c7 = max(max_c7, this_json["score_c7"])
+
         all_jsons[m] = this_json
 
-        results.append((m, float(scores[1]), float(scores[2]), table, float(scores[3]), float(scores[4]), float(scores[5]), float(scores[6]), float(scores[7]), float(scores[8]), float(scores[9])))
+    for m in models:
+        res = temp[m]
+        this_json = all_jsons[m]
+        table = res.split("==OVERALL SCORES==")[0]
+
+        score_c1 = format_numb_in_table(this_json["score_c1"], max_c1)
+        score_c2 = format_numb_in_table(this_json["score_c2"], max_c2)
+        score_c3 = format_numb_in_table(this_json["score_c3"], max_c3)
+        score_c4 = format_numb_in_table(this_json["score_c4"], max_c4)
+        score_c5 = format_numb_in_table(this_json["score_c5"], max_c5)
+        score_c6 = format_numb_in_table(this_json["score_c6"], max_c6)
+        score_c7 = format_numb_in_table(this_json["score_c7"], max_c7)
+
+        results.append((m, this_json["score_textual"], this_json["total_score"], table, score_c1, score_c2, score_c3, score_c4, score_c5, score_c6, score_c7))
 
     results.sort(key=lambda x: (x[1], x[2], x[0]), reverse=True)
 
