@@ -72,7 +72,10 @@ def perform_evaluation(answering_model_name=None):
             if os.path.exists(answer_path) and not os.path.exists(evaluation_path):
                 print("Evaluating:", answer_path)
 
-                answer = open(answer_path, "r").read()
+                try:
+                    answer = open(answer_path, "r").read()
+                except:
+                    answer = open(answer_path, "r", encoding="utf-8").read()
 
                 if answer is not None and answer:
                     missing = True
