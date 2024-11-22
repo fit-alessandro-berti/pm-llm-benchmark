@@ -9,7 +9,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | chatgpt-4o-latest-2024-11-20 | **38.7**       | :x:                | :mage_woman: **9.0** | **8.2**              | :mage_woman: **6.2** | 5.3                  | 2.9                  | :mage_woman: **7.0** | 4.2                  |
 | Gemini-Exp-1114-TEMP1        | **38.5**       | :x:                | 7.8                  | 7.8                  | 5.8                  | :mage_woman: **6.3** | :mage_woman: **3.5** | :mage_woman: **7.0** | :mage_woman: **5.4** |
 | chatgpt-4o-latest-2024-09-03 | **38.1**       | :x:                | 8.0                  | **8.2**              | 5.8                  | **6.1**              | **3.2**              | **6.8**              | **5.2**              |
-| gemini-exp-1121              | **38.0**       | :x:                | **8.8**              | :mage_woman: **8.3** | 4.7                  | 5.8                  | **3.3**              | :mage_woman: **7.0** | 4.2                  |
+| gemini-exp-1121              | **38.0**       | :x:                | **8.8**              | :mage_woman: **8.3** | 4.7                  | 5.8                  | **3.3**              | :mage_woman: **7.0** | **5.2**              |
 | claude-3-5-sonnet-20241022   | **37.7**       | :x:                | 8.5                  | 7.5                  | 5.5                  | **6.0**              | **3.3**              | **6.8**              | **5.3**              |
 | gpt-4o-2024-08-06            | **37.1**       | :x:                | 8.2                  | **8.1**              | 5.6                  | 5.7                  | 3.1                  | 6.5                  | 5.0                  |
 | Gemini-1.5-Flash-8B          | **37.1**       | :x:                | 8.0                  | **8.2**              | 5.2                  | 5.8                  | **3.2**              | **6.7**              | 4.8                  |
@@ -321,7 +321,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 
 
-### gemini-exp-1121   => 42.2 (/52) points
+### gemini-exp-1121   => 43.1 (/52) points
 
 | Question                                |   Score |
 |:----------------------------------------|--------:|
@@ -374,6 +374,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | cat07_01_dotted_chart                   |     9   |
 | cat07_02_perf_spectrum                  |     7.5 |
 | cat07_03_running-example                |     8.5 |
+| cat07_04_credit-score                   |     9   |
 | cat07_05_dfg_ru                         |     9   |
 | cat07_06_process_tree_ru                |     8.5 |
 
