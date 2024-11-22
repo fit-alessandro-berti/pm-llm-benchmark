@@ -21,6 +21,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | gpt-4o-2024-05-13             | **36.2**       | :x:                | 7.9                  | **8.1**              | 5.1                  | 5.2                  | 3.1                  | 6.8                  | 4.5                  |
 | pixtral-large-2411            | **36.0**       | :white_check_mark: | 7.1                  | **8.1**              | 5.1                  | 5.8                  | 3.1                  | 6.8                  | 5.0                  |
 | o1-mini-2024-09-12            | **36.0**       | :x:                | 7.3                  | 7.8                  | 4.9                  | 5.8                  | **3.2**              | 6.9                  | 0.0                  |
+| AIDC-AIMarco-o1               | **36.0**       | :x:                | 7.8                  | 7.6                  | 5.0                  | 5.8                  | **3.3**              | 6.5                  | 0.0                  |
 | mistral-large-2411            | **35.9**       | :white_check_mark: | 7.7                  | 7.9                  | 5.5                  | 5.2                  | 3.0                  | 6.7                  | 0.0                  |
 | gpt-4-turbo-2024-04-09        | **35.8**       | :x:                | 7.2                  | **8.0**              | 5.7                  | 5.3                  | 2.8                  | 6.7                  | **5.2**              |
 | gpt-4o-mini-2024-07-18        | **35.5**       | :x:                | 7.4                  | **8.2**              | 5.3                  | 5.2                  | 2.9                  | 6.7                  | 4.8                  |
@@ -1031,6 +1032,59 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | cat06_06_hiring_prot_comp               |     9   |
 | cat06_07_lending_prot_comp              |     9   |
 | cat06_08_hospital_prot_comp             |     8   |
+
+
+
+### AIDC-AIMarco-o1   => 36.0 (/52) points
+
+| Question                                |   Score |
+|:----------------------------------------|--------:|
+| cat01_01_variants_bpic2020_rca          |     8.5 |
+| cat01_02_variants_roadtraffic_anomalies |     9   |
+| cat01_03_bpic2020_var_descr             |     8.5 |
+| cat01_04_roadtraffic_var_descr          |     8.5 |
+| cat01_05_bpic2020_dfg_descr             |     8.5 |
+| cat01_06_roadtraffic_dfg_descr          |     8.5 |
+| cat01_07_ocel_container_description     |     7.5 |
+| cat01_08_ocel_logistics_description     |     7.5 |
+| cat01_09_ocel_container_rca             |     6.5 |
+| cat01_10_ocel_logistics_rca             |     4.5 |
+| cat02_01_open_event_abstraction         |     8.5 |
+| cat02_02_open_process_cubes             |     8   |
+| cat02_03_open_decomposition_strategies  |     9   |
+| cat02_04_open_trace_clustering          |     8.5 |
+| cat02_05_open_rpa                       |     8.5 |
+| cat02_06_open_anomaly_detection         |     8.5 |
+| cat02_07_open_process_enhancement       |     8.5 |
+| cat02_08_closed_process_mining          |     8   |
+| cat02_09_closed_petri_nets              |     8.5 |
+| cat03_01_temp_profile_generation        |     8   |
+| cat03_02_declare_generation             |     8.5 |
+| cat03_03_log_skeleton_generation        |     8   |
+| cat03_04_process_tree_generation        |     2   |
+| cat03_05_powl_generation                |     8   |
+| cat03_06_temp_profile_discovery         |     1   |
+| cat03_07_declare_discovery              |     8   |
+| cat03_08_log_skeleton_discovery         |     6   |
+| cat04_01_bpmn_xml_tasks                 |     9.5 |
+| cat04_02_bpmn_json_description          |     9.5 |
+| cat04_03_bpmn_simp_xml_description      |     8   |
+| cat04_04_declare_description            |     9.5 |
+| cat04_05_declare_anomalies              |     4.5 |
+| cat04_06_log_skeleton_description       |     9   |
+| cat04_07_log_skeleton_anomalies         |     8   |
+| cat05_01_hypothesis_bpic2020            |     7.5 |
+| cat05_02_hypothesis_roadtraffic         |     8.5 |
+| cat05_03_hypothesis_bpmn_json           |     8   |
+| cat05_04_hypothesis_bpmn_simpl_xml      |     9   |
+| cat06_01_renting_attributes             |     8   |
+| cat06_02_hiring_attributes              |     8.5 |
+| cat06_03_lending_attributes             |     9   |
+| cat06_04_hospital_attributes            |     7.5 |
+| cat06_05_renting_prot_comp              |     8   |
+| cat06_06_hiring_prot_comp               |     7.5 |
+| cat06_07_lending_prot_comp              |     8   |
+| cat06_08_hospital_prot_comp             |     9   |
 
 
 
