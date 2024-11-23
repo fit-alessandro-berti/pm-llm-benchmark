@@ -14,6 +14,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | microsoftWizardLM-2-8x22B     | **35.1**       | :white_check_mark: | 7.5                  | **8.0**              | 4.2                  | **5.7**              | 3.0                  | **6.8**              | 0.0                  |
 | meta-llamaMeta-Llama-3.1-405B | **35.0**       | :white_check_mark: | 7.8                  | 7.7                  | 4.8                  | **5.7**              | **3.2**              | 5.8                  | 0.0                  |
 | gemma29b-instruct-q6_K        | **34.6**       | :white_check_mark: | 7.7                  | **7.9**              | 5.5                  | 4.0                  | 2.8                  | **6.7**              | 0.0                  |
+| QwenQwen2.5-7B-Instruct       | **34.3**       | :white_check_mark: | 7.5                  | 7.8                  | 4.9                  | 5.2                  | 2.7                  | 6.2                  | 0.0                  |
 | meta-llamaMeta-Llama-3.1-70B  | **34.2**       | :white_check_mark: | 7.2                  | 7.8                  | 4.5                  | **5.6**              | 2.8                  | 6.4                  | 0.0                  |
 | qwen2.532b-instruct-q6_K      | **34.2**       | :white_check_mark: | 7.5                  | **7.9**              | **5.8**              | 5.2                  | 2.0                  | 5.8                  | 0.0                  |
 | QwenQwen2.5-Coder-32B         | **33.8**       | :white_check_mark: | 6.7                  | 7.8                  | 5.5                  | :mage_woman: **5.8** | 2.5                  | 5.5                  | 0.0                  |
@@ -581,6 +582,59 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | cat06_06_hiring_prot_comp               |     7   |
 | cat06_07_lending_prot_comp              |     8   |
 | cat06_08_hospital_prot_comp             |     9   |
+
+
+
+### QwenQwen2.5-7B-Instruct   => 34.3 (/52) points
+
+| Question                                |   Score |
+|:----------------------------------------|--------:|
+| cat01_01_variants_bpic2020_rca          |     8   |
+| cat01_02_variants_roadtraffic_anomalies |     3   |
+| cat01_03_bpic2020_var_descr             |     7.5 |
+| cat01_04_roadtraffic_var_descr          |     9   |
+| cat01_05_bpic2020_dfg_descr             |     8.5 |
+| cat01_06_roadtraffic_dfg_descr          |     8.5 |
+| cat01_07_ocel_container_description     |     7   |
+| cat01_08_ocel_logistics_description     |     8.5 |
+| cat01_09_ocel_container_rca             |     8   |
+| cat01_10_ocel_logistics_rca             |     7.5 |
+| cat02_01_open_event_abstraction         |     8.5 |
+| cat02_02_open_process_cubes             |     9.5 |
+| cat02_03_open_decomposition_strategies  |     9.5 |
+| cat02_04_open_trace_clustering          |     9   |
+| cat02_05_open_rpa                       |     9.5 |
+| cat02_06_open_anomaly_detection         |     9   |
+| cat02_07_open_process_enhancement       |     9   |
+| cat02_08_closed_process_mining          |     8   |
+| cat02_09_closed_petri_nets              |     5.5 |
+| cat03_01_temp_profile_generation        |     9   |
+| cat03_02_declare_generation             |     8   |
+| cat03_03_log_skeleton_generation        |     8   |
+| cat03_04_process_tree_generation        |     4   |
+| cat03_05_powl_generation                |     6   |
+| cat03_06_temp_profile_discovery         |     2   |
+| cat03_07_declare_discovery              |     5   |
+| cat03_08_log_skeleton_discovery         |     7   |
+| cat04_01_bpmn_xml_tasks                 |     9.5 |
+| cat04_02_bpmn_json_description          |     7   |
+| cat04_03_bpmn_simp_xml_description      |     7.5 |
+| cat04_04_declare_description            |     9   |
+| cat04_05_declare_anomalies              |     8   |
+| cat04_06_log_skeleton_description       |     6   |
+| cat04_07_log_skeleton_anomalies         |     5   |
+| cat05_01_hypothesis_bpic2020            |     7.5 |
+| cat05_02_hypothesis_roadtraffic         |     7.5 |
+| cat05_03_hypothesis_bpmn_json           |     8   |
+| cat05_04_hypothesis_bpmn_simpl_xml      |     4   |
+| cat06_01_renting_attributes             |     8   |
+| cat06_02_hiring_attributes              |     8.5 |
+| cat06_03_lending_attributes             |     6   |
+| cat06_04_hospital_attributes            |     8.5 |
+| cat06_05_renting_prot_comp              |     8   |
+| cat06_06_hiring_prot_comp               |     8   |
+| cat06_07_lending_prot_comp              |     7   |
+| cat06_08_hospital_prot_comp             |     8   |
 
 
 
