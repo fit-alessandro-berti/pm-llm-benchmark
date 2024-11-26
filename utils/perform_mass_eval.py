@@ -26,3 +26,5 @@ for m in answers_models:
         print(m)
         evalscript.perform_evaluation(m)
         overall_table.write_evaluation(".", extra=False)
+
+overall_table.write_evaluation(".", extra=True)
