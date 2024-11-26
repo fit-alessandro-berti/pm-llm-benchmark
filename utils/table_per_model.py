@@ -31,6 +31,9 @@ def execute_script(evaluation_folder, model_name):
     score_c5 = 0.0
     score_c6 = 0.0
     score_c7 = 0.0
+    score_c8 = 0.0
+    score_c9 = 0.0
+    score_c10 = 0.0
 
     this_json = {"score_questions": []}
 
@@ -39,7 +42,7 @@ def execute_script(evaluation_folder, model_name):
         target_path = os.path.join(evaluation_folder, resp)
 
         catnum = int(question.split("_")[0].split("cat")[1])
-        is_textual = True if catnum <= 6 else False
+        is_textual = True if catnum != 7 else False
 
         contents = open(target_path, "r").read()
 
@@ -65,6 +68,12 @@ def execute_script(evaluation_folder, model_name):
             score_c6 += numb
         elif catnum == 7:
             score_c7 += numb
+        elif catnum == 8:
+            score_c8 += numb
+        elif catnum == 9:
+            score_c9 += numb
+        elif catnum == 10:
+            score_c10 += numb
 
         evaluations.append({"Question": question, "Score": numb})
         this_json["score_questions"].append([question, numb])
@@ -85,6 +94,9 @@ def execute_script(evaluation_folder, model_name):
     score_c5 /= 10
     score_c6 /= 10
     score_c7 /= 10
+    score_c8 /= 10
+    score_c9 /= 10
+    score_c10 /= 10
 
     this_json["score_questions"].sort(key=lambda x: x[0])
     this_json["total_score"] = total_score
@@ -96,8 +108,11 @@ def execute_script(evaluation_folder, model_name):
     this_json["score_c5"] = score_c5
     this_json["score_c6"] = score_c6
     this_json["score_c7"] = score_c7
+    this_json["score_c8"] = score_c8
+    this_json["score_c9"] = score_c9
+    this_json["score_c10"] = score_c10
 
-    result.append("==OVERALL SCORES==\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f" % (score_textual, total_score, score_c1, score_c2, score_c3, score_c4, score_c5, score_c6, score_c7))
+    result.append("==OVERALL SCORES==\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f" % (score_textual, total_score, score_c1, score_c2, score_c3, score_c4, score_c5, score_c6, score_c7, score_c8, score_c9, score_c10))
 
     return "\n\n".join(result), this_json
 
@@ -106,6 +121,7 @@ if __name__ == "__main__":
     evaluation_folder = "../evaluation" if len(sys.argv) < 3 else sys.argv[2]
 
     model_name = ANSWERING_MODEL_NAME
+    #model_name = "gpt-4o-2024-11-20"
 
     model_name = model_name.replace("/", "").replace(":", "")
     result, this_json = execute_script(evaluation_folder, model_name)

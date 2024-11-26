@@ -49,6 +49,9 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     max_c5 = 0.0
     max_c6 = 0.0
     max_c7 = 0.0
+    max_c8 = 0.0
+    max_c9 = 0.0
+    max_c10 = 0.0
 
     for m in models:
         if include_closed_source or is_open_source(m):
@@ -61,6 +64,9 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
             this_json["score_c5"] = round(this_json["score_c5"], 1)
             this_json["score_c6"] = round(this_json["score_c6"], 1)
             this_json["score_c7"] = round(this_json["score_c7"], 1)
+            this_json["score_c8"] = round(this_json["score_c8"], 1)
+            this_json["score_c9"] = round(this_json["score_c9"], 1)
+            this_json["score_c10"] = round(this_json["score_c10"], 1)
 
             if this_json["score_c7"] > 0 or not require_vision:
                 temp[m] = res
@@ -71,6 +77,10 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
                 max_c5 = max(max_c5, this_json["score_c5"])
                 max_c6 = max(max_c6, this_json["score_c6"])
                 max_c7 = max(max_c7, this_json["score_c7"])
+                max_c8 = max(max_c8, this_json["score_c8"])
+                max_c9 = max(max_c9, this_json["score_c9"])
+                max_c10 = max(max_c10, this_json["score_c10"])
+
                 all_jsons[m] = this_json
 
     for m in temp:
@@ -85,9 +95,12 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
         score_c5 = format_numb_in_table(this_json["score_c5"], max_c5)
         score_c6 = format_numb_in_table(this_json["score_c6"], max_c6)
         score_c7 = format_numb_in_table(this_json["score_c7"], max_c7)
+        score_c8 = format_numb_in_table(this_json["score_c8"], max_c8)
+        score_c9 = format_numb_in_table(this_json["score_c9"], max_c9)
+        score_c10 = format_numb_in_table(this_json["score_c10"], max_c10)
 
         results.append((m, this_json["score_textual"], this_json["total_score"], table, score_c1, score_c2, score_c3,
-                        score_c4, score_c5, score_c6, score_c7))
+                        score_c4, score_c5, score_c6, score_c7, score_c8, score_c9, score_c10))
 
     results.sort(key=lambda x: (
     x[1], x[2], this_json["score_c1"], this_json["score_c2"], this_json["score_c3"], this_json["score_c4"],
@@ -122,7 +135,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Score(C1-C6)", "OS", "PMi", "DK", "PMo", "PQ", "HG", "FA", ":nerd_face: VI"]
+    overall_table.columns = ["Model", "Score", "OS", "PMi", "DK", "PMo", "PQ", "HG", "FA", ":nerd_face: VI"]
     overall_table = overall_table.to_markdown(index=False)
 
     output = []
