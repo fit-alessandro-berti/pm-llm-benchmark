@@ -148,7 +148,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
 def write_evaluation(base_path, extra=True):
     e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
-    evaluation_folder = "../evaluation" if "gpt-4o" in EVALUATING_MODEL_NAME else "../evaluation-" + e_m_name
+    evaluation_folder = os.path.join(base_path, "evaluation") if "gpt-4o" in EVALUATING_MODEL_NAME else os.path.join(base_path, "evaluation-" + e_m_name)
     execute(evaluation_folder, os.path.join(base_path, "leaderboard_" + e_m_name + ".md"), include_closed_source=True, require_vision=False,
             leaderboard_title="Overall Leaderboard")
 
