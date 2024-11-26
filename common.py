@@ -8,14 +8,6 @@ import sys
 
 from typing import Dict, Any
 
-API_URL = "https://api.openai.com/v1/"
-# API_URL = "http://137.226.117.70:11434/v1/"
-# API_URL = "https://api.deepinfra.com/v1/openai/"
-# API_URL = "https://api.mistral.ai/v1/"
-# API_URL = "https://generativelanguage.googleapis.com/v1beta/"
-# API_URL = "https://api.anthropic.com/v1/"
-# API_URL = "https://api.groq.com/openai/v1/"
-
 # the model used to respond to the questions
 ANSWERING_MODEL_NAME = "chatgpt-4o-latest" if len(sys.argv) < 3 else sys.argv[1]
 
@@ -27,6 +19,41 @@ class Shared:
     API_KEY = None
     MODEL_NAME = None
     MAX_REQUESTED_TOKENS = 4096
+    API_URL = "https://api.openai.com/v1/"
+    # API_URL = "http://137.226.117.70:11434/v1/"
+    # API_URL = "https://api.deepinfra.com/v1/openai/"
+    # API_URL = "https://api.mistral.ai/v1/"
+    # API_URL = "https://generativelanguage.googleapis.com/v1beta/"
+    # API_URL = "https://api.anthropic.com/v1/"
+    # API_URL = "https://api.groq.com/openai/v1/"
+
+
+MODELS_DICT = {
+    "openai": {
+        "api_url": "https://api.openai.com/v1/",
+        "api_key": "sk-",
+        "models": {
+            "o1-preview-2024-09-12", "o1-mini-2024-09-12", "gpt-4o-2024-11-20", "gpt-4o-2024-08-06",
+            "gpt-4o-2024-05-13", "gpt-4o-mini-2024-07-18", "gpt-4-turbo-2024-04-09", "gpt-4-0613",
+            "gpt-3.5-turbo"
+        }
+    },
+    "google": {
+        "api_url": "https://generativelanguage.googleapis.com/v1beta/",
+        "api_key": "sk-",
+        "models": {
+            "gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-1.5-flash-8b", "gemini-exp-1114",
+            "gemini-exp-1121"
+        }
+    },
+    "claude": {
+        "api_url": "https://api.anthropic.com/v1/",
+        "api_key": "sk-",
+        "models": {
+            "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620"
+        }
+    }
+}
 
 
 def is_visual_model(model_name):
@@ -41,7 +68,8 @@ def is_visual_model(model_name):
 
 def set_api_key(type_key):
     if type_key == "answer":
-        answering_api_key_path = "answering_api_key.txt" if os.path.exists("answering_api_key.txt") else "../answering_api_key.txt"
+        answering_api_key_path = "answering_api_key.txt" if os.path.exists(
+            "answering_api_key.txt") else "../answering_api_key.txt"
         Shared.API_KEY = open(answering_api_key_path, "r").read().strip()
         Shared.MODEL_NAME = ANSWERING_MODEL_NAME
     else:
@@ -77,13 +105,13 @@ def get_llm_specific_settings() -> Dict[str, Any]:
     model_name = Shared.MODEL_NAME.lower()
     options = {}
 
-    if "api.mistral" not in API_URL:
+    if "api.mistral" not in Shared.API_URL:
         if "mistral" in model_name:
             options["temperature"] = 0.3
             if "7b" in model_name:
                 options["temperature"] = 1.0
 
-    if "deepinfra" in API_URL:
+    if "deepinfra" in Shared.API_URL:
         options["max_tokens"] = Shared.MAX_REQUESTED_TOKENS
 
     return options
@@ -224,12 +252,12 @@ def query_text_simple(question_path, target_file, callback, question=None):
     if question is None:
         question = open(question_path, "r", encoding="utf-8").read()
 
-    if "googleapis" in API_URL:
-        response_message = query_text_simple_google(question, API_URL, target_file)
-    elif "anthropic" in API_URL:
-        response_message = query_text_simple_anthropic(question, API_URL, target_file)
+    if "googleapis" in Shared.API_URL:
+        response_message = query_text_simple_google(question, Shared.API_URL, target_file)
+    elif "anthropic" in Shared.API_URL:
+        response_message = query_text_simple_anthropic(question, Shared.API_URL, target_file)
     else:
-        response_message = query_text_simple_generic(question, API_URL, target_file)
+        response_message = query_text_simple_generic(question, Shared.API_URL, target_file)
 
     callback(response_message, target_file)
 
@@ -341,11 +369,11 @@ def query_image_simple(question_path, target_file, callback, base64_image=None, 
     if base64_image is None:
         base64_image = encode_image(question_path)
 
-    if "googleapis" in API_URL:
-        response_message = query_image_simple_google(base64_image, API_URL, target_file, text)
-    elif "anthropic" in API_URL:
-        response_message = query_image_simple_anthropic(base64_image, API_URL, target_file, text)
+    if "googleapis" in Shared.API_URL:
+        response_message = query_image_simple_google(base64_image, Shared.API_URL, target_file, text)
+    elif "anthropic" in Shared.API_URL:
+        response_message = query_image_simple_anthropic(base64_image, Shared.API_URL, target_file, text)
     else:
-        response_message = query_image_simple_generic(base64_image, API_URL, target_file, text)
+        response_message = query_image_simple_generic(base64_image, Shared.API_URL, target_file, text)
 
     callback(response_message, target_file)

@@ -8,7 +8,12 @@ import common
 WAITING_TIME_RETRY = 60
 
 
-def answer_question(model_name):
+def answer_question(model_name, api_url=None, api_key=None):
+    if api_url is not None:
+        common.API_URL = api_url
+    if api_key is not None:
+        common.Shared.API_KEY = api_key
+
     common.ANSWERING_MODEL_NAME = model_name
     set_api_key("answer")
 
@@ -51,15 +56,12 @@ def answer_question(model_name):
 
 
 if __name__ == "__main__":
-    models_openai = ["o1-preview-2024-09-12", "o1-mini-2024-09-12", "gpt-4o-2024-11-20", "gpt-4o-2024-08-06",
-                     "gpt-4o-2024-05-13", "gpt-4o-mini-2024-07-18", "gpt-4-turbo-2024-04-09", "gpt-4-0613",
-                     "gpt-3.5-turbo"]
-    models_google = ["gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-1.5-flash-8b", "gemini-exp-1114",
-                     "gemini-exp-1121"]
-    models_claude = ["claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620"]
-
-    models = [common.ANSWERING_MODEL_NAME]
-    #models = models_openai + models_google + models_claude + models_deepinfra
-
-    for model in models:
-        answer_question(model)
+    if False:
+        for cat in ["openai"]:
+            value = common.MODELS_DICT[cat]
+            for model in value["models"]:
+                answer_question(model, api_url=value["api_url"], api_key=value["api_key"])
+    else:
+        models = [common.ANSWERING_MODEL_NAME]
+        for model in models:
+            answer_question(model)
