@@ -13,7 +13,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | claude-3-5-sonnet-20241022    | **37.7**       | :x:                | 8.5                  | 7.5                  | 5.5                  | **6.0**              | **3.3**              | 6.8                  | **5.3**              |
 | nvidiaLlama-3.1-Nemotron-70B  | **37.2**       | :white_check_mark: | 8.2                  | 7.5                  | 5.8                  | 5.7                  | **3.4**              | 6.6                  | 0.0                  |
 | gpt-4o-2024-08-06             | **37.1**       | :x:                | 8.2                  | **8.1**              | 5.6                  | 5.7                  | 3.1                  | 6.5                  | 5.0                  |
-| gemini-1.5-flash-8B           | **37.1**       | :x:                | 8.0                  | **8.2**              | 5.2                  | 5.8                  | **3.2**              | 6.7                  | 4.8                  |
+| gemini-1.5-flash-8b           | **37.1**       | :x:                | 8.0                  | **8.2**              | 5.2                  | 5.8                  | **3.2**              | 6.7                  | 4.8                  |
 | Deepseek-R1-Lite-Preview      | **37.1**       | :white_check_mark: | 7.8                  | **8.0**              | **6.1**              | 5.2                  | 3.1                  | 6.9                  | 0.0                  |
 | claude-3-5-sonnet-20240620    | **36.9**       | :x:                | 7.8                  | 7.9                  | 5.0                  | 5.8                  | **3.3**              | **7.0**              | **5.3**              |
 | nemotron70b-instruct-q8_0     | **36.5**       | :white_check_mark: | 8.0                  | **8.2**              | 5.2                  | 5.5                  | 2.8                  | 6.9                  | 0.0                  |
@@ -581,7 +581,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 
 
-### gemini-1.5-flash-8B   => 42.0 (/52) points
+### gemini-1.5-flash-8b   => 42.0 (/52) points
 
 | Question                                |   Score |
 |:----------------------------------------|--------:|
