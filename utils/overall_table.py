@@ -141,17 +141,25 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     F.write(output)
     F.close()
 
+    print("wrote", target_file)
+
     return output, all_jsons
 
 
-if __name__ == "__main__":
+def write_evaluation(base_path, extra=True):
     e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
     evaluation_folder = "../evaluation" if "gpt-4o" in EVALUATING_MODEL_NAME else "../evaluation-" + e_m_name
-    execute(evaluation_folder, "../leaderboard_" + e_m_name + ".md", include_closed_source=True, require_vision=False,
+    execute(evaluation_folder, os.path.join(base_path, "leaderboard_" + e_m_name + ".md"), include_closed_source=True, require_vision=False,
             leaderboard_title="Overall Leaderboard")
-    execute(evaluation_folder, "../leaderboard_os_" + e_m_name + ".md", include_closed_source=False,
-            require_vision=False, leaderboard_title="Open-Source Leaderboard")
-    execute(evaluation_folder, "../leaderboard_vis_" + e_m_name + ".md", include_closed_source=True,
-            require_vision=True, leaderboard_title="Vision Leaderboard")
-    execute(evaluation_folder, "../leaderboard_os_vis_" + e_m_name + ".md", include_closed_source=False,
-            require_vision=True, leaderboard_title="Open-Source Vision Leaderboard")
+
+    if extra and e_m_name == "chatgpt-4o-latest":
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_" + e_m_name + ".md"), include_closed_source=False,
+                require_vision=False, leaderboard_title="Open-Source Leaderboard")
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_vis_" + e_m_name + ".md"), include_closed_source=True,
+                require_vision=True, leaderboard_title="Vision Leaderboard")
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_vis_" + e_m_name + ".md"), include_closed_source=False,
+                require_vision=True, leaderboard_title="Open-Source Vision Leaderboard")
+
+
+if __name__ == "__main__":
+    write_evaluation("..", extra=True)
