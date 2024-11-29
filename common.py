@@ -26,9 +26,13 @@ class Shared:
     # API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.anthropic.com/v1/"
     # API_URL = "https://api.groq.com/openai/v1/"
-    # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You are Qwen developed by Alibaba. You should think step-by-step."
     SYSTEM_PROMPT = None
+    # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You are Qwen developed by Alibaba. You should think step-by-step."
+    #SYSTEM_PROMPT = "You are a helpful and harmless assistant."
     TRIAL_CHANGE_EVALUATION_LRM = False
+    CUSTOM_TEMPERATURE = None
+    #CUSTOM_TEMPERATURE = 0.1
+
 
 MODELS_DICT = {
     "openai": {
@@ -115,6 +119,9 @@ def get_llm_specific_settings() -> Dict[str, Any]:
 
     if "deepinfra" in Shared.API_URL:
         options["max_tokens"] = Shared.MAX_REQUESTED_TOKENS
+
+    if Shared.CUSTOM_TEMPERATURE is not None:
+        options["temperature"] = Shared.CUSTOM_TEMPERATURE
 
     return options
 
