@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "chatgpt-4o-latest" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "Qwen/QwQ-32B-Preview" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "chatgpt-4o-latest" if len(sys.argv) < 3 else sys.argv[2]
@@ -18,7 +18,7 @@ EVALUATING_MODEL_NAME = "chatgpt-4o-latest" if len(sys.argv) < 3 else sys.argv[2
 class Shared:
     API_KEY = None
     MODEL_NAME = None
-    MAX_REQUESTED_TOKENS = 4096
+    MAX_REQUESTED_TOKENS = 32768
     API_URL = "https://api.openai.com/v1/"
     # API_URL = "http://137.226.117.70:11434/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
@@ -26,7 +26,9 @@ class Shared:
     # API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.anthropic.com/v1/"
     # API_URL = "https://api.groq.com/openai/v1/"
-
+    # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You are Qwen developed by Alibaba. You should think step-by-step."
+    SYSTEM_PROMPT = None
+    TRIAL_CHANGE_EVALUATION_LRM = False
 
 MODELS_DICT = {
     "openai": {
@@ -143,6 +145,9 @@ def query_text_simple_generic(question, api_url, target_file):
     complete_url = api_url + "chat/completions"
 
     messages = [{"role": "user", "content": question}]
+
+    if Shared.SYSTEM_PROMPT is not None:
+        messages = [{"role": "system", "content": Shared.SYSTEM_PROMPT}] + messages
 
     headers = {
         "Content-Type": "application/json",
@@ -268,6 +273,9 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
     messages = [{"role": "user", "content": [{"type": "text", "text": text},
                                              {"type": "image_url",
                                               "image_url": {"url": f"data:image/png;base64,{base64_image}"}}]}]
+
+    if Shared.SYSTEM_PROMPT is not None:
+        messages = [{"role": "system", "content": Shared.SYSTEM_PROMPT}] + messages
 
     payload = {
         "model": Shared.MODEL_NAME,
