@@ -2,47 +2,48 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 ## Open-Source Leaderboard (1-shot; chatgpt-4o-latest used as a judge)
 
-| Model                         | Score(C1-C6)   | OS                 | PMi                  | DK                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
-|:------------------------------|:---------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| nvidiaLlama-3.1-Nemotron-70B  | **37.2**       | :white_check_mark: | :mage_woman: **8.2** | 7.5                  | **5.8**              | **5.7**              | :mage_woman: **3.4** | 6.6                  | 0.0                  |
-| Deepseek-R1-Lite-Preview      | **37.1**       | :white_check_mark: | 7.8                  | **8.0**              | :mage_woman: **6.1** | 5.2                  | **3.1**              | :mage_woman: **6.9** | 0.0                  |
-| nemotron70b-instruct-q8_0     | **36.5**       | :white_check_mark: | **8.0**              | :mage_woman: **8.2** | 5.2                  | **5.5**              | 2.8                  | :mage_woman: **6.9** | 0.0                  |
-| pixtral-large-2411            | **36.0**       | :white_check_mark: | 7.1                  | **8.1**              | 5.1                  | :mage_woman: **5.8** | **3.1**              | **6.8**              | :mage_woman: **5.0** |
-| AIDC-AIMarco-o1               | **36.0**       | :white_check_mark: | 7.8                  | 7.6                  | 5.0                  | :mage_woman: **5.8** | **3.3**              | 6.5                  | 0.0                  |
-| mistral-large-2411            | **35.9**       | :white_check_mark: | 7.7                  | **7.9**              | 5.5                  | 5.2                  | 3.0                  | **6.7**              | 0.0                  |
-| meta-llamaLlama-3.2-90B       | **35.2**       | :white_check_mark: | 7.7                  | 7.7                  | 4.8                  | 5.3                  | **3.1**              | 6.5                  | 4.0                  |
-| microsoftWizardLM-2-8x22B     | **35.1**       | :white_check_mark: | 7.5                  | **8.0**              | 4.2                  | **5.7**              | 3.0                  | **6.8**              | 0.0                  |
-| meta-llamaMeta-Llama-3.1-405B | **35.0**       | :white_check_mark: | 7.8                  | 7.7                  | 4.8                  | **5.7**              | **3.2**              | 5.8                  | 0.0                  |
-| gemma29b-instruct-q6_K        | **34.6**       | :white_check_mark: | 7.7                  | **7.9**              | 5.5                  | 4.0                  | 2.8                  | **6.7**              | 0.0                  |
-| QwenQwen2.5-7B-Instruct       | **34.3**       | :white_check_mark: | 7.5                  | 7.8                  | 4.9                  | 5.2                  | 2.7                  | 6.2                  | 0.0                  |
-| meta-llamaMeta-Llama-3.1-70B  | **34.2**       | :white_check_mark: | 7.2                  | 7.8                  | 4.5                  | **5.6**              | 2.8                  | 6.4                  | 0.0                  |
-| qwen2.532b-instruct-q6_K      | **34.2**       | :white_check_mark: | 7.5                  | **7.9**              | **5.8**              | 5.2                  | 2.0                  | 5.8                  | 0.0                  |
-| QwenQwen2.5-Coder-32B         | **33.8**       | :white_check_mark: | 6.7                  | 7.8                  | 5.5                  | :mage_woman: **5.8** | 2.5                  | 5.5                  | 0.0                  |
-| qwen2.514b-instruct-q6_K      | **33.6**       | :white_check_mark: | 7.0                  | 7.8                  | 4.8                  | 4.8                  | 2.8                  | 6.5                  | 0.0                  |
-| open-mixtral-8x22b            | **33.5**       | :white_check_mark: | 7.0                  | 7.7                  | 5.0                  | 4.8                  | 2.9                  | 6.1                  | 0.0                  |
-| mistral-nemo12b-instruct-2407 | **32.6**       | :white_check_mark: | 7.5                  | 7.6                  | 4.8                  | 4.1                  | 2.5                  | 6.2                  | 0.0                  |
-| mistral-nemo12b-instruct-2407 | **32.5**       | :white_check_mark: | 7.0                  | 7.7                  | 4.8                  | 4.7                  | 2.2                  | 6.0                  | 0.0                  |
-| pixtral-12b-2409              | **32.4**       | :white_check_mark: | 7.2                  | 7.8                  | 3.7                  | **5.5**              | 2.9                  | 5.3                  | 3.9                  |
-| open-mistral-nemo-2407        | **32.3**       | :white_check_mark: | 6.5                  | 7.6                  | 5.0                  | 5.3                  | 2.6                  | 5.4                  | 0.0                  |
-| mistral-small-2409            | **32.1**       | :white_check_mark: | 6.0                  | **8.0**              | 4.3                  | **5.6**              | 2.1                  | 6.1                  | 0.0                  |
-| mistralaiPixtral-12B-2409     | **31.9**       | :white_check_mark: | 7.2                  | **8.1**              | 4.3                  | 4.2                  | 1.8                  | 6.4                  | 4.5                  |
-| codestral-2405                | **31.9**       | :white_check_mark: | 5.7                  | 7.0                  | 4.8                  | 4.8                  | **3.1**              | **6.7**              | 0.0                  |
-| qwen2.57b-instruct-q6_K       | **31.6**       | :white_check_mark: | 6.2                  | 7.8                  | 4.9                  | 4.8                  | 2.0                  | 6.0                  | 0.0                  |
-| open-mixtral-8x7b             | **31.2**       | :white_check_mark: | 6.0                  | 7.5                  | 4.2                  | 4.3                  | 2.9                  | 6.2                  | 0.0                  |
-| ministral-8b-2410             | **31.1**       | :white_check_mark: | 6.3                  | 7.5                  | 3.4                  | 4.2                  | 2.9                  | **6.8**              | 0.0                  |
-| mistral7b-instruct-v0.3-q6_K  | **29.6**       | :white_check_mark: | 6.7                  | 7.6                  | 3.6                  | 3.0                  | 2.5                  | 6.2                  | 0.0                  |
-| microsoftWizardLM-2-7B        | **29.6**       | :white_check_mark: | 7.0                  | **7.9**              | 3.5                  | 3.8                  | 1.7                  | 5.8                  | 0.0                  |
-| QwenQwen2-VL-72B-Instruct     | **28.6**       | :white_check_mark: | 5.8                  | 6.8                  | 3.4                  | 4.5                  | 2.8                  | 5.2                  | **4.7**              |
-| meta-llamaMeta-Llama-3.1-8B   | **28.6**       | :white_check_mark: | 6.1                  | 7.8                  | 2.6                  | 4.2                  | 3.0                  | 4.8                  | 0.0                  |
-| open-codestral-mamba-2407     | **26.6**       | :white_check_mark: | 4.7                  | 7.0                  | 3.9                  | 4.1                  | **3.1**              | 3.8                  | 0.0                  |
-| meta-llamaLlama-3.2-11B       | **25.9**       | :white_check_mark: | 6.0                  | 6.5                  | 2.9                  | 3.2                  | 2.0                  | 5.2                  | 3.6                  |
-| qwen2.53b-instruct-q8_0       | **25.8**       | :white_check_mark: | 4.8                  | **8.0**              | 2.5                  | 4.2                  | 1.7                  | 4.7                  | 0.0                  |
-| gemma22b-instruct-q8_0        | **25.6**       | :white_check_mark: | 5.7                  | 7.3                  | 3.0                  | 3.3                  | 1.8                  | 4.5                  | 0.0                  |
-| llama3.23b-instruct-q8_0      | **24.9**       | :white_check_mark: | 5.6                  | 6.7                  | 2.0                  | 3.6                  | 2.3                  | 4.7                  | 0.0                  |
-| QwenQwen2-VL-7B-Instruct      | **21.8**       | :white_check_mark: | 4.3                  | 6.0                  | 3.0                  | 3.0                  | 1.1                  | 4.3                  | 3.4                  |
-| qwen2.51.5b-instruct-q6_K     | **19.1**       | :white_check_mark: | 4.0                  | 6.2                  | 2.2                  | 2.7                  | 1.8                  | 2.3                  | 0.0                  |
-| llama3.21b-instruct-q6_K      | **16.8**       | :white_check_mark: | 3.9                  | 5.5                  | 1.9                  | 1.7                  | 0.9                  | 2.8                  | 0.0                  |
-| smollm21.7b-instruct-q6_K     | **15.6**       | :white_check_mark: | 3.4                  | 5.8                  | 1.7                  | 1.6                  | 1.2                  | 1.9                  | 0.0                  |
+| Model                         | Score    | OS                 | PMi                  | DK                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
+|:------------------------------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
+| nvidiaLlama-3.1-Nemotron-70B  | **37.2** | :white_check_mark: | :mage_woman: **8.2** | 7.5                  | 5.8                  | **5.7**              | :mage_woman: **3.4** | 6.6                  | 0.0                  |
+| Deepseek-R1-Lite-Preview      | **37.1** | :white_check_mark: | 7.8                  | **8.0**              | 6.1                  | 5.2                  | **3.1**              | :mage_woman: **6.9** | 0.0                  |
+| nemotron70b-instruct-q8_0     | **36.5** | :white_check_mark: | **8.0**              | :mage_woman: **8.2** | 5.2                  | **5.5**              | 2.8                  | :mage_woman: **6.9** | 0.0                  |
+| pixtral-large-2411            | **36.0** | :white_check_mark: | 7.1                  | **8.1**              | 5.1                  | :mage_woman: **5.8** | **3.1**              | **6.8**              | :mage_woman: **5.0** |
+| AIDC-AIMarco-o1               | **36.0** | :white_check_mark: | 7.8                  | 7.6                  | 5.0                  | :mage_woman: **5.8** | **3.3**              | 6.5                  | 0.0                  |
+| mistral-large-2411            | **35.9** | :white_check_mark: | 7.7                  | **7.9**              | 5.5                  | 5.2                  | 3.0                  | **6.7**              | 0.0                  |
+| meta-llamaLlama-3.2-90B       | **35.2** | :white_check_mark: | 7.7                  | 7.7                  | 4.8                  | 5.3                  | **3.1**              | 6.5                  | 4.0                  |
+| microsoftWizardLM-2-8x22B     | **35.1** | :white_check_mark: | 7.5                  | **8.0**              | 4.2                  | **5.7**              | 3.0                  | **6.8**              | 0.0                  |
+| meta-llamaMeta-Llama-3.1-405B | **35.0** | :white_check_mark: | 7.8                  | 7.7                  | 4.8                  | **5.7**              | **3.2**              | 5.8                  | 0.0                  |
+| qwq32b-preview-q4_K_M         | **34.8** | :white_check_mark: | 7.5                  | **8.1**              | :mage_woman: **6.4** | 4.7                  | 2.5                  | 5.7                  | 0.0                  |
+| gemma29b-instruct-q6_K        | **34.6** | :white_check_mark: | 7.7                  | **7.9**              | 5.5                  | 4.0                  | 2.8                  | **6.7**              | 0.0                  |
+| QwenQwen2.5-7B-Instruct       | **34.3** | :white_check_mark: | 7.5                  | 7.8                  | 4.9                  | 5.2                  | 2.7                  | 6.2                  | 0.0                  |
+| meta-llamaMeta-Llama-3.1-70B  | **34.2** | :white_check_mark: | 7.2                  | 7.8                  | 4.5                  | **5.6**              | 2.8                  | 6.4                  | 0.0                  |
+| qwen2.532b-instruct-q6_K      | **34.2** | :white_check_mark: | 7.5                  | **7.9**              | 5.8                  | 5.2                  | 2.0                  | 5.8                  | 0.0                  |
+| QwenQwen2.5-Coder-32B         | **33.8** | :white_check_mark: | 6.7                  | 7.8                  | 5.5                  | :mage_woman: **5.8** | 2.5                  | 5.5                  | 0.0                  |
+| qwen2.514b-instruct-q6_K      | **33.6** | :white_check_mark: | 7.0                  | 7.8                  | 4.8                  | 4.8                  | 2.8                  | 6.5                  | 0.0                  |
+| open-mixtral-8x22b            | **33.5** | :white_check_mark: | 7.0                  | 7.7                  | 5.0                  | 4.8                  | 2.9                  | 6.1                  | 0.0                  |
+| mistral-nemo12b-instruct-2407 | **32.6** | :white_check_mark: | 7.5                  | 7.6                  | 4.8                  | 4.1                  | 2.5                  | 6.2                  | 0.0                  |
+| mistral-nemo12b-instruct-2407 | **32.5** | :white_check_mark: | 7.0                  | 7.7                  | 4.8                  | 4.7                  | 2.2                  | 6.0                  | 0.0                  |
+| pixtral-12b-2409              | **32.4** | :white_check_mark: | 7.2                  | 7.8                  | 3.7                  | **5.5**              | 2.9                  | 5.3                  | 3.9                  |
+| open-mistral-nemo-2407        | **32.3** | :white_check_mark: | 6.5                  | 7.6                  | 5.0                  | 5.3                  | 2.6                  | 5.4                  | 0.0                  |
+| mistral-small-2409            | **32.1** | :white_check_mark: | 6.0                  | **8.0**              | 4.3                  | **5.6**              | 2.1                  | 6.1                  | 0.0                  |
+| mistralaiPixtral-12B-2409     | **31.9** | :white_check_mark: | 7.2                  | **8.1**              | 4.3                  | 4.2                  | 1.8                  | 6.4                  | 4.5                  |
+| codestral-2405                | **31.9** | :white_check_mark: | 5.7                  | 7.0                  | 4.8                  | 4.8                  | **3.1**              | **6.7**              | 0.0                  |
+| qwen2.57b-instruct-q6_K       | **31.6** | :white_check_mark: | 6.2                  | 7.8                  | 4.9                  | 4.8                  | 2.0                  | 6.0                  | 0.0                  |
+| open-mixtral-8x7b             | **31.2** | :white_check_mark: | 6.0                  | 7.5                  | 4.2                  | 4.3                  | 2.9                  | 6.2                  | 0.0                  |
+| ministral-8b-2410             | **31.1** | :white_check_mark: | 6.3                  | 7.5                  | 3.4                  | 4.2                  | 2.9                  | **6.8**              | 0.0                  |
+| mistral7b-instruct-v0.3-q6_K  | **29.6** | :white_check_mark: | 6.7                  | 7.6                  | 3.6                  | 3.0                  | 2.5                  | 6.2                  | 0.0                  |
+| microsoftWizardLM-2-7B        | **29.6** | :white_check_mark: | 7.0                  | **7.9**              | 3.5                  | 3.8                  | 1.7                  | 5.8                  | 0.0                  |
+| QwenQwen2-VL-72B-Instruct     | **28.6** | :white_check_mark: | 5.8                  | 6.8                  | 3.4                  | 4.5                  | 2.8                  | 5.2                  | **4.7**              |
+| meta-llamaMeta-Llama-3.1-8B   | **28.6** | :white_check_mark: | 6.1                  | 7.8                  | 2.6                  | 4.2                  | 3.0                  | 4.8                  | 0.0                  |
+| open-codestral-mamba-2407     | **26.6** | :white_check_mark: | 4.7                  | 7.0                  | 3.9                  | 4.1                  | **3.1**              | 3.8                  | 0.0                  |
+| meta-llamaLlama-3.2-11B       | **25.9** | :white_check_mark: | 6.0                  | 6.5                  | 2.9                  | 3.2                  | 2.0                  | 5.2                  | 3.6                  |
+| qwen2.53b-instruct-q8_0       | **25.8** | :white_check_mark: | 4.8                  | **8.0**              | 2.5                  | 4.2                  | 1.7                  | 4.7                  | 0.0                  |
+| gemma22b-instruct-q8_0        | **25.6** | :white_check_mark: | 5.7                  | 7.3                  | 3.0                  | 3.3                  | 1.8                  | 4.5                  | 0.0                  |
+| llama3.23b-instruct-q8_0      | **24.9** | :white_check_mark: | 5.6                  | 6.7                  | 2.0                  | 3.6                  | 2.3                  | 4.7                  | 0.0                  |
+| QwenQwen2-VL-7B-Instruct      | **21.8** | :white_check_mark: | 4.3                  | 6.0                  | 3.0                  | 3.0                  | 1.1                  | 4.3                  | 3.4                  |
+| qwen2.51.5b-instruct-q6_K     | **19.1** | :white_check_mark: | 4.0                  | 6.2                  | 2.2                  | 2.7                  | 1.8                  | 2.3                  | 0.0                  |
+| llama3.21b-instruct-q6_K      | **16.8** | :white_check_mark: | 3.9                  | 5.5                  | 1.9                  | 1.7                  | 0.9                  | 2.8                  | 0.0                  |
+| smollm21.7b-instruct-q6_K     | **15.6** | :white_check_mark: | 3.4                  | 5.8                  | 1.7                  | 1.6                  | 1.2                  | 1.9                  | 0.0                  |
 
 ### nvidiaLlama-3.1-Nemotron-70B-Instruct   => 37.2 (/52) points
 
@@ -530,6 +531,59 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | cat06_06_hiring_prot_comp               |     4   |
 | cat06_07_lending_prot_comp              |     8.5 |
 | cat06_08_hospital_prot_comp             |     4   |
+
+
+
+### qwq32b-preview-q4_K_M   => 34.8 (/52) points
+
+| Question                                |   Score |
+|:----------------------------------------|--------:|
+| cat01_01_variants_bpic2020_rca          |     8.5 |
+| cat01_02_variants_roadtraffic_anomalies |     8   |
+| cat01_03_bpic2020_var_descr             |     8   |
+| cat01_04_roadtraffic_var_descr          |     7   |
+| cat01_05_bpic2020_dfg_descr             |     9   |
+| cat01_06_roadtraffic_dfg_descr          |     8   |
+| cat01_07_ocel_container_description     |     8   |
+| cat01_08_ocel_logistics_description     |     8   |
+| cat01_09_ocel_container_rca             |     6   |
+| cat01_10_ocel_logistics_rca             |     4   |
+| cat02_01_open_event_abstraction         |     8.5 |
+| cat02_02_open_process_cubes             |     9.5 |
+| cat02_03_open_decomposition_strategies  |     9   |
+| cat02_04_open_trace_clustering          |     8.5 |
+| cat02_05_open_rpa                       |     9   |
+| cat02_06_open_anomaly_detection         |     9   |
+| cat02_07_open_process_enhancement       |     9.5 |
+| cat02_08_closed_process_mining          |     8   |
+| cat02_09_closed_petri_nets              |     9.5 |
+| cat03_01_temp_profile_generation        |     8   |
+| cat03_02_declare_generation             |     8.5 |
+| cat03_03_log_skeleton_generation        |     9   |
+| cat03_04_process_tree_generation        |     7.5 |
+| cat03_05_powl_generation                |     8   |
+| cat03_06_temp_profile_discovery         |     8   |
+| cat03_07_declare_discovery              |     7   |
+| cat03_08_log_skeleton_discovery         |     8   |
+| cat04_01_bpmn_xml_tasks                 |     9   |
+| cat04_02_bpmn_json_description          |     3   |
+| cat04_03_bpmn_simp_xml_description      |     7   |
+| cat04_04_declare_description            |     6.5 |
+| cat04_05_declare_anomalies              |     7.5 |
+| cat04_06_log_skeleton_description       |     5   |
+| cat04_07_log_skeleton_anomalies         |     8.5 |
+| cat05_01_hypothesis_bpic2020            |     8   |
+| cat05_02_hypothesis_roadtraffic         |     8   |
+| cat05_03_hypothesis_bpmn_json           |     1   |
+| cat05_04_hypothesis_bpmn_simpl_xml      |     8.5 |
+| cat06_01_renting_attributes             |     9   |
+| cat06_02_hiring_attributes              |     9   |
+| cat06_03_lending_attributes             |     9   |
+| cat06_04_hospital_attributes            |     9   |
+| cat06_05_renting_prot_comp              |     6   |
+| cat06_06_hiring_prot_comp               |     1   |
+| cat06_07_lending_prot_comp              |     8   |
+| cat06_08_hospital_prot_comp             |     6   |
 
 
 
