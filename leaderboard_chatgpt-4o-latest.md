@@ -12,6 +12,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | gemini-exp-1114               | **38.5** | :x:                | 7.8                  | 7.8                  | 5.8                  | :mage_woman: **6.3** | :mage_woman: **3.5** | **7.0**              | :mage_woman: **5.4** |
 | gemini-exp-1121               | **38.0** | :x:                | **8.8**              | :mage_woman: **8.3** | 4.7                  | 5.8                  | **3.3**              | **7.0**              | **5.2**              |
 | claude-3-5-sonnet-20241022    | **37.7** | :x:                | 8.5                  | 7.5                  | 5.5                  | **6.0**              | **3.3**              | 6.8                  | **5.3**              |
+| meta-llamaLlama-3.3-70B       | **37.6** | :white_check_mark: | 7.9                  | **8.1**              | 5.8                  | 5.8                  | :mage_woman: **3.5** | 6.5                  | 0.0                  |
 | nvidiaLlama-3.1-Nemotron-70B  | **37.2** | :white_check_mark: | 8.2                  | 7.5                  | 5.8                  | 5.7                  | **3.4**              | 6.6                  | 0.0                  |
 | gpt-4o-2024-08-06             | **37.1** | :x:                | 8.2                  | **8.1**              | 5.6                  | 5.7                  | 3.1                  | 6.5                  | 5.0                  |
 | Gemini-1.5-Flash-8B           | **37.1** | :x:                | 8.0                  | **8.2**              | 5.2                  | 5.8                  | **3.2**              | 6.7                  | 4.8                  |
@@ -528,6 +529,59 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | cat07_04_credit-score                   |     9   |
 | cat07_05_dfg_ru                         |     9   |
 | cat07_06_process_tree_ru                |     9   |
+
+
+
+### meta-llamaLlama-3.3-70B-Instruct   => 37.6 (/52) points
+
+| Question                                |   Score |
+|:----------------------------------------|--------:|
+| cat01_01_variants_bpic2020_rca          |     9   |
+| cat01_02_variants_roadtraffic_anomalies |     8.5 |
+| cat01_03_bpic2020_var_descr             |     8.5 |
+| cat01_04_roadtraffic_var_descr          |     8   |
+| cat01_05_bpic2020_dfg_descr             |     8.5 |
+| cat01_06_roadtraffic_dfg_descr          |     8   |
+| cat01_07_ocel_container_description     |     7.5 |
+| cat01_08_ocel_logistics_description     |     6   |
+| cat01_09_ocel_container_rca             |     7.5 |
+| cat01_10_ocel_logistics_rca             |     7.5 |
+| cat02_01_open_event_abstraction         |     8.5 |
+| cat02_02_open_process_cubes             |     8.5 |
+| cat02_03_open_decomposition_strategies  |     9.5 |
+| cat02_04_open_trace_clustering          |     9   |
+| cat02_05_open_rpa                       |     9.5 |
+| cat02_06_open_anomaly_detection         |     9   |
+| cat02_07_open_process_enhancement       |     9.5 |
+| cat02_08_closed_process_mining          |     8.5 |
+| cat02_09_closed_petri_nets              |     9   |
+| cat03_01_temp_profile_generation        |     9   |
+| cat03_02_declare_generation             |     8.5 |
+| cat03_03_log_skeleton_generation        |     9   |
+| cat03_04_process_tree_generation        |     8   |
+| cat03_05_powl_generation                |     7.5 |
+| cat03_06_temp_profile_discovery         |     3   |
+| cat03_07_declare_discovery              |     5   |
+| cat03_08_log_skeleton_discovery         |     8   |
+| cat04_01_bpmn_xml_tasks                 |     8.5 |
+| cat04_02_bpmn_json_description          |     9   |
+| cat04_03_bpmn_simp_xml_description      |     8.5 |
+| cat04_04_declare_description            |     8   |
+| cat04_05_declare_anomalies              |     8.5 |
+| cat04_06_log_skeleton_description       |     8   |
+| cat04_07_log_skeleton_anomalies         |     8   |
+| cat05_01_hypothesis_bpic2020            |     8.5 |
+| cat05_02_hypothesis_roadtraffic         |     8.5 |
+| cat05_03_hypothesis_bpmn_json           |     8.5 |
+| cat05_04_hypothesis_bpmn_simpl_xml      |     9   |
+| cat06_01_renting_attributes             |     8   |
+| cat06_02_hiring_attributes              |     8.5 |
+| cat06_03_lending_attributes             |     8   |
+| cat06_04_hospital_attributes            |     9   |
+| cat06_05_renting_prot_comp              |     8   |
+| cat06_06_hiring_prot_comp               |     8   |
+| cat06_07_lending_prot_comp              |     8.5 |
+| cat06_08_hospital_prot_comp             |     7.5 |
 
 
 
