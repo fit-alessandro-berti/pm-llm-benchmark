@@ -59,6 +59,39 @@ MODELS_DICT = {
         "models": {
             "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620"
         }
+    },
+    "mistral": {
+        "api_url": "https://api.mistral.ai/v1/",
+        "api_key": "sk-",
+        "models": {
+            "pixtral-large-2411", "mistral-large-2411", "open-mixtral-8x22b", "pixtral-12b-2409", "mistral-small-2409", "open-mistral-nemo-2407", "codestral-2405",
+            "open-mixtral-8x7b", "ministral-8b-2410", "ministral-3b-2410", "open-codestral-mamba"
+        }
+    },
+    "grok": {
+        "api_url": "https://api.x.ai/v1/",
+        "api_key": "sk-",
+        "models": {
+            "grok-beta", "grok-vision-beta"
+        }
+    },
+    "deepinfra": {
+        "api_url": "https://api.deepinfra.com/v1/openai/",
+        "api_key": "sk-",
+        "models": {
+            "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "meta-llama/Meta-Llama-3.1-405B-Instruct", "Qwen/Qwen2.5-Coder-32B-Instruct", "nvidia/Llama-3.1-Nemotron-70B-Instruct",
+            "meta-llama/Llama-3.2-90B-Vision-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct",
+        }
+    },
+    "ollama_local": {
+        "api_url": "http://137.226.117.70:11434/v1/",
+        "api_key": "sk-",
+        "models": {
+            "mistral:7b-instruct-v0.3-q6_K", "gemma2:9b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0", "llama3.2:1b-instruct-q6_K",
+            "llama3.2:3b-instruct-q8_0", "qwen2.5:1.5b-instruct-q6_K", "nemotron:70b-instruct-q8_0", "qwen2.5:7b-instruct-q6_K",
+            "qwen2.5:14b-instruct-q6_K", "qwen2.5:32b-instruct-q6_K", "gemma2:2b-instruct-q8_0", "smollm2:1.7b-instruct-q6_K"
+        }
     }
 }
 
@@ -408,7 +441,30 @@ def get_models():
     return models
 
 
+def check_all_models():
+    MODELS_DICT["openai"]["api_key"] = open("api_openai.txt", "r").read().strip()
+    MODELS_DICT["mistral"]["api_key"] = open("api_mistral.txt", "r").read().strip()
+    MODELS_DICT["grok"]["api_key"] = open("api_grok.txt", "r").read().strip()
+    MODELS_DICT["deepinfra"]["api_key"] = open("api_deepinfra.txt", "r").read().strip()
+
+    for provider in MODELS_DICT:
+        if provider not in {"google", "claude"}:
+            print(provider)
+            info = MODELS_DICT[provider]
+            Shared.API_URL = info["api_url"]
+            Shared.API_KEY = info["api_key"]
+            models = get_models()
+            models = {x["id"] for x in models["data"]}
+            models_specified = set(info["models"])
+            diff = models_specified.difference(models)
+            if len(diff) > 0:
+                print("ERROR")
+                print(diff)
+                input()
+
+
 if __name__ == "__main__":
-    set_api_key("answer")
-    models = get_models()
-    print(models)
+    check_all_models()
+    #set_api_key("answer")
+    #models = get_models()
+    #print(models)
