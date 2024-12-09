@@ -4,71 +4,13 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 | Model                     | Score    | OS                 | PMi                  | DK                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:--------------------------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| grok-vision-beta          | **36.5** | :white_check_mark: | :mage_woman: **8.2** | :mage_woman: **8.2** | :mage_woman: **6.3** | 4.9                  | 2.5                  | **6.5**              | 4.1                  |
-| pixtral-large-2411        | **36.0** | :white_check_mark: | 7.1                  | **8.1**              | 5.1                  | :mage_woman: **5.8** | :mage_woman: **3.1** | :mage_woman: **6.8** | :mage_woman: **5.0** |
-| meta-llamaLlama-3.2-90B   | **35.2** | :white_check_mark: | 7.7                  | 7.7                  | 4.8                  | 5.3                  | :mage_woman: **3.1** | **6.5**              | 4.0                  |
-| pixtral-12b-2409          | **32.4** | :white_check_mark: | 7.2                  | 7.8                  | 3.7                  | **5.5**              | **2.9**              | 5.3                  | 3.9                  |
-| mistralaiPixtral-12B-2409 | **31.9** | :white_check_mark: | 7.2                  | **8.1**              | 4.3                  | 4.2                  | 1.8                  | 6.4                  | 4.5                  |
+| pixtral-large-2411        | **36.0** | :white_check_mark: | 7.1                  | :mage_woman: **8.1** | :mage_woman: **5.1** | :mage_woman: **5.8** | :mage_woman: **3.1** | :mage_woman: **6.8** | :mage_woman: **5.0** |
+| meta-llamaLlama-3.2-90B   | **35.2** | :white_check_mark: | :mage_woman: **7.7** | 7.7                  | **4.8**              | 5.3                  | :mage_woman: **3.1** | **6.5**              | 4.0                  |
+| pixtral-12b-2409          | **32.4** | :white_check_mark: | 7.2                  | **7.8**              | 3.7                  | **5.5**              | **2.9**              | 5.3                  | 3.9                  |
+| mistralaiPixtral-12B-2409 | **31.9** | :white_check_mark: | 7.2                  | :mage_woman: **8.1** | 4.3                  | 4.2                  | 1.8                  | 6.4                  | 4.5                  |
 | QwenQwen2-VL-72B-Instruct | **28.6** | :white_check_mark: | 5.8                  | 6.8                  | 3.4                  | 4.5                  | 2.8                  | 5.2                  | **4.7**              |
 | meta-llamaLlama-3.2-11B   | **25.9** | :white_check_mark: | 6.0                  | 6.5                  | 2.9                  | 3.2                  | 2.0                  | 5.2                  | 3.6                  |
 | QwenQwen2-VL-7B-Instruct  | **21.8** | :white_check_mark: | 4.3                  | 6.0                  | 3.0                  | 3.0                  | 1.1                  | 4.3                  | 3.4                  |
-
-### grok-vision-beta   => 40.6 (/52) points
-
-| Question                                |   Score |
-|:----------------------------------------|--------:|
-| cat01_01_variants_bpic2020_rca          |     9   |
-| cat01_02_variants_roadtraffic_anomalies |     8   |
-| cat01_03_bpic2020_var_descr             |     9   |
-| cat01_04_roadtraffic_var_descr          |     9   |
-| cat01_05_bpic2020_dfg_descr             |     9   |
-| cat01_06_roadtraffic_dfg_descr          |     8   |
-| cat01_07_ocel_container_description     |     6.5 |
-| cat01_08_ocel_logistics_description     |     8.5 |
-| cat01_09_ocel_container_rca             |     8.5 |
-| cat01_10_ocel_logistics_rca             |     6.5 |
-| cat02_01_open_event_abstraction         |     9.5 |
-| cat02_02_open_process_cubes             |     9   |
-| cat02_03_open_decomposition_strategies  |     9   |
-| cat02_04_open_trace_clustering          |     9.5 |
-| cat02_05_open_rpa                       |     9   |
-| cat02_06_open_anomaly_detection         |     9   |
-| cat02_07_open_process_enhancement       |     9.5 |
-| cat02_08_closed_process_mining          |     8.5 |
-| cat02_09_closed_petri_nets              |     9   |
-| cat03_01_temp_profile_generation        |     8.5 |
-| cat03_02_declare_generation             |     9   |
-| cat03_03_log_skeleton_generation        |     8.5 |
-| cat03_04_process_tree_generation        |     9   |
-| cat03_05_powl_generation                |     8.5 |
-| cat03_06_temp_profile_discovery         |     4   |
-| cat03_07_declare_discovery              |     8.5 |
-| cat03_08_log_skeleton_discovery         |     7   |
-| cat04_01_bpmn_xml_tasks                 |    10   |
-| cat04_03_bpmn_simp_xml_description      |     7.5 |
-| cat04_04_declare_description            |     8.5 |
-| cat04_05_declare_anomalies              |     8.5 |
-| cat04_06_log_skeleton_description       |     7.5 |
-| cat04_07_log_skeleton_anomalies         |     7   |
-| cat05_01_hypothesis_bpic2020            |     8   |
-| cat05_02_hypothesis_roadtraffic         |     8.5 |
-| cat05_04_hypothesis_bpmn_simpl_xml      |     8   |
-| cat06_01_renting_attributes             |     8   |
-| cat06_02_hiring_attributes              |     9   |
-| cat06_03_lending_attributes             |     8.5 |
-| cat06_04_hospital_attributes            |     9   |
-| cat06_05_renting_prot_comp              |     8   |
-| cat06_06_hiring_prot_comp               |     6.5 |
-| cat06_07_lending_prot_comp              |     7.5 |
-| cat06_08_hospital_prot_comp             |     8.5 |
-| cat07_01_dotted_chart                   |     8.5 |
-| cat07_02_perf_spectrum                  |     8.5 |
-| cat07_03_running-example                |     2   |
-| cat07_04_credit-score                   |     4   |
-| cat07_05_dfg_ru                         |     9.5 |
-| cat07_06_process_tree_ru                |     8.5 |
-
-
 
 ### pixtral-large-2411   => 41.0 (/52) points
 
