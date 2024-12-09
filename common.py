@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "Qwen/QwQ-32B-Preview" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "grok-beta" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "chatgpt-4o-latest" if len(sys.argv) < 3 else sys.argv[2]
@@ -22,6 +22,7 @@ class Shared:
     API_URL = "https://api.openai.com/v1/"
     # API_URL = "http://137.226.117.70:11434/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
+    # API_URL = "https://api.x.ai/v1/"
     # API_URL = "https://api.mistral.ai/v1/"
     # API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.anthropic.com/v1/"
@@ -392,3 +393,22 @@ def query_image_simple(question_path, target_file, callback, base64_image=None, 
         response_message = query_image_simple_generic(base64_image, Shared.API_URL, target_file, text)
 
     callback(response_message, target_file)
+
+
+def get_models():
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {Shared.API_KEY}"
+    }
+
+    complete_url = Shared.API_URL+"models"
+
+    models = requests.get(complete_url, headers=headers).json()
+
+    return models
+
+
+if __name__ == "__main__":
+    set_api_key("answer")
+    models = get_models()
+    print(models)
