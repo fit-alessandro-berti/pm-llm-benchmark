@@ -14,6 +14,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | gpt-4o-2024-08-06          | **37.1** | :x:                | 8.2                  | **8.1**              | 5.6                  | 5.7                  | 3.1                  | 6.5                  | 5.0                  |
 | gemini-1.5-flash-8b        | **37.1** | :x:                | 8.0                  | **8.2**              | 5.2                  | 5.8                  | **3.2**              | 6.7                  | 4.8                  |
 | claude-3-5-sonnet-20240620 | **36.9** | :x:                | 7.8                  | 7.9                  | 5.0                  | 5.8                  | **3.3**              | **7.0**              | **5.3**              |
+| grok-vision-beta           | **36.5** | :white_check_mark: | 8.2                  | **8.2**              | 6.3                  | 4.9                  | 2.5                  | 6.5                  | 4.1                  |
 | gpt-4o-2024-05-13          | **36.2** | :x:                | 7.9                  | **8.1**              | 5.1                  | 5.2                  | 3.1                  | 6.8                  | 4.5                  |
 | pixtral-large-2411         | **36.0** | :white_check_mark: | 7.1                  | **8.1**              | 5.1                  | 5.8                  | 3.1                  | 6.8                  | 5.0                  |
 | gpt-4-turbo-2024-04-09     | **35.8** | :x:                | 7.2                  | **8.0**              | 5.7                  | 5.3                  | 2.8                  | 6.7                  | **5.2**              |
@@ -613,6 +614,63 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | cat07_04_credit-score                   |     9.5 |
 | cat07_05_dfg_ru                         |     9   |
 | cat07_06_process_tree_ru                |     8   |
+
+
+
+### grok-vision-beta   => 40.6 (/52) points
+
+| Question                                |   Score |
+|:----------------------------------------|--------:|
+| cat01_01_variants_bpic2020_rca          |     9   |
+| cat01_02_variants_roadtraffic_anomalies |     8   |
+| cat01_03_bpic2020_var_descr             |     9   |
+| cat01_04_roadtraffic_var_descr          |     9   |
+| cat01_05_bpic2020_dfg_descr             |     9   |
+| cat01_06_roadtraffic_dfg_descr          |     8   |
+| cat01_07_ocel_container_description     |     6.5 |
+| cat01_08_ocel_logistics_description     |     8.5 |
+| cat01_09_ocel_container_rca             |     8.5 |
+| cat01_10_ocel_logistics_rca             |     6.5 |
+| cat02_01_open_event_abstraction         |     9.5 |
+| cat02_02_open_process_cubes             |     9   |
+| cat02_03_open_decomposition_strategies  |     9   |
+| cat02_04_open_trace_clustering          |     9.5 |
+| cat02_05_open_rpa                       |     9   |
+| cat02_06_open_anomaly_detection         |     9   |
+| cat02_07_open_process_enhancement       |     9.5 |
+| cat02_08_closed_process_mining          |     8.5 |
+| cat02_09_closed_petri_nets              |     9   |
+| cat03_01_temp_profile_generation        |     8.5 |
+| cat03_02_declare_generation             |     9   |
+| cat03_03_log_skeleton_generation        |     8.5 |
+| cat03_04_process_tree_generation        |     9   |
+| cat03_05_powl_generation                |     8.5 |
+| cat03_06_temp_profile_discovery         |     4   |
+| cat03_07_declare_discovery              |     8.5 |
+| cat03_08_log_skeleton_discovery         |     7   |
+| cat04_01_bpmn_xml_tasks                 |    10   |
+| cat04_03_bpmn_simp_xml_description      |     7.5 |
+| cat04_04_declare_description            |     8.5 |
+| cat04_05_declare_anomalies              |     8.5 |
+| cat04_06_log_skeleton_description       |     7.5 |
+| cat04_07_log_skeleton_anomalies         |     7   |
+| cat05_01_hypothesis_bpic2020            |     8   |
+| cat05_02_hypothesis_roadtraffic         |     8.5 |
+| cat05_04_hypothesis_bpmn_simpl_xml      |     8   |
+| cat06_01_renting_attributes             |     8   |
+| cat06_02_hiring_attributes              |     9   |
+| cat06_03_lending_attributes             |     8.5 |
+| cat06_04_hospital_attributes            |     9   |
+| cat06_05_renting_prot_comp              |     8   |
+| cat06_06_hiring_prot_comp               |     6.5 |
+| cat06_07_lending_prot_comp              |     7.5 |
+| cat06_08_hospital_prot_comp             |     8.5 |
+| cat07_01_dotted_chart                   |     8.5 |
+| cat07_02_perf_spectrum                  |     8.5 |
+| cat07_03_running-example                |     2   |
+| cat07_04_credit-score                   |     4   |
+| cat07_05_dfg_ru                         |     9.5 |
+| cat07_06_process_tree_ru                |     8.5 |
 
 
 
