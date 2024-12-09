@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "grok-beta" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "grok-vision-beta" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "chatgpt-4o-latest" if len(sys.argv) < 3 else sys.argv[2]
@@ -18,7 +18,7 @@ EVALUATING_MODEL_NAME = "chatgpt-4o-latest" if len(sys.argv) < 3 else sys.argv[2
 class Shared:
     API_KEY = None
     MODEL_NAME = None
-    MAX_REQUESTED_TOKENS = 32768
+    MAX_REQUESTED_TOKENS = 16384
     API_URL = "https://api.openai.com/v1/"
     # API_URL = "http://137.226.117.70:11434/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
@@ -64,7 +64,7 @@ MODELS_DICT = {
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-"]
+    patterns = ["qwen2-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
