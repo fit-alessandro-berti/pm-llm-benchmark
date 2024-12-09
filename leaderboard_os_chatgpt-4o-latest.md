@@ -35,7 +35,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | microsoftWizardLM-2-7B        | **29.6** | :white_check_mark: | 7.0                  | 7.9                  | 3.5                  | 3.8                  | 1.7                  | 5.8                  | 0.0                  |
 | QwenQwen2-VL-72B-Instruct     | **28.6** | :white_check_mark: | 5.8                  | 6.8                  | 3.4                  | 4.5                  | 2.8                  | 5.2                  | **4.7**              |
 | meta-llamaMeta-Llama-3.1-8B   | **28.6** | :white_check_mark: | 6.1                  | 7.8                  | 2.6                  | 4.2                  | 3.0                  | 4.8                  | 0.0                  |
-| open-codestral-mamba-2407     | **26.6** | :white_check_mark: | 4.7                  | 7.0                  | 3.9                  | 4.1                  | 3.1                  | 3.8                  | 0.0                  |
+| open-codestral-mamba          | **26.6** | :white_check_mark: | 4.7                  | 7.0                  | 3.9                  | 4.1                  | 3.1                  | 3.8                  | 0.0                  |
 | meta-llamaLlama-3.2-11B       | **25.9** | :white_check_mark: | 6.0                  | 6.5                  | 2.9                  | 3.2                  | 2.0                  | 5.2                  | 3.6                  |
 | qwen2.53b-instruct-q8_0       | **25.8** | :white_check_mark: | 4.8                  | **8.0**              | 2.5                  | 4.2                  | 1.7                  | 4.7                  | 0.0                  |
 | gemma22b-instruct-q8_0        | **25.6** | :white_check_mark: | 5.7                  | 7.3                  | 3.0                  | 3.3                  | 1.8                  | 4.5                  | 0.0                  |
@@ -1716,7 +1716,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 
 
-### open-codestral-mamba-2407   => 26.6 (/52) points
+### open-codestral-mamba   => 26.6 (/52) points
 
 | Question                                |   Score |
 |:----------------------------------------|--------:|
