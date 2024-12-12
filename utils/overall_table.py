@@ -156,7 +156,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
     print("wrote", target_file)
 
-    return output, all_jsons
+    return output, all_jsons, [m[0] for m in results]
 
 
 def write_evaluation(base_path, extra=True):
