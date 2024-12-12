@@ -2,6 +2,7 @@ import os
 import traceback
 import time
 import datetime
+from utils import forge_eval_prompt
 from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, \
     encode_image, set_api_key, is_visual_model
 from common import Shared as CommonShared
@@ -82,26 +83,12 @@ def perform_evaluation(answering_model_name=None):
                     missing = True
                     try:
                         if question_path.endswith(".txt"):
-                            question = open(question_path, "r", encoding="utf-8").read()
-
-                            inquiry = ["Given the following question:\n\n"]
-                            inquiry.append(question)
-                            inquiry.append(
-                                "\n\nHow would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)? Please put the grade at the beginning of the response. ")
-                            if CommonShared.TRIAL_CHANGE_EVALUATION_LRM:
-                                inquiry.append("Please ignore the initial part of the answer, as it contains the 'flow of thought' and it can be verbose and repetitive. Only the final part/conclusions should be considered for the grade!")
-                            inquiry.append("\n\n")
-
-                            inquiry.append(answer)
-                            inquiry = ",".join(inquiry)
+                            inquiry, base64_image = forge_eval_prompt.forge(question_path, answer)
 
                             query_text_simple(None, evaluation_path, callback_write, question=inquiry)
                         elif is_visual_model(EVALUATING_MODEL_NAME):
-                            base64_image = encode_image(question_path)
-                            inquiry = [
-                                "Given the attached image, how would you grade the following answer from 1.0 (minimum) to 10.0 (maximum)?\n\n"]
-                            inquiry.append(answer)
-                            inquiry = "".join(inquiry)
+                            inquiry, base64_image = forge_eval_prompt.forge(question_path, answer)
+
                             query_image_simple(None, evaluation_path, callback_write, base64_image=base64_image,
                                                text=inquiry)
                     except:
