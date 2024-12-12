@@ -2,14 +2,14 @@
 
 | Model                  | Score    | OS   | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:-----------------------|:---------|:-----|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| o1-2024-12-05          | **22.9** | :x:  | 5.4                  | 6.8                  | **4.8**              | :mage_woman: **5.8** | :mage_woman: **0.0** | :mage_woman: **0.0** | :mage_woman: **0.0** |
-| gpt-4o-2024-11-20      | **22.5** | :x:  | 5.0                  | :mage_woman: **7.5** | :mage_woman: **5.0** | 5.1                  | :mage_woman: **0.0** | :mage_woman: **0.0** | :mage_woman: **0.0** |
-| o1-mini-2024-09-12     | **21.1** | :x:  | :mage_woman: **5.8** | 6.2                  | 4.0                  | 5.2                  | :mage_woman: **0.0** | :mage_woman: **0.0** | :mage_woman: **0.0** |
-| gpt-4o-mini-2024-07-18 | **20.2** | :x:  | 4.1                  | 6.3                  | **4.7**              | 5.0                  | :mage_woman: **0.0** | :mage_woman: **0.0** | :mage_woman: **0.0** |
-| gemini-1.5-pro-002     | **20.1** | :x:  | **5.5**              | 6.2                  | 3.7                  | 4.8                  | :mage_woman: **0.0** | :mage_woman: **0.0** | :mage_woman: **0.0** |
-| gpt-3.5-turbo          | **17.1** | :x:  | 4.7                  | 6.3                  | 2.2                  | 4.0                  | :mage_woman: **0.0** | :mage_woman: **0.0** | :mage_woman: **0.0** |
+| o1-2024-12-05          | **28.2** | :x:  | 5.4                  | 6.8                  | **4.8**              | :mage_woman: **5.8** | :mage_woman: **5.3** | :mage_woman: **0.0** | :mage_woman: **0.0** |
+| gpt-4o-2024-11-20      | **27.3** | :x:  | 5.0                  | :mage_woman: **7.5** | :mage_woman: **5.0** | 5.1                  | 4.8                  | :mage_woman: **0.0** | :mage_woman: **0.0** |
+| o1-mini-2024-09-12     | **25.9** | :x:  | :mage_woman: **5.8** | 6.2                  | 4.0                  | 5.2                  | 4.8                  | :mage_woman: **0.0** | :mage_woman: **0.0** |
+| gemini-1.5-pro-002     | **25.3** | :x:  | **5.5**              | 6.2                  | 3.7                  | 4.8                  | **5.2**              | :mage_woman: **0.0** | :mage_woman: **0.0** |
+| gpt-4o-mini-2024-07-18 | **24.8** | :x:  | 4.1                  | 6.3                  | **4.7**              | 5.0                  | 4.6                  | :mage_woman: **0.0** | :mage_woman: **0.0** |
+| gpt-3.5-turbo          | **21.9** | :x:  | 4.7                  | 6.3                  | 2.2                  | 4.0                  | 4.8                  | :mage_woman: **0.0** | :mage_woman: **0.0** |
 
-### o1-2024-12-05   => 22.9 points
+### o1-2024-12-05   => 28.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -45,10 +45,17 @@
 | cat04_05_sql_filt_num_events       |     8.5 |
 | cat04_06_sql_filt_three_df         |     6.5 |
 | cat04_07_sql_filt_top_k_vars       |     8   |
+| cat05_01_hyp_generation_log        |     5   |
+| cat05_02_hyp_gen_powl              |     8.5 |
+| cat05_03_hyp_gen_declare           |     8   |
+| cat05_04_hyp_gen_temp_profile      |     8   |
+| cat05_05_question_gen_nlp          |     8.5 |
+| cat05_06_question_pseudo_bpmn      |     8.5 |
+| cat05_07_question_interview        |     6.5 |
 
 
 
-### gpt-4o-2024-11-20   => 22.5 points
+### gpt-4o-2024-11-20   => 27.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -84,10 +91,17 @@
 | cat04_05_sql_filt_num_events       |     7   |
 | cat04_06_sql_filt_three_df         |     3   |
 | cat04_07_sql_filt_top_k_vars       |     7   |
+| cat05_01_hyp_generation_log        |     6.5 |
+| cat05_02_hyp_gen_powl              |     8   |
+| cat05_03_hyp_gen_declare           |     3   |
+| cat05_04_hyp_gen_temp_profile      |     6.5 |
+| cat05_05_question_gen_nlp          |     9.5 |
+| cat05_06_question_pseudo_bpmn      |     6   |
+| cat05_07_question_interview        |     9   |
 
 
 
-### o1-mini-2024-09-12   => 21.1 points
+### o1-mini-2024-09-12   => 25.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -123,49 +137,17 @@
 | cat04_05_sql_filt_num_events       |     9.5 |
 | cat04_06_sql_filt_three_df         |     6   |
 | cat04_07_sql_filt_top_k_vars       |     6   |
+| cat05_01_hyp_generation_log        |     6.5 |
+| cat05_02_hyp_gen_powl              |     3.5 |
+| cat05_03_hyp_gen_declare           |     9   |
+| cat05_04_hyp_gen_temp_profile      |     8   |
+| cat05_05_question_gen_nlp          |     8.5 |
+| cat05_06_question_pseudo_bpmn      |     8   |
+| cat05_07_question_interview        |     5   |
 
 
 
-### gpt-4o-mini-2024-07-18   => 20.2 points
-
-| Question                           |   Score |
-|:-----------------------------------|--------:|
-| cat01_01_case_id_inference         |     6   |
-| cat01_02_activity_context          |     6   |
-| cat01_03_high_level_events         |     7.5 |
-| cat01_04_sensor_recordings         |     1   |
-| cat01_05_merge_two_logs            |     3   |
-| cat01_06_system_logs               |     6   |
-| cat01_07_interv_to_pseudo_bpmn     |     8   |
-| cat01_08_tables_to_log             |     3.5 |
-| cat02_01_conformance_textual       |     7   |
-| cat02_02_conf_desiderata           |     6.5 |
-| cat02_03_anomaly_event_log         |     7   |
-| cat02_04_powl_anomaly_detection    |     7   |
-| cat02_05_two_powls_anomalies       |     6.5 |
-| cat02_06_root_cause_1              |     7.5 |
-| cat02_07_root_cause_2              |     5   |
-| cat02_08_underfitting_process_tree |     7.5 |
-| cat02_09_fix_process_tree          |     9.5 |
-| cat03_01_process_tree_generation   |     6.5 |
-| cat03_02_powl_generation           |     3.5 |
-| cat03_03_log_skeleton_generation   |     6   |
-| cat03_04_declare_generation        |     6.5 |
-| cat03_05_temp_profile_generation   |     6   |
-| cat03_06_petri_net_generation      |     6   |
-| cat03_07_process_tree_discovery    |     6.5 |
-| cat03_08_powl_discovery            |     6   |
-| cat04_01_pseudo_bpmn_description   |     8   |
-| cat04_02_pseudo_bpmn_open_question |     8   |
-| cat04_03_declare_open_question     |     7   |
-| cat04_04_declare_description       |     7.5 |
-| cat04_05_sql_filt_num_events       |     9   |
-| cat04_06_sql_filt_three_df         |     3   |
-| cat04_07_sql_filt_top_k_vars       |     8   |
-
-
-
-### gemini-1.5-pro-002   => 20.1 points
+### gemini-1.5-pro-002   => 25.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -201,10 +183,63 @@
 | cat04_05_sql_filt_num_events       |     8   |
 | cat04_06_sql_filt_three_df         |     5   |
 | cat04_07_sql_filt_top_k_vars       |     4   |
+| cat05_01_hyp_generation_log        |     8   |
+| cat05_02_hyp_gen_powl              |     7.5 |
+| cat05_03_hyp_gen_declare           |     7   |
+| cat05_04_hyp_gen_temp_profile      |     8   |
+| cat05_05_question_gen_nlp          |     8.5 |
+| cat05_06_question_pseudo_bpmn      |     8.5 |
+| cat05_07_question_interview        |     4   |
 
 
 
-### gpt-3.5-turbo   => 17.1 points
+### gpt-4o-mini-2024-07-18   => 24.8 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |     6   |
+| cat01_02_activity_context          |     6   |
+| cat01_03_high_level_events         |     7.5 |
+| cat01_04_sensor_recordings         |     1   |
+| cat01_05_merge_two_logs            |     3   |
+| cat01_06_system_logs               |     6   |
+| cat01_07_interv_to_pseudo_bpmn     |     8   |
+| cat01_08_tables_to_log             |     3.5 |
+| cat02_01_conformance_textual       |     7   |
+| cat02_02_conf_desiderata           |     6.5 |
+| cat02_03_anomaly_event_log         |     7   |
+| cat02_04_powl_anomaly_detection    |     7   |
+| cat02_05_two_powls_anomalies       |     6.5 |
+| cat02_06_root_cause_1              |     7.5 |
+| cat02_07_root_cause_2              |     5   |
+| cat02_08_underfitting_process_tree |     7.5 |
+| cat02_09_fix_process_tree          |     9.5 |
+| cat03_01_process_tree_generation   |     6.5 |
+| cat03_02_powl_generation           |     3.5 |
+| cat03_03_log_skeleton_generation   |     6   |
+| cat03_04_declare_generation        |     6.5 |
+| cat03_05_temp_profile_generation   |     6   |
+| cat03_06_petri_net_generation      |     6   |
+| cat03_07_process_tree_discovery    |     6.5 |
+| cat03_08_powl_discovery            |     6   |
+| cat04_01_pseudo_bpmn_description   |     8   |
+| cat04_02_pseudo_bpmn_open_question |     8   |
+| cat04_03_declare_open_question     |     7   |
+| cat04_04_declare_description       |     7.5 |
+| cat04_05_sql_filt_num_events       |     9   |
+| cat04_06_sql_filt_three_df         |     3   |
+| cat04_07_sql_filt_top_k_vars       |     8   |
+| cat05_01_hyp_generation_log        |     4.5 |
+| cat05_02_hyp_gen_powl              |     6   |
+| cat05_03_hyp_gen_declare           |     2   |
+| cat05_04_hyp_gen_temp_profile      |     8.5 |
+| cat05_05_question_gen_nlp          |     8.5 |
+| cat05_06_question_pseudo_bpmn      |     8.5 |
+| cat05_07_question_interview        |     8   |
+
+
+
+### gpt-3.5-turbo   => 21.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -240,4 +275,11 @@
 | cat04_05_sql_filt_num_events       |     8.5 |
 | cat04_06_sql_filt_three_df         |     4   |
 | cat04_07_sql_filt_top_k_vars       |     4   |
+| cat05_01_hyp_generation_log        |     5   |
+| cat05_02_hyp_gen_powl              |     4.5 |
+| cat05_03_hyp_gen_declare           |     7   |
+| cat05_04_hyp_gen_temp_profile      |     6.5 |
+| cat05_05_question_gen_nlp          |     9   |
+| cat05_06_question_pseudo_bpmn      |     8.5 |
+| cat05_07_question_interview        |     8   |
 
