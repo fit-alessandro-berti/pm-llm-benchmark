@@ -49,15 +49,15 @@ MODELS_DICT = {
         "api_url": "https://generativelanguage.googleapis.com/v1beta/",
         "api_key": "sk-",
         "models": {
-            "gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-1.5-flash-8b", "gemini-exp-1114",
-            "gemini-exp-1121"
+            "gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-1.5-flash-8b",
+            "gemini-exp-1121", "gemini-exp-1206", "gemini-2.0-flash-exp"
         }
     },
     "claude": {
         "api_url": "https://api.anthropic.com/v1/",
         "api_key": "sk-",
         "models": {
-            "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620"
+            "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620", "claude-3-sonnet"
         }
     },
     "mistral": {
@@ -79,9 +79,10 @@ MODELS_DICT = {
         "api_url": "https://api.deepinfra.com/v1/openai/",
         "api_key": "sk-",
         "models": {
-            "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct",
             "meta-llama/Meta-Llama-3.1-405B-Instruct", "Qwen/Qwen2.5-Coder-32B-Instruct", "nvidia/Llama-3.1-Nemotron-70B-Instruct",
             "meta-llama/Llama-3.2-90B-Vision-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct",
+            "Qwen/QwQ-32B-Preview", "microsoft/WizardLM-2-8x22B", "microsoft/WizardLM-2-7B"
         }
     },
     "ollama_local": {
@@ -463,8 +464,23 @@ def check_all_models():
                 input()
 
 
+def check_missing_models():
+    responding_models = set(x.split("_cat")[0] for x in os.listdir("answers") if not x.startswith("__init"))
+    catalogue_models = set()
+    for provider in MODELS_DICT:
+        info = MODELS_DICT[provider]
+        for model in info["models"]:
+            catalogue_models.add(model.replace("/", "").replace(":", ""))
+    diff = set(catalogue_models).difference(responding_models)
+    if diff:
+        raise Exception("catalogue_models outdated: "+str(diff))
+    diff = set(responding_models).difference(catalogue_models)
+    print(diff)
+
+
 if __name__ == "__main__":
     check_all_models()
+    check_missing_models()
     #set_api_key("answer")
     #models = get_models()
     #print(models)
