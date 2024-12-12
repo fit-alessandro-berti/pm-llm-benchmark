@@ -138,7 +138,8 @@ MODELS_DICT = {
         "api_url": "https://api.deepinfra.com/v1/openai/",
         "api_key": "sk-",
         "models": {
-            "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct"
+            "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "meta-llama/Llama-3.2-90B-Vision-Instruct"
         }
     },
     "ollama_local": {
