@@ -484,6 +484,10 @@ def clean_model_name(m_name):
     return m_name.replace("/", "").replace(":", "")
 
 
+def get_base_evaluation_path(model_name):
+    return "evaluation" if "gpt-4o" in model_name else "evaluation-" + clean_model_name(model_name)
+
+
 if __name__ == "__main__":
     check_all_models()
     check_missing_models()

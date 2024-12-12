@@ -4,7 +4,7 @@ import time
 import datetime
 from utils import forge_eval_prompt
 from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, \
-    set_api_key, is_visual_model
+    set_api_key, is_visual_model, get_base_evaluation_path
 import common
 
 
@@ -60,10 +60,7 @@ def perform_evaluation(answering_model_name=None):
             else:
                 evaluation_path = m_name + "_" + q
 
-            if "gpt-4o" in e_m_name:
-                base_evaluation_path = "evaluation"
-            else:
-                base_evaluation_path = "evaluation-" + e_m_name
+            base_evaluation_path = get_base_evaluation_path(e_m_name)
 
             if not os.path.exists(base_evaluation_path):
                 os.mkdir(base_evaluation_path)
