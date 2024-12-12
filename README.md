@@ -1,4 +1,4 @@
-# PM-LLM-Benchmark
+# PM-LLM-Benchmark v 1.0
 
 Process mining benefits significantly from the domain knowledge provided by LLMs. However, no process-mining-specific LLM benchmarks have been proposed
 until the current date.
