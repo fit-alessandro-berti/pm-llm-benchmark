@@ -2,7 +2,7 @@ import os
 import re
 import sys
 import pandas as pd
-from common import ANSWERING_MODEL_NAME, clean_model_name
+from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path
 
 
 pattern = r'(?P<sign>[-+]?)(?:\d*\.\d+|(?P<numerator>\d+)/(?P<denominator>\d+))'
@@ -118,7 +118,7 @@ def execute_script(evaluation_folder, model_name):
 
 
 if __name__ == "__main__":
-    evaluation_folder = "../evaluation" if len(sys.argv) < 3 else sys.argv[2]
+    evaluation_folder = os.path.join("..", get_base_evaluation_path(EVALUATING_MODEL_NAME)) if len(sys.argv) < 3 else sys.argv[2]
 
     model_name = ANSWERING_MODEL_NAME
     #model_name = "gpt-4o-2024-11-20"
