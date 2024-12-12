@@ -102,7 +102,7 @@ MODELS_DICT = {
         "api_url": "https://api.openai.com/v1/",
         "api_key": "sk-",
         "models": {
-            "gpt-4o-mini-2024-07-18", "o1-mini-2024-09-12"
+            "gpt-4o-mini-2024-07-18", "gpt-4o-2024-11-20"
         }
     },
     "google": {
@@ -123,7 +123,7 @@ MODELS_DICT = {
         "api_url": "https://api.mistral.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "ministral-3b-2410"
+            "ministral-3b-2410", "ministral-8b-2410"
         }
     },
     "grok": {
