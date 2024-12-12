@@ -138,13 +138,12 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     overall_table = overall_table.to_markdown(index=False)
 
     output = []
-    output.append(
-        "A score in the range **27-33** is considered **sufficient**; a score in the range **33-39** is considered **good**; a score **>39** is considered **excellent**.")
+    #output.append("A score in the range **27-33** is considered **sufficient**; a score in the range **33-39** is considered **good**; a score **>39** is considered **excellent**.")
     output.append("## %s (1-shot; %s used as a judge)" % (leaderboard_title, EVALUATING_MODEL_NAME))
     output.append(overall_table)
 
     for m in results:
-        output.append("### %s   => %.1f (/52) points" % (m[0], m[2]))
+        output.append("### %s   => %.1f points" % (m[0], m[2]))
         output.append(m[3])
 
     output = "\n\n".join(output)

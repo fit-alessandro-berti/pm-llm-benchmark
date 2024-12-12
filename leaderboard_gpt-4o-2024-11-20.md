@@ -1,5 +1,3 @@
-A score in the range **27-33** is considered **sufficient**; a score in the range **33-39** is considered **good**; a score **>39** is considered **excellent**.
-
 ## Overall Leaderboard (1-shot; gpt-4o-2024-11-20 used as a judge)
 
 | Model                  | Score    | OS   | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
@@ -11,7 +9,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 | gemini-1.5-pro-002     | **20.1** | :x:  | **5.5**              | 6.2                  | 3.7                  | 4.8                  | :mage_woman: **0.0** | :mage_woman: **0.0** | :mage_woman: **0.0** |
 | gpt-3.5-turbo          | **17.1** | :x:  | 4.7                  | 6.3                  | 2.2                  | 4.0                  | :mage_woman: **0.0** | :mage_woman: **0.0** | :mage_woman: **0.0** |
 
-### o1-2024-12-05   => 22.9 (/52) points
+### o1-2024-12-05   => 22.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -50,7 +48,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 
 
-### gpt-4o-2024-11-20   => 22.5 (/52) points
+### gpt-4o-2024-11-20   => 22.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -89,7 +87,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 
 
-### o1-mini-2024-09-12   => 21.1 (/52) points
+### o1-mini-2024-09-12   => 21.1 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -128,7 +126,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 
 
-### gpt-4o-mini-2024-07-18   => 20.2 (/52) points
+### gpt-4o-mini-2024-07-18   => 20.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -167,7 +165,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 
 
-### gemini-1.5-pro-002   => 20.1 (/52) points
+### gemini-1.5-pro-002   => 20.1 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -206,7 +204,7 @@ A score in the range **27-33** is considered **sufficient**; a score in the rang
 
 
 
-### gpt-3.5-turbo   => 17.1 (/52) points
+### gpt-3.5-turbo   => 17.1 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
