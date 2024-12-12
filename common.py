@@ -64,7 +64,7 @@ MODELS_DICT = {
         "api_url": "https://api.mistral.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "pixtral-large-2411", "mistral-large-2411", "open-mixtral-8x22b", "pixtral-12b-2409", "mistral-small-2409", "open-mistral-nemo-2407", "codestral-2405",
+            "pixtral-large-2411", "mistral-large-2411", "open-mixtral-8x22b", "mistral-small-2409", "open-mistral-nemo-2407", "codestral-2405",
             "open-mixtral-8x7b", "ministral-8b-2410", "ministral-3b-2410", "open-codestral-mamba"
         }
     },
@@ -72,7 +72,7 @@ MODELS_DICT = {
         "api_url": "https://api.x.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "grok-beta", "grok-vision-beta"
+            "grok-beta"
         }
     },
     "deepinfra": {
@@ -447,6 +447,8 @@ def check_all_models():
     MODELS_DICT["mistral"]["api_key"] = open("api_mistral.txt", "r").read().strip()
     MODELS_DICT["grok"]["api_key"] = open("api_grok.txt", "r").read().strip()
     MODELS_DICT["deepinfra"]["api_key"] = open("api_deepinfra.txt", "r").read().strip()
+    MODELS_DICT["google"]["api_key"] = open("api_google.txt", "r").read().strip()
+    MODELS_DICT["claude"]["api_key"] = open("api_anthropic.txt", "r").read().strip()
 
     for provider in MODELS_DICT:
         if provider not in {"google", "claude"}:

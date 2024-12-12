@@ -2,7 +2,7 @@ import os
 import traceback
 import time
 import sys
-from common import query_text_simple, query_image_simple, callback_write, set_api_key, is_visual_model
+from common import query_text_simple, query_image_simple, callback_write, set_api_key, is_visual_model, check_missing_models, check_all_models, MODELS_DICT
 import common
 
 WAITING_TIME_RETRY = 60
@@ -56,11 +56,13 @@ def answer_question(model_name, api_url=None, api_key=None):
 
 
 if __name__ == "__main__":
-    if False:
-        for cat in ["openai"]:
-            value = common.MODELS_DICT[cat]
-            for model in value["models"]:
-                answer_question(model, api_url=value["api_url"], api_key=value["api_key"])
+    if True:
+        check_missing_models()
+        check_all_models()
+        for provider in MODELS_DICT:
+            info = MODELS_DICT[provider]
+            for model in info["models"]:
+                answer_question(model, api_url=info["api_url"], api_key=info["api_key"])
     else:
         models = [common.ANSWERING_MODEL_NAME]
         for model in models:
