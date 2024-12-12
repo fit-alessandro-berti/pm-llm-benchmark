@@ -10,12 +10,15 @@ WAITING_TIME_RETRY = 60
 
 def answer_question(model_name, api_url=None, api_key=None):
     if api_url is not None:
-        common.API_URL = api_url
+        common.Shared.API_URL = api_url
+
     if api_key is not None:
         common.Shared.API_KEY = api_key
+        common.Shared.MODEL_NAME = model_name
+    else:
+        set_api_key("answer")
 
     common.ANSWERING_MODEL_NAME = model_name
-    set_api_key("answer")
 
     print("=====", common.ANSWERING_MODEL_NAME)
 
@@ -63,13 +66,17 @@ if __name__ == "__main__":
             info = MODELS_DICT[provider]
             for model in info["models"]:
                 answer_question(model, api_url=info["api_url"], api_key=info["api_key"])
-    elif False:
+    elif True:
         from utils import overall_table
         e_m_name = common.clean_model_name(common.EVALUATING_MODEL_NAME)
-        check_missing_models()
-        check_all_models()
-        output, all_jsons, ordered_llms = overall_table.execute("evaluation", "leaderboard_"+e_m_name+".md", include_closed_source=True, require_vision=False,
-            leaderboard_title="Overall Leaderboard")
+        common.insert_api_keys()
+        #check_missing_models()
+        #check_all_models()
+        try:
+            output, all_jsons, ordered_llms = overall_table.execute("evaluation", "leaderboard_"+e_m_name+".md", include_closed_source=True, require_vision=False,
+                leaderboard_title="Overall Leaderboard")
+        except:
+            ordered_llms = []
         referenced_llms = set()
         for provider in MODELS_DICT:
             info = MODELS_DICT[provider]

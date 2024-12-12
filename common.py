@@ -495,13 +495,16 @@ def get_models():
     return models
 
 
-def check_all_models():
+def insert_api_keys():
     MODELS_DICT["openai"]["api_key"] = open("api_openai.txt", "r").read().strip()
     MODELS_DICT["mistral"]["api_key"] = open("api_mistral.txt", "r").read().strip()
     MODELS_DICT["grok"]["api_key"] = open("api_grok.txt", "r").read().strip()
     MODELS_DICT["deepinfra"]["api_key"] = open("api_deepinfra.txt", "r").read().strip()
     MODELS_DICT["google"]["api_key"] = open("api_google.txt", "r").read().strip()
     MODELS_DICT["claude"]["api_key"] = open("api_anthropic.txt", "r").read().strip()
+
+def check_all_models():
+    insert_api_keys()
 
     for provider in MODELS_DICT:
         if provider not in {"google", "claude"}:
