@@ -11,7 +11,7 @@ os.chdir(parent_directory)
 
 answers = os.listdir("answers")
 answers_models = Counter([x.split("_cat")[0] for x in answers])
-answers_models = {x: y for x, y in answers_models.items() if y >= 44}
+#answers_models = {x: y for x, y in answers_models.items() if y >= 44}
 
 e_m_name = clean_model_name(EVALUATING_MODEL_NAME)
 base_evaluation_path = get_base_evaluation_path(e_m_name)

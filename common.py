@@ -97,6 +97,59 @@ MODELS_DICT = {
 }
 
 
+MODELS_DICT = {
+    "openai": {
+        "api_url": "https://api.openai.com/v1/",
+        "api_key": "sk-",
+        "models": {
+            "gpt-4o-mini-2024-07-18", "o1-mini-2024-09-12"
+        }
+    },
+    "google": {
+        "api_url": "https://generativelanguage.googleapis.com/v1beta/",
+        "api_key": "sk-",
+        "models": {
+
+        }
+    },
+    "claude": {
+        "api_url": "https://api.anthropic.com/v1/",
+        "api_key": "sk-",
+        "models": {
+
+        }
+    },
+    "mistral": {
+        "api_url": "https://api.mistral.ai/v1/",
+        "api_key": "sk-",
+        "models": {
+            "ministral-3b-2410"
+        }
+    },
+    "grok": {
+        "api_url": "https://api.x.ai/v1/",
+        "api_key": "sk-",
+        "models": {
+
+        }
+    },
+    "deepinfra": {
+        "api_url": "https://api.deepinfra.com/v1/openai/",
+        "api_key": "sk-",
+        "models": {
+
+        }
+    },
+    "ollama_local": {
+        "api_url": "http://137.226.117.70:11434/v1/",
+        "api_key": "sk-",
+        "models": {
+
+        }
+    }
+}
+
+
 def is_visual_model(model_name):
     patterns = ["qwen2-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta"]
 
