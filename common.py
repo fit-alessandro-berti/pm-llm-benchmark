@@ -110,14 +110,14 @@ MODELS_DICT = {
         "api_url": "https://generativelanguage.googleapis.com/v1beta/",
         "api_key": "sk-",
         "models": {
-            "gemini-1.5-pro-002"
+            "gemini-1.5-pro-002", "gemini-exp-1206"
         }
     },
     "claude": {
         "api_url": "https://api.anthropic.com/v1/",
         "api_key": "sk-",
         "models": {
-
+            "claude-3-5-sonnet-20241022"
         }
     },
     "mistral": {
@@ -138,7 +138,7 @@ MODELS_DICT = {
         "api_url": "https://api.deepinfra.com/v1/openai/",
         "api_key": "sk-",
         "models": {
-
+            "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct"
         }
     },
     "ollama_local": {

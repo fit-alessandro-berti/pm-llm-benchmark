@@ -81,7 +81,7 @@ if __name__ == "__main__":
         for provider in MODELS_DICT:
             info = MODELS_DICT[provider]
             referenced_llms = referenced_llms.union(info["models"])
-        referenced_llms = [x for x in referenced_llms if common.clean_model_name(x) not in ordered_llms]
+        referenced_llms = [common.clean_model_name(x) for x in referenced_llms if common.clean_model_name(x) not in ordered_llms]
         ordered_llms = ordered_llms + referenced_llms
         for llm in ordered_llms:
             found = False
