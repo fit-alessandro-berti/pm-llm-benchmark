@@ -139,7 +139,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct",
-            "meta-llama/Llama-3.2-90B-Vision-Instruct"
+            "meta-llama/Llama-3.2-90B-Vision-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct"
         }
     },
     "ollama_local": {
