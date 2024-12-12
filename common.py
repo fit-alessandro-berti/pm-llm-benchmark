@@ -12,7 +12,7 @@ from typing import Dict, Any
 ANSWERING_MODEL_NAME = "gpt-4o-mini-2024-07-18" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
-EVALUATING_MODEL_NAME = "chatgpt-4o-latest" if len(sys.argv) < 3 else sys.argv[2]
+EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
 
 
 class Shared:
