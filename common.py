@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "gpt-4o-mini-2024-07-18" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "gemini-1.5-pro-002" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -103,14 +103,14 @@ MODELS_DICT = {
         "api_url": "https://api.openai.com/v1/",
         "api_key": "sk-",
         "models": {
-            "gpt-4o-mini-2024-07-18", "gpt-4o-2024-11-20"
+            "gpt-4o-mini-2024-07-18", "gpt-4o-2024-11-20", "gpt-3.5-turbo"
         }
     },
     "google": {
         "api_url": "https://generativelanguage.googleapis.com/v1beta/",
         "api_key": "sk-",
         "models": {
-
+            "gemini-1.5-pro-002"
         }
     },
     "claude": {
@@ -124,7 +124,7 @@ MODELS_DICT = {
         "api_url": "https://api.mistral.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "ministral-3b-2410", "ministral-8b-2410"
+
         }
     },
     "grok": {
