@@ -2,6 +2,7 @@ import os
 import pyperclip
 import subprocess
 import sys
+from common import clean_model_name
 
 questions_folder = "../questions"
 answers_folder = "../answers"
@@ -21,7 +22,7 @@ for q in questions:
 
     question = open(question_path, "r").read().strip()
 
-    answer_path = os.path.join(answers_folder, model_name.replace("/", "").replace(":", "") + "_" + q).replace(".png", ".txt")
+    answer_path = os.path.join(answers_folder, clean_model_name(model_name) + "_" + q).replace(".png", ".txt")
 
     proceed = False
 
@@ -45,7 +46,7 @@ also_graphical = input("Does the model support multi-modality (pictures) ? (y/n)
 if also_graphical == "y":
     for q in graphical_questions:
         print(q)
-        answer_path = os.path.join(answers_folder, model_name.replace("/", "").replace(":", "") + "_" + q).replace(".png", ".txt")
+        answer_path = os.path.join(answers_folder, clean_model_name(model_name) + "_" + q).replace(".png", ".txt")
 
         proceed = False
 

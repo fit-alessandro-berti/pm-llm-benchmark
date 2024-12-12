@@ -4,8 +4,8 @@ import time
 import datetime
 from utils import forge_eval_prompt
 from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, \
-    encode_image, set_api_key, is_visual_model
-from common import Shared as CommonShared
+    set_api_key, is_visual_model
+import common
 
 
 class Shared:
@@ -46,8 +46,8 @@ def perform_evaluation(answering_model_name=None):
     while True:
         missing = False
         for q in questions:
-            m_name = answering_model_name.replace("/", "").replace(":", "")
-            e_m_name = EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
+            m_name = common.clean_model_name(answering_model_name)
+            e_m_name = common.clean_model_name(EVALUATING_MODEL_NAME)
 
             question_path = os.path.join("questions", q)
 

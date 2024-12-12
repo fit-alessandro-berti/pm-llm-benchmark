@@ -2,7 +2,7 @@ import os
 import re
 import sys
 import pandas as pd
-from common import ANSWERING_MODEL_NAME
+from common import ANSWERING_MODEL_NAME, clean_model_name
 
 
 pattern = r'(?P<sign>[-+]?)(?:\d*\.\d+|(?P<numerator>\d+)/(?P<denominator>\d+))'
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     model_name = ANSWERING_MODEL_NAME
     #model_name = "gpt-4o-2024-11-20"
 
-    model_name = model_name.replace("/", "").replace(":", "")
+    model_name = clean_model_name(model_name)
     result, this_json = execute_script(evaluation_folder, model_name)
 
     print(result)

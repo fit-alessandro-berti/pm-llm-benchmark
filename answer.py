@@ -23,7 +23,7 @@ def answer_question(model_name, api_url=None, api_key=None):
 
     for q in questions:
         question_path = os.path.join("questions", q)
-        answer_path = os.path.join("answers", model_name.replace("/", "").replace(":", "") + "_" + q).replace(
+        answer_path = os.path.join("answers", common.clean_model_name(model_name) + "_" + q).replace(
             ".png", ".txt")
 
         if not os.path.exists(answer_path):
@@ -65,7 +65,7 @@ if __name__ == "__main__":
                 answer_question(model, api_url=info["api_url"], api_key=info["api_key"])
     elif False:
         from utils import overall_table
-        e_m_name = common.EVALUATING_MODEL_NAME.replace("/", "").replace(":", "")
+        e_m_name = common.clean_model_name(common.EVALUATING_MODEL_NAME)
         check_missing_models()
         check_all_models()
         output, all_jsons, ordered_llms = overall_table.execute("evaluation", "leaderboard_"+e_m_name+".md", include_closed_source=True, require_vision=False,
@@ -75,7 +75,7 @@ if __name__ == "__main__":
             found = False
             for provider in MODELS_DICT:
                 info = MODELS_DICT[provider]
-                cleaned_models = {x.replace("/", "").replace(":", ""): x for x in info["models"]}
+                cleaned_models = {common.clean_model_name(x): x for x in info["models"]}
                 if llm in cleaned_models:
                     answer_question(cleaned_models[llm], api_url=info["api_url"], api_key=info["api_key"])
                     found = True

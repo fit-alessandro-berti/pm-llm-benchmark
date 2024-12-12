@@ -472,12 +472,16 @@ def check_missing_models():
     for provider in MODELS_DICT:
         info = MODELS_DICT[provider]
         for model in info["models"]:
-            catalogue_models.add(model.replace("/", "").replace(":", ""))
+            catalogue_models.add(clean_model_name(model))
     diff = set(catalogue_models).difference(responding_models)
     if diff:
         raise Exception("catalogue_models outdated: "+str(diff))
     diff = set(responding_models).difference(catalogue_models)
     print(diff)
+
+
+def clean_model_name(m_name):
+    return m_name.replace("/", "").replace(":", "")
 
 
 if __name__ == "__main__":
