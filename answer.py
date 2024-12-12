@@ -70,7 +70,12 @@ if __name__ == "__main__":
         check_all_models()
         output, all_jsons, ordered_llms = overall_table.execute("evaluation", "leaderboard_"+e_m_name+".md", include_closed_source=True, require_vision=False,
             leaderboard_title="Overall Leaderboard")
-        print(ordered_llms)
+        referenced_llms = set()
+        for provider in MODELS_DICT:
+            info = MODELS_DICT[provider]
+            referenced_llms = referenced_llms.union(info["models"])
+        referenced_llms = [x for x in referenced_llms if common.clean_model_name(x) not in ordered_llms]
+        ordered_llms = ordered_llms + referenced_llms
         for llm in ordered_llms:
             found = False
             for provider in MODELS_DICT:
