@@ -13,6 +13,13 @@ def forge(question_path, answer):
         if CommonShared.TRIAL_CHANGE_EVALUATION_LRM:
             inquiry.append(
                 "Please ignore the initial part of the answer, as it contains the 'flow of thought' and it can be verbose and repetitive. Only the final part/conclusions should be considered for the grade!")
+        if CommonShared.TRIAL_SEVERE_EVALUATION:
+            inquiry.append(
+                "Please evaluate with the utmost strictness. Be hypercritical of any inaccuracies, "
+                "unclarities, or logical flaws. Even minor issues should result in a significantly "
+                "lower score. Only award a very high score if the answer is nearly flawless."
+            )
+
         inquiry.append("\n\n")
 
         inquiry.append(answer)
