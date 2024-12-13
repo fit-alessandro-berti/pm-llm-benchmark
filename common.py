@@ -41,68 +41,6 @@ MODELS_DICT = {
         "api_url": "https://api.openai.com/v1/",
         "api_key": "sk-",
         "models": {
-            "o1-preview-2024-09-12", "o1-mini-2024-09-12", "gpt-4o-2024-11-20", "gpt-4o-2024-08-06",
-            "gpt-4o-2024-05-13", "gpt-4o-mini-2024-07-18", "gpt-4-turbo-2024-04-09", "gpt-4-0613",
-            "gpt-3.5-turbo"
-        }
-    },
-    "google": {
-        "api_url": "https://generativelanguage.googleapis.com/v1beta/",
-        "api_key": "sk-",
-        "models": {
-            "gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-1.5-flash-8b",
-            "gemini-exp-1121", "gemini-exp-1206", "gemini-2.0-flash-exp"
-        }
-    },
-    "claude": {
-        "api_url": "https://api.anthropic.com/v1/",
-        "api_key": "sk-",
-        "models": {
-            "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620", "claude-3-sonnet"
-        }
-    },
-    "mistral": {
-        "api_url": "https://api.mistral.ai/v1/",
-        "api_key": "sk-",
-        "models": {
-            "pixtral-large-2411", "mistral-large-2411", "open-mixtral-8x22b", "mistral-small-2409", "open-mistral-nemo-2407", "codestral-2405",
-            "open-mixtral-8x7b", "ministral-8b-2410", "ministral-3b-2410", "open-codestral-mamba"
-        }
-    },
-    "grok": {
-        "api_url": "https://api.x.ai/v1/",
-        "api_key": "sk-",
-        "models": {
-            "grok-beta"
-        }
-    },
-    "deepinfra": {
-        "api_url": "https://api.deepinfra.com/v1/openai/",
-        "api_key": "sk-",
-        "models": {
-            "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct",
-            "meta-llama/Meta-Llama-3.1-405B-Instruct", "Qwen/Qwen2.5-Coder-32B-Instruct", "nvidia/Llama-3.1-Nemotron-70B-Instruct",
-            "meta-llama/Llama-3.2-90B-Vision-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct",
-            "Qwen/QwQ-32B-Preview", "microsoft/WizardLM-2-8x22B", "microsoft/WizardLM-2-7B"
-        }
-    },
-    "ollama_local": {
-        "api_url": "http://137.226.117.70:11434/v1/",
-        "api_key": "sk-",
-        "models": {
-            "mistral:7b-instruct-v0.3-q6_K", "gemma2:9b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0", "llama3.2:1b-instruct-q6_K",
-            "llama3.2:3b-instruct-q8_0", "qwen2.5:1.5b-instruct-q6_K", "nemotron:70b-instruct-q8_0", "qwen2.5:7b-instruct-q6_K",
-            "qwen2.5:14b-instruct-q6_K", "qwen2.5:32b-instruct-q6_K", "gemma2:2b-instruct-q8_0", "smollm2:1.7b-instruct-q6_K"
-        }
-    }
-}
-
-
-MODELS_DICT = {
-    "openai": {
-        "api_url": "https://api.openai.com/v1/",
-        "api_key": "sk-",
-        "models": {
             "gpt-4o-mini-2024-07-18", "gpt-4o-2024-11-20", "gpt-3.5-turbo",
             "gpt-4-turbo-2024-04-09"
         }
@@ -125,7 +63,8 @@ MODELS_DICT = {
         "api_url": "https://api.mistral.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410"
+            "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
+            "mistral-small-2409"
         }
     },
     "grok": {
