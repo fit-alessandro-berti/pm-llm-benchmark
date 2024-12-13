@@ -66,7 +66,7 @@ if __name__ == "__main__":
             info = MODELS_DICT[provider]
             for model in info["models"]:
                 answer_question(model, api_url=info["api_url"], api_key=info["api_key"])
-    elif True:
+    elif False:
         from utils import overall_table
         e_m_name = common.clean_model_name(common.EVALUATING_MODEL_NAME)
         common.insert_api_keys()
