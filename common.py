@@ -117,7 +117,7 @@ MODELS_DICT = {
         "api_url": "https://api.anthropic.com/v1/",
         "api_key": "sk-",
         "models": {
-            "claude-3-5-sonnet-20241022"
+#            "claude-3-5-sonnet-20241022"
         }
     },
     "mistral": {
@@ -139,7 +139,8 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct",
-            "meta-llama/Llama-3.2-90B-Vision-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct"
+            "meta-llama/Llama-3.2-90B-Vision-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct",
+            "meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.2-3B-Instruct"
         }
     },
     "ollama_local": {
