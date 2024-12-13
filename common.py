@@ -110,7 +110,7 @@ MODELS_DICT = {
         "api_url": "https://generativelanguage.googleapis.com/v1beta/",
         "api_key": "sk-",
         "models": {
-            "gemini-1.5-pro-002", "gemini-exp-1206"
+            "gemini-1.5-pro-002", "gemini-exp-1206", "gemini-2.0-flash-exp"
         }
     },
     "claude": {
@@ -131,7 +131,7 @@ MODELS_DICT = {
         "api_url": "https://api.x.ai/v1/",
         "api_key": "sk-",
         "models": {
-
+            "grok-beta"
         }
     },
     "deepinfra": {
