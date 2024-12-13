@@ -2,22 +2,22 @@
 
 | Model                       | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:----------------------------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| o1-2024-12-05               | **33.4** | :x:                | 5.4                  | 6.8                  | 4.8                  | :mage_woman: **5.8** | **5.3**              | 5.3                  | :mage_woman: **0.0** |
-| claude-3-5-sonnet-20241022  | **32.8** | :x:                | :mage_woman: **5.8** | 6.6                  | :mage_woman: **5.3** | 4.6                  | **5.3**              | 5.2                  | :mage_woman: **0.0** |
-| gpt-4o-2024-11-20           | **32.6** | :x:                | 5.0                  | :mage_woman: **7.5** | **5.0**              | 5.1                  | 4.8                  | 5.3                  | :mage_woman: **0.0** |
-| gemini-exp-1206             | **31.9** | :x:                | 5.4                  | 7.0                  | 4.0                  | 4.8                  | :mage_woman: **5.4** | 5.2                  | :mage_woman: **0.0** |
-| o1-mini-2024-09-12          | **31.5** | :x:                | :mage_woman: **5.8** | 6.2                  | 4.0                  | 5.2                  | 4.8                  | 5.6                  | :mage_woman: **0.0** |
-| meta-llamaLlama-3.3-70B     | **31.2** | :white_check_mark: | 5.2                  | 6.5                  | 4.0                  | 5.3                  | 4.9                  | 5.3                  | :mage_woman: **0.0** |
-| gemini-1.5-pro-002          | **31.1** | :x:                | **5.5**              | 6.2                  | 3.7                  | 4.8                  | **5.2**              | :mage_woman: **5.9** | :mage_woman: **0.0** |
-| gpt-4o-mini-2024-07-18      | **29.1** | :x:                | 4.1                  | 6.3                  | 4.7                  | 5.0                  | 4.6                  | 4.2                  | :mage_woman: **0.0** |
-| gpt-3.5-turbo               | **25.9** | :x:                | 4.7                  | 6.3                  | 2.2                  | 4.0                  | 4.8                  | 4.0                  | :mage_woman: **0.0** |
-| meta-llamaLlama-3.2-90B     | **25.8** | :white_check_mark: | 4.7                  | 5.0                  | 3.3                  | 4.7                  | 4.3                  | 3.9                  | :mage_woman: **0.0** |
-| meta-llamaMeta-Llama-3.1-8B | **21.8** | :white_check_mark: | 3.6                  | 4.7                  | 2.4                  | 3.5                  | 3.8                  | 3.8                  | :mage_woman: **0.0** |
-| meta-llamaLlama-3.2-3B      | **21.1** | :white_check_mark: | 4.0                  | 4.8                  | 2.1                  | 3.6                  | 3.1                  | 3.3                  | :mage_woman: **0.0** |
-| meta-llamaLlama-3.2-11B     | **19.9** | :white_check_mark: | 2.8                  | 5.4                  | 2.6                  | 2.8                  | 3.4                  | 3.0                  | :mage_woman: **0.0** |
-| meta-llamaLlama-3.2-1B      | **12.8** | :white_check_mark: | 1.9                  | 2.6                  | 1.2                  | 1.7                  | 2.6                  | 2.7                  | :mage_woman: **0.0** |
+| o1-2024-12-05               | **33.4** | :x:                | 5.4                  | 6.8                  | 4.8                  | :mage_woman: **5.8** | **5.3**              | 5.3                  | 3.9                  |
+| claude-3-5-sonnet-20241022  | **32.8** | :x:                | :mage_woman: **5.8** | 6.6                  | :mage_woman: **5.3** | 4.6                  | **5.3**              | 5.2                  | 0.0                  |
+| gpt-4o-2024-11-20           | **32.6** | :x:                | 5.0                  | :mage_woman: **7.5** | **5.0**              | 5.1                  | 4.8                  | 5.3                  | :mage_woman: **4.5** |
+| gemini-exp-1206             | **31.9** | :x:                | 5.4                  | 7.0                  | 4.0                  | 4.8                  | :mage_woman: **5.4** | 5.2                  | :mage_woman: **4.5** |
+| o1-mini-2024-09-12          | **31.5** | :x:                | :mage_woman: **5.8** | 6.2                  | 4.0                  | 5.2                  | 4.8                  | 5.6                  | 0.0                  |
+| meta-llamaLlama-3.3-70B     | **31.2** | :white_check_mark: | 5.2                  | 6.5                  | 4.0                  | 5.3                  | 4.9                  | 5.3                  | 0.0                  |
+| gemini-1.5-pro-002          | **31.1** | :x:                | **5.5**              | 6.2                  | 3.7                  | 4.8                  | **5.2**              | :mage_woman: **5.9** | :mage_woman: **4.5** |
+| gpt-4o-mini-2024-07-18      | **29.1** | :x:                | 4.1                  | 6.3                  | 4.7                  | 5.0                  | 4.6                  | 4.2                  | :mage_woman: **4.5** |
+| gpt-3.5-turbo               | **25.9** | :x:                | 4.7                  | 6.3                  | 2.2                  | 4.0                  | 4.8                  | 4.0                  | 0.0                  |
+| meta-llamaLlama-3.2-90B     | **25.8** | :white_check_mark: | 4.7                  | 5.0                  | 3.3                  | 4.7                  | 4.3                  | 3.9                  | **4.2**              |
+| meta-llamaMeta-Llama-3.1-8B | **21.8** | :white_check_mark: | 3.6                  | 4.7                  | 2.4                  | 3.5                  | 3.8                  | 3.8                  | 0.0                  |
+| meta-llamaLlama-3.2-3B      | **21.1** | :white_check_mark: | 4.0                  | 4.8                  | 2.1                  | 3.6                  | 3.1                  | 3.3                  | 0.0                  |
+| meta-llamaLlama-3.2-11B     | **19.9** | :white_check_mark: | 2.8                  | 5.4                  | 2.6                  | 2.8                  | 3.4                  | 3.0                  | 3.6                  |
+| meta-llamaLlama-3.2-1B      | **12.8** | :white_check_mark: | 1.9                  | 2.6                  | 1.2                  | 1.7                  | 2.6                  | 2.7                  | 0.0                  |
 
-### o1-2024-12-05   => 33.4 points
+### o1-2024-12-05   => 37.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -67,6 +67,11 @@
 | cat06_05_bias_two_logs_2           |     9.5 |
 | cat06_06_bias_mitigation_declare   |     6   |
 | cat06_07_fair_unfair_powl          |     3.5 |
+| cat07_01_ocdfg                     |     9   |
+| cat07_02_bpmn_orders               |     9   |
+| cat07_03_bpmn_dispatch             |     9.5 |
+| cat07_04_causal_net                |     9   |
+| cat07_06_perf_spectrum             |     2   |
 
 
 
@@ -123,7 +128,7 @@
 
 
 
-### gpt-4o-2024-11-20   => 32.6 points
+### gpt-4o-2024-11-20   => 37.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -173,10 +178,15 @@
 | cat06_05_bias_two_logs_2           |     9.2 |
 | cat06_06_bias_mitigation_declare   |     6.5 |
 | cat06_07_fair_unfair_powl          |     4   |
+| cat07_01_ocdfg                     |     9   |
+| cat07_02_bpmn_orders               |     9.5 |
+| cat07_03_bpmn_dispatch             |     9   |
+| cat07_04_causal_net                |     9   |
+| cat07_06_perf_spectrum             |     9   |
 
 
 
-### gemini-exp-1206   => 31.9 points
+### gemini-exp-1206   => 36.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -226,6 +236,11 @@
 | cat06_05_bias_two_logs_2           |     8   |
 | cat06_06_bias_mitigation_declare   |     7   |
 | cat06_07_fair_unfair_powl          |     8   |
+| cat07_01_ocdfg                     |     8.5 |
+| cat07_02_bpmn_orders               |     9.5 |
+| cat07_03_bpmn_dispatch             |     9.5 |
+| cat07_04_causal_net                |     9.5 |
+| cat07_06_perf_spectrum             |     8.5 |
 
 
 
@@ -335,7 +350,7 @@
 
 
 
-### gemini-1.5-pro-002   => 31.1 points
+### gemini-1.5-pro-002   => 35.6 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -385,10 +400,15 @@
 | cat06_05_bias_two_logs_2           |     9.5 |
 | cat06_06_bias_mitigation_declare   |     7   |
 | cat06_07_fair_unfair_powl          |     7   |
+| cat07_01_ocdfg                     |     9   |
+| cat07_02_bpmn_orders               |     9   |
+| cat07_03_bpmn_dispatch             |     9   |
+| cat07_04_causal_net                |     8.5 |
+| cat07_06_perf_spectrum             |     9   |
 
 
 
-### gpt-4o-mini-2024-07-18   => 29.1 points
+### gpt-4o-mini-2024-07-18   => 33.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -438,6 +458,11 @@
 | cat06_05_bias_two_logs_2           |     8   |
 | cat06_06_bias_mitigation_declare   |     4   |
 | cat06_07_fair_unfair_powl          |     6.5 |
+| cat07_01_ocdfg                     |     9   |
+| cat07_02_bpmn_orders               |     9   |
+| cat07_03_bpmn_dispatch             |     9   |
+| cat07_04_causal_net                |     9   |
+| cat07_06_perf_spectrum             |     9   |
 
 
 
@@ -494,7 +519,7 @@
 
 
 
-### meta-llamaLlama-3.2-90B-Vision-Instruct   => 25.8 points
+### meta-llamaLlama-3.2-90B-Vision-Instruct   => 29.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -544,6 +569,11 @@
 | cat06_05_bias_two_logs_2           |     7.2 |
 | cat06_06_bias_mitigation_declare   |     5   |
 | cat06_07_fair_unfair_powl          |     3   |
+| cat07_01_ocdfg                     |     7   |
+| cat07_02_bpmn_orders               |     9   |
+| cat07_03_bpmn_dispatch             |     9   |
+| cat07_04_causal_net                |     8   |
+| cat07_06_perf_spectrum             |     8.5 |
 
 
 
@@ -653,7 +683,7 @@
 
 
 
-### meta-llamaLlama-3.2-11B-Vision-Instruct   => 19.9 points
+### meta-llamaLlama-3.2-11B-Vision-Instruct   => 23.6 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -703,6 +733,11 @@
 | cat06_05_bias_two_logs_2           |     5   |
 | cat06_06_bias_mitigation_declare   |     5   |
 | cat06_07_fair_unfair_powl          |     3   |
+| cat07_01_ocdfg                     |     4   |
+| cat07_02_bpmn_orders               |     6   |
+| cat07_03_bpmn_dispatch             |     8.5 |
+| cat07_04_causal_net                |     9   |
+| cat07_06_perf_spectrum             |     9   |
 
 
 
