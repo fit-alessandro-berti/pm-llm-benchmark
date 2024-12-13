@@ -2,23 +2,23 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 ## Vision Leaderboard (1-shot; gpt-4o-2024-11-20 used as a judge)
 
-| Model                      | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
-|:---------------------------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| o1-pro-2024-12-05          | **34.7** | :x:                | :mage_woman: **6.0** | 6.7                  | :mage_woman: **5.8** | **5.5**              | 4.8                  | :mage_woman: **5.9** | :mage_woman: **5.5** |
-| o1-2024-12-05              | **33.4** | :x:                | 5.4                  | 6.8                  | 4.8                  | :mage_woman: **5.8** | **5.3**              | 5.3                  | :mage_woman: **5.5** |
-| claude-3-5-sonnet-20241022 | **32.8** | :x:                | **5.8**              | 6.6                  | 5.3                  | 4.6                  | **5.3**              | 5.2                  | :mage_woman: **5.5** |
-| gpt-4o-2024-11-20          | **32.6** | :x:                | 5.0                  | :mage_woman: **7.5** | 5.0                  | 5.1                  | 4.8                  | 5.3                  | :mage_woman: **5.5** |
-| gemini-exp-1206            | **31.9** | :x:                | 5.4                  | 7.0                  | 4.0                  | 4.8                  | :mage_woman: **5.4** | 5.2                  | 4.7                  |
-| pixtral-large-2411         | **31.2** | :white_check_mark: | 5.4                  | 6.8                  | 4.5                  | 4.3                  | **5.2**              | 4.9                  | 4.7                  |
-| gemini-1.5-pro-002         | **31.1** | :x:                | 5.5                  | 6.2                  | 3.7                  | 4.8                  | **5.2**              | :mage_woman: **5.9** | 4.5                  |
-| gpt-4-turbo-2024-04-09     | **30.7** | :x:                | :mage_woman: **6.0** | 6.8                  | 4.3                  | 4.3                  | 5.1                  | 4.2                  | **5.4**              |
-| gemini-2.0-flash-exp       | **30.6** | :x:                | **5.7**              | 6.0                  | 4.5                  | 4.0                  | 5.0                  | 5.5                  | :mage_woman: **5.5** |
-| gpt-4o-mini-2024-07-18     | **29.1** | :x:                | 4.1                  | 6.3                  | 4.7                  | 5.0                  | 4.6                  | 4.2                  | **5.3**              |
-| pixtral-12b-2409           | **26.4** | :white_check_mark: | 3.2                  | 5.5                  | 3.1                  | 4.5                  | 5.1                  | 5.0                  | **5.2**              |
-| meta-llamaLlama-3.2-90B    | **25.8** | :white_check_mark: | 4.7                  | 5.0                  | 3.3                  | 4.7                  | 4.3                  | 3.9                  | 5.0                  |
-| meta-llamaLlama-3.2-11B    | **19.9** | :white_check_mark: | 2.8                  | 5.4                  | 2.6                  | 2.8                  | 3.4                  | 3.0                  | 4.2                  |
+| Model                      | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
+|:---------------------------|:--------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
+| o1-pro-2024-12-05          | **7.5** | **34.7** | :x:                | :mage_woman: **6.0** | 6.7                  | :mage_woman: **5.8** | **5.5**              | 4.8                  | :mage_woman: **5.9** | :mage_woman: **5.5** |
+| o1-2024-12-05              | **7.3** | **33.4** | :x:                | 5.4                  | 6.8                  | 4.8                  | :mage_woman: **5.8** | **5.3**              | 5.3                  | :mage_woman: **5.5** |
+| claude-3-5-sonnet-20241022 | **7.1** | **32.8** | :x:                | **5.8**              | 6.6                  | 5.3                  | 4.6                  | **5.3**              | 5.2                  | :mage_woman: **5.5** |
+| gpt-4o-2024-11-20          | **7.1** | **32.6** | :x:                | 5.0                  | :mage_woman: **7.5** | 5.0                  | 5.1                  | 4.8                  | 5.3                  | :mage_woman: **5.5** |
+| gemini-exp-1206            | **6.9** | **31.9** | :x:                | 5.4                  | 7.0                  | 4.0                  | 4.8                  | :mage_woman: **5.4** | 5.2                  | 4.7                  |
+| pixtral-large-2411         | **6.8** | **31.2** | :white_check_mark: | 5.4                  | 6.8                  | 4.5                  | 4.3                  | **5.2**              | 4.9                  | 4.7                  |
+| gemini-1.5-pro-002         | **6.8** | **31.1** | :x:                | 5.5                  | 6.2                  | 3.7                  | 4.8                  | **5.2**              | :mage_woman: **5.9** | 4.5                  |
+| gpt-4-turbo-2024-04-09     | **6.7** | **30.7** | :x:                | :mage_woman: **6.0** | 6.8                  | 4.3                  | 4.3                  | 5.1                  | 4.2                  | **5.4**              |
+| gemini-2.0-flash-exp       | **6.7** | **30.6** | :x:                | **5.7**              | 6.0                  | 4.5                  | 4.0                  | 5.0                  | 5.5                  | :mage_woman: **5.5** |
+| gpt-4o-mini-2024-07-18     | **6.3** | **29.1** | :x:                | 4.1                  | 6.3                  | 4.7                  | 5.0                  | 4.6                  | 4.2                  | **5.3**              |
+| pixtral-12b-2409           | **5.7** | **26.4** | :white_check_mark: | 3.2                  | 5.5                  | 3.1                  | 4.5                  | 5.1                  | 5.0                  | **5.2**              |
+| meta-llamaLlama-3.2-90B    | **5.6** | **25.8** | :white_check_mark: | 4.7                  | 5.0                  | 3.3                  | 4.7                  | 4.3                  | 3.9                  | 5.0                  |
+| meta-llamaLlama-3.2-11B    | **4.3** | **19.9** | :white_check_mark: | 2.8                  | 5.4                  | 2.6                  | 2.8                  | 3.4                  | 3.0                  | 4.2                  |
 
-### o1-pro-2024-12-05   => 40.2 points
+### o1-pro-2024-12-05   => 34.7 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -77,7 +77,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### o1-2024-12-05   => 38.9 points
+### o1-2024-12-05   => 33.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -136,7 +136,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### claude-3-5-sonnet-20241022   => 38.3 points
+### claude-3-5-sonnet-20241022   => 32.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -195,7 +195,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### gpt-4o-2024-11-20   => 38.1 points
+### gpt-4o-2024-11-20   => 32.6 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -254,7 +254,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### gemini-exp-1206   => 36.5 points
+### gemini-exp-1206   => 31.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -313,7 +313,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### pixtral-large-2411   => 35.9 points
+### pixtral-large-2411   => 31.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -372,7 +372,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### gemini-1.5-pro-002   => 35.7 points
+### gemini-1.5-pro-002   => 31.1 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -431,7 +431,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### gpt-4-turbo-2024-04-09   => 36.1 points
+### gpt-4-turbo-2024-04-09   => 30.7 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -490,7 +490,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### gemini-2.0-flash-exp   => 36.1 points
+### gemini-2.0-flash-exp   => 30.6 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -549,7 +549,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### gpt-4o-mini-2024-07-18   => 34.4 points
+### gpt-4o-mini-2024-07-18   => 29.1 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -608,7 +608,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### pixtral-12b-2409   => 31.7 points
+### pixtral-12b-2409   => 26.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -667,7 +667,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### meta-llamaLlama-3.2-90B-Vision-Instruct   => 30.7 points
+### meta-llamaLlama-3.2-90B-Vision-Instruct   => 25.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -726,7 +726,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### meta-llamaLlama-3.2-11B-Vision-Instruct   => 24.2 points
+### meta-llamaLlama-3.2-11B-Vision-Instruct   => 19.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|

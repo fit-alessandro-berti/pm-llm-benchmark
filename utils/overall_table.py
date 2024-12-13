@@ -126,16 +126,18 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
             m_n = news[0:min(target_len+1, len(news))]
         #m_n = m_n.capitalize()
 
+        average = float(m[1]) / 4.6
+
         if m[1] == m[2]:
-            entry = {"Model": m_n, "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
+            entry = {"Model": m_n, "Avg": "**%.1f**" % (average), "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
                      "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         else:
-            entry = {"Model": m_n, "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
+            entry = {"Model": m_n, "Avg": "**%.1f**" % (average), "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
                      "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Score", "OS", "PCo", "CC", "PMo", "PQ", "HG", "FA", ":nerd_face: VI"]
+    overall_table.columns = ["Model", "Avg", "Score", "OS", "PCo", "CC", "PMo", "PQ", "HG", "FA", ":nerd_face: VI"]
     overall_table = overall_table.to_markdown(index=False)
 
     output = []
@@ -144,7 +146,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     output.append(overall_table)
 
     for m in results:
-        output.append("### %s   => %.1f points" % (m[0], m[2]))
+        output.append("### %s   => %.1f points" % (m[0], m[1]))
         output.append(m[3])
 
     output = "\n\n".join(output)

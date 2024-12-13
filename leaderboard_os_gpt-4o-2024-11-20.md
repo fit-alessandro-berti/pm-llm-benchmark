@@ -2,27 +2,27 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 ## Open-Source Leaderboard (1-shot; gpt-4o-2024-11-20 used as a judge)
 
-| Model                        | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
-|:-----------------------------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| pixtral-large-2411           | **31.2** | :white_check_mark: | **5.4**              | **6.8**              | :mage_woman: **4.5** | 4.3                  | **5.2**              | 4.9                  | 4.7                  |
-| meta-llamaLlama-3.3-70B      | **31.2** | :white_check_mark: | 5.2                  | 6.5                  | 4.0                  | :mage_woman: **5.3** | 4.9                  | :mage_woman: **5.3** | 0.0                  |
-| nvidiaLlama-3.1-Nemotron-70B | **30.3** | :white_check_mark: | **5.5**              | 6.5                  | 3.8                  | **5.1**              | **5.0**              | 4.3                  | 0.0                  |
-| QwenQwQ-32B-Preview          | **28.8** | :white_check_mark: | **5.5**              | :mage_woman: **6.9** | **4.3**              | **5.1**              | 3.6                  | 3.3                  | 0.0                  |
-| qwen2.532b-instruct-q6_K     | **28.6** | :white_check_mark: | **5.5**              | 6.1                  | 3.3                  | 4.2                  | 4.5                  | 4.8                  | 0.0                  |
-| qwen2.514b-instruct-q6_K     | **28.3** | :white_check_mark: | 4.0                  | **6.8**              | 3.2                  | 4.4                  | :mage_woman: **5.3** | 4.6                  | 0.0                  |
-| mistral-small-2409           | **28.2** | :white_check_mark: | :mage_woman: **5.7** | 5.7                  | 3.1                  | 4.5                  | 4.2                  | **5.0**              | 0.0                  |
-| pixtral-12b-2409             | **26.4** | :white_check_mark: | 3.2                  | 5.5                  | 3.1                  | 4.5                  | **5.1**              | **5.0**              | :mage_woman: **5.2** |
-| meta-llamaLlama-3.2-90B      | **25.8** | :white_check_mark: | 4.7                  | 5.0                  | 3.3                  | 4.7                  | 4.3                  | 3.9                  | **5.0**              |
-| googlegemma-2-9b-it          | **25.0** | :white_check_mark: | 4.1                  | 5.2                  | 2.8                  | 3.9                  | 4.5                  | 4.6                  | 0.0                  |
-| qwen2.57b-instruct-q6_K      | **24.6** | :white_check_mark: | 3.5                  | 6.0                  | 2.5                  | 4.2                  | 3.6                  | 4.7                  | 0.0                  |
-| AIDC-AIMarco-o1              | **24.5** | :white_check_mark: | 3.6                  | 6.0                  | 3.1                  | 4.0                  | 3.5                  | 4.4                  | 0.0                  |
-| meta-llamaMeta-Llama-3.1-8B  | **21.8** | :white_check_mark: | 3.6                  | 4.7                  | 2.4                  | 3.5                  | 3.8                  | 3.8                  | 0.0                  |
-| qwen2.53b-instruct-q8_0      | **21.5** | :white_check_mark: | 3.4                  | 5.0                  | 2.9                  | 3.3                  | 3.4                  | 3.6                  | 0.0                  |
-| meta-llamaLlama-3.2-3B       | **21.1** | :white_check_mark: | 4.0                  | 4.8                  | 2.1                  | 3.6                  | 3.1                  | 3.3                  | 0.0                  |
-| meta-llamaLlama-3.2-11B      | **19.9** | :white_check_mark: | 2.8                  | 5.4                  | 2.6                  | 2.8                  | 3.4                  | 3.0                  | 4.2                  |
-| meta-llamaLlama-3.2-1B       | **12.8** | :white_check_mark: | 1.9                  | 2.6                  | 1.2                  | 1.7                  | 2.6                  | 2.7                  | 0.0                  |
+| Model                        | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
+|:-----------------------------|:--------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
+| pixtral-large-2411           | **6.8** | **31.2** | :white_check_mark: | **5.4**              | **6.8**              | :mage_woman: **4.5** | 4.3                  | **5.2**              | 4.9                  | 4.7                  |
+| meta-llamaLlama-3.3-70B      | **6.8** | **31.2** | :white_check_mark: | 5.2                  | 6.5                  | 4.0                  | :mage_woman: **5.3** | 4.9                  | :mage_woman: **5.3** | 0.0                  |
+| nvidiaLlama-3.1-Nemotron-70B | **6.6** | **30.3** | :white_check_mark: | **5.5**              | 6.5                  | 3.8                  | **5.1**              | **5.0**              | 4.3                  | 0.0                  |
+| QwenQwQ-32B-Preview          | **6.3** | **28.8** | :white_check_mark: | **5.5**              | :mage_woman: **6.9** | **4.3**              | **5.1**              | 3.6                  | 3.3                  | 0.0                  |
+| qwen2.532b-instruct-q6_K     | **6.2** | **28.6** | :white_check_mark: | **5.5**              | 6.1                  | 3.3                  | 4.2                  | 4.5                  | 4.8                  | 0.0                  |
+| qwen2.514b-instruct-q6_K     | **6.2** | **28.3** | :white_check_mark: | 4.0                  | **6.8**              | 3.2                  | 4.4                  | :mage_woman: **5.3** | 4.6                  | 0.0                  |
+| mistral-small-2409           | **6.1** | **28.2** | :white_check_mark: | :mage_woman: **5.7** | 5.7                  | 3.1                  | 4.5                  | 4.2                  | **5.0**              | 0.0                  |
+| pixtral-12b-2409             | **5.7** | **26.4** | :white_check_mark: | 3.2                  | 5.5                  | 3.1                  | 4.5                  | **5.1**              | **5.0**              | :mage_woman: **5.2** |
+| meta-llamaLlama-3.2-90B      | **5.6** | **25.8** | :white_check_mark: | 4.7                  | 5.0                  | 3.3                  | 4.7                  | 4.3                  | 3.9                  | **5.0**              |
+| googlegemma-2-9b-it          | **5.4** | **25.0** | :white_check_mark: | 4.1                  | 5.2                  | 2.8                  | 3.9                  | 4.5                  | 4.6                  | 0.0                  |
+| qwen2.57b-instruct-q6_K      | **5.3** | **24.6** | :white_check_mark: | 3.5                  | 6.0                  | 2.5                  | 4.2                  | 3.6                  | 4.7                  | 0.0                  |
+| AIDC-AIMarco-o1              | **5.3** | **24.5** | :white_check_mark: | 3.6                  | 6.0                  | 3.1                  | 4.0                  | 3.5                  | 4.4                  | 0.0                  |
+| meta-llamaMeta-Llama-3.1-8B  | **4.7** | **21.8** | :white_check_mark: | 3.6                  | 4.7                  | 2.4                  | 3.5                  | 3.8                  | 3.8                  | 0.0                  |
+| qwen2.53b-instruct-q8_0      | **4.7** | **21.5** | :white_check_mark: | 3.4                  | 5.0                  | 2.9                  | 3.3                  | 3.4                  | 3.6                  | 0.0                  |
+| meta-llamaLlama-3.2-3B       | **4.6** | **21.1** | :white_check_mark: | 4.0                  | 4.8                  | 2.1                  | 3.6                  | 3.1                  | 3.3                  | 0.0                  |
+| meta-llamaLlama-3.2-11B      | **4.3** | **19.9** | :white_check_mark: | 2.8                  | 5.4                  | 2.6                  | 2.8                  | 3.4                  | 3.0                  | 4.2                  |
+| meta-llamaLlama-3.2-1B       | **2.8** | **12.8** | :white_check_mark: | 1.9                  | 2.6                  | 1.2                  | 1.7                  | 2.6                  | 2.7                  | 0.0                  |
 
-### pixtral-large-2411   => 35.9 points
+### pixtral-large-2411   => 31.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -399,7 +399,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### pixtral-12b-2409   => 31.7 points
+### pixtral-12b-2409   => 26.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -458,7 +458,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### meta-llamaLlama-3.2-90B-Vision-Instruct   => 30.7 points
+### meta-llamaLlama-3.2-90B-Vision-Instruct   => 25.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -835,7 +835,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### meta-llamaLlama-3.2-11B-Vision-Instruct   => 24.2 points
+### meta-llamaLlama-3.2-11B-Vision-Instruct   => 19.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|

@@ -2,14 +2,14 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 ## Open-Source Vision Leaderboard (1-shot; gpt-4o-2024-11-20 used as a judge)
 
-| Model                   | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
-|:------------------------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| pixtral-large-2411      | **31.2** | :white_check_mark: | :mage_woman: **5.4** | :mage_woman: **6.8** | :mage_woman: **4.5** | 4.3                  | :mage_woman: **5.2** | **4.9**              | 4.7                  |
-| pixtral-12b-2409        | **26.4** | :white_check_mark: | 3.2                  | 5.5                  | 3.1                  | **4.5**              | **5.1**              | :mage_woman: **5.0** | :mage_woman: **5.2** |
-| meta-llamaLlama-3.2-90B | **25.8** | :white_check_mark: | 4.7                  | 5.0                  | 3.3                  | :mage_woman: **4.7** | 4.3                  | 3.9                  | **5.0**              |
-| meta-llamaLlama-3.2-11B | **19.9** | :white_check_mark: | 2.8                  | 5.4                  | 2.6                  | 2.8                  | 3.4                  | 3.0                  | 4.2                  |
+| Model                   | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
+|:------------------------|:--------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
+| pixtral-large-2411      | **6.8** | **31.2** | :white_check_mark: | :mage_woman: **5.4** | :mage_woman: **6.8** | :mage_woman: **4.5** | 4.3                  | :mage_woman: **5.2** | **4.9**              | 4.7                  |
+| pixtral-12b-2409        | **5.7** | **26.4** | :white_check_mark: | 3.2                  | 5.5                  | 3.1                  | **4.5**              | **5.1**              | :mage_woman: **5.0** | :mage_woman: **5.2** |
+| meta-llamaLlama-3.2-90B | **5.6** | **25.8** | :white_check_mark: | 4.7                  | 5.0                  | 3.3                  | :mage_woman: **4.7** | 4.3                  | 3.9                  | **5.0**              |
+| meta-llamaLlama-3.2-11B | **4.3** | **19.9** | :white_check_mark: | 2.8                  | 5.4                  | 2.6                  | 2.8                  | 3.4                  | 3.0                  | 4.2                  |
 
-### pixtral-large-2411   => 35.9 points
+### pixtral-large-2411   => 31.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -68,7 +68,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### pixtral-12b-2409   => 31.7 points
+### pixtral-12b-2409   => 26.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -127,7 +127,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### meta-llamaLlama-3.2-90B-Vision-Instruct   => 30.7 points
+### meta-llamaLlama-3.2-90B-Vision-Instruct   => 25.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -186,7 +186,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### meta-llamaLlama-3.2-11B-Vision-Instruct   => 24.2 points
+### meta-llamaLlama-3.2-11B-Vision-Instruct   => 19.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
