@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "o1-pro-2024-12-05" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "AIDC-AI/Marco-o1" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -103,7 +103,8 @@ MODELS_DICT = {
         "api_url": "https://api.openai.com/v1/",
         "api_key": "sk-",
         "models": {
-            "gpt-4o-mini-2024-07-18", "gpt-4o-2024-11-20", "gpt-3.5-turbo"
+            "gpt-4o-mini-2024-07-18", "gpt-4o-2024-11-20", "gpt-3.5-turbo",
+            "gpt-4-turbo-2024-04-09"
         }
     },
     "google": {
@@ -124,7 +125,7 @@ MODELS_DICT = {
         "api_url": "https://api.mistral.ai/v1/",
         "api_key": "sk-",
         "models": {
-
+            "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410"
         }
     },
     "grok": {
@@ -140,14 +141,16 @@ MODELS_DICT = {
         "models": {
             "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct",
             "meta-llama/Llama-3.2-90B-Vision-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct",
-            "meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.2-3B-Instruct"
+            "meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.2-3B-Instruct",
+            "nvidia/Llama-3.1-Nemotron-70B-Instruct"
         }
     },
     "ollama_local": {
         "api_url": "http://137.226.117.70:11434/v1/",
         "api_key": "sk-",
         "models": {
-
+            "qwen2.5:3b-instruct-q8_0", "qwen2.5:7b-instruct-q6_K",
+            "qwen2.5:14b-instruct-q6_K", "qwen2.5:32b-instruct-q6_K"
         }
     }
 }
