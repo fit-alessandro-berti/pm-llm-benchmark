@@ -139,7 +139,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     overall_table = overall_table.to_markdown(index=False)
 
     output = []
-    #output.append("A score in the range **27-33** is considered **sufficient**; a score in the range **33-39** is considered **good**; a score **>39** is considered **excellent**.")
+    output.append("A score in the range **25-30** is considered **sufficient**; a score in the range **30-35** is considered **good**; a score **>35** is considered **excellent**.")
     output.append("## %s (1-shot; %s used as a judge)" % (leaderboard_title, EVALUATING_MODEL_NAME))
     output.append(overall_table)
 
@@ -166,7 +166,7 @@ def write_evaluation(base_path, extra=True):
     execute(evaluation_folder, os.path.join(base_path, "leaderboard_" + e_m_name + ".md"), include_closed_source=True, require_vision=False,
             leaderboard_title="Overall Leaderboard")
 
-    if extra and e_m_name == "chatgpt-4o-latest":
+    if extra and e_m_name == "gpt-4o-2024-11-20":
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_" + e_m_name + ".md"), include_closed_source=False,
                 require_vision=False, leaderboard_title="Open-Source Leaderboard")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_vis_" + e_m_name + ".md"), include_closed_source=True,

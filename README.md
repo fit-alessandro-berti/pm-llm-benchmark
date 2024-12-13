@@ -1,4 +1,7 @@
-# PM-LLM-Benchmark v 2.0 (!! IN ACTIVE DEVELOPMENT !!)
+# PM-LLM-Benchmark v 2.0
+
+**The current repository shows PM-LLM-Benchmark v 2.0, which contains a different and more complex set of prompts than PM-LLM-Benchmark v 1.0**
+The paper describing PM-LLM-Benchmark v 1.0 is available [here](https://arxiv.org/pdf/2407.13244)
 
 Process mining benefits significantly from the domain knowledge provided by LLMs. However, no process-mining-specific LLM benchmarks have been proposed
 until the current date.
@@ -21,17 +24,19 @@ Some scripts to execute and evaluate the questions against OpenAI's APIs are ava
 The API key should be configured inside **answering_api_key.txt** and **judge_api_key.txt**.
 The responding model (and the API URL) can be configured inside the corresponding scripts.
 
-Different categories of questions are contained in the benchmark.
-* The first category checks the contextual understanding of the LLM in process mining tasks. Different types of tasks (case ID inference, contextual splitting of activity labels, definition of high-level events ...) are considered.
-* The second category checks the conformance checking/anomaly detection of the LLM, starting from textual descriptions/event logs/procedural process models.
-* The third category checks the ability of the LLM to generate and modify declarative and procedural process models.
-* The fourth category checks the process querying abilities of the LLM, including procedural and declarative process models.
-* The fifth category ...
-* The sixth category ...
-* The seventh category ...
+The benchmark includes different categories of questions:
+- **Category 1:** Assesses the contextual understanding of the LLM in process mining tasks. Various tasks, such as case ID inference, contextual splitting of activity labels, and defining high-level events, are considered.  
+- **Category 2:** Evaluates the LLM’s ability to perform conformance checking and anomaly detection, starting from textual descriptions, event logs, or procedural process models.  
+- **Category 3:** Tests the LLM’s capacity to generate and modify declarative and procedural process models.  
+- **Category 4:** Measures the LLM’s process querying abilities, encompassing both procedural and declarative process models.  
+- **Category 5:** Examines the LLM’s ability to generate valid hypotheses and questions based on the provided artifacts.  
+- **Category 6:** Assesses the LLM’s ability to identify and propose solutions for unfairness in processes.  
+- **Category 7:** Evaluates the LLM’s ability to read and interpret process mining diagrams.  
 
 ## Leaderboards
 
 The leaderboards include the results of the benchmark, as evaluated by the considered judge LLM:
 
-* (2024-XX-YY TO NOW) [gpt-4o-2024-11-20](leaderboard_gpt-4o-2024-11-20.md)
+* (2024-12-13 TO NOW) [gpt-4o-2024-11-20](leaderboard_gpt-4o-2024-11-20.md)
+
+* (**v1, OLD, 2024-10-31 TO 2024-12-12**) [v1-leaderboard](old/OLD_v1_leaderboard_chatgpt-4o-latest.md)
