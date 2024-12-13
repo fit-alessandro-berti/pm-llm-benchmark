@@ -83,7 +83,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
                 all_jsons[m] = this_json
 
     for m in temp:
-        if "o1-pro" not in m:
+        if True or "o1-pro" not in m:
             res = temp[m]
             this_json = all_jsons[m]
             table = res.split("==OVERALL SCORES==")[0]
