@@ -20,8 +20,9 @@ evaluations_models = Counter([x.split("_cat")[0] for x in evaluations])
 
 for m in answers_models:
     if evaluations_models[m] != answers_models[m]:
-        print(m)
-        evalscript.perform_evaluation(m)
-        overall_table.write_evaluation(".", extra=False)
+        if "o1-pro" not in m:
+            print(m)
+            evalscript.perform_evaluation(m)
+            overall_table.write_evaluation(".", extra=False)
 
 overall_table.write_evaluation(".", extra=True)

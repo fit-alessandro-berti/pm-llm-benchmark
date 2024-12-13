@@ -83,23 +83,24 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
                 all_jsons[m] = this_json
 
     for m in temp:
-        res = temp[m]
-        this_json = all_jsons[m]
-        table = res.split("==OVERALL SCORES==")[0]
+        if "o1-pro" not in m:
+            res = temp[m]
+            this_json = all_jsons[m]
+            table = res.split("==OVERALL SCORES==")[0]
 
-        score_c1 = format_numb_in_table(this_json["score_c1"], max_c1)
-        score_c2 = format_numb_in_table(this_json["score_c2"], max_c2)
-        score_c3 = format_numb_in_table(this_json["score_c3"], max_c3)
-        score_c4 = format_numb_in_table(this_json["score_c4"], max_c4)
-        score_c5 = format_numb_in_table(this_json["score_c5"], max_c5)
-        score_c6 = format_numb_in_table(this_json["score_c6"], max_c6)
-        score_c7 = format_numb_in_table(this_json["score_c7"], max_c7)
-        score_c8 = format_numb_in_table(this_json["score_c8"], max_c8)
-        score_c9 = format_numb_in_table(this_json["score_c9"], max_c9)
-        score_c10 = format_numb_in_table(this_json["score_c10"], max_c10)
+            score_c1 = format_numb_in_table(this_json["score_c1"], max_c1)
+            score_c2 = format_numb_in_table(this_json["score_c2"], max_c2)
+            score_c3 = format_numb_in_table(this_json["score_c3"], max_c3)
+            score_c4 = format_numb_in_table(this_json["score_c4"], max_c4)
+            score_c5 = format_numb_in_table(this_json["score_c5"], max_c5)
+            score_c6 = format_numb_in_table(this_json["score_c6"], max_c6)
+            score_c7 = format_numb_in_table(this_json["score_c7"], max_c7)
+            score_c8 = format_numb_in_table(this_json["score_c8"], max_c8)
+            score_c9 = format_numb_in_table(this_json["score_c9"], max_c9)
+            score_c10 = format_numb_in_table(this_json["score_c10"], max_c10)
 
-        results.append((m, this_json["score_textual"], this_json["total_score"], table, score_c1, score_c2, score_c3,
-                        score_c4, score_c5, score_c6, score_c7, score_c8, score_c9, score_c10))
+            results.append((m, this_json["score_textual"], this_json["total_score"], table, score_c1, score_c2, score_c3,
+                            score_c4, score_c5, score_c6, score_c7, score_c8, score_c9, score_c10))
 
     results.sort(key=lambda x: (
     x[1], x[2], this_json["score_c1"], this_json["score_c2"], this_json["score_c3"], this_json["score_c4"],
