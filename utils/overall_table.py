@@ -26,7 +26,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "-thinking-"]
+    patterns = ["o1-", "-thinking-", "qwq", "marco"]
 
     for p in patterns:
         if p in m_name:
@@ -47,7 +47,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
             require_reasoning=False, leaderboard_title="Overall Leaderboard"):
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
-    #models = {x: y for x, y in models.items() if y >= 44}
+    models = {x: y for x, y in models.items() if y >= 40}
 
     temp = {}
     results = []
@@ -181,7 +181,7 @@ def write_evaluation(base_path, extra=True):
 
     if extra and e_m_name == "gpt-4o-2024-11-20":
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_" + e_m_name + ".md"), include_closed_source=True,
-                require_vision=False, require_reasoning=True, leaderboard_title="LRMs Leaderboard")
+                require_vision=False, require_reasoning=True, leaderboard_title="Large Reasoning Models Leaderboard")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_" + e_m_name + ".md"), include_closed_source=False,
                 require_vision=False, leaderboard_title="Open-Source Leaderboard")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_vis_" + e_m_name + ".md"), include_closed_source=True,
