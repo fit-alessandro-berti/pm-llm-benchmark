@@ -24,6 +24,18 @@ def is_open_source(m_name):
     return True
 
 
+def is_large_reasoning_model(m_name):
+    m_name = m_name.lower()
+    patterns = ["o1-", "-thinking-"]
+
+    for p in patterns:
+        if p in m_name:
+            return True
+
+    return False
+
+
+
 def format_is_open_source(m_name):
     if is_open_source(m_name):
         return ":white_check_mark:"
@@ -32,7 +44,7 @@ def format_is_open_source(m_name):
 
 
 def execute(evaluation_folder, target_file, include_closed_source=True, require_vision=False,
-            leaderboard_title="Overall Leaderboard"):
+            require_reasoning=False, leaderboard_title="Overall Leaderboard"):
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
     #models = {x: y for x, y in models.items() if y >= 44}
@@ -53,7 +65,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     max_c10 = 0.0
 
     for m in models:
-        if include_closed_source or is_open_source(m):
+        if (include_closed_source or is_open_source(m)) and (not require_reasoning or is_large_reasoning_model(m)):
             res, this_json = execute_script(evaluation_folder, m)
 
             this_json["score_c1"] = round(this_json["score_c1"], 1)
@@ -83,24 +95,23 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
                 all_jsons[m] = this_json
 
     for m in temp:
-        if True or "o1-pro" not in m:
-            res = temp[m]
-            this_json = all_jsons[m]
-            table = res.split("==OVERALL SCORES==")[0]
+        res = temp[m]
+        this_json = all_jsons[m]
+        table = res.split("==OVERALL SCORES==")[0]
 
-            score_c1 = format_numb_in_table(this_json["score_c1"], max_c1)
-            score_c2 = format_numb_in_table(this_json["score_c2"], max_c2)
-            score_c3 = format_numb_in_table(this_json["score_c3"], max_c3)
-            score_c4 = format_numb_in_table(this_json["score_c4"], max_c4)
-            score_c5 = format_numb_in_table(this_json["score_c5"], max_c5)
-            score_c6 = format_numb_in_table(this_json["score_c6"], max_c6)
-            score_c7 = format_numb_in_table(this_json["score_c7"], max_c7)
-            score_c8 = format_numb_in_table(this_json["score_c8"], max_c8)
-            score_c9 = format_numb_in_table(this_json["score_c9"], max_c9)
-            score_c10 = format_numb_in_table(this_json["score_c10"], max_c10)
+        score_c1 = format_numb_in_table(this_json["score_c1"], max_c1)
+        score_c2 = format_numb_in_table(this_json["score_c2"], max_c2)
+        score_c3 = format_numb_in_table(this_json["score_c3"], max_c3)
+        score_c4 = format_numb_in_table(this_json["score_c4"], max_c4)
+        score_c5 = format_numb_in_table(this_json["score_c5"], max_c5)
+        score_c6 = format_numb_in_table(this_json["score_c6"], max_c6)
+        score_c7 = format_numb_in_table(this_json["score_c7"], max_c7)
+        score_c8 = format_numb_in_table(this_json["score_c8"], max_c8)
+        score_c9 = format_numb_in_table(this_json["score_c9"], max_c9)
+        score_c10 = format_numb_in_table(this_json["score_c10"], max_c10)
 
-            results.append((m, this_json["score_textual"], this_json["total_score"], table, score_c1, score_c2, score_c3,
-                            score_c4, score_c5, score_c6, score_c7, score_c8, score_c9, score_c10))
+        results.append((m, this_json["score_textual"], this_json["total_score"], table, score_c1, score_c2, score_c3,
+                        score_c4, score_c5, score_c6, score_c7, score_c8, score_c9, score_c10))
 
     results.sort(key=lambda x: (
     x[1], x[2], this_json["score_c1"], this_json["score_c2"], this_json["score_c3"], this_json["score_c4"],
@@ -169,6 +180,8 @@ def write_evaluation(base_path, extra=True):
             leaderboard_title="Overall Leaderboard")
 
     if extra and e_m_name == "gpt-4o-2024-11-20":
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_" + e_m_name + ".md"), include_closed_source=True,
+                require_vision=False, require_reasoning=True, leaderboard_title="LRMs Leaderboard")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_" + e_m_name + ".md"), include_closed_source=False,
                 require_vision=False, leaderboard_title="Open-Source Leaderboard")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_vis_" + e_m_name + ".md"), include_closed_source=True,
