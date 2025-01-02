@@ -12,7 +12,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | o1-mini-2024-09-12            | **6.9** | **31.5** | :x:                | 5.8                  | 6.2                  | 4.0                  | 5.2                  | 4.8                  | 5.6                  | 0.0                  |
 | deepseek-r1-lite-preview      | **6.3** | **28.9** | :white_check_mark: | 5.2                  | 6.3                  | 4.9                  | 4.2                  | 3.8                  | 4.5                  | 0.0                  |
 | QwenQwQ-32B-Preview           | **6.3** | **28.8** | :white_check_mark: | 5.5                  | 6.9                  | 4.3                  | 5.1                  | 3.6                  | 3.3                  | 0.0                  |
-| Sonus-1-Pro-Reasoning         | **6.1** | **28.1** | :white_check_mark: | 4.8                  | 6.7                  | 3.2                  | 4.5                  | 4.2                  | 4.7                  | 0.0                  |
+| Sonus-1-Pro-Reasoning         | **6.1** | **28.1** | :x:                | 4.8                  | 6.7                  | 3.2                  | 4.5                  | 4.2                  | 4.7                  | 0.0                  |
 | gemini-2.0-flash-thinking-exp | **5.8** | **26.7** | :x:                | 3.7                  | 6.6                  | 4.0                  | 4.7                  | 3.0                  | 4.7                  | **5.5**              |
 | AIDC-AIMarco-o1               | **5.3** | **24.5** | :white_check_mark: | 3.6                  | 6.0                  | 3.1                  | 4.0                  | 3.5                  | 4.4                  | 0.0                  |
 
