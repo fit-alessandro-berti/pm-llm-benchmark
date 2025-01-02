@@ -26,7 +26,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "-thinking-", "qwq", "marco", "deepseek-r1"]
+    patterns = ["o1-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason"]
 
     for p in patterns:
         if p in m_name:
