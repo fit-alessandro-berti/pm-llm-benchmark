@@ -80,6 +80,10 @@ def perform_evaluation(answering_model_name=None):
                     missing = True
                     try:
                         if question_path.endswith(".txt"):
+                            #answer = answer.split("</think>")[-1].strip()
+
+                            #print(answer)
+
                             inquiry, base64_image = forge_eval_prompt.forge(question_path, answer)
 
                             query_text_simple(None, evaluation_path, callback_write, question=inquiry)
