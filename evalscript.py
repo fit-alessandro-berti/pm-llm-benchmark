@@ -84,11 +84,11 @@ def perform_evaluation(answering_model_name=None):
 
                             #print(answer)
 
-                            inquiry, base64_image = forge_eval_prompt.forge(question_path, answer)
+                            inquiry, base64_image = forge_eval_prompt.forge(question_path, answer, answering_model_name=ANSWERING_MODEL_NAME)
 
                             query_text_simple(None, evaluation_path, callback_write, question=inquiry)
                         elif is_visual_model(EVALUATING_MODEL_NAME):
-                            inquiry, base64_image = forge_eval_prompt.forge(question_path, answer)
+                            inquiry, base64_image = forge_eval_prompt.forge(question_path, answer, answering_model_name=ANSWERING_MODEL_NAME)
 
                             query_image_simple(None, evaluation_path, callback_write, base64_image=base64_image,
                                                text=inquiry)
