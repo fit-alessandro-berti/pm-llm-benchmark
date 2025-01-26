@@ -1,5 +1,8 @@
 A score in the range **25-30** is considered **sufficient**; a score in the range **30-35** is considered **good**; a score **>35** is considered **excellent**.
 
+
+**Since 2025-01-26, the chain-of-though of Large Reasoning Models, if provided, is considered in the assessment of the answers as integral part of the answer.**
+
 ## Open-Source Vision Leaderboard (1-shot; gpt-4o-2024-11-20 used as a judge)
 
 | Model                   | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |

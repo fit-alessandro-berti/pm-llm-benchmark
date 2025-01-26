@@ -1,0 +1,134 @@
+### Identified Anomalies
+
+1. **R  P (Receive to Approve)**:  
+   - **Anomaly**: Extremely low standard deviation (1 hour) despite an average of ~25 hours.  
+   - **Hypotheses**:  
+     - Approval is artificially scheduled (e.g., batch processing at fixed times).  
+     - Automated rules bypass evaluation steps for specific claim types.  
+     - Timestamps for approvals are manually overridden.  
+
+2. **P  N (Approve to Notify)**:  
+   - **Anomaly**: Long average delay (7 days) with high variability (2 days STDEV).  
+   - **Hypotheses**:  
+     - Manual notification processes cause inconsistent delays.  
+     - Notifications are deprioritized or backlogged after approval.  
+     - External dependencies (e.g., third-party systems) introduce delays.  
+
+3. **A  C (Assign to Close)**:  
+   - **Anomaly**: Claims close quickly (2 hours on average) after assignment.  
+   - **Hypotheses**:  
+     - Adjusters skip evaluation/approval steps for low-amount claims.  
+     - System errors auto-close claims prematurely.  
+     - Claims are reassigned but not properly logged.  
+
+4. **E  N (Evaluate to Notify)**:  
+   - **Anomaly**: Near-instantaneous notification (5 minutes on average).  
+   - **Hypotheses**:  
+     - Automated notifications trigger immediately after evaluation.  
+     - Missing approval steps compress the timeline.  
+     - Timestamps for evaluation and notification are logged inaccurately.  
+
+---
+
+### Verification SQL Queries
+
+#### 1. Check for Rigid R  P Approval Timing  
+Find claims where approval occurs exactly 25 hours after receipt:  
+```sql
+SELECT
+    c.claim_id,
+    c.claim_type,
+    EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS r_to_p_seconds
+FROM
+    (SELECT claim_id, timestamp FROM claim_events WHERE activity = 'R') r
+JOIN
+    (SELECT claim_id, timestamp FROM claim_events WHERE activity = 'P') p
+    ON r.claim_id = p.claim_id
+JOIN claims c ON r.claim_id = c.claim_id
+WHERE
+    EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) BETWEEN 90000 - 3600 AND 90000 + 3600;  -- ±1 hour from average
+```
+
+#### 2. Investigate P  N Delays  
+Identify claims with notification delays exceeding 10 days:  
+```sql
+SELECT
+    p.claim_id,
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS p_to_n_seconds,
+    c.claim_amount,
+    a.region
+FROM
+    (SELECT claim_id, timestamp FROM claim_events WHERE activity = 'P') p
+JOIN
+    (SELECT claim_id, timestamp FROM claim_events WHERE activity = 'N') n
+    ON p.claim_id = n.claim_id
+JOIN claims c ON p.claim_id = c.claim_id
+LEFT JOIN adjusters a ON c.claim_id IN (
+    SELECT claim_id FROM claim_events WHERE activity = 'A' AND resource = a.adjuster_id
+)
+WHERE
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) > 10 * 86400;  -- >10 days
+```
+
+#### 3. Detect Premature A  C Closures  
+Find claims closed without evaluation or approval:  
+```sql
+SELECT
+    a.claim_id,
+    a.resource AS adjuster_id,
+    c.claim_type
+FROM
+    (SELECT claim_id, resource, timestamp FROM claim_events WHERE activity = 'A') a
+JOIN
+    (SELECT claim_id, timestamp FROM claim_events WHERE activity = 'C') c_close
+    ON a.claim_id = c_close.claim_id
+LEFT JOIN
+    (SELECT claim_id FROM claim_events WHERE activity IN ('E', 'P')) steps
+    ON a.claim_id = steps.claim_id
+JOIN claims c ON a.claim_id = c.claim_id
+WHERE
+    steps.claim_id IS NULL  -- No evaluate/approve steps
+    AND EXTRACT(EPOCH FROM (c_close.timestamp - a.timestamp)) < 7200;  -- <2 hours
+```
+
+#### 4. Validate E  N Automation  
+Check if notifications are automated (via `resource` field):  
+```sql
+SELECT
+    e.claim_id,
+    e.resource AS evaluator,
+    n.resource AS notifier,
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS e_to_n_seconds
+FROM
+    (SELECT claim_id, timestamp, resource FROM claim_events WHERE activity = 'E') e
+JOIN
+    (SELECT claim_id, timestamp, resource FROM claim_events WHERE activity = 'N') n
+    ON e.claim_id = n.claim_id
+WHERE
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) < 300  -- <5 minutes
+    AND n.resource LIKE '%system%';  -- Look for automated resources
+```
+
+---
+
+### Correlation Analysis  
+To link anomalies to specific adjusters, regions, or claim types:  
+```sql
+-- Example: Adjusters with frequent A  C closures
+SELECT
+    a.adjuster_id,
+    a.name,
+    COUNT(*) AS premature_closures
+FROM
+    adjusters a
+JOIN claim_events ce ON ce.resource = a.adjuster_id::VARCHAR
+JOIN (
+    SELECT claim_id
+    FROM claim_events
+    WHERE activity = 'C'
+    AND claim_id NOT IN (SELECT claim_id FROM claim_events WHERE activity IN ('E', 'P'))
+) c ON ce.claim_id = c.claim_id
+WHERE ce.activity = 'A'
+GROUP BY a.adjuster_id, a.name
+ORDER BY premature_closures DESC;
+```

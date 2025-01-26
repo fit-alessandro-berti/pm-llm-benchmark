@@ -153,6 +153,8 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
     output = []
     output.append("A score in the range **25-30** is considered **sufficient**; a score in the range **30-35** is considered **good**; a score **>35** is considered **excellent**.")
+    output.append("\n**Since 2025-01-26, the chain-of-though of Large Reasoning Models, if provided, is considered in the assessment of the answers as integral part of the answer.**")
+
     output.append("## %s (1-shot; %s used as a judge)" % (leaderboard_title, EVALUATING_MODEL_NAME))
     output.append(overall_table)
 
