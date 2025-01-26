@@ -1,13 +1,5 @@
-from common import encode_image
+from common import encode_image, force_custom_evaluation_lrm
 from common import Shared as CommonShared
-
-
-def force_custom_evaluation_lrm(answering_model_name):
-    model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-reasoner"]:
-        if p in model_name:
-            return True
-    return False
 
 
 def forge(question_path, answer, answering_model_name=""):

@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "DeepSeek-R1" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "DeepSeek-R1-671B-API" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -94,6 +94,14 @@ MODELS_DICT = {
         }
     }
 }
+
+
+def force_custom_evaluation_lrm(answering_model_name):
+    model_name = answering_model_name.lower()
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-reasoner", "deepseek-r1-671"]:
+        if p in model_name:
+            return True
+    return False
 
 
 def is_visual_model(model_name):

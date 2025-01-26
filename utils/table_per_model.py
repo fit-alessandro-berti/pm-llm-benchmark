@@ -2,7 +2,7 @@ import os
 import re
 import sys
 import pandas as pd
-from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path
+from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, force_custom_evaluation_lrm
 
 
 pattern = r'(?P<sign>[-+]?)(?:\d*\.\d+|(?P<numerator>\d+)/(?P<denominator>\d+))'
@@ -48,6 +48,12 @@ def execute_script(evaluation_folder, model_name):
 
         numbers = match_regex(contents)
         numb = float(numbers) if numbers is not None else 1.0
+
+        if force_custom_evaluation_lrm(model_name):
+            numb0 = numb
+            diff = 10.0 - numb0
+            diff = round(diff * 4.0/3.0, 1)
+            numb = max(1.0, 10.0 - diff)
 
         total_score += numb
 
