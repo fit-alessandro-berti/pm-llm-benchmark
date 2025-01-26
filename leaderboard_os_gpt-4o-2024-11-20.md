@@ -7,7 +7,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 | Model                        | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:-----------------------------|:--------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| deepseek-reasoner            | **8.3** | **38.0** | :white_check_mark: | :mage_woman: **6.4** | :mage_woman: **7.5** | :mage_woman: **6.0** | :mage_woman: **6.2** | **5.9**              | :mage_woman: **6.1** | 0.0                  |
+| DeepSeek-R1-671B-API         | **8.3** | **38.0** | :white_check_mark: | :mage_woman: **6.4** | :mage_woman: **7.5** | :mage_woman: **6.0** | :mage_woman: **6.2** | **5.9**              | :mage_woman: **6.1** | 0.0                  |
 | DeepSeek-R1-Distill-Qwen-32B | **7.3** | **33.7** | :white_check_mark: | **6.2**              | **7.2**              | 3.8                  | 5.1                  | :mage_woman: **6.0** | 5.4                  | 0.0                  |
 | QwenQwen2.5-72B-Instruct     | **7.1** | **32.5** | :white_check_mark: | 5.8                  | 7.1                  | 4.5                  | 5.1                  | 4.9                  | 5.0                  | 0.0                  |
 | microsoftWizardLM-2-8x22B    | **6.9** | **31.6** | :white_check_mark: | 4.7                  | 6.1                  | 4.5                  | 5.4                  | 5.5                  | 5.3                  | 0.0                  |
@@ -39,7 +39,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | meta-llamaLlama-3.2-11B      | **4.3** | **19.9** | :white_check_mark: | 2.8                  | 5.4                  | 2.6                  | 2.8                  | 3.4                  | 3.0                  | 4.2                  |
 | meta-llamaLlama-3.2-1B       | **2.8** | **12.8** | :white_check_mark: | 1.9                  | 2.6                  | 1.2                  | 1.7                  | 2.6                  | 2.7                  | 0.0                  |
 
-### deepseek-reasoner   => 38.0 points
+### DeepSeek-R1-671B-API   => 38.0 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
