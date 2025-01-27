@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct-1M" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -92,7 +92,7 @@ MODELS_DICT = {
         "api_url": "http://137.226.117.70:11434/v1/",
         "api_key": "sk-",
         "models": {
-            "qwen2.5:3b-instruct-q8_0", "qwen2.5:7b-instruct-q6_K",
+            "qwen2.5:3b-instruct-q8_0",
             "falcon3:10b-instruct-q8_0", "falcon3:7b-instruct-q8_0",
             "falcon3:3b-instruct-q8_0", "command-r7b:7b-12-2024-q4_K_M",
             "olmo2:7b-1124-instruct-q8_0"
@@ -106,7 +106,9 @@ MODELS_DICT = {
             "DeepSeek-V3", "o1-2024-12-17", "MiniMax-01",
             "gpt-4o-mini-2024-11-05", "Sonus-1-Pro-Reasoning",
             "o1-pro-2024-12-17", "DeepSeek-R1-Distill-Llama-70B",
-            "DeepSeek-R1-671B-API", "DeepSeek-R1-Distill-Qwen-14B"
+            "DeepSeek-R1-671B-API", "DeepSeek-R1-Distill-Qwen-14B",
+            "Qwen/Qwen2.5-14B-Instruct-1M", "Qwen/Qwen2.5-14B-Instruct",
+            "Qwen/Qwen2.5-7B-Instruct", "Qwen/Qwen2.5-7B-Instruct-1M"
         }
     }
 }
