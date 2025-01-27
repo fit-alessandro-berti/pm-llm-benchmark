@@ -30,6 +30,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | mistral-small-2409            | **6.1** | **28.2** | :white_check_mark: | **5.7**              | 5.7                  | 3.1                  | 4.5                  | 4.2                  | 5.0                  | 0.0                  |
 | pixtral-12b-2409              | **5.7** | **26.4** | :white_check_mark: | 3.2                  | 5.5                  | 3.1                  | 4.5                  | 5.1                  | 5.0                  | :mage_woman: **5.2** |
 | meta-llamaLlama-3.2-90B       | **5.6** | **25.8** | :white_check_mark: | 4.7                  | 5.0                  | 3.3                  | 4.7                  | 4.3                  | 3.9                  | **5.0**              |
+| QwenQwen2.5-7B-Instruct-1M    | **5.5** | **25.5** | :white_check_mark: | 3.9                  | 5.4                  | 3.1                  | 4.2                  | 4.2                  | 4.7                  | 0.0                  |
 | googlegemma-2-9b-it           | **5.4** | **25.0** | :white_check_mark: | 4.1                  | 5.2                  | 2.8                  | 3.9                  | 4.5                  | 4.6                  | 0.0                  |
 | command-r7b7b-12-2024-q4_K_M  | **5.1** | **23.6** | :white_check_mark: | 4.0                  | 4.8                  | 2.4                  | 4.2                  | 3.9                  | 4.2                  | 0.0                  |
 | falcon33b-instruct-q8_0       | **5.1** | **23.2** | :white_check_mark: | 3.8                  | 4.5                  | 3.1                  | 3.5                  | 4.7                  | 3.7                  | 0.0                  |
@@ -1274,6 +1275,59 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat07_04_causal_net                |     8   |
 | cat07_05_proclets                  |     8   |
 | cat07_06_perf_spectrum             |     8.5 |
+
+
+
+### QwenQwen2.5-7B-Instruct-1M   => 25.5 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |     3   |
+| cat01_02_activity_context          |     7.5 |
+| cat01_03_high_level_events         |     6   |
+| cat01_04_sensor_recordings         |     7.5 |
+| cat01_05_merge_two_logs            |     3   |
+| cat01_06_system_logs               |     2   |
+| cat01_07_interv_to_pseudo_bpmn     |     6.5 |
+| cat01_08_tables_to_log             |     3   |
+| cat02_01_conformance_textual       |     6.5 |
+| cat02_02_conf_desiderata           |     4   |
+| cat02_03_anomaly_event_log         |     6   |
+| cat02_04_powl_anomaly_detection    |     7   |
+| cat02_05_two_powls_anomalies       |     6   |
+| cat02_06_root_cause_1              |     6   |
+| cat02_07_root_cause_2              |     6.5 |
+| cat02_08_underfitting_process_tree |     3   |
+| cat02_09_fix_process_tree          |     9   |
+| cat03_01_process_tree_generation   |     1   |
+| cat03_02_powl_generation           |     3   |
+| cat03_03_log_skeleton_generation   |     6   |
+| cat03_04_declare_generation        |     4.5 |
+| cat03_05_temp_profile_generation   |     4   |
+| cat03_06_petri_net_generation      |     6.5 |
+| cat03_07_process_tree_discovery    |     2.5 |
+| cat03_08_powl_discovery            |     3.5 |
+| cat04_01_pseudo_bpmn_description   |     6.5 |
+| cat04_02_pseudo_bpmn_open_question |     6   |
+| cat04_03_declare_open_question     |     8.5 |
+| cat04_04_declare_description       |     6.5 |
+| cat04_05_sql_filt_num_events       |     8   |
+| cat04_06_sql_filt_three_df         |     4   |
+| cat04_07_sql_filt_top_k_vars       |     3   |
+| cat05_01_hyp_generation_log        |     4   |
+| cat05_02_hyp_gen_powl              |     4   |
+| cat05_03_hyp_gen_declare           |     7   |
+| cat05_04_hyp_gen_temp_profile      |     6.5 |
+| cat05_05_question_gen_nlp          |     8   |
+| cat05_06_question_pseudo_bpmn      |     6   |
+| cat05_07_question_interview        |     6.5 |
+| cat06_01_bias_text                 |     8   |
+| cat06_02_bias_event_log            |     7.5 |
+| cat06_03_bias_powl                 |     8.5 |
+| cat06_04_bias_two_logs             |     8.5 |
+| cat06_05_bias_two_logs_2           |     6.5 |
+| cat06_06_bias_mitigation_declare   |     5   |
+| cat06_07_fair_unfair_powl          |     3   |
 
 
 
