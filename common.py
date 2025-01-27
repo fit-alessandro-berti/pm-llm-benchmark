@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "DeepSeek-R1-671B-API" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -43,21 +43,22 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gpt-4o-mini-2024-07-18", "gpt-4o-2024-11-20", "gpt-3.5-turbo",
-            "gpt-4-turbo-2024-04-09"
+            "gpt-4-turbo-2024-04-09", "o1-mini-2024-09-12", "o1-preview-2024-09-12"
         }
     },
     "google": {
         "api_url": "https://generativelanguage.googleapis.com/v1beta/",
         "api_key": "sk-",
         "models": {
-            "gemini-1.5-pro-002", "gemini-exp-1206", "gemini-2.0-flash-exp"
+            "gemini-1.5-pro-002", "gemini-exp-1206", "gemini-2.0-flash-exp",
+            "gemini-2.0-flash-thinking-exp-01-21"
         }
     },
     "claude": {
         "api_url": "https://api.anthropic.com/v1/",
         "api_key": "sk-",
         "models": {
-#            "claude-3-5-sonnet-20241022"
+            "claude-3-5-sonnet-20241022"
         }
     },
     "mistral": {
@@ -65,7 +66,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
-            "mistral-small-2409"
+            "mistral-small-2409", "codestral-2501", "mistral-large-2411"
         }
     },
     "grok": {
@@ -82,7 +83,9 @@ MODELS_DICT = {
             "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct",
             "meta-llama/Llama-3.2-90B-Vision-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct",
             "meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.2-3B-Instruct",
-            "nvidia/Llama-3.1-Nemotron-70B-Instruct", "google/gemma-2-9b-it"
+            "nvidia/Llama-3.1-Nemotron-70B-Instruct", "google/gemma-2-9b-it",
+            "Qwen/QwQ-32B-Preview", "microsoft/phi-4", "microsoft/WizardLM-2-8x22B",
+            "Qwen/Qwen2.5-72B-Instruct"
         }
     },
     "ollama_local": {
@@ -90,7 +93,20 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "qwen2.5:3b-instruct-q8_0", "qwen2.5:7b-instruct-q6_K",
-            "qwen2.5:14b-instruct-q6_K", "qwen2.5:32b-instruct-q6_K"
+            "qwen2.5:14b-instruct-q6_K", "qwen2.5:32b-instruct-q6_K",
+            "falcon3:10b-instruct-q8_0", "falcon3:7b-instruct-q8_0",
+            "falcon3:3b-instruct-q8_0", "command-r7b:7b-12-2024-q4_K_M",
+            "olmo2:7b-1124-instruct-q8_0"
+        }
+    },
+    "manual": {
+        "api_url": "http://0.0.0.0:1000/v1/",
+        "api_key": "sk-",
+        "models": {
+            "Qwen-2.5-Plus", "DeepSeek-R1-Distill-Qwen-32B",
+            "DeepSeek-V3", "o1-2024-12-17", "MiniMax-01",
+            "gpt-4o-mini-2024-11-05", "Sonus-1-Pro-Reasoning",
+            "o1-pro-2024-12-17"
         }
     }
 }
@@ -461,7 +477,7 @@ def check_all_models():
     insert_api_keys()
 
     for provider in MODELS_DICT:
-        if provider not in {"google", "claude"}:
+        if provider not in {"google", "claude", "grok", "manual"}:
             print(provider)
             info = MODELS_DICT[provider]
             Shared.API_URL = info["api_url"]
