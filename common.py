@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct-1M" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -20,7 +20,7 @@ class Shared:
     MODEL_NAME = None
     MAX_REQUESTED_TOKENS = 16384
     API_URL = "https://api.openai.com/v1/"
-    # API_URL = "http://137.226.117.70:11434/v1/"
+    API_URL = "http://137.226.117.70:8000/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
     # API_URL = "https://api.x.ai/v1/"
     # API_URL = "https://api.mistral.ai/v1/"
@@ -93,7 +93,6 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "qwen2.5:3b-instruct-q8_0", "qwen2.5:7b-instruct-q6_K",
-            "qwen2.5:14b-instruct-q6_K", "qwen2.5:32b-instruct-q6_K",
             "falcon3:10b-instruct-q8_0", "falcon3:7b-instruct-q8_0",
             "falcon3:3b-instruct-q8_0", "command-r7b:7b-12-2024-q4_K_M",
             "olmo2:7b-1124-instruct-q8_0"
@@ -106,7 +105,8 @@ MODELS_DICT = {
             "Qwen-2.5-Plus", "DeepSeek-R1-Distill-Qwen-32B",
             "DeepSeek-V3", "o1-2024-12-17", "MiniMax-01",
             "gpt-4o-mini-2024-11-05", "Sonus-1-Pro-Reasoning",
-            "o1-pro-2024-12-17"
+            "o1-pro-2024-12-17", "DeepSeek-R1-Distill-Llama-70B",
+            "DeepSeek-R1-671B-API", "DeepSeek-R1-Distill-Qwen-14B"
         }
     }
 }
@@ -114,7 +114,7 @@ MODELS_DICT = {
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-reasoner", "deepseek-r1-671"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill"]:
         if p in model_name:
             return True
     return False
@@ -250,7 +250,11 @@ def query_text_simple_generic(question, api_url, target_file):
 
         dump_payload(payload, target_file)
 
-        response = requests.post(complete_url, headers=headers, json=payload).json()
+        response = requests.post(complete_url, headers=headers, json=payload)
+        #print(response)
+        #print(response.status_code)
+
+        response = response.json()
         dump_response(response, target_file)
 
         try:
