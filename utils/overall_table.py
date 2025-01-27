@@ -44,7 +44,7 @@ def format_is_open_source(m_name):
 
 
 def execute(evaluation_folder, target_file, include_closed_source=True, require_vision=False,
-            require_reasoning=False, leaderboard_title="Overall Leaderboard"):
+            require_reasoning=False, leaderboard_title="Overall Leaderboard", reg_expr=None):
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
     models = {x: y for x, y in models.items() if y >= 40}
@@ -66,33 +66,34 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
     for m in models:
         if (include_closed_source or is_open_source(m)) and (not require_reasoning or is_large_reasoning_model(m)):
-            res, this_json = execute_script(evaluation_folder, m)
+            if reg_expr is None or reg_expr.lower() in m.lower():
+                res, this_json = execute_script(evaluation_folder, m)
 
-            this_json["score_c1"] = round(this_json["score_c1"], 1)
-            this_json["score_c2"] = round(this_json["score_c2"], 1)
-            this_json["score_c3"] = round(this_json["score_c3"], 1)
-            this_json["score_c4"] = round(this_json["score_c4"], 1)
-            this_json["score_c5"] = round(this_json["score_c5"], 1)
-            this_json["score_c6"] = round(this_json["score_c6"], 1)
-            this_json["score_c7"] = round(this_json["score_c7"], 1)
-            this_json["score_c8"] = round(this_json["score_c8"], 1)
-            this_json["score_c9"] = round(this_json["score_c9"], 1)
-            this_json["score_c10"] = round(this_json["score_c10"], 1)
+                this_json["score_c1"] = round(this_json["score_c1"], 1)
+                this_json["score_c2"] = round(this_json["score_c2"], 1)
+                this_json["score_c3"] = round(this_json["score_c3"], 1)
+                this_json["score_c4"] = round(this_json["score_c4"], 1)
+                this_json["score_c5"] = round(this_json["score_c5"], 1)
+                this_json["score_c6"] = round(this_json["score_c6"], 1)
+                this_json["score_c7"] = round(this_json["score_c7"], 1)
+                this_json["score_c8"] = round(this_json["score_c8"], 1)
+                this_json["score_c9"] = round(this_json["score_c9"], 1)
+                this_json["score_c10"] = round(this_json["score_c10"], 1)
 
-            if this_json["score_c7"] > 0 or not require_vision:
-                temp[m] = res
-                max_c1 = max(max_c1, this_json["score_c1"])
-                max_c2 = max(max_c2, this_json["score_c2"])
-                max_c3 = max(max_c3, this_json["score_c3"])
-                max_c4 = max(max_c4, this_json["score_c4"])
-                max_c5 = max(max_c5, this_json["score_c5"])
-                max_c6 = max(max_c6, this_json["score_c6"])
-                max_c7 = max(max_c7, this_json["score_c7"])
-                max_c8 = max(max_c8, this_json["score_c8"])
-                max_c9 = max(max_c9, this_json["score_c9"])
-                max_c10 = max(max_c10, this_json["score_c10"])
+                if this_json["score_c7"] > 0 or not require_vision:
+                    temp[m] = res
+                    max_c1 = max(max_c1, this_json["score_c1"])
+                    max_c2 = max(max_c2, this_json["score_c2"])
+                    max_c3 = max(max_c3, this_json["score_c3"])
+                    max_c4 = max(max_c4, this_json["score_c4"])
+                    max_c5 = max(max_c5, this_json["score_c5"])
+                    max_c6 = max(max_c6, this_json["score_c6"])
+                    max_c7 = max(max_c7, this_json["score_c7"])
+                    max_c8 = max(max_c8, this_json["score_c8"])
+                    max_c9 = max(max_c9, this_json["score_c9"])
+                    max_c10 = max(max_c10, this_json["score_c10"])
 
-                all_jsons[m] = this_json
+                    all_jsons[m] = this_json
 
     for m in temp:
         res = temp[m]
@@ -192,7 +193,9 @@ def write_evaluation(base_path, extra=True):
                 require_vision=True, leaderboard_title="Vision Leaderboard")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_vis_" + e_m_name + ".md"), include_closed_source=False,
                 require_vision=True, leaderboard_title="Open-Source Vision Leaderboard")
-
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_qwen_" + e_m_name + ".md"),
+                include_closed_source=True, require_vision=False,
+                leaderboard_title="QWEN Leaderboard", reg_expr="qwen")
 
 if __name__ == "__main__":
     write_evaluation("..", extra=True)
