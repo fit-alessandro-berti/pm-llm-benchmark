@@ -52,7 +52,7 @@ def execute_script(evaluation_folder, model_name):
         if force_custom_evaluation_lrm(model_name):
             numb0 = numb
             diff = 10.0 - numb0
-            diff = round(diff * 4.0/3.0, 1)
+            diff = round(diff * 1.15, 1)
             numb = max(1.0, 10.0 - diff)
 
         total_score += numb
