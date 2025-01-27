@@ -20,7 +20,7 @@ class Shared:
     MODEL_NAME = None
     MAX_REQUESTED_TOKENS = 16384
     API_URL = "https://api.openai.com/v1/"
-    API_URL = "http://137.226.117.70:8000/v1/"
+    # API_URL = "http://137.226.117.70:8000/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
     # API_URL = "https://api.x.ai/v1/"
     # API_URL = "https://api.mistral.ai/v1/"
