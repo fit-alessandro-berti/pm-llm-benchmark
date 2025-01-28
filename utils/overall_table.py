@@ -196,6 +196,10 @@ def write_evaluation(base_path, extra=True):
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_qwen_" + e_m_name + ".md"),
                 include_closed_source=True, require_vision=False,
                 leaderboard_title="QWEN Leaderboard", reg_expr="qwen")
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_deepseek_" + e_m_name + ".md"),
+                include_closed_source=True, require_vision=False,
+                leaderboard_title="DEEPSEEK Leaderboard", reg_expr="deepseek")
+
 
 if __name__ == "__main__":
     write_evaluation("..", extra=True)

@@ -13,8 +13,8 @@ def do_renaming(base_path, original_name, novel_name):
 
 
 if __name__ == "__main__":
-    original_name = "Gemini-Pro-Exp-1114"
-    novel_name = "Gemini-Exp-1114"
+    original_name = "deepseek-aiDeepSeek-R1-Distill-Llama-8B"
+    novel_name = "DeepSeek-R1-Distill-Llama-8B"
 
     do_renaming("../answers", original_name, novel_name)
     do_renaming("../evaluation", original_name, novel_name)
