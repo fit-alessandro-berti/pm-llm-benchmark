@@ -53,12 +53,13 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | QwenQwen2.5-7B-Instruct       | **5.3** | **24.2** | :white_check_mark: | 3.5                  | 5.8                  | 2.6                  | 3.9                  | 4.5                  | 3.9                  | 0.0                  |
 | command-r7b7b-12-2024-q4_K_M  | **5.1** | **23.6** | :white_check_mark: | 4.0                  | 4.8                  | 2.4                  | 4.2                  | 3.9                  | 4.2                  | 0.0                  |
 | falcon33b-instruct-q8_0       | **5.1** | **23.2** | :white_check_mark: | 3.8                  | 4.5                  | 3.1                  | 3.5                  | 4.7                  | 3.7                  | 0.0                  |
+| DeepSeek-R1-Distill-Qwen-7B   | **5.0** | **22.9** | :white_check_mark: | 3.3                  | 5.2                  | 2.7                  | 4.0                  | 4.2                  | 3.6                  | 0.0                  |
 | meta-llamaMeta-Llama-3.1-8B   | **4.7** | **21.8** | :white_check_mark: | 3.6                  | 4.7                  | 2.4                  | 3.5                  | 3.8                  | 3.8                  | 0.0                  |
 | qwen2.53b-instruct-q8_0       | **4.7** | **21.5** | :white_check_mark: | 3.4                  | 5.0                  | 2.9                  | 3.3                  | 3.4                  | 3.6                  | 0.0                  |
 | meta-llamaLlama-3.2-3B        | **4.6** | **21.1** | :white_check_mark: | 4.0                  | 4.8                  | 2.1                  | 3.6                  | 3.1                  | 3.3                  | 0.0                  |
 | olmo27b-1124-instruct-q8_0    | **4.5** | **20.9** | :white_check_mark: | 3.8                  | 4.3                  | 2.1                  | 3.3                  | 3.2                  | 4.1                  | 0.0                  |
 | meta-llamaLlama-3.2-11B       | **4.3** | **19.9** | :white_check_mark: | 2.8                  | 5.4                  | 2.6                  | 2.8                  | 3.4                  | 3.0                  | 4.2                  |
-| deepseek-aiDeepSeek-R1        | **3.1** | **14.4** | :white_check_mark: | 2.4                  | 3.6                  | 1.4                  | 2.3                  | 2.4                  | 2.4                  | 0.0                  |
+| DeepSeek-R1-Distill-Qwen-1.5B | **3.1** | **14.4** | :white_check_mark: | 2.4                  | 3.6                  | 1.4                  | 2.3                  | 2.4                  | 2.4                  | 0.0                  |
 | meta-llamaLlama-3.2-1B        | **2.8** | **12.8** | :white_check_mark: | 1.9                  | 2.6                  | 1.2                  | 1.7                  | 2.6                  | 2.7                  | 0.0                  |
 
 ### o1-pro-2024-12-17   => 35.6 points
@@ -2583,6 +2584,59 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
+### DeepSeek-R1-Distill-Qwen-7B   => 22.9 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |     1   |
+| cat01_02_activity_context          |     6   |
+| cat01_03_high_level_events         |     8.9 |
+| cat01_04_sensor_recordings         |     7.7 |
+| cat01_05_merge_two_logs            |     2   |
+| cat01_06_system_logs               |     3.1 |
+| cat01_07_interv_to_pseudo_bpmn     |     2   |
+| cat01_08_tables_to_log             |     2   |
+| cat02_01_conformance_textual       |     6.6 |
+| cat02_02_conf_desiderata           |     6   |
+| cat02_03_anomaly_event_log         |     4.2 |
+| cat02_04_powl_anomaly_detection    |     8.9 |
+| cat02_05_two_powls_anomalies       |     4.8 |
+| cat02_06_root_cause_1              |     8.3 |
+| cat02_07_root_cause_2              |     4.8 |
+| cat02_08_underfitting_process_tree |     2   |
+| cat02_09_fix_process_tree          |     6   |
+| cat03_01_process_tree_generation   |     3.1 |
+| cat03_02_powl_generation           |     8.3 |
+| cat03_03_log_skeleton_generation   |     5.4 |
+| cat03_04_declare_generation        |     1.4 |
+| cat03_05_temp_profile_generation   |     4.8 |
+| cat03_06_petri_net_generation      |     1   |
+| cat03_07_process_tree_discovery    |     1   |
+| cat03_08_powl_discovery            |     2   |
+| cat04_01_pseudo_bpmn_description   |     7.1 |
+| cat04_02_pseudo_bpmn_open_question |     8.3 |
+| cat04_03_declare_open_question     |     7.1 |
+| cat04_04_declare_description       |     7.1 |
+| cat04_05_sql_filt_num_events       |     6.6 |
+| cat04_06_sql_filt_three_df         |     1   |
+| cat04_07_sql_filt_top_k_vars       |     3.1 |
+| cat05_01_hyp_generation_log        |     2.5 |
+| cat05_02_hyp_gen_powl              |     4.2 |
+| cat05_03_hyp_gen_declare           |     6   |
+| cat05_04_hyp_gen_temp_profile      |     2.5 |
+| cat05_05_question_gen_nlp          |     9.4 |
+| cat05_06_question_pseudo_bpmn      |     7.7 |
+| cat05_07_question_interview        |     9.4 |
+| cat06_01_bias_text                 |     7.1 |
+| cat06_02_bias_event_log            |     7.7 |
+| cat06_03_bias_powl                 |     6   |
+| cat06_04_bias_two_logs             |     7.7 |
+| cat06_05_bias_two_logs_2           |     1   |
+| cat06_06_bias_mitigation_declare   |     5.4 |
+| cat06_07_fair_unfair_powl          |     1   |
+
+
+
 ### meta-llamaMeta-Llama-3.1-8B-Instruct   => 21.8 points
 
 | Question                           |   Score |
@@ -2854,7 +2908,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### deepseek-aiDeepSeek-R1-Distill-Qwen-1.5B   => 14.4 points
+### DeepSeek-R1-Distill-Qwen-1.5B   => 14.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
