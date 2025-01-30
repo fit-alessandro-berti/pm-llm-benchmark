@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "SIGJNF/deepseek-r1-671b-1.58bit" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -20,7 +20,7 @@ class Shared:
     MODEL_NAME = None
     MAX_REQUESTED_TOKENS = 16384
     API_URL = "https://api.openai.com/v1/"
-    # API_URL = "http://137.226.117.70:8000/v1/"
+    # API_URL = "http://137.226.117.70:11434/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
     # API_URL = "https://api.x.ai/v1/"
     # API_URL = "https://api.mistral.ai/v1/"
@@ -116,7 +116,7 @@ MODELS_DICT = {
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-r1-671b"]:
         if p in model_name:
             return True
     return False
