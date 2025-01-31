@@ -1,4 +1,5 @@
 import os.path
+import traceback
 
 import requests
 import re
@@ -9,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "deepseek-ai/DeepSeek-R1" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "gemini-2.0-flash" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -117,7 +118,7 @@ MODELS_DICT = {
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai"]:
         if p in model_name:
             return True
     return False
@@ -210,7 +211,19 @@ def dump_response(response, target_file):
 
 
 def query_text_simple_generic(question, api_url, target_file):
-    complete_url = api_url + "chat/completions"
+    """
+    Generic function to query LLM endpoints:
+      - OLLAMA (if "11434" is in api_url)
+      - Otherwise, standard OpenAI /v1/chat/completions (optionally streaming)
+    """
+
+    # Usually OpenAI's Chat endpoint is /v1/chat/completions
+    # If your base api_url doesn't already end with '/v1/',
+    # you can do something like:
+    complete_url = api_url
+    if not complete_url.endswith("/"):
+        complete_url += "/"
+    complete_url += "chat/completions"  # might be /v1/chat/completions, depending on your setup
 
     messages = [{"role": "user", "content": question}]
 
@@ -222,11 +235,13 @@ def query_text_simple_generic(question, api_url, target_file):
         "Authorization": f"Bearer {Shared.API_KEY}"
     }
 
+    # Base payload for OpenAI-like
     payload = {
         "model": Shared.MODEL_NAME,
         "messages": messages,
     }
 
+    # Check if "11434" in api_url (OLLAMA case)
     if "11434" in api_url:
         # OLLAMA
         options = {"num_ctx": 8192}
@@ -238,35 +253,83 @@ def query_text_simple_generic(question, api_url, target_file):
             "options": options
         }
 
-        complete_url = complete_url.replace("v1/chat/completions", "api/generate")
-        response0 = requests.post(complete_url, headers=headers, json=payload).text
-        response0 = [x.strip() for x in response0.split("\n")]
-        response = []
-        for el in response0:
+        # OLLAMA’s typical generate endpoint
+        ollama_url = api_url.replace("v1/chat/completions", "api/generate")
+        response_text = requests.post(ollama_url, headers=headers, json=payload).text
+
+        # OLLAMA streams lines separated by newlines, we parse JSON lines
+        lines = [x.strip() for x in response_text.split("\n")]
+        response_jsons = []
+        for el in lines:
             try:
-                response.append(json.loads(el))
+                response_jsons.append(json.loads(el))
             except:
-                pass
-        response_message = "".join(x["response"] for x in response)
+                pass  # skip any line that can't be parsed as JSON
+        response_message = "".join(x["response"] for x in response_jsons)
+
     else:
+        # Non-OLLAMA (OpenAI or OpenAI-compatible endpoint)
         payload.update(get_llm_specific_settings())
 
+        # For debugging/logging
         dump_payload(payload, target_file)
 
-        response = requests.post(complete_url, headers=headers, json=payload)
-        #print(response)
-        #print(response.status_code)
-        #print(response.text)
+        # Decide if we want streaming
+        streaming_enabled = True  # Example usage
 
-        response = response.json()
-        dump_response(response, target_file)
+        if streaming_enabled:
+            payload["stream"] = True
+            response_message = ""
+            chunk_count = 0
 
-        try:
-            response_message = response["choices"][0]["message"]["content"]
-        except Exception as e:
-            raise Exception(str(response))
+            # We add stream=True to requests so we can iterate over chunks
+            with requests.post(complete_url, headers=headers, json=payload, stream=True) as resp:
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    decoded_line = line.decode("utf-8")
+
+                    # OpenAI-style streaming lines begin with "data: "
+                    if decoded_line.startswith("data: "):
+                        data_str = decoded_line[len("data: "):].strip()
+                        if data_str == "[DONE]":
+                            # End of stream
+                            break
+                        try:
+                            data_json = json.loads(data_str)
+                            if "choices" in data_json:
+                                # Each chunk has a delta with partial content
+                                chunk_content = data_json["choices"][0]["delta"].get("content", "")
+                                response_message += chunk_content
+                                chunk_count += 1
+                                #print(chunk_count)
+                                if chunk_count % 10 == 0:
+                                    #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
+                                    pass
+                        except json.JSONDecodeError:
+                            # Possibly a keep-alive or incomplete chunk
+                            traceback.print_exc()
+
+            # Optionally store the final result so you can debug
+            final_response = {
+                "choices": [
+                    {"message": {"content": response_message}}
+                ]
+            }
+            dump_response(final_response, target_file)
+
+        else:
+            # Non-streaming call
+            response = requests.post(complete_url, headers=headers, json=payload)
+            response = response.json()
+            dump_response(response, target_file)
+            try:
+                response_message = response["choices"][0]["message"]["content"]
+            except Exception as e:
+                raise Exception(str(response))
 
     return response_message
+
 
 
 def query_text_simple_anthropic(question, api_url, target_file):

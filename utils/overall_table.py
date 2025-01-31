@@ -47,7 +47,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
             require_reasoning=False, leaderboard_title="Overall Leaderboard", reg_expr=None):
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
-    models = {x: y for x, y in models.items() if y >= 40}
+    models = {x: y for x, y in models.items() if y >= 44}
 
     temp = {}
     results = []
