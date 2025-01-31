@@ -7,7 +7,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 | Model                         | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:------------------------------|:--------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| o3-mini-2025-01-31-LOW        | **7.7** | **35.5** | :white_check_mark: | **6.0**              | 6.8                  | :mage_woman: **6.1** | :mage_woman: **5.6** | **5.7**              | 5.2                  | 0.0                  |
+| o3-mini-20250131-LOW          | **7.7** | **35.5** | :white_check_mark: | **6.0**              | 6.8                  | :mage_woman: **6.1** | :mage_woman: **5.6** | **5.7**              | 5.2                  | 0.0                  |
 | DeepSeek-R1-671B-DS           | **7.6** | **35.1** | :white_check_mark: | :mage_woman: **6.2** | **7.0**              | 4.8                  | :mage_woman: **5.6** | 5.5                  | :mage_woman: **5.8** | 0.0                  |
 | DeepSeek-R1-Distill-Llama-70B | **7.2** | **33.2** | :white_check_mark: | 5.8                  | 6.8                  | 4.4                  | 5.2                  | 5.3                  | **5.5**              | 0.0                  |
 | QwenQwen2.5-72B-Instruct      | **7.1** | **32.5** | :white_check_mark: | 5.8                  | **7.1**              | 4.5                  | 5.1                  | 4.9                  | 5.0                  | 0.0                  |
@@ -48,7 +48,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | DeepSeek-R1-Distill-Qwen-1.5B | **3.1** | **14.4** | :white_check_mark: | 2.4                  | 3.6                  | 1.4                  | 2.3                  | 2.4                  | 2.4                  | 0.0                  |
 | meta-llamaLlama-3.2-1B        | **2.8** | **12.8** | :white_check_mark: | 1.9                  | 2.6                  | 1.2                  | 1.7                  | 2.6                  | 2.7                  | 0.0                  |
 
-### o3-mini-2025-01-31-LOW   => 35.5 points
+### o3-mini-20250131-LOW   => 35.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
