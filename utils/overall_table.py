@@ -15,7 +15,7 @@ def format_numb_in_table(score, max_score, good_diff=0.3):
 
 def is_open_source(m_name):
     m_name = m_name.lower()
-    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max"]
+    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max"]
 
     for p in patterns:
         if p in m_name:
@@ -26,7 +26,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason"]
 
     for p in patterns:
         if p in m_name:
@@ -65,6 +65,9 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     max_c10 = 0.0
 
     for m in models:
+        if "DeepSeek-R1-671B-HB" in m:
+            continue
+
         if (include_closed_source or is_open_source(m)) and (not require_reasoning or is_large_reasoning_model(m)):
             if reg_expr is None or reg_expr.lower() in m.lower():
                 res, this_json = execute_script(evaluation_folder, m)
