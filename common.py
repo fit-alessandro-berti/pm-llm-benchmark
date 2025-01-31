@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "SIGJNF/deepseek-r1-671b-1.58bit" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "deepseek-ai/DeepSeek-R1" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -28,6 +28,7 @@ class Shared:
     # API_URL = "https://api.anthropic.com/v1/"
     # API_URL = "https://api.groq.com/openai/v1/"
     # API_URL = "https://api.deepseek.com/"
+    # API_URL = "https://api.hyperbolic.xyz/v1/"
     SYSTEM_PROMPT = None
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You are Qwen developed by Alibaba. You should think step-by-step."
     #SYSTEM_PROMPT = "You are a helpful and harmless assistant."
@@ -116,7 +117,7 @@ MODELS_DICT = {
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-r1-671b"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill"]:
         if p in model_name:
             return True
     return False
@@ -255,6 +256,7 @@ def query_text_simple_generic(question, api_url, target_file):
         response = requests.post(complete_url, headers=headers, json=payload)
         #print(response)
         #print(response.status_code)
+        #print(response.text)
 
         response = response.json()
         dump_response(response, target_file)
