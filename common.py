@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "deepseek-ai/DeepSeek-R1-Zero" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "mistral:7b-instruct-v0.3-q6_K" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -243,29 +243,47 @@ def query_text_simple_generic(question, api_url, target_file):
 
     # Check if "11434" in api_url (OLLAMA case)
     if "11434" in api_url:
-        # OLLAMA
+        # OLLAMA with streaming enabled
         options = {"num_ctx": 8192}
         options.update(get_llm_specific_settings())
 
+        # Include "stream": True in the payload
         payload = {
             "model": Shared.MODEL_NAME,
             "prompt": question,
-            "options": options
+            "options": options,
+            "stream": True  # ask for a streamed response
         }
 
-        # OLLAMA’s typical generate endpoint
-        ollama_url = api_url.replace("v1/chat/completions", "api/generate")
-        response_text = requests.post(ollama_url, headers=headers, json=payload).text
+        # OLLAMA’s generate endpoint
+        ollama_url = complete_url.replace("v1/chat/completions", "api/generate")
 
-        # OLLAMA streams lines separated by newlines, we parse JSON lines
-        lines = [x.strip() for x in response_text.split("\n")]
-        response_jsons = []
-        for el in lines:
-            try:
-                response_jsons.append(json.loads(el))
-            except:
-                pass  # skip any line that can't be parsed as JSON
-        response_message = "".join(x["response"] for x in response_jsons)
+        response_message = ""
+        chunk_count = 0
+
+        # Use stream=True to process response chunks as they arrive
+        with requests.post(ollama_url, headers=headers, json=payload, stream=True) as resp:
+            # Iterate over each line in the streamed response
+            for line in resp.iter_lines():
+                if not line:
+                    continue  # skip empty lines
+
+                try:
+                    # Each line should be a JSON-encoded object with a "response" field
+                    data = json.loads(line.decode("utf-8"))
+                except json.JSONDecodeError:
+                    # If the line is not valid JSON, skip it
+                    continue
+
+                # Append the chunk's text to our overall response message
+                chunk = data.get("response", "")
+                response_message += chunk
+                chunk_count += 1
+                #print(chunk_count)
+
+                if chunk_count % 10 == 0:
+                    #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
+                    pass
 
     else:
         # Non-OLLAMA (OpenAI or OpenAI-compatible endpoint)
@@ -400,7 +418,8 @@ def query_text_simple(question_path, target_file, callback, question=None):
     else:
         response_message = query_text_simple_generic(question, Shared.API_URL, target_file)
 
-    callback(response_message, target_file)
+    if response_message:
+        callback(response_message, target_file)
 
 
 def query_image_simple_generic(base64_image, api_url, target_file, text):
