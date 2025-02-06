@@ -30,6 +30,7 @@ class Shared:
     # API_URL = "https://api.groq.com/openai/v1/"
     # API_URL = "https://api.deepseek.com/"
     # API_URL = "https://api.hyperbolic.xyz/v1/"
+    # API_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/"
     SYSTEM_PROMPT = None
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You are Qwen developed by Alibaba. You should think step-by-step."
     #SYSTEM_PROMPT = "You are a helpful and harmless assistant."
@@ -244,7 +245,7 @@ def query_text_simple_generic(question, api_url, target_file):
     # Check if "11434" in api_url (OLLAMA case)
     if "11434" in api_url:
         # OLLAMA with streaming enabled
-        options = {"num_ctx": 8192}
+        options = {"num_ctx": Shared.MAX_REQUESTED_TOKENS}
         options.update(get_llm_specific_settings())
 
         # Include "stream": True in the payload
