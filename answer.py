@@ -5,7 +5,7 @@ import sys
 from common import query_text_simple, query_image_simple, callback_write, set_api_key, is_visual_model, check_missing_models, check_all_models, MODELS_DICT
 import common
 
-WAITING_TIME_RETRY = 60
+WAITING_TIME_RETRY = 15
 
 
 def answer_question(model_name, api_url=None, api_key=None):
