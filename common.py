@@ -126,7 +126,7 @@ def force_custom_evaluation_lrm(answering_model_name):
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
