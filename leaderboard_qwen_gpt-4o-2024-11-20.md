@@ -9,16 +9,16 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 |:------------------------------|:--------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
 | qwen-max-2025-01-25           | **7.4** | **33.9** | :x:                | **5.8**              | :mage_woman: **7.6** | **4.7**              | 4.8                  | 5.4                  | :mage_woman: **5.8** | :mage_woman: **0.0** |
 | qwen-plus-2025-01-25          | **7.3** | **33.5** | :x:                | 4.8                  | **7.4**              | :mage_woman: **5.0** | :mage_woman: **5.4** | **5.6**              | 5.4                  | :mage_woman: **0.0** |
-| QwenQwen2.5-72B-Instruct      | **7.1** | **32.5** | :white_check_mark: | **5.8**              | 7.1                  | 4.5                  | 5.1                  | 4.9                  | 5.0                  | :mage_woman: **0.0** |
+| qwen2.5-72b-instruct          | **7.1** | **32.5** | :white_check_mark: | **5.8**              | 7.1                  | 4.5                  | 5.1                  | 4.9                  | 5.0                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Qwen-32B  | **7.0** | **32.1** | :white_check_mark: | :mage_woman: **5.9** | 7.0                  | 3.3                  | 4.8                  | :mage_woman: **5.8** | 5.2                  | :mage_woman: **0.0** |
-| QwenQwen2.5-32B-Instruct      | **6.8** | **31.4** | :white_check_mark: | **5.7**              | 6.8                  | 3.9                  | 5.0                  | 4.8                  | 5.2                  | :mage_woman: **0.0** |
+| qwen2.5-32b-instruct          | **6.8** | **31.4** | :white_check_mark: | **5.7**              | 6.8                  | 3.9                  | 5.0                  | 4.8                  | 5.2                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Qwen-14B  | **6.7** | **30.9** | :white_check_mark: | **5.7**              | 7.2                  | 3.8                  | 4.1                  | 5.0                  | 5.1                  | :mage_woman: **0.0** |
-| QwenQwen2.5-14B-Instruct      | **6.7** | **30.6** | :white_check_mark: | 5.5                  | 6.5                  | 4.2                  | 4.3                  | 4.8                  | 5.2                  | :mage_woman: **0.0** |
+| qwen2.5-14b-instruct          | **6.7** | **30.6** | :white_check_mark: | 5.5                  | 6.5                  | 4.2                  | 4.3                  | 4.8                  | 5.2                  | :mage_woman: **0.0** |
 | qwen-turbo-2024-11-01         | **6.5** | **29.8** | :x:                | 4.0                  | 6.5                  | 4.3                  | 5.0                  | 5.0                  | 4.8                  | :mage_woman: **0.0** |
 | QwenQwQ-32B-Preview           | **6.3** | **28.8** | :white_check_mark: | 5.3                  | 6.9                  | 3.4                  | 3.7                  | 4.8                  | 4.7                  | :mage_woman: **0.0** |
-| QwenQwen2.5-14B-Instruct-1M   | **6.2** | **28.5** | :white_check_mark: | 5.0                  | 6.2                  | 3.8                  | 4.6                  | 4.7                  | 4.2                  | :mage_woman: **0.0** |
-| QwenQwen2.5-7B-Instruct-1M    | **5.5** | **25.5** | :white_check_mark: | 3.9                  | 5.4                  | 3.1                  | 4.2                  | 4.2                  | 4.7                  | :mage_woman: **0.0** |
-| QwenQwen2.5-7B-Instruct       | **5.3** | **24.2** | :white_check_mark: | 3.5                  | 5.8                  | 2.6                  | 3.9                  | 4.5                  | 3.9                  | :mage_woman: **0.0** |
+| qwen2.5-14b-instruct-1m       | **6.2** | **28.5** | :white_check_mark: | 5.0                  | 6.2                  | 3.8                  | 4.6                  | 4.7                  | 4.2                  | :mage_woman: **0.0** |
+| qwen2.5-7b-instruct-1m        | **5.5** | **25.5** | :white_check_mark: | 3.9                  | 5.4                  | 3.1                  | 4.2                  | 4.2                  | 4.7                  | :mage_woman: **0.0** |
+| qwen2.5-7b-instruct           | **5.3** | **24.2** | :white_check_mark: | 3.5                  | 5.8                  | 2.6                  | 3.9                  | 4.5                  | 3.9                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Qwen-7B   | **5.0** | **22.9** | :white_check_mark: | 3.3                  | 5.2                  | 2.7                  | 4.0                  | 4.2                  | 3.6                  | :mage_woman: **0.0** |
 | qwen2.53b-instruct-q8_0       | **4.7** | **21.5** | :white_check_mark: | 3.4                  | 5.0                  | 2.9                  | 3.3                  | 3.4                  | 3.6                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Qwen-1.5B | **3.1** | **14.4** | :white_check_mark: | 2.4                  | 3.6                  | 1.4                  | 2.3                  | 2.4                  | 2.4                  | :mage_woman: **0.0** |
@@ -129,7 +129,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-72B-Instruct   => 32.5 points
+### qwen2.5-72b-instruct   => 32.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -235,7 +235,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-32B-Instruct   => 31.4 points
+### qwen2.5-32b-instruct   => 31.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -341,7 +341,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-14B-Instruct   => 30.6 points
+### qwen2.5-14b-instruct   => 30.6 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -500,7 +500,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-14B-Instruct-1M   => 28.5 points
+### qwen2.5-14b-instruct-1m   => 28.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -553,7 +553,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-7B-Instruct-1M   => 25.5 points
+### qwen2.5-7b-instruct-1m   => 25.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -606,7 +606,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-7B-Instruct   => 24.2 points
+### qwen2.5-7b-instruct   => 24.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|

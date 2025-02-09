@@ -20,14 +20,14 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | claude-3-5-sonnet-20241022    | **7.1** | **32.8** | :x:                | 5.8                  | 6.6                  | 5.3                  | 4.6                  | 5.3                  | 5.2                  | **5.5**              |
 | gpt-4o-2024-11-20             | **7.1** | **32.6** | :x:                | 5.0                  | **7.5**              | 5.0                  | 5.1                  | 4.8                  | 5.3                  | **5.5**              |
 | grok-2-1212                   | **7.1** | **32.6** | :x:                | **6.2**              | 7.0                  | 4.3                  | 5.0                  | 4.7                  | 5.5                  | 0.0                  |
-| QwenQwen2.5-72B-Instruct      | **7.1** | **32.5** | :white_check_mark: | 5.8                  | 7.1                  | 4.5                  | 5.1                  | 4.9                  | 5.0                  | 0.0                  |
+| qwen2.5-72b-instruct          | **7.1** | **32.5** | :white_check_mark: | 5.8                  | 7.1                  | 4.5                  | 5.1                  | 4.9                  | 5.0                  | 0.0                  |
 | DeepSeek-R1-Zero              | **7.0** | **32.1** | :white_check_mark: | 5.3                  | 6.8                  | 4.3                  | 4.6                  | **5.9**              | 5.2                  | 0.0                  |
 | DeepSeek-R1-Distill-Qwen-32B  | **7.0** | **32.1** | :white_check_mark: | 5.9                  | 7.0                  | 3.3                  | 4.8                  | **5.8**              | 5.2                  | 0.0                  |
 | gemini-2.0-pro-exp-02-05      | **6.9** | **31.9** | :x:                | 5.4                  | 6.8                  | 4.4                  | 4.9                  | 4.8                  | **5.7**              | **5.6**              |
 | gemini-exp-1206               | **6.9** | **31.9** | :x:                | 5.4                  | 7.0                  | 4.0                  | 4.8                  | 5.4                  | 5.2                  | 4.7                  |
 | microsoftWizardLM-2-8x22B     | **6.9** | **31.6** | :white_check_mark: | 4.7                  | 6.1                  | 4.5                  | 5.4                  | 5.5                  | 5.3                  | 0.0                  |
 | o1-mini-2024-09-12            | **6.9** | **31.5** | :x:                | 5.8                  | 6.2                  | 4.0                  | 5.2                  | 4.8                  | 5.6                  | 0.0                  |
-| QwenQwen2.5-32B-Instruct      | **6.8** | **31.4** | :white_check_mark: | 5.7                  | 6.8                  | 3.9                  | 5.0                  | 4.8                  | 5.2                  | 0.0                  |
+| qwen2.5-32b-instruct          | **6.8** | **31.4** | :white_check_mark: | 5.7                  | 6.8                  | 3.9                  | 5.0                  | 4.8                  | 5.2                  | 0.0                  |
 | pixtral-large-2411            | **6.8** | **31.2** | :white_check_mark: | 5.4                  | 6.8                  | 4.5                  | 4.3                  | 5.2                  | 4.9                  | 4.7                  |
 | meta-llamaLlama-3.3-70B       | **6.8** | **31.2** | :white_check_mark: | 5.2                  | 6.5                  | 4.0                  | 5.3                  | 4.9                  | 5.3                  | 0.0                  |
 | chatgpt-4o-latest-20250129    | **6.8** | **31.1** | :x:                | 5.6                  | 6.8                  | 3.8                  | 4.2                  | 5.5                  | 5.2                  | **5.6**              |
@@ -35,7 +35,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | DeepSeek-V3                   | **6.8** | **31.1** | :white_check_mark: | 5.2                  | 6.8                  | 4.0                  | 4.6                  | 4.9                  | 5.6                  | 0.0                  |
 | DeepSeek-R1-Distill-Qwen-14B  | **6.7** | **30.9** | :white_check_mark: | 5.7                  | 7.2                  | 3.8                  | 4.1                  | 5.0                  | 5.1                  | 0.0                  |
 | gpt-4-turbo-2024-04-09        | **6.7** | **30.7** | :x:                | **6.0**              | 6.8                  | 4.3                  | 4.3                  | 5.1                  | 4.2                  | 5.4                  |
-| QwenQwen2.5-14B-Instruct      | **6.7** | **30.6** | :white_check_mark: | 5.5                  | 6.5                  | 4.2                  | 4.3                  | 4.8                  | 5.2                  | 0.0                  |
+| qwen2.5-14b-instruct          | **6.7** | **30.6** | :white_check_mark: | 5.5                  | 6.5                  | 4.2                  | 4.3                  | 4.8                  | 5.2                  | 0.0                  |
 | nvidiaLlama-3.1-Nemotron-70B  | **6.6** | **30.3** | :white_check_mark: | 5.5                  | 6.5                  | 3.8                  | 5.1                  | 5.0                  | 4.3                  | 0.0                  |
 | microsoftphi-4                | **6.6** | **30.2** | :white_check_mark: | **6.0**              | 5.8                  | 4.2                  | 4.9                  | 4.9                  | 4.6                  | 0.0                  |
 | gemini-2.0-flash              | **6.6** | **30.2** | :x:                | 5.2                  | 6.7                  | 4.2                  | 5.0                  | 4.1                  | 5.0                  | 4.9                  |
@@ -48,7 +48,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | gpt-4o-mini-2024-07-18        | **6.3** | **29.1** | :x:                | 4.1                  | 6.3                  | 4.7                  | 5.0                  | 4.6                  | 4.2                  | 5.3                  |
 | QwenQwQ-32B-Preview           | **6.3** | **28.8** | :white_check_mark: | 5.3                  | 6.9                  | 3.4                  | 3.7                  | 4.8                  | 4.7                  | 0.0                  |
 | falcon37b-instruct-q8_0       | **6.2** | **28.6** | :white_check_mark: | 4.5                  | 5.8                  | 4.1                  | 4.5                  | 4.8                  | 5.1                  | 0.0                  |
-| QwenQwen2.5-14B-Instruct-1M   | **6.2** | **28.5** | :white_check_mark: | 5.0                  | 6.2                  | 3.8                  | 4.6                  | 4.7                  | 4.2                  | 0.0                  |
+| qwen2.5-14b-instruct-1m       | **6.2** | **28.5** | :white_check_mark: | 5.0                  | 6.2                  | 3.8                  | 4.6                  | 4.7                  | 4.2                  | 0.0                  |
 | gpt-4o-mini-2024-11-05        | **6.2** | **28.5** | :x:                | 5.2                  | 5.7                  | 4.0                  | 4.0                  | 5.0                  | 4.7                  | 5.2                  |
 | codestral-2501                | **6.2** | **28.4** | :white_check_mark: | 5.1                  | 6.2                  | 3.5                  | 4.5                  | 4.8                  | 4.3                  | 0.0                  |
 | mistral-small-2409            | **6.1** | **28.2** | :white_check_mark: | 5.7                  | 5.7                  | 3.1                  | 4.5                  | 4.2                  | 5.0                  | 0.0                  |
@@ -57,10 +57,10 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | gemini-2.0-flash-lite-preview | **5.7** | **26.4** | :x:                | 4.3                  | 5.8                  | 4.0                  | 3.8                  | 3.8                  | 4.9                  | 5.0                  |
 | gpt-3.5-turbo                 | **5.6** | **25.9** | :x:                | 4.7                  | 6.3                  | 2.2                  | 4.0                  | 4.8                  | 4.0                  | 0.0                  |
 | meta-llamaLlama-3.2-90B       | **5.6** | **25.8** | :white_check_mark: | 4.7                  | 5.0                  | 3.3                  | 4.7                  | 4.3                  | 3.9                  | 5.0                  |
-| QwenQwen2.5-7B-Instruct-1M    | **5.5** | **25.5** | :white_check_mark: | 3.9                  | 5.4                  | 3.1                  | 4.2                  | 4.2                  | 4.7                  | 0.0                  |
+| qwen2.5-7b-instruct-1m        | **5.5** | **25.5** | :white_check_mark: | 3.9                  | 5.4                  | 3.1                  | 4.2                  | 4.2                  | 4.7                  | 0.0                  |
 | ministral-3b-2410             | **5.5** | **25.4** | :x:                | 3.7                  | 5.7                  | 2.4                  | 4.2                  | 4.1                  | 5.3                  | 0.0                  |
 | googlegemma-2-9b-it           | **5.4** | **25.0** | :white_check_mark: | 4.1                  | 5.2                  | 2.8                  | 3.9                  | 4.5                  | 4.6                  | 0.0                  |
-| QwenQwen2.5-7B-Instruct       | **5.3** | **24.2** | :white_check_mark: | 3.5                  | 5.8                  | 2.6                  | 3.9                  | 4.5                  | 3.9                  | 0.0                  |
+| qwen2.5-7b-instruct           | **5.3** | **24.2** | :white_check_mark: | 3.5                  | 5.8                  | 2.6                  | 3.9                  | 4.5                  | 3.9                  | 0.0                  |
 | command-r7b7b-12-2024-q4_K_M  | **5.1** | **23.6** | :white_check_mark: | 4.0                  | 4.8                  | 2.4                  | 4.2                  | 3.9                  | 4.2                  | 0.0                  |
 | falcon33b-instruct-q8_0       | **5.1** | **23.2** | :white_check_mark: | 3.8                  | 4.5                  | 3.1                  | 3.5                  | 4.7                  | 3.7                  | 0.0                  |
 | DeepSeek-R1-Distill-Qwen-7B   | **5.0** | **22.9** | :white_check_mark: | 3.3                  | 5.2                  | 2.7                  | 4.0                  | 4.2                  | 3.6                  | 0.0                  |
@@ -791,7 +791,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-72B-Instruct   => 32.5 points
+### qwen2.5-72b-instruct   => 32.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -1174,7 +1174,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-32B-Instruct   => 31.4 points
+### qwen2.5-32b-instruct   => 31.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -1622,7 +1622,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-14B-Instruct   => 30.6 points
+### qwen2.5-14b-instruct   => 30.6 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -2323,7 +2323,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-14B-Instruct-1M   => 28.5 points
+### qwen2.5-14b-instruct-1m   => 28.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -2824,7 +2824,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-7B-Instruct-1M   => 25.5 points
+### qwen2.5-7b-instruct-1m   => 25.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -2983,7 +2983,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwen2.5-7B-Instruct   => 24.2 points
+### qwen2.5-7b-instruct   => 24.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
