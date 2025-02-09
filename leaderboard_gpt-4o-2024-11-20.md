@@ -12,8 +12,8 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | o3-mini-20250131-LOW          | **7.7** | **35.5** | :x:                | **6.0**              | 6.8                  | 6.1                  | **5.6**              | **5.7**              | 5.2                  | 0.0                  |
 | DeepSeek-R1-671B-DS           | **7.6** | **35.1** | :white_check_mark: | **6.2**              | 7.0                  | 4.8                  | **5.6**              | 5.5                  | **5.8**              | 0.0                  |
 | o1-2024-12-17                 | **7.6** | **34.8** | :x:                | :mage_woman: **6.3** | 6.8                  | 5.2                  | 5.0                  | :mage_woman: **6.0** | 5.5                  | **5.7**              |
-| qwen-max-2025-01-25           | **7.4** | **33.9** | :x:                | 5.8                  | :mage_woman: **7.6** | 4.7                  | 4.8                  | 5.4                  | **5.8**              | 0.0                  |
-| qwen-plus-2025-01-25          | **7.3** | **33.5** | :x:                | 4.8                  | **7.4**              | 5.0                  | 5.4                  | 5.6                  | 5.4                  | 0.0                  |
+| qwen-max-2025-01-25           | **7.4** | **33.9** | :x:                | 5.8                  | :mage_woman: **7.6** | 4.7                  | 4.8                  | 5.4                  | **5.8**              | 5.4                  |
+| qwen-plus-2025-01-25          | **7.3** | **33.5** | :x:                | 4.8                  | **7.4**              | 5.0                  | 5.4                  | 5.6                  | 5.4                  | 4.8                  |
 | o1-preview-2024-09-12         | **7.2** | **33.3** | :x:                | **6.2**              | 7.0                  | 4.0                  | 4.9                  | **5.8**              | 5.3                  | 0.0                  |
 | DeepSeek-R1-Distill-Llama-70B | **7.2** | **33.2** | :white_check_mark: | 5.8                  | 6.8                  | 4.4                  | 5.2                  | 5.3                  | 5.5                  | 0.0                  |
 | gemini-2.0-flash-thinking-exp | **7.1** | **32.8** | :x:                | 5.2                  | 7.2                  | 4.0                  | 5.3                  | **5.7**              | 5.4                  | **5.5**              |
@@ -399,6 +399,12 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     9   |
 | cat06_06_bias_mitigation_declare   |     7.5 |
 | cat06_07_fair_unfair_powl          |     7   |
+| cat07_01_ocdfg                     |     9.5 |
+| cat07_02_bpmn_orders               |     9   |
+| cat07_03_bpmn_dispatch             |     8.5 |
+| cat07_04_causal_net                |     9   |
+| cat07_05_proclets                  |     9   |
+| cat07_06_perf_spectrum             |     9   |
 
 
 
@@ -452,6 +458,12 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     8.5 |
 | cat06_06_bias_mitigation_declare   |     7   |
 | cat06_07_fair_unfair_powl          |     6.5 |
+| cat07_01_ocdfg                     |     8.5 |
+| cat07_02_bpmn_orders               |     9   |
+| cat07_03_bpmn_dispatch             |     4   |
+| cat07_04_causal_net                |     9   |
+| cat07_05_proclets                  |     7.5 |
+| cat07_06_perf_spectrum             |    10   |
 
 
 
