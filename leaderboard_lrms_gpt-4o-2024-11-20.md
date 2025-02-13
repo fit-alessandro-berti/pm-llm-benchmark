@@ -7,9 +7,9 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 | Model                         | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:------------------------------|:--------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| o3-mini-20250131-HIGH         | **7.8** | **35.9** | :x:                | 5.8                  | 6.9                  | :mage_woman: **6.4** | :mage_woman: **5.8** | 5.2                  | **5.6**              | 0.0                  |
+| o3-mini-20250131-HIGH         | **7.8** | **35.9** | :x:                | 5.8                  | 6.9                  | :mage_woman: **6.4** | :mage_woman: **5.8** | 5.2                  | **5.6**              | **5.5**              |
 | o1-pro-2024-12-17             | **7.7** | **35.6** | :x:                | **6.0**              | :mage_woman: **7.3** | 5.2                  | **5.5**              | **5.9**              | :mage_woman: **5.8** | :mage_woman: **5.8** |
-| o3-mini-20250131-LOW          | **7.7** | **35.5** | :x:                | **6.0**              | 6.8                  | 6.1                  | **5.6**              | **5.7**              | 5.2                  | 0.0                  |
+| o3-mini-20250131-LOW          | **7.7** | **35.5** | :x:                | **6.0**              | 6.8                  | 6.1                  | **5.6**              | **5.7**              | 5.2                  | **5.7**              |
 | DeepSeek-R1-671B-DS           | **7.6** | **35.1** | :white_check_mark: | **6.2**              | **7.0**              | 4.8                  | **5.6**              | 5.5                  | :mage_woman: **5.8** | 0.0                  |
 | o1-2024-12-17                 | **7.6** | **34.8** | :x:                | :mage_woman: **6.3** | 6.8                  | 5.2                  | 5.0                  | :mage_woman: **6.0** | **5.5**              | **5.7**              |
 | o1-preview-2024-09-12         | **7.2** | **33.3** | :x:                | **6.2**              | **7.0**              | 4.0                  | 4.9                  | **5.8**              | 5.3                  | 0.0                  |
@@ -75,6 +75,12 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     8.5 |
 | cat06_06_bias_mitigation_declare   |     7   |
 | cat06_07_fair_unfair_powl          |     8   |
+| cat07_01_ocdfg                     |     9   |
+| cat07_02_bpmn_orders               |     9   |
+| cat07_03_bpmn_dispatch             |     9   |
+| cat07_04_causal_net                |     9   |
+| cat07_05_proclets                  |     9   |
+| cat07_06_perf_spectrum             |     9.5 |
 
 
 
@@ -187,6 +193,12 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     9.2 |
 | cat06_06_bias_mitigation_declare   |     3   |
 | cat06_07_fair_unfair_powl          |     7   |
+| cat07_01_ocdfg                     |     9.5 |
+| cat07_02_bpmn_orders               |     9   |
+| cat07_03_bpmn_dispatch             |     9   |
+| cat07_04_causal_net                |    10   |
+| cat07_05_proclets                  |     9.5 |
+| cat07_06_perf_spectrum             |     9.5 |
 
 
 
