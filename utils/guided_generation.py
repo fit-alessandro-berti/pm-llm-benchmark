@@ -4,6 +4,22 @@ import subprocess
 import sys
 from common import clean_model_name
 
+
+def read_contents(file_path):
+    content = ""
+
+    try:
+        F = open(file_path, "r", encoding="utf-8")
+        content = F.read()
+        F.close()
+    except:
+        F = open(file_path, "r")
+        content = F.read()
+        F.close()
+
+    return content
+
+
 questions_folder = "../questions"
 answers_folder = "../answers"
 
@@ -20,7 +36,7 @@ model_name = input("Give me the name of the model that you are testing -> ")
 for q in questions:
     question_path = os.path.join(questions_folder, q)
 
-    question = open(question_path, "r", encoding="utf-8").read().strip()
+    question = read_contents(question_path).strip()
 
     answer_path = os.path.join(answers_folder, clean_model_name(model_name) + "_" + q).replace(".png", ".txt")
 
@@ -29,7 +45,7 @@ for q in questions:
     if not os.path.exists(answer_path):
         proceed = True
     else:
-        contents = open(answer_path, "r", encoding="utf-8").read().strip()
+        contents = read_contents(answer_path).strip()
         if not contents:
             proceed = True
 
