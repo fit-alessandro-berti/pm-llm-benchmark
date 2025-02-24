@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "DeepSeek-R1-Dynamic-Quant" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "r1-1776" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -30,6 +30,7 @@ class Shared:
     # API_URL = "https://api.groq.com/openai/v1/"
     # API_URL = "https://api.deepseek.com/"
     # API_URL = "https://api.hyperbolic.xyz/v1/"
+    # API_URL = "https://api.perplexity.ai/"
     # API_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/"
     SYSTEM_PROMPT = None
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You are Qwen developed by Alibaba. You should think step-by-step."
@@ -119,7 +120,7 @@ MODELS_DICT = {
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning"]:
         if p in model_name:
             return True
     return False
@@ -280,10 +281,10 @@ def query_text_simple_generic(question, api_url, target_file):
                 chunk = data.get("response", "")
                 response_message += chunk
                 chunk_count += 1
-                print(chunk_count)
+                #print(chunk_count)
 
                 if chunk_count % 10 == 0:
-                    print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
+                    #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                     pass
 
     else:
@@ -294,7 +295,7 @@ def query_text_simple_generic(question, api_url, target_file):
         dump_payload(payload, target_file)
 
         # Decide if we want streaming
-        streaming_enabled = True  # Example usage
+        streaming_enabled = True
 
         if streaming_enabled:
             payload["stream"] = True
