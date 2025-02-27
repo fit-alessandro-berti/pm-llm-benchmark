@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "r1-1776" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "claude-3-7-sonnet-20250219" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -39,6 +39,8 @@ class Shared:
     CUSTOM_TEMPERATURE = None
     #CUSTOM_TEMPERATURE = 0.1
     TRIAL_SEVERE_EVALUATION = True
+    ANTHROPIC_THINKING_TOKENS = 65536
+    ANTHROPIC_THINKING_TOKENS = None
 
 
 MODELS_DICT = {
@@ -360,24 +362,63 @@ def query_text_simple_anthropic(question, api_url, target_file):
     headers = {
         "content-type": "application/json",
         "anthropic-version": "2023-06-01",
+        "anthropic-beta": "output-128k-2025-02-19",
         "x-api-key": Shared.API_KEY
     }
 
     payload = {
         "model": Shared.MODEL_NAME,
-        "max_tokens": Shared.MAX_REQUESTED_TOKENS
+        "max_tokens": Shared.MAX_REQUESTED_TOKENS,
+        "messages": messages
     }
 
-    payload["messages"] = messages
+    if Shared.ANTHROPIC_THINKING_TOKENS is not None:
+        payload["thinking"] = {"type": "enabled", "budget_tokens": Shared.ANTHROPIC_THINKING_TOKENS}
+        payload["max_tokens"] += Shared.ANTHROPIC_THINKING_TOKENS
+        payload["max_tokens"] = min(128000, payload["max_tokens"])
+
     dump_payload(payload, target_file)
 
-    response = requests.post(complete_url, headers=headers, json=payload).json()
-    dump_response(response, target_file)
+    payload["stream"] = True
+    response_message = ""
+    chunk_count = 0
 
-    try:
-        response_message = response["content"][0]["text"]
-    except Exception as e:
-        raise Exception(str(response))
+    # Make a streaming POST request
+    with requests.post(complete_url, headers=headers, json=payload, stream=True) as resp:
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            # Decode the line
+            decoded_line = line.decode("utf-8").strip()
+
+            # Optionally check for a stream end marker (Anthropic may send "[DONE]")
+            if "message_stop" in decoded_line:
+                break
+
+            if "message_start" in decoded_line:
+                continue
+
+            try:
+                decoded_line = decoded_line.split("data: ")[-1].strip()
+                if "text" in decoded_line:
+                    chunk = decoded_line.split('"text":"')[-1].split('"')[0].replace("\\n", "\n")
+                    response_message += chunk
+                    chunk_count += 1
+                    #print(chunk_count)
+
+                    # You could add logging or progress updates here if desired
+                    if chunk_count % 10 == 0:
+                        #print(chunk_count, len(response_message), response_message)
+                        pass
+
+            except json.JSONDecodeError:
+                # Skip any malformed lines
+                traceback.print_exc()
+                continue
+
+    # Optionally, dump the final aggregated response for debugging
+    final_response = {"content": [{"text": response_message}]}
+    dump_response(final_response, target_file)
 
     return response_message
 
@@ -476,6 +517,7 @@ def query_image_simple_anthropic(base64_image, api_url, target_file, text):
     headers = {
         "content-type": "application/json",
         "anthropic-version": "2023-06-01",
+        "anthropic-beta": "output-128k-2025-02-19",
         "x-api-key": Shared.API_KEY
     }
 
@@ -484,13 +526,18 @@ def query_image_simple_anthropic(base64_image, api_url, target_file, text):
         "max_tokens": Shared.MAX_REQUESTED_TOKENS
     }
 
+    if Shared.ANTHROPIC_THINKING_TOKENS is not None:
+        payload["thinking"] = {"type": "enabled", "budget_tokens": Shared.ANTHROPIC_THINKING_TOKENS}
+        payload["max_tokens"] += Shared.ANTHROPIC_THINKING_TOKENS
+        payload["max_tokens"] = min(128000, payload["max_tokens"])
+
     payload["messages"] = messages
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
     dump_response(response, target_file)
 
     try:
-        response_message = response["content"][0]["text"]
+        response_message = response["content"][-1]["text"]
     except Exception as e:
         raise Exception(str(response))
 
