@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "claude-3-7-sonnet-20250219" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "claude-3-5-haiku-20241022" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -133,7 +133,8 @@ def is_visual_model(model_name):
 
     for p in patterns:
         if p.lower() in model_name.lower():
-            return True
+            if "haiku" not in model_name.lower():
+                return True
 
     return False
 
