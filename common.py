@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "gpt-4.5-preview" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "claude-3-opus-20240229" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -380,42 +380,50 @@ def query_text_simple_anthropic(question, api_url, target_file):
 
     dump_payload(payload, target_file)
 
-    payload["stream"] = True
     response_message = ""
-    chunk_count = 0
 
-    # Make a streaming POST request
-    with requests.post(complete_url, headers=headers, json=payload, stream=True) as resp:
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            # Decode the line
-            decoded_line = line.decode("utf-8").strip()
+    streaming_enabled = False
 
-            # Optionally check for a stream end marker (Anthropic may send "[DONE]")
-            if "message_stop" in decoded_line:
-                break
+    if streaming_enabled:
+        payload["stream"] = True
+        chunk_count = 0
 
-            if "message_start" in decoded_line:
-                continue
+        # Make a streaming POST request
+        with requests.post(complete_url, headers=headers, json=payload, stream=True) as resp:
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                # Decode the line
+                decoded_line = line.decode("utf-8").strip()
 
-            try:
-                decoded_line = decoded_line.split("data: ")[-1].strip()
-                if "text" in decoded_line:
-                    chunk = decoded_line.split('"text":"')[-1].split('"')[0].replace("\\n", "\n")
-                    response_message += chunk
-                    chunk_count += 1
-                    #print(chunk_count)
+                # Optionally check for a stream end marker (Anthropic may send "[DONE]")
+                if "message_stop" in decoded_line:
+                    break
 
-                    # You could add logging or progress updates here if desired
-                    if chunk_count % 10 == 0:
-                        #print(chunk_count, len(response_message), response_message)
-                        pass
+                if "message_start" in decoded_line:
+                    continue
 
-            except json.JSONDecodeError:
-                # Skip any malformed lines
-                traceback.print_exc()
-                continue
+                try:
+                    decoded_line = decoded_line.split("data: ")[-1].strip()
+                    if "text" in decoded_line:
+                        chunk = decoded_line.split('"text":"')[-1].split('"')[0].replace("\\n", "\n")
+                        response_message += chunk
+                        chunk_count += 1
+                        #print(chunk_count)
+
+                        # You could add logging or progress updates here if desired
+                        if chunk_count % 10 == 0:
+                            #print(chunk_count, len(response_message), response_message)
+                            pass
+
+                except json.JSONDecodeError:
+                    # Skip any malformed lines
+                    traceback.print_exc()
+                    continue
+    else:
+        with requests.post(complete_url, headers=headers, json=payload) as resp:
+            respj = resp.json()
+            response_message = respj["content"][-1]["text"]
 
     # Optionally, dump the final aggregated response for debugging
     final_response = {"content": [{"text": response_message}]}
