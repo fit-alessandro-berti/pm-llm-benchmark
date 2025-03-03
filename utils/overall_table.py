@@ -2,7 +2,7 @@ import os
 import pandas as pd
 from collections import Counter
 from utils.table_per_model import execute_script
-from common import EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path
+from common import EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, is_open_source, is_large_reasoning_model, force_custom_evaluation_lrm
 
 
 def format_numb_in_table(score, max_score, good_diff=0.3):
@@ -13,29 +13,6 @@ def format_numb_in_table(score, max_score, good_diff=0.3):
     return "%.1f" % (score)
 
 
-def is_open_source(m_name):
-    m_name = m_name.lower()
-    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "qwen-plus", "qwen-turbo", "qwen-max", "sonar-"]
-
-    for p in patterns:
-        if p in m_name:
-            return False
-
-    return True
-
-
-def is_large_reasoning_model(m_name):
-    m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776"]
-
-    for p in patterns:
-        if p in m_name:
-            return True
-
-    return False
-
-
-
 def format_is_open_source(m_name):
     if is_open_source(m_name):
         return ":white_check_mark:"
@@ -44,7 +21,7 @@ def format_is_open_source(m_name):
 
 
 def execute(evaluation_folder, target_file, include_closed_source=True, require_vision=False,
-            require_reasoning=False, leaderboard_title="Overall Leaderboard", reg_expr=None):
+            require_reasoning=False, require_reasoning_custom=False, leaderboard_title="Overall Leaderboard", reg_expr=None):
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
     models = {x: y for x, y in models.items() if y >= 44}
@@ -65,10 +42,10 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     max_c10 = 0.0
 
     for m in models:
-        if "DeepSeek-R1-671B-HB" in m:
+        if "DeepSeek-R1-671B-HB" in m and not require_reasoning_custom:
             continue
 
-        if (include_closed_source or is_open_source(m)) and (not require_reasoning or is_large_reasoning_model(m)):
+        if (include_closed_source or is_open_source(m)) and (not require_reasoning or (is_large_reasoning_model(m) and (not require_reasoning_custom or force_custom_evaluation_lrm(m)))):
             if reg_expr is None or reg_expr.lower() in m.lower():
                 res, this_json = execute_script(evaluation_folder, m)
 
@@ -139,7 +116,6 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
                     break
                 i = i + 1
             m_n = news[0:min(target_len+1, len(news))]
-        #m_n = m_n.capitalize()
 
         average = float(m[1]) / 4.6
 
@@ -190,12 +166,10 @@ def write_evaluation(base_path, extra=True):
     if extra and e_m_name == "gpt-4o-2024-11-20":
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_" + e_m_name + ".md"), include_closed_source=True,
                 require_vision=False, require_reasoning=True, leaderboard_title="Large Reasoning Models Leaderboard")
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_cot_" + e_m_name + ".md"), include_closed_source=True,
+                require_vision=False, require_reasoning=True, require_reasoning_custom=True, leaderboard_title="Large Reasoning Models Leaderboard (Models with CoT)")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_" + e_m_name + ".md"), include_closed_source=False,
                 require_vision=False, leaderboard_title="Open-Source Leaderboard")
-        execute(evaluation_folder, os.path.join(base_path, "leaderboard_vis_" + e_m_name + ".md"), include_closed_source=True,
-                require_vision=True, leaderboard_title="Vision Leaderboard")
-        execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_vis_" + e_m_name + ".md"), include_closed_source=False,
-                require_vision=True, leaderboard_title="Open-Source Vision Leaderboard")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_qwen_" + e_m_name + ".md"),
                 include_closed_source=True, require_vision=False,
                 leaderboard_title="QWEN Leaderboard", reg_expr="qwen")

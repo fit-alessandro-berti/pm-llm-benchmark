@@ -120,14 +120,6 @@ MODELS_DICT = {
 }
 
 
-def force_custom_evaluation_lrm(answering_model_name):
-    model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning"]:
-        if p in model_name:
-            return True
-    return False
-
-
 def is_visual_model(model_name):
     patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta"]
 
@@ -136,6 +128,36 @@ def is_visual_model(model_name):
             if "haiku" not in model_name.lower():
                 return True
 
+    return False
+
+
+def is_open_source(m_name):
+    m_name = m_name.lower()
+    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "qwen-plus", "qwen-turbo", "qwen-max", "sonar-"]
+
+    for p in patterns:
+        if p in m_name:
+            return False
+
+    return True
+
+
+def is_large_reasoning_model(m_name):
+    m_name = m_name.lower()
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776"]
+
+    for p in patterns:
+        if p in m_name:
+            return True
+
+    return False
+
+
+def force_custom_evaluation_lrm(answering_model_name):
+    model_name = answering_model_name.lower()
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning"]:
+        if p in model_name:
+            return True
     return False
 
 
