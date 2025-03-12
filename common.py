@@ -237,6 +237,40 @@ def dump_response(response, target_file):
             print("response dumping failed")
 
 
+def query_text_simple_openai_new(question, api_url, target_file):
+    complete_url = api_url
+    if not complete_url.endswith("/"):
+        complete_url += "/"
+    complete_url += "responses"
+
+    payload = {
+        "model": Shared.MODEL_NAME,
+        "input": question
+    }
+
+    if Shared.SYSTEM_PROMPT is not None:
+        payload["instructions"] = Shared.SYSTEM_PROMPT
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {Shared.API_KEY}"
+    }
+
+    dump_payload(payload, target_file)
+
+    response = requests.post(complete_url, headers=headers, json=payload)
+    if response.status_code != 200:
+        print(response)
+        print(response.status_code)
+        print(response.text)
+
+    response = response.json()
+
+    dump_response(response, target_file)
+
+    return response["output"][0]["content"][0]["text"]
+
+
 def query_text_simple_generic(question, api_url, target_file):
     """
     Generic function to query LLM endpoints:
@@ -485,7 +519,9 @@ def query_text_simple(question_path, target_file, callback, question=None):
     if question is None:
         question = open(question_path, "r", encoding="utf-8").read()
 
-    if "googleapis" in Shared.API_URL:
+    if "openai" in Shared.API_URL:
+        response_message = query_text_simple_openai_new(question, Shared.API_URL, target_file)
+    elif "googleapis" in Shared.API_URL:
         response_message = query_text_simple_google(question, Shared.API_URL, target_file)
     elif "anthropic" in Shared.API_URL:
         response_message = query_text_simple_anthropic(question, Shared.API_URL, target_file)
@@ -494,6 +530,48 @@ def query_text_simple(question_path, target_file, callback, question=None):
 
     if response_message:
         callback(response_message, target_file)
+
+
+def query_image_simple_openai_new(base64_image, api_url, target_file, text):
+    complete_url = api_url
+    if not complete_url.endswith("/"):
+        complete_url += "/"
+    complete_url += "responses"
+
+    payload = {
+        "model": Shared.MODEL_NAME,
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": text},
+                    {"type": "input_image", "image_url": f"data:image/png;base64,{base64_image}"}
+                ]
+            }
+        ]
+    }
+
+    if Shared.SYSTEM_PROMPT is not None:
+        payload["instructions"] = Shared.SYSTEM_PROMPT
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {Shared.API_KEY}"
+    }
+
+    dump_payload(payload, target_file)
+
+    response = requests.post(complete_url, headers=headers, json=payload)
+    if response.status_code != 200:
+        print(response)
+        print(response.status_code)
+        print(response.text)
+
+    response = response.json()
+
+    dump_response(response, target_file)
+
+    return response["output"][0]["content"][0]["text"]
 
 
 def query_image_simple_generic(base64_image, api_url, target_file, text):
@@ -612,7 +690,9 @@ def query_image_simple(question_path, target_file, callback, base64_image=None, 
     if base64_image is None:
         base64_image = encode_image(question_path)
 
-    if "googleapis" in Shared.API_URL:
+    if "openai" in Shared.API_URL:
+        response_message = query_image_simple_openai_new(base64_image, Shared.API_URL, target_file, text)
+    elif "googleapis" in Shared.API_URL:
         response_message = query_image_simple_google(base64_image, Shared.API_URL, target_file, text)
     elif "anthropic" in Shared.API_URL:
         response_message = query_image_simple_anthropic(base64_image, Shared.API_URL, target_file, text)
