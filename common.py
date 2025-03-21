@@ -268,7 +268,7 @@ def query_text_simple_openai_new(question, api_url, target_file):
 
     dump_response(response, target_file)
 
-    return response["output"][0]["content"][0]["text"]
+    return response["output"][-1]["content"][0]["text"]
 
 
 def query_text_simple_generic(question, api_url, target_file):
@@ -571,7 +571,7 @@ def query_image_simple_openai_new(base64_image, api_url, target_file, text):
 
     dump_response(response, target_file)
 
-    return response["output"][0]["content"][0]["text"]
+    return response["output"][-1]["content"][0]["text"]
 
 
 def query_image_simple_generic(base64_image, api_url, target_file, text):
