@@ -21,6 +21,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | Grok-3-beta-20250220          | **7.2** | **33.0** | :x:                | 5.0                  | 7.1                  | 4.8                  | 5.4                  | 5.0                  | **5.7**              | **5.5**              |
 | gemini-2.0-flash-thinking-exp | **7.1** | **32.8** | :x:                | 5.2                  | 7.2                  | 4.0                  | 5.3                  | **5.7**              | 5.4                  | **5.5**              |
 | claude-3-5-sonnet-20241022    | **7.1** | **32.8** | :x:                | 5.8                  | 6.6                  | 5.3                  | 4.6                  | 5.3                  | 5.2                  | **5.5**              |
+| exaone-deep7.8b-fp16          | **7.1** | **32.8** | :white_check_mark: | 4.5                  | **7.5**              | 3.8                  | **5.6**              | **5.8**              | 5.6                  | 0.0                  |
 | gpt-4o-2024-11-20             | **7.1** | **32.6** | :x:                | 5.0                  | **7.5**              | 5.0                  | 5.1                  | 4.8                  | 5.3                  | **5.5**              |
 | grok-2-1212                   | **7.1** | **32.6** | :x:                | **6.2**              | 7.0                  | 4.3                  | 5.0                  | 4.7                  | 5.5                  | 0.0                  |
 | qwen2.5-72b-instruct          | **7.1** | **32.5** | :white_check_mark: | 5.8                  | 7.1                  | 4.5                  | 5.1                  | 4.9                  | 5.0                  | 0.0                  |
@@ -893,6 +894,59 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat07_04_causal_net                |     9.5 |
 | cat07_05_proclets                  |     9   |
 | cat07_06_perf_spectrum             |     9   |
+
+
+
+### exaone-deep7.8b-fp16   => 32.8 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |     2.5 |
+| cat01_02_activity_context          |     7.7 |
+| cat01_03_high_level_events         |     9.1 |
+| cat01_04_sensor_recordings         |     7.7 |
+| cat01_05_merge_two_logs            |     8.3 |
+| cat01_06_system_logs               |     4.2 |
+| cat01_07_interv_to_pseudo_bpmn     |     4.2 |
+| cat01_08_tables_to_log             |     1   |
+| cat02_01_conformance_textual       |     8.9 |
+| cat02_02_conf_desiderata           |     8.3 |
+| cat02_03_anomaly_event_log         |     7.7 |
+| cat02_04_powl_anomaly_detection    |     6   |
+| cat02_05_two_powls_anomalies       |     8.3 |
+| cat02_06_root_cause_1              |    10   |
+| cat02_07_root_cause_2              |     7.7 |
+| cat02_08_underfitting_process_tree |     9.4 |
+| cat02_09_fix_process_tree          |     8.9 |
+| cat03_01_process_tree_generation   |     3.1 |
+| cat03_02_powl_generation           |     9.4 |
+| cat03_03_log_skeleton_generation   |     1   |
+| cat03_04_declare_generation        |     5.4 |
+| cat03_05_temp_profile_generation   |     1   |
+| cat03_06_petri_net_generation      |     3.7 |
+| cat03_07_process_tree_discovery    |     9.4 |
+| cat03_08_powl_discovery            |     4.8 |
+| cat04_01_pseudo_bpmn_description   |     7.7 |
+| cat04_02_pseudo_bpmn_open_question |     8.9 |
+| cat04_03_declare_open_question     |     8.9 |
+| cat04_04_declare_description       |     8.9 |
+| cat04_05_sql_filt_num_events       |     8.9 |
+| cat04_06_sql_filt_three_df         |     4.8 |
+| cat04_07_sql_filt_top_k_vars       |     8.3 |
+| cat05_01_hyp_generation_log        |     7.1 |
+| cat05_02_hyp_gen_powl              |     8.3 |
+| cat05_03_hyp_gen_declare           |     8.3 |
+| cat05_04_hyp_gen_temp_profile      |     7.1 |
+| cat05_05_question_gen_nlp          |     9.4 |
+| cat05_06_question_pseudo_bpmn      |     8.9 |
+| cat05_07_question_interview        |     8.9 |
+| cat06_01_bias_text                 |     8.9 |
+| cat06_02_bias_event_log            |     7.1 |
+| cat06_03_bias_powl                 |     8.3 |
+| cat06_04_bias_two_logs             |     9.4 |
+| cat06_05_bias_two_logs_2           |     9.4 |
+| cat06_06_bias_mitigation_declare   |     4.2 |
+| cat06_07_fair_unfair_powl          |     8.3 |
 
 
 
