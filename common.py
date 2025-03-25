@@ -49,23 +49,25 @@ MODELS_DICT = {
         "api_url": "https://api.openai.com/v1/",
         "api_key": "sk-",
         "models": {
-            "gpt-4o-mini-2024-07-18", "gpt-4o-2024-11-20", "gpt-3.5-turbo",
-            "gpt-4-turbo-2024-04-09", "o1-mini-2024-09-12", "o1-preview-2024-09-12"
+            "gpt-4o-2024-11-20", "gpt-3.5-turbo",
+            "gpt-4-turbo-2024-04-09", "o1-mini-2024-09-12", "o1-preview-2024-09-12",
+            "gpt-4.5-preview"
         }
     },
     "google": {
         "api_url": "https://generativelanguage.googleapis.com/v1beta/",
         "api_key": "sk-",
         "models": {
-            "gemini-1.5-pro-002", "gemini-exp-1206", "gemini-2.0-flash-exp",
-            "gemini-2.0-flash-thinking-exp-01-21"
+            "gemini-1.5-pro-002", "gemini-2.0-flash",
+            "gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-lite"
         }
     },
     "claude": {
         "api_url": "https://api.anthropic.com/v1/",
         "api_key": "sk-",
         "models": {
-            "claude-3-5-sonnet-20241022"
+            "claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-7-sonnet-20250219",
+            "claude-3-5-haiku-20241022"
         }
     },
     "mistral": {
@@ -73,7 +75,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
-            "mistral-small-2409", "codestral-2501", "mistral-large-2411"
+            "codestral-2501", "mistral-large-2411", "mistral-small-2501", "mistral-small-2503"
         }
     },
     "grok": {
@@ -91,8 +93,8 @@ MODELS_DICT = {
             "meta-llama/Llama-3.2-90B-Vision-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct",
             "meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.2-3B-Instruct",
             "nvidia/Llama-3.1-Nemotron-70B-Instruct", "google/gemma-2-9b-it",
-            "Qwen/QwQ-32B-Preview", "microsoft/phi-4", "microsoft/WizardLM-2-8x22B",
-            "Qwen/Qwen2.5-72B-Instruct"
+            "microsoft/phi-4", "microsoft/WizardLM-2-8x22B", "Qwen/QwQ-32B",
+            "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct"
         }
     },
     "ollama_local": {
@@ -102,20 +104,37 @@ MODELS_DICT = {
             "qwen2.5:3b-instruct-q8_0",
             "falcon3:10b-instruct-q8_0", "falcon3:7b-instruct-q8_0",
             "falcon3:3b-instruct-q8_0", "command-r7b:7b-12-2024-q4_K_M",
-            "olmo2:7b-1124-instruct-q8_0"
+            "olmo2:7b-1124-instruct-q8_0", "exaone-deep:32b-fp16",
+            "exaone-deep:7.8b-fp16", "exaone-deep:2.4b-fp16",
+            "gemma3:27b-it-q8_0", "gemma3:12b-it-q8_0", "gemma3:4b-it-q8_0",
+            "gemma3:1b-it-q8_0", "granite3.2:8b-instruct-q4_K_M",
+        }
+    },
+    "qwen": {
+        "api_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/",
+        "api_key": "sk-",
+        "models": {
+            "qwen-max-2025-01-25", "qwen-plus-2025-01-25", "qwen-turbo-2024-11-01",
+            "qwen2.5-72b-instruct", "qwen2.5-32b-instruct", "qwen2.5-14b-instruct",
+            "qwen2.5-7b-instruct", "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m",
+            "qwen2.5:1.5b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0"
         }
     },
     "manual": {
         "api_url": "http://0.0.0.0:1000/v1/",
         "api_key": "sk-",
         "models": {
-            "Qwen-2.5-Plus", "DeepSeek-R1-Distill-Qwen-32B",
+            "DeepSeek-R1-Distill-Qwen-32B",
             "DeepSeek-V3", "o1-2024-12-17", "MiniMax-01",
             "gpt-4o-mini-2024-11-05", "Sonus-1-Pro-Reasoning",
             "o1-pro-2024-12-17", "DeepSeek-R1-Distill-Llama-70B",
-            "DeepSeek-R1-671B-API", "DeepSeek-R1-Distill-Qwen-14B",
-            "Qwen/Qwen2.5-14B-Instruct-1M", "Qwen/Qwen2.5-14B-Instruct",
-            "Qwen/Qwen2.5-7B-Instruct", "Qwen/Qwen2.5-7B-Instruct-1M"
+            "DeepSeek-R1-Distill-Qwen-14B", "DeepSeek-R1-Distill-Llama-8B",
+            "DeepSeek-R1-Distill-Qwen-1.5B", "DeepSeek-R1-Distill-Qwen-7B",
+            "DeepSeek-R1-Zero", "DeepSeek-R1-671B-DS", "DeepSeek-R1-Dynamic-Quant",
+            "DeepSeek-R1-671B-HB", "o3-mini-20250131-HIGH", "o3-mini-20250131-LOW",
+            "Perplexity-R1-1776", "Perplexity-Sonar-Pro", "Perplexity-Sonar-Reasoning-Pro",
+            "Grok-3-beta-thinking-20250221", "Grok-3-beta-20250220",
+            "chatgpt-4o-latest-20250215"
         }
     }
 }
@@ -718,18 +737,19 @@ def get_models():
 
 
 def insert_api_keys():
-    MODELS_DICT["openai"]["api_key"] = open("api_openai.txt", "r").read().strip()
-    MODELS_DICT["mistral"]["api_key"] = open("api_mistral.txt", "r").read().strip()
-    MODELS_DICT["grok"]["api_key"] = open("api_grok.txt", "r").read().strip()
-    MODELS_DICT["deepinfra"]["api_key"] = open("api_deepinfra.txt", "r").read().strip()
-    MODELS_DICT["google"]["api_key"] = open("api_google.txt", "r").read().strip()
-    MODELS_DICT["claude"]["api_key"] = open("api_anthropic.txt", "r").read().strip()
+    MODELS_DICT["openai"]["api_key"] = open("../api_openai.txt", "r").read().strip()
+    MODELS_DICT["mistral"]["api_key"] = open("../api_mistral.txt", "r").read().strip()
+    MODELS_DICT["grok"]["api_key"] = open("../api_grok.txt", "r").read().strip()
+    MODELS_DICT["deepinfra"]["api_key"] = open("../api_deepinfra.txt", "r").read().strip()
+    MODELS_DICT["qwen"]["api_key"] = open("../api_qwen.txt", "r").read().strip()
+    MODELS_DICT["google"]["api_key"] = open("../api_google.txt", "r").read().strip()
+    MODELS_DICT["claude"]["api_key"] = open("../api_anthropic.txt", "r").read().strip()
 
 def check_all_models():
     insert_api_keys()
 
     for provider in MODELS_DICT:
-        if provider not in {"google", "claude", "grok", "manual"}:
+        if provider not in {"google", "claude", "grok", "qwen", "manual"}:
             print(provider)
             info = MODELS_DICT[provider]
             Shared.API_URL = info["api_url"]
@@ -741,6 +761,8 @@ def check_all_models():
             if len(diff) > 0:
                 print("ERROR")
                 print(diff)
+                print(models_specified)
+                print(models)
                 input()
 
 
