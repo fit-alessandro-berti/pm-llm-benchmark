@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "mistral-small-2503" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "nvidia/llama-3.3-nemotron-super-49b-v1" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[2]
@@ -32,6 +32,7 @@ class Shared:
     # API_URL = "https://api.hyperbolic.xyz/v1/"
     # API_URL = "https://api.perplexity.ai/"
     # API_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/"
+    # API_URL = "https://integrate.api.nvidia.com/v1/"
     SYSTEM_PROMPT = None
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You are Qwen developed by Alibaba. You should think step-by-step."
     #SYSTEM_PROMPT = "You are a helpful and harmless assistant."
@@ -144,7 +145,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone"]
 
     for p in patterns:
         if p in m_name:
@@ -155,7 +156,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone"]:
         if p in model_name:
             return True
     return False
@@ -343,6 +344,7 @@ def query_text_simple_generic(question, api_url, target_file):
                 #print(chunk_count)
 
                 if chunk_count % 10 == 0:
+                    #print(chunk_count)
                     #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                     pass
 
