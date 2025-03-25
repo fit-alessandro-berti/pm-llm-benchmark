@@ -28,7 +28,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | Sonus-1-Pro-Reasoning         | **6.1** | **28.1** | :x:                | 4.8                  | 6.7                  | 3.2                  | 4.5                  | 4.2                  | 4.7                  | 0.0                  |
 | exaone-deep2.4b-fp16          | **5.9** | **27.1** | :white_check_mark: | 4.5                  | 6.9                  | 1.6                  | 4.5                  | 4.7                  | 4.9                  | 0.0                  |
 | Perplexity-Sonar-Reasoning    | **5.6** | **25.8** | :x:                | 4.8                  | 5.8                  | 2.4                  | 4.1                  | 4.3                  | 4.3                  | 0.0                  |
-| QwenQwQ-32B                   | **5.5** | **25.2** | :white_check_mark: | 4.7                  | 6.5                  | 1.4                  | 4.2                  | 3.9                  | 4.5                  | 0.0                  |
+| QwQ-32B                       | **5.5** | **25.2** | :white_check_mark: | 4.7                  | 6.5                  | 1.4                  | 4.2                  | 3.9                  | 4.5                  | 0.0                  |
 | DeepSeek-R1-Distill-Qwen-7B   | **5.0** | **22.9** | :white_check_mark: | 3.3                  | 5.2                  | 2.7                  | 4.0                  | 4.2                  | 3.6                  | 0.0                  |
 | DeepSeek-R1-Distill-Qwen-1.5B | **3.1** | **14.4** | :white_check_mark: | 2.4                  | 3.6                  | 1.4                  | 2.3                  | 2.4                  | 2.4                  | 0.0                  |
 

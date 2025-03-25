@@ -20,6 +20,19 @@ def format_is_open_source(m_name):
         return ":x:"
 
 
+def manage_file_name(file_name):
+    if "deepseek-ai" in file_name:
+        return file_name.split("deepseek-ai")[-1]
+
+    if "nvidia" in file_name:
+        return file_name.split("nvidia")[-1]
+
+    if file_name.lower().startswith("qwenqw"):
+        file_name = file_name[4:]
+
+    return file_name
+
+
 def execute(evaluation_folder, target_file, include_closed_source=True, require_vision=False,
             require_reasoning=False, require_reasoning_custom=False, leaderboard_title="Overall Leaderboard", reg_expr=None):
     files = os.listdir(evaluation_folder)
@@ -102,7 +115,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
     target_len = 29
     for m in results:
-        m_n = m[0]
+        m_n = manage_file_name(m[0])
         if len(m_n) > target_len:
             spli = m_n.split("-")
             news = ""
