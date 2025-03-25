@@ -94,7 +94,8 @@ MODELS_DICT = {
             "meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.2-3B-Instruct",
             "nvidia/Llama-3.1-Nemotron-70B-Instruct", "google/gemma-2-9b-it",
             "microsoft/phi-4", "microsoft/WizardLM-2-8x22B", "Qwen/QwQ-32B",
-            "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct"
+            "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "deepseek-ai/DeepSeek-V3-0324"
         }
     },
     "ollama_local": {
@@ -118,6 +119,13 @@ MODELS_DICT = {
             "qwen2.5-72b-instruct", "qwen2.5-32b-instruct", "qwen2.5-14b-instruct",
             "qwen2.5-7b-instruct", "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m",
             "qwen2.5:1.5b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0"
+        }
+    },
+    "nvidia": {
+        "api_url": "https://integrate.api.nvidia.com/v1/",
+        "api_key": "sk-",
+        "models": {
+            "nvidia/llama-3.3-nemotron-super-49b-v1"
         }
     },
     "manual": {
@@ -742,8 +750,10 @@ def insert_api_keys():
     MODELS_DICT["grok"]["api_key"] = open("../api_grok.txt", "r").read().strip()
     MODELS_DICT["deepinfra"]["api_key"] = open("../api_deepinfra.txt", "r").read().strip()
     MODELS_DICT["qwen"]["api_key"] = open("../api_qwen.txt", "r").read().strip()
+    MODELS_DICT["nvidia"]["api_key"] = open("../api_nvidia.txt", "r").read().strip()
     MODELS_DICT["google"]["api_key"] = open("../api_google.txt", "r").read().strip()
     MODELS_DICT["claude"]["api_key"] = open("../api_anthropic.txt", "r").read().strip()
+
 
 def check_all_models():
     insert_api_keys()
