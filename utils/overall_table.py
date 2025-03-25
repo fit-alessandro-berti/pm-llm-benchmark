@@ -29,6 +29,15 @@ def manage_file_name(file_name):
 
     if file_name.lower().startswith("qwenqw"):
         file_name = file_name[4:]
+        return file_name
+
+    if file_name.startswith("microsoft"):
+        file_name = file_name[9:]
+        return file_name
+
+    if file_name.startswith("meta-llama"):
+        file_name = file_name.split("meta-llama")[1]
+        return file_name
 
     return file_name
 
