@@ -184,7 +184,7 @@ def is_large_reasoning_model(m_name):
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
     for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone"]:
-        if p in model_name:
+        if p in model_name and not "deepseek-v3" in model_name:
             return True
     return False
 
