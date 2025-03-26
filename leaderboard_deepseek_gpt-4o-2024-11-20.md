@@ -8,16 +8,16 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | Model                         | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:------------------------------|:--------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
 | DeepSeek-R1-671B-DS           | **7.6** | **35.1** | :white_check_mark: | :mage_woman: **6.2** | 7.0                  | 4.8                  | :mage_woman: **5.6** | 5.5                  | :mage_woman: **5.8** | :mage_woman: **0.0** |
-| DeepSeek-V3-0324              | **7.4** | **34.1** | :white_check_mark: | 5.8                  | :mage_woman: **7.7** | :mage_woman: **5.4** | 4.9                  | 5.0                  | 5.4                  | :mage_woman: **0.0** |
+| DeepSeek-V3-0324              | **7.5** | **34.6** | :white_check_mark: | 5.8                  | :mage_woman: **7.7** | :mage_woman: **5.4** | 5.0                  | 5.4                  | 5.4                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Llama-70B | **7.2** | **33.2** | :white_check_mark: | 5.8                  | 6.8                  | 4.4                  | 5.2                  | 5.3                  | **5.5**              | :mage_woman: **0.0** |
-| DeepSeek-R1-Zero              | **7.0** | **32.1** | :white_check_mark: | 5.3                  | 6.8                  | 4.3                  | 4.6                  | :mage_woman: **5.9** | 5.2                  | :mage_woman: **0.0** |
+| DeepSeek-R1-Zero              | **7.1** | **32.8** | :white_check_mark: | 5.3                  | 6.8                  | 5.0                  | 4.6                  | :mage_woman: **5.9** | 5.2                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Qwen-32B  | **7.0** | **32.1** | :white_check_mark: | **5.9**              | 7.0                  | 3.3                  | 4.8                  | **5.8**              | 5.2                  | :mage_woman: **0.0** |
-| DeepSeek-V3                   | **6.8** | **31.1** | :white_check_mark: | 5.2                  | 6.8                  | 4.0                  | 4.6                  | 4.9                  | **5.6**              | :mage_woman: **0.0** |
+| DeepSeek-V3                   | **6.8** | **31.2** | :white_check_mark: | 5.2                  | 6.8                  | 4.0                  | 4.7                  | 4.9                  | **5.6**              | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Qwen-14B  | **6.7** | **30.9** | :white_check_mark: | 5.7                  | 7.2                  | 3.8                  | 4.1                  | 5.0                  | 5.1                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Dynamic-Quant     | **6.5** | **29.9** | :white_check_mark: | 4.6                  | 6.3                  | 4.8                  | 4.8                  | 4.9                  | 4.6                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Llama-8B  | **6.4** | **29.3** | :white_check_mark: | 5.5                  | 6.9                  | 3.0                  | 3.6                  | 4.5                  | :mage_woman: **5.8** | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Qwen-7B   | **5.0** | **22.9** | :white_check_mark: | 3.3                  | 5.2                  | 2.7                  | 4.0                  | 4.2                  | 3.6                  | :mage_woman: **0.0** |
-| DeepSeek-R1-Distill-Qwen-1.5B | **3.1** | **14.4** | :white_check_mark: | 2.4                  | 3.6                  | 1.4                  | 2.3                  | 2.4                  | 2.4                  | :mage_woman: **0.0** |
+| DeepSeek-R1-Distill-Qwen-1.5B | **3.2** | **14.8** | :white_check_mark: | 2.4                  | 3.6                  | 1.4                  | 2.6                  | 2.4                  | 2.4                  | :mage_woman: **0.0** |
 
 ### DeepSeek-R1-671B-DS   => 35.1 points
 
@@ -72,7 +72,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### deepseek-aiDeepSeek-V3-0324   => 34.1 points
+### deepseek-aiDeepSeek-V3-0324   => 34.6 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -101,7 +101,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat03_06_petri_net_generation      |     8   |
 | cat03_07_process_tree_discovery    |     9.5 |
 | cat03_08_powl_discovery            |     8   |
-| cat04_01_pseudo_bpmn_description   |     8   |
+| cat04_01_pseudo_bpmn_description   |     9   |
 | cat04_02_pseudo_bpmn_open_question |     8.5 |
 | cat04_03_declare_open_question     |     8.5 |
 | cat04_04_declare_description       |     9   |
@@ -113,7 +113,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat05_03_hyp_gen_declare           |     9   |
 | cat05_04_hyp_gen_temp_profile      |     7.5 |
 | cat05_05_question_gen_nlp          |     7   |
-| cat05_06_question_pseudo_bpmn      |     5   |
+| cat05_06_question_pseudo_bpmn      |     9   |
 | cat05_07_question_interview        |     6.5 |
 | cat06_01_bias_text                 |     9   |
 | cat06_02_bias_event_log            |     8.5 |
@@ -178,7 +178,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### DeepSeek-R1-Zero   => 32.1 points
+### DeepSeek-R1-Zero   => 32.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -199,7 +199,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat02_07_root_cause_2              |     8.3 |
 | cat02_08_underfitting_process_tree |     7.7 |
 | cat02_09_fix_process_tree          |     6.6 |
-| cat03_01_process_tree_generation   |     2   |
+| cat03_01_process_tree_generation   |     8.9 |
 | cat03_02_powl_generation           |     6.6 |
 | cat03_03_log_skeleton_generation   |     4.2 |
 | cat03_04_declare_generation        |     7.7 |
@@ -284,7 +284,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### DeepSeek-V3   => 31.1 points
+### DeepSeek-V3   => 31.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -314,7 +314,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat03_07_process_tree_discovery    |     5.5 |
 | cat03_08_powl_discovery            |     5   |
 | cat04_01_pseudo_bpmn_description   |     9.5 |
-| cat04_02_pseudo_bpmn_open_question |     8   |
+| cat04_02_pseudo_bpmn_open_question |     9   |
 | cat04_03_declare_open_question     |     5.8 |
 | cat04_04_declare_description       |     7   |
 | cat04_05_sql_filt_num_events       |     9   |
@@ -549,7 +549,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### DeepSeek-R1-Distill-Qwen-1.5B   => 14.4 points
+### DeepSeek-R1-Distill-Qwen-1.5B   => 14.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -578,7 +578,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat03_06_petri_net_generation      |     1   |
 | cat03_07_process_tree_discovery    |     2   |
 | cat03_08_powl_discovery            |     1   |
-| cat04_01_pseudo_bpmn_description   |     5.4 |
+| cat04_01_pseudo_bpmn_description   |     8.9 |
 | cat04_02_pseudo_bpmn_open_question |     1   |
 | cat04_03_declare_open_question     |     6.6 |
 | cat04_04_declare_description       |     6.6 |
