@@ -7,17 +7,17 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 | Model                         | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:------------------------------|:--------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| gemini-2.5-pro-exp-03-25      | **8.2** | **37.9** | :x:                | :mage_woman: **6.4** | :mage_woman: **8.0** | :mage_woman: **5.7** | :mage_woman: **5.9** | :mage_woman: **6.2** | :mage_woman: **5.8** | 4.9                  |
-| o3-mini-20250131-HIGH         | **7.3** | **33.8** | :x:                | 5.9                  | 7.6                  | 4.3                  | 4.9                  | 5.4                  | **5.6**              | 2.5                  |
-| o1-pro-2024-12-17             | **7.3** | **33.7** | :x:                | 5.9                  | **7.7**              | 4.5                  | 5.0                  | 5.5                  | 5.2                  | :mage_woman: **5.6** |
-| gpt-4.5-preview               | **7.1** | **32.6** | :x:                | 5.7                  | 7.4                  | 4.2                  | 4.9                  | 5.2                  | 5.3                  | 3.4                  |
+| gemini-2.5-pro-exp-03-25      | **8.2** | **37.9** | :x:                | :mage_woman: **6.4** | :mage_woman: **8.0** | :mage_woman: **5.7** | :mage_woman: **5.9** | :mage_woman: **6.2** | :mage_woman: **5.8** | :mage_woman: **5.8** |
+| o3-mini-20250131-HIGH         | **7.3** | **33.8** | :x:                | 5.9                  | 7.6                  | 4.3                  | 4.9                  | 5.4                  | **5.6**              | 3.5                  |
+| o1-pro-2024-12-17             | **7.3** | **33.7** | :x:                | 5.9                  | **7.7**              | 4.5                  | 5.0                  | 5.5                  | 5.2                  | 4.8                  |
+| gpt-4.5-preview               | **7.1** | **32.6** | :x:                | 5.7                  | 7.4                  | 4.2                  | 4.9                  | 5.2                  | 5.3                  | 4.2                  |
 | DeepSeek-R1-671B-DS           | **6.7** | **30.6** | :white_check_mark: | 5.3                  | 7.1                  | 4.0                  | 4.8                  | 4.6                  | 4.8                  | 0.0                  |
 | DeepSeek-V3-0324              | **6.6** | **30.4** | :white_check_mark: | 5.8                  | 6.5                  | 3.8                  | 4.8                  | 4.8                  | 4.6                  | 0.0                  |
-| o3-mini-20250131-LOW          | **6.5** | **29.9** | :x:                | 4.9                  | 6.3                  | 3.5                  | 4.6                  | 5.5                  | 4.9                  | 2.7                  |
-| gpt-4o-2024-11-20             | **5.9** | **27.1** | :x:                | 4.5                  | 5.8                  | 3.0                  | 3.6                  | 5.1                  | 5.1                  | 3.4                  |
-| gemini-2.0-flash              | **5.8** | **26.8** | :x:                | 4.6                  | 6.1                  | 3.4                  | 3.0                  | 4.5                  | 5.2                  | 2.8                  |
+| o3-mini-20250131-LOW          | **6.5** | **29.9** | :x:                | 4.9                  | 6.3                  | 3.5                  | 4.6                  | 5.5                  | 4.9                  | 3.8                  |
+| gpt-4o-2024-11-20             | **5.9** | **27.1** | :x:                | 4.5                  | 5.8                  | 3.0                  | 3.6                  | 5.1                  | 5.1                  | 4.5                  |
+| gemini-2.0-flash              | **5.8** | **26.8** | :x:                | 4.6                  | 6.1                  | 3.4                  | 3.0                  | 4.5                  | 5.2                  | 3.8                  |
 | DeepSeek-R1-Distill-Qwen-32B  | **5.6** | **25.8** | :white_check_mark: | 5.1                  | 6.2                  | 3.5                  | 3.2                  | 3.8                  | 4.0                  | 0.0                  |
-| mistral-small-2503            | **5.3** | **24.3** | :white_check_mark: | 3.1                  | 5.0                  | 2.4                  | 4.3                  | 4.7                  | 4.8                  | 2.8                  |
+| mistral-small-2503            | **5.3** | **24.3** | :white_check_mark: | 3.1                  | 5.0                  | 2.4                  | 4.3                  | 4.7                  | 4.8                  | 3.6                  |
 | DeepSeek-R1-Distill-Llama-70B | **5.3** | **24.3** | :white_check_mark: | 4.1                  | 5.7                  | 2.2                  | 3.6                  | 4.4                  | 4.4                  | 0.0                  |
 | ministral-3b-2410             | **4.1** | **18.6** | :x:                | 2.9                  | 3.4                  | 2.0                  | 3.3                  | 3.7                  | 3.4                  | 0.0                  |
 
@@ -62,7 +62,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat05_03_hyp_gen_declare           |     9   |
 | cat05_04_hyp_gen_temp_profile      |     8.7 |
 | cat05_05_question_gen_nlp          |     9   |
-| cat05_06_question_pseudo_bpmn      |     9.8 |
+| cat05_06_question_pseudo_bpmn      |     9.5 |
 | cat05_07_question_interview        |     8.5 |
 | cat06_01_bias_text                 |     9.5 |
 | cat06_02_bias_event_log            |     9   |
@@ -75,7 +75,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat07_02_bpmn_orders               |     9.5 |
 | cat07_03_bpmn_dispatch             |     9.5 |
 | cat07_04_causal_net                |    10   |
-| cat07_05_proclets                  |     0.1 |
+| cat07_05_proclets                  |     9   |
 | cat07_06_perf_spectrum             |     9.8 |
 
 
@@ -130,11 +130,11 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     7.5 |
 | cat06_06_bias_mitigation_declare   |     7   |
 | cat06_07_fair_unfair_powl          |     7   |
-| cat07_01_ocdfg                     |     3   |
+| cat07_01_ocdfg                     |     6   |
 | cat07_02_bpmn_orders               |     3.5 |
 | cat07_03_bpmn_dispatch             |     4.5 |
 | cat07_04_causal_net                |     5.5 |
-| cat07_05_proclets                  |     0.1 |
+| cat07_05_proclets                  |     7.5 |
 | cat07_06_perf_spectrum             |     8   |
 
 
@@ -191,7 +191,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat06_07_fair_unfair_powl          |     9.5 |
 | cat07_01_ocdfg                     |     9.8 |
 | cat07_02_bpmn_orders               |    10   |
-| cat07_03_bpmn_dispatch             |     8.5 |
+| cat07_03_bpmn_dispatch             |     1   |
 | cat07_04_causal_net                |     8   |
 | cat07_05_proclets                  |     9.8 |
 | cat07_06_perf_spectrum             |     9.8 |
@@ -248,7 +248,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     9   |
 | cat06_06_bias_mitigation_declare   |     4   |
 | cat06_07_fair_unfair_powl          |     8   |
-| cat07_01_ocdfg                     |     1.2 |
+| cat07_01_ocdfg                     |     9.8 |
 | cat07_02_bpmn_orders               |     6.5 |
 | cat07_03_bpmn_dispatch             |     1   |
 | cat07_04_causal_net                |     6.5 |
@@ -413,9 +413,9 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     8   |
 | cat06_06_bias_mitigation_declare   |     6   |
 | cat06_07_fair_unfair_powl          |     3.5 |
-| cat07_01_ocdfg                     |     1.2 |
-| cat07_02_bpmn_orders               |     1   |
-| cat07_03_bpmn_dispatch             |     1   |
+| cat07_01_ocdfg                     |     6   |
+| cat07_02_bpmn_orders               |     4   |
+| cat07_03_bpmn_dispatch             |     4   |
 | cat07_04_causal_net                |     8.5 |
 | cat07_05_proclets                  |     7   |
 | cat07_06_perf_spectrum             |     8.5 |
@@ -474,9 +474,9 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat06_07_fair_unfair_powl          |     8   |
 | cat07_01_ocdfg                     |     9.5 |
 | cat07_02_bpmn_orders               |     6   |
-| cat07_03_bpmn_dispatch             |     1   |
+| cat07_03_bpmn_dispatch             |     5   |
 | cat07_04_causal_net                |     8   |
-| cat07_05_proclets                  |     0.1 |
+| cat07_05_proclets                  |     7   |
 | cat07_06_perf_spectrum             |     9.5 |
 
 
@@ -535,7 +535,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat07_02_bpmn_orders               |     9.2 |
 | cat07_03_bpmn_dispatch             |     1   |
 | cat07_04_causal_net                |     8   |
-| cat07_05_proclets                  |     0.1 |
+| cat07_05_proclets                  |     9.8 |
 | cat07_06_perf_spectrum             |     1   |
 
 
@@ -643,12 +643,12 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     7.5 |
 | cat06_06_bias_mitigation_declare   |     4   |
 | cat06_07_fair_unfair_powl          |     8.5 |
-| cat07_01_ocdfg                     |     2   |
+| cat07_01_ocdfg                     |     7   |
 | cat07_02_bpmn_orders               |     6   |
 | cat07_03_bpmn_dispatch             |     5   |
 | cat07_04_causal_net                |     7   |
 | cat07_05_proclets                  |     6.5 |
-| cat07_06_perf_spectrum             |     1   |
+| cat07_06_perf_spectrum             |     4.5 |
 
 
 
