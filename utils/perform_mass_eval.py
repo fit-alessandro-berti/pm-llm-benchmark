@@ -19,7 +19,7 @@ base_evaluation_path = get_base_evaluation_path(e_m_name)
 evaluations = os.listdir(base_evaluation_path)
 evaluations_models = Counter([x.split("_cat")[0] for x in evaluations])
 
-models_list = ["mistral-small-2503", "gemini-2.0-flash", "gpt-4o-2024-11-20", "DeepSeek-R1-Distill-Llama-70B", "DeepSeek-R1-Distill-Qwen-32B", "o3-mini-20250131-HIGH", "o3-mini-20250131-LOW", "DeepSeek-R1-671B-DS", "gemini-2.5-pro-exp-03-25", "gpt-4.5-preview", "deepseek-aiDeepSeek-V3-0324", "qwen-max-2025-01-25", "qwen-plus-2025-01-25", "claude-3-7-sonnet-20250219", "nvidiallama-3.3-nemotron-super-49b-v1", "Grok-3-beta-20250220", "gemini-2.0-flash-thinking-exp-01-21", "Grok-3-beta-thinking-20250221", "grok-2-1212", "qwen2.5-72b-instruct"]
+models_list = ["mistral-small-2503", "gemini-2.0-flash", "gpt-4o-2024-11-20", "DeepSeek-R1-Distill-Llama-70B", "DeepSeek-R1-Distill-Qwen-32B", "o3-mini-20250131-HIGH", "o3-mini-20250131-LOW", "DeepSeek-R1-671B-DS", "gemini-2.5-pro-exp-03-25", "gpt-4.5-preview", "deepseek-aiDeepSeek-V3-0324", "gemini-2.0-pro-exp-02-05", "gemini-2.0-flash-lite", "gemini-1.5-pro-002", "qwen-max-2025-01-25", "qwen-plus-2025-01-25", "claude-3-7-sonnet-20250219", "nvidiallama-3.3-nemotron-super-49b-v1", "Grok-3-beta-20250220", "gemini-2.0-flash-thinking-exp-01-21", "Grok-3-beta-thinking-20250221", "grok-2-1212", "qwen2.5-72b-instruct"]
 answer_models_keys = list(answers_models.keys())
 diff = set(models_list).difference(answer_models_keys)
 if diff:
