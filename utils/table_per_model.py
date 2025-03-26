@@ -5,17 +5,31 @@ import pandas as pd
 from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, force_custom_evaluation_lrm
 
 
-pattern = r'(?P<sign>[-+]?)(?:\d*\.\d+|(?P<numerator>\d+)/(?P<denominator>\d+))'
+pattern = r'(?P<sign>[-+]?)(?:(?P<float>\d+\.\d+)|(?P<int>\d+)|(?P<numerator>\d+)/(?P<denominator>\d+))(?!\.)'
 reg_expr = re.compile(pattern)
 
+
 def match_regex(text):
-    for match in reg_expr.finditer(text):
-        if match.group('numerator'):
-            numerator = int(match.group('numerator'))
-            return numerator
-        else:
-            number = float(match.group(0))
-            return number
+    matches = list(reg_expr.finditer(text))
+    matches_numbers_floats = []
+    matches_numbers_ints = []
+    for match in matches:
+        match_stri = str(match.group(0))
+        number = float(match_stri)
+        if number >= 1 and number <= 10:
+            if "." in match_stri:
+                matches_numbers_floats.append(number)
+            else:
+                matches_numbers_ints.append(number)
+
+    if matches_numbers_floats:
+        if 10.0 in matches_numbers_floats:
+            idx = matches_numbers_floats.index(10.0)
+            if idx > 0:
+                return matches_numbers_floats[idx-1]
+        return matches_numbers_floats[0]
+    elif matches_numbers_ints:
+        return matches_numbers_ints[0]
 
 
 def execute_script(evaluation_folder, model_name):
