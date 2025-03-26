@@ -59,7 +59,8 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gemini-1.5-pro-002", "gemini-2.0-flash",
-            "gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-lite"
+            "gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-lite",
+            "gemini-2.5-pro-exp-03-25"
         }
     },
     "claude": {
@@ -799,8 +800,8 @@ def get_base_evaluation_path(model_name):
 
 
 if __name__ == "__main__":
-    check_all_models()
     check_missing_models()
+    check_all_models()
     #set_api_key("answer")
     #models = get_models()
     #print(models)
