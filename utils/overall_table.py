@@ -177,25 +177,29 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     return output, all_jsons, [m[0] for m in results]
 
 
+def get_suffix_name(e_m_name):
+    return e_m_name.split("-exp")[0]
+
+
 def write_evaluation(base_path, extra=True):
     e_m_name = clean_model_name(EVALUATING_MODEL_NAME)
     base_evaluation_path = get_base_evaluation_path(EVALUATING_MODEL_NAME)
     evaluation_folder = os.path.join(base_path, base_evaluation_path)
 
-    execute(evaluation_folder, os.path.join(base_path, "leaderboard_" + e_m_name + ".md"), include_closed_source=True, require_vision=False,
+    execute(evaluation_folder, os.path.join(base_path, "leaderboard_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True, require_vision=False,
             leaderboard_title="Overall Leaderboard")
 
     if extra and e_m_name == "gpt-4o-2024-11-20":
-        execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_" + e_m_name + ".md"), include_closed_source=True,
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
                 require_vision=False, require_reasoning=True, leaderboard_title="Large Reasoning Models Leaderboard")
-        execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_cot_" + e_m_name + ".md"), include_closed_source=True,
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_cot_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
                 require_vision=False, require_reasoning=True, require_reasoning_custom=True, leaderboard_title="Large Reasoning Models Leaderboard (Models with CoT)")
-        execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_" + e_m_name + ".md"), include_closed_source=False,
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=False,
                 require_vision=False, leaderboard_title="Open-Source Leaderboard")
-        execute(evaluation_folder, os.path.join(base_path, "leaderboard_qwen_" + e_m_name + ".md"),
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_qwen_" + get_suffix_name(e_m_name) + ".md"),
                 include_closed_source=True, require_vision=False,
                 leaderboard_title="QWEN Leaderboard", reg_expr="qwen")
-        execute(evaluation_folder, os.path.join(base_path, "leaderboard_deepseek_" + e_m_name + ".md"),
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_deepseek_" + get_suffix_name(e_m_name) + ".md"),
                 include_closed_source=True, require_vision=False,
                 leaderboard_title="DEEPSEEK Leaderboard", reg_expr="deepseek")
 
