@@ -18,7 +18,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 | DeepSeek-V3-0324              | **6.6** | **30.4** | :white_check_mark: | 5.8                  | 6.5                  | 3.8                  | 4.8                  | 4.8                  | 4.6                  | 0.0                  |
 | DeepSeek-R1-Dynamic-Quant     | **6.6** | **30.4** | :white_check_mark: | 5.4                  | 7.4                  | 3.5                  | 4.6                  | 5.3                  | 4.2                  | 0.0                  |
 | o3-mini-20250131-LOW          | **6.5** | **29.9** | :x:                | 4.9                  | 6.3                  | 3.5                  | 4.6                  | 5.5                  | 4.9                  | 3.8                  |
-| claude-3-7-sonnet-20250219    | **6.3** | **29.0** | :x:                | 5.2                  | 5.9                  | 4.1                  | 3.6                  | 5.0                  | 5.2                  | 3.6                  |
+| claude-3-7-sonnet-nothink     | **6.3** | **29.0** | :x:                | 5.2                  | 5.9                  | 4.1                  | 3.6                  | 5.0                  | 5.2                  | 3.6                  |
 | gemini-1.5-pro-002            | **6.2** | **28.7** | :x:                | 4.4                  | 5.8                  | 3.0                  | 4.4                  | 5.5                  | 5.6                  | 4.7                  |
 | chatgpt-4o-latest-20250215    | **6.2** | **28.3** | :x:                | 4.7                  | 6.1                  | 3.4                  | 3.5                  | 5.5                  | 5.1                  | 3.8                  |
 | DeepSeek-R1-Zero              | **6.1** | **28.0** | :white_check_mark: | 5.3                  | 5.1                  | 3.6                  | 4.2                  | 5.5                  | 4.3                  | 0.0                  |
@@ -678,7 +678,7 @@ A score in the range **25-30** is considered **sufficient**; a score in the rang
 
 
 
-### claude-3-7-sonnet-20250219   => 29.0 points
+### claude-3-7-sonnet-nothink-20250219   => 29.0 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
