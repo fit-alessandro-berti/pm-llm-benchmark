@@ -64,9 +64,6 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     max_c10 = 0.0
 
     for m in models:
-        if "DeepSeek-R1-671B-HB" in m and not require_reasoning_custom:
-            continue
-
         if (include_closed_source or is_open_source(m)) and (not require_reasoning or (is_large_reasoning_model(m) and (not require_reasoning_custom or force_custom_evaluation_lrm(m)))):
             if reg_expr is None or reg_expr.lower() in m.lower():
                 res, this_json = execute_script(evaluation_folder, m)

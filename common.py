@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "claude-3-7-sonnet-20250219" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "DeepSeek-R1-671B-HB" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-exp-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -41,7 +41,7 @@ class Shared:
     #CUSTOM_TEMPERATURE = 0.1
     TRIAL_SEVERE_EVALUATION = True
     ANTHROPIC_THINKING_TOKENS = 98304
-    ANTHROPIC_THINKING_TOKENS = None
+    #ANTHROPIC_THINKING_TOKENS = None
 
 
 MODELS_DICT = {
@@ -184,7 +184,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb"]:
         if p in model_name and not "deepseek-v3" in model_name:
             return True
     return False
