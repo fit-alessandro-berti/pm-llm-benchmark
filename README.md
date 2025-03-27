@@ -37,6 +37,7 @@ The benchmark includes different categories of questions:
 
 The leaderboards include the results of the benchmark, as evaluated by the considered judge LLM:
 
-* (**2024-12-13 TO NOW**) [gpt-4o-2024-11-20](leaderboard_gpt-4o-2024-11-20.md)
+(**2025-03-27 TO NOW**) [gemini-2.5-pro](leaderboard_gemini-2.5-pro.md)
 
+* (v2, OLD, 2024-12-13 TO 2025-03-26) [gpt-4o-2024-11-20](old/OLD_v2_leaderboard_gpt-4o-2024-11-20.md)
 * (v1, OLD, 2024-10-31 TO 2024-12-12) [v1-leaderboard](old/OLD_v1_leaderboard_chatgpt-4o-latest.md)
