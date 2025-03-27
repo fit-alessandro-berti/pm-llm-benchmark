@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "qwen-plus-2025-01-25" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "claude-3-7-sonnet-20250219" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-exp-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -40,7 +40,7 @@ class Shared:
     CUSTOM_TEMPERATURE = None
     #CUSTOM_TEMPERATURE = 0.1
     TRIAL_SEVERE_EVALUATION = True
-    ANTHROPIC_THINKING_TOKENS = 65536
+    ANTHROPIC_THINKING_TOKENS = 128000
     ANTHROPIC_THINKING_TOKENS = None
 
 
@@ -67,7 +67,7 @@ MODELS_DICT = {
         "api_url": "https://api.anthropic.com/v1/",
         "api_key": "sk-",
         "models": {
-            "claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-7-sonnet-20250219",
+            "claude-3-5-sonnet-20241022", "claude-3-opus-20240229"
             "claude-3-5-haiku-20241022"
         }
     },
@@ -143,7 +143,7 @@ MODELS_DICT = {
             "DeepSeek-R1-671B-HB", "o3-mini-20250131-HIGH", "o3-mini-20250131-LOW",
             "Perplexity-R1-1776", "Perplexity-Sonar-Pro", "Perplexity-Sonar-Reasoning-Pro",
             "Grok-3-beta-thinking-20250221", "Grok-3-beta-20250220",
-            "chatgpt-4o-latest-20250215"
+            "chatgpt-4o-latest-20250215", "claude-3-7-sonnet-nothink-20250219"
         }
     }
 }
@@ -173,7 +173,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro"]
 
     for p in patterns:
         if p in m_name:
