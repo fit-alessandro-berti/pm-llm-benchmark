@@ -186,19 +186,11 @@ def write_evaluation(base_path, extra=True):
     execute(evaluation_folder, os.path.join(base_path, "leaderboard_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True, require_vision=False,
             leaderboard_title="Overall Leaderboard")
 
-    if extra and e_m_name == "gpt-4o-2024-11-20":
-        execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
-                require_vision=False, require_reasoning=True, leaderboard_title="Large Reasoning Models Leaderboard")
+    if extra and e_m_name.startswith("gemini-2.5-pro"):
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_cot_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
                 require_vision=False, require_reasoning=True, require_reasoning_custom=True, leaderboard_title="Large Reasoning Models Leaderboard (Models with CoT)")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=False,
                 require_vision=False, leaderboard_title="Open-Source Leaderboard")
-        execute(evaluation_folder, os.path.join(base_path, "leaderboard_qwen_" + get_suffix_name(e_m_name) + ".md"),
-                include_closed_source=True, require_vision=False,
-                leaderboard_title="QWEN Leaderboard", reg_expr="qwen")
-        execute(evaluation_folder, os.path.join(base_path, "leaderboard_deepseek_" + get_suffix_name(e_m_name) + ".md"),
-                include_closed_source=True, require_vision=False,
-                leaderboard_title="DEEPSEEK Leaderboard", reg_expr="deepseek")
 
 
 if __name__ == "__main__":

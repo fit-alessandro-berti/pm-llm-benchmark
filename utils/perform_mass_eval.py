@@ -44,11 +44,11 @@ answer_models_keys = [x for x in answer_models_keys if evaluations_models[x] != 
 print(answer_models_keys)
 #input()
 
-overall_table.write_evaluation(".", extra=False)
+overall_table.write_evaluation(".", extra=True)
 
 for m in answer_models_keys:
     print(m)
     evalscript.perform_evaluation(m)
-    overall_table.write_evaluation(".", extra=False)
+    overall_table.write_evaluation(".", extra=True)
 
 overall_table.write_evaluation(".", extra=True)
