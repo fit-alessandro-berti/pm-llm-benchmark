@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "gpt-4o-2024-11-20" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "qwen-plus-2025-01-25" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-exp-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -20,12 +20,12 @@ class Shared:
     API_KEY = None
     MODEL_NAME = None
     MAX_REQUESTED_TOKENS = 16384
-    API_URL = "https://api.openai.com/v1/"
+    API_URL = "https://generativelanguage.googleapis.com/v1beta/"
+    # API_URL = "https://api.openai.com/v1/"
     # API_URL = "http://137.226.117.70:11434/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
     # API_URL = "https://api.x.ai/v1/"
     # API_URL = "https://api.mistral.ai/v1/"
-    API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.anthropic.com/v1/"
     # API_URL = "https://api.groq.com/openai/v1/"
     # API_URL = "https://api.deepseek.com/"
@@ -796,7 +796,7 @@ def clean_model_name(m_name):
 
 
 def get_base_evaluation_path(model_name):
-    return "evaluation" if "gpt-4o" in model_name else "evaluation-" + clean_model_name(model_name)
+    return "evaluation" if "gpt-4o" in model_name else "evaluation-" + clean_model_name(model_name).split("-exp")[0]
 
 
 if __name__ == "__main__":
