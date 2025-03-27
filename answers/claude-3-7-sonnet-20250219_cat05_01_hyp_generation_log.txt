@@ -1,0 +1,219 @@
+# Process Mining & Anomaly Detection Analysis
+
+After analyzing the event log data, I've identified several anomalies and process deviations that warrant further investigation. Here's my analysis of the order processing event logs:
+
+## Identified Anomalies
+
+### 1. Sequence Violations
+The assumed normal process flow (Register  Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Issue Invoice  Receive Payment) is frequently violated:
+
+- **Case 1002**: Shipping activities (Confirm Shipment, Ship Goods) occur *before* Credit Check and Stock Validation
+- **Case 1003**: Goods are shipped before shipment confirmation; Invoice issued before confirmation
+- **Case 1004**: Payment received before invoice issuance
+
+### 2. Missing Process Steps
+Several cases show incomplete process execution:
+
+- **Case 1003**: Missing "Validate Stock" activity
+- **Case 1004**: Missing both "Perform Credit Check" and "Validate Stock" activities
+
+### 3. Logical Inconsistencies
+- **Case 1004**: The "Confirm Shipment" activity shows `shipment_scheduled=N`, yet "Ship Goods" happens anyway
+
+### 4. Timing Anomalies
+- Unusually quick transitions between activities (e.g., Payment received only 5 minutes after order registration in Case 1004)
+
+## Hypotheses for Anomalies
+
+1. **System Control Issues**: Lack of enforced process controls allowing out-of-sequence activities
+2. **Priority Order Handling**: Special handling for high-value or priority orders (bypassing steps)
+3. **Departmental Silos**: Lack of coordination between departments (Finance, Logistics, etc.)
+4. **Manual Overrides**: Authorized users bypassing the normal flow for expedited processing
+5. **Data Entry Problems**: Backdating of activities or incorrect timestamps
+6. **Incomplete Process Documentation**: Actual process differs from documented standard process
+
+## SQL Queries for Investigation
+
+### Query 1: Identify process sequence variations
+```sql
+WITH ordered_events AS (
+  SELECT 
+    case_id, 
+    activity,
+    timestamp,
+    ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as event_order
+  FROM order_event_log
+)
+SELECT 
+  oe.case_id,
+  STRING_AGG(oe.activity, '  ' ORDER BY oe.event_order) as actual_sequence,
+  o.order_type,
+  o.order_value
+FROM ordered_events oe
+JOIN orders o ON oe.case_id = o.case_id
+GROUP BY oe.case_id, o.order_type, o.order_value
+ORDER BY oe.case_id;
+```
+
+### Query 2: Find missing activities by case
+```sql
+WITH expected_activities AS (
+  SELECT 'Register Order' as activity UNION ALL
+  SELECT 'Perform Credit Check' UNION ALL
+  SELECT 'Validate Stock' UNION ALL
+  SELECT 'Confirm Shipment' UNION ALL
+  SELECT 'Ship Goods' UNION ALL
+  SELECT 'Issue Invoice' UNION ALL
+  SELECT 'Receive Payment'
+),
+case_activities AS (
+  SELECT DISTINCT case_id, activity
+  FROM order_event_log
+)
+SELECT 
+  o.case_id,
+  ea.activity as missing_activity,
+  o.order_type,
+  o.order_value
+FROM orders o
+CROSS JOIN expected_activities ea
+LEFT JOIN case_activities ca ON o.case_id = ca.case_id AND ea.activity = ca.activity
+WHERE ca.case_id IS NULL
+ORDER BY o.case_id, ea.activity;
+```
+
+### Query 3: Analyze timing between activities
+```sql
+WITH event_pairs AS (
+  SELECT 
+    e1.case_id,
+    e1.activity as activity1,
+    e2.activity as activity2,
+    e1.timestamp as time1,
+    e2.timestamp as time2,
+    EXTRACT(EPOCH FROM (e2.timestamp - e1.timestamp))/60 as minutes_between
+  FROM order_event_log e1
+  JOIN order_event_log e2 ON e1.case_id = e2.case_id 
+    AND e1.timestamp < e2.timestamp
+  WHERE NOT EXISTS (
+    SELECT 1 FROM order_event_log e3
+    WHERE e3.case_id = e1.case_id 
+      AND e3.timestamp > e1.timestamp 
+      AND e3.timestamp < e2.timestamp
+  )
+)
+SELECT 
+  activity1,
+  activity2,
+  AVG(minutes_between) as avg_minutes,
+  MIN(minutes_between) as min_minutes,
+  MAX(minutes_between) as max_minutes,
+  COUNT(*) as pair_count
+FROM event_pairs
+GROUP BY activity1, activity2
+ORDER BY avg_minutes;
+```
+
+### Query 4: Investigate process variations by order type
+```sql
+SELECT 
+  o.order_type,
+  COUNT(DISTINCT oel.case_id) as order_count,
+  AVG(
+    (SELECT COUNT(DISTINCT activity) FROM order_event_log WHERE case_id = o.case_id)
+  ) as avg_activities_per_case,
+  AVG(o.order_value) as avg_order_value
+FROM orders o
+JOIN order_event_log oel ON o.case_id = oel.case_id
+GROUP BY o.order_type
+ORDER BY avg_activities_per_case;
+```
+
+### Query 5: Detect logical inconsistencies in shipment process
+```sql
+SELECT 
+  oel1.case_id,
+  oel1.timestamp as confirmation_time,
+  oel1.additional_info as shipment_status,
+  oel2.timestamp as shipping_time,
+  oel2.additional_info as shipping_details,
+  o.order_type,
+  o.order_value
+FROM order_event_log oel1
+JOIN order_event_log oel2 ON oel1.case_id = oel2.case_id
+JOIN orders o ON oel1.case_id = o.case_id
+WHERE oel1.activity = 'Confirm Shipment'
+  AND oel2.activity = 'Ship Goods'
+  AND oel1.additional_info LIKE '%shipment_scheduled=N%';
+```
+
+### Query 6: Identify which resources are involved in anomalous cases
+```sql
+WITH anomalous_cases AS (
+  SELECT DISTINCT case_id
+  FROM (
+    SELECT 
+      oel.case_id,
+      COUNT(DISTINCT oel.activity) as activity_count,
+      BOOL_OR(oel.activity = 'Ship Goods' AND NOT EXISTS (
+        SELECT 1 FROM order_event_log 
+        WHERE case_id = oel.case_id AND activity = 'Validate Stock'
+      )) as shipped_without_validation
+    FROM order_event_log oel
+    GROUP BY oel.case_id
+  ) subq
+  WHERE activity_count < 7 OR shipped_without_validation
+)
+SELECT 
+  r.resource_id,
+  r.role,
+  r.department,
+  COUNT(DISTINCT oel.case_id) as anomalous_cases_count
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+WHERE oel.case_id IN (SELECT case_id FROM anomalous_cases)
+GROUP BY r.resource_id, r.role, r.department
+ORDER BY anomalous_cases_count DESC;
+```
+
+### Query 7: Check for activities performed out of sequence
+```sql
+WITH process_steps AS (
+  SELECT 'Register Order' as activity, 1 as step_order UNION ALL
+  SELECT 'Perform Credit Check', 2 UNION ALL
+  SELECT 'Validate Stock', 3 UNION ALL
+  SELECT 'Confirm Shipment', 4 UNION ALL
+  SELECT 'Ship Goods', 5 UNION ALL
+  SELECT 'Issue Invoice', 6 UNION ALL
+  SELECT 'Receive Payment', 7
+),
+case_activity_order AS (
+  SELECT 
+    oel.case_id,
+    oel.activity,
+    ps.step_order as expected_order,
+    ROW_NUMBER() OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) as actual_order
+  FROM order_event_log oel
+  JOIN process_steps ps ON oel.activity = ps.activity
+)
+SELECT 
+  cao.case_id,
+  STRING_AGG(cao.activity, ', ' ORDER BY cao.actual_order) as activity_sequence,
+  COUNT(*) as violations
+FROM case_activity_order cao
+JOIN case_activity_order cao2 ON cao.case_id = cao2.case_id
+WHERE cao.expected_order > cao2.expected_order AND cao.actual_order < cao2.actual_order
+GROUP BY cao.case_id
+ORDER BY violations DESC;
+```
+
+## Recommendations
+
+1. Implement system controls to enforce the correct sequence of process steps
+2. Create standardized exceptions for priority orders that require documented approval
+3. Improve inter-departmental communication, especially between Finance and Logistics
+4. Implement data validation to prevent logical inconsistencies
+5. Document and communicate the correct process flow to all stakeholders
+6. Consider a process mining tool for continuous monitoring of process compliance
+
+These findings suggest significant deviations from the expected process, which could lead to quality issues, customer dissatisfaction, and potential revenue loss. Further investigation with the proposed SQL queries will help pinpoint the root causes and identify appropriate process improvements.
