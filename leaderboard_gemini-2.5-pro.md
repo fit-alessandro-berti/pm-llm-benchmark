@@ -17,6 +17,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | gpt-4.5-preview               | **7.1** | **32.6** | :x:                | 5.7                  | 7.4                  | 4.2                  | 4.9                  | 5.2                  | 5.3                  | 4.2                  |
 | gemini-2.0-flash-thinking-exp | **7.0** | **32.2** | :x:                | 4.6                  | 7.4                  | 3.1                  | 5.6                  | **5.9**              | 5.5                  | 5.0                  |
 | o1-preview-2024-09-12         | **6.9** | **31.9** | :x:                | 5.9                  | 7.1                  | 3.3                  | 4.9                  | 5.7                  | 5.0                  | 0.0                  |
+| chatgpt-4o-latest-2025-03-26  | **6.7** | **30.9** | :x:                | 5.5                  | 6.3                  | 3.8                  | 4.7                  | 5.1                  | 5.5                  | 4.9                  |
 | Grok-3-beta-20250220          | **6.6** | **30.4** | :x:                | 5.2                  | 6.5                  | 3.7                  | 3.9                  | 5.7                  | 5.4                  | 3.8                  |
 | DeepSeek-V3-0324              | **6.6** | **30.4** | :white_check_mark: | 5.8                  | 6.5                  | 3.8                  | 4.8                  | 4.8                  | 4.6                  | 0.0                  |
 | DeepSeek-R1-Dynamic-Quant     | **6.6** | **30.4** | :white_check_mark: | 5.4                  | 7.4                  | 3.5                  | 4.6                  | 5.3                  | 4.2                  | 0.0                  |
@@ -663,6 +664,65 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     8   |
 | cat06_06_bias_mitigation_declare   |     4   |
 | cat06_07_fair_unfair_powl          |     6   |
+
+
+
+### chatgpt-4o-latest-2025-03-26   => 30.9 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |     9.2 |
+| cat01_02_activity_context          |     6   |
+| cat01_03_high_level_events         |     7   |
+| cat01_04_sensor_recordings         |     6.5 |
+| cat01_05_merge_two_logs            |     6   |
+| cat01_06_system_logs               |     5   |
+| cat01_07_interv_to_pseudo_bpmn     |     5   |
+| cat01_08_tables_to_log             |     9.8 |
+| cat02_01_conformance_textual       |     8.5 |
+| cat02_02_conf_desiderata           |     8.3 |
+| cat02_03_anomaly_event_log         |     9.2 |
+| cat02_04_powl_anomaly_detection    |     8.5 |
+| cat02_05_two_powls_anomalies       |     5.5 |
+| cat02_06_root_cause_1              |     7.8 |
+| cat02_07_root_cause_2              |     5.5 |
+| cat02_08_underfitting_process_tree |     2   |
+| cat02_09_fix_process_tree          |     8   |
+| cat03_01_process_tree_generation   |     5.5 |
+| cat03_02_powl_generation           |     8.5 |
+| cat03_03_log_skeleton_generation   |     2   |
+| cat03_04_declare_generation        |     3.5 |
+| cat03_05_temp_profile_generation   |     6   |
+| cat03_06_petri_net_generation      |     3.5 |
+| cat03_07_process_tree_discovery    |     5   |
+| cat03_08_powl_discovery            |     4   |
+| cat04_01_pseudo_bpmn_description   |     7   |
+| cat04_02_pseudo_bpmn_open_question |     6.5 |
+| cat04_03_declare_open_question     |     4   |
+| cat04_04_declare_description       |     3   |
+| cat04_05_sql_filt_num_events       |     9.5 |
+| cat04_06_sql_filt_three_df         |     8.5 |
+| cat04_07_sql_filt_top_k_vars       |     8.5 |
+| cat05_01_hyp_generation_log        |     5   |
+| cat05_02_hyp_gen_powl              |     6.9 |
+| cat05_03_hyp_gen_declare           |     6   |
+| cat05_04_hyp_gen_temp_profile      |     6   |
+| cat05_05_question_gen_nlp          |     9   |
+| cat05_06_question_pseudo_bpmn      |     9   |
+| cat05_07_question_interview        |     9   |
+| cat06_01_bias_text                 |     8.5 |
+| cat06_02_bias_event_log            |     9   |
+| cat06_03_bias_powl                 |     9.5 |
+| cat06_04_bias_two_logs             |     8.8 |
+| cat06_05_bias_two_logs_2           |     8.5 |
+| cat06_06_bias_mitigation_declare   |     3.5 |
+| cat06_07_fair_unfair_powl          |     7.5 |
+| cat07_01_ocdfg                     |     9.8 |
+| cat07_02_bpmn_orders               |     6.5 |
+| cat07_03_bpmn_dispatch             |     5.5 |
+| cat07_04_causal_net                |    10   |
+| cat07_05_proclets                  |     8   |
+| cat07_06_perf_spectrum             |     9.5 |
 
 
 
