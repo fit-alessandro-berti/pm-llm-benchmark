@@ -34,11 +34,11 @@ class Shared:
     # API_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/"
     # API_URL = "https://integrate.api.nvidia.com/v1/"
     SYSTEM_PROMPT = None
-    # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You are Qwen developed by Alibaba. You should think step-by-step."
-    #SYSTEM_PROMPT = "You are a helpful and harmless assistant."
+    # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You should think step-by-step."
+    # SYSTEM_PROMPT = "You are a helpful and harmless assistant."
     TRIAL_CHANGE_EVALUATION_LRM = False
     CUSTOM_TEMPERATURE = None
-    #CUSTOM_TEMPERATURE = 0.1
+    #CUSTOM_TEMPERATURE = 0.6
     TRIAL_SEVERE_EVALUATION = True
     ANTHROPIC_THINKING_TOKENS = 98304
     #ANTHROPIC_THINKING_TOKENS = None
