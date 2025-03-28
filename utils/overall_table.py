@@ -152,7 +152,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
     output = []
     output.append(
-        "A score in the range **25-30** is considered **sufficient**; a score in the range **30-35** is considered **good**; and a score **>35** is considered **excellent**.")
+        "A score in the range **22-26** is considered **sufficient**; a score in the range **26-30** is considered **fair**; a score in the range **30-34** is considered **good**; and a score **>34** is considered **excellent**.")
     output.append(
         "\n**As of 2025-01-26, the chain of thought of Large Reasoning Models, if provided, is considered in the assessment of answers.**")
 
