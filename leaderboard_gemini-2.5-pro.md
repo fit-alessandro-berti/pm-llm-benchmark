@@ -23,7 +23,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | DeepSeek-R1-Dynamic-Quant     | **6.6** | **30.4** | :white_check_mark: | 5.4                  | 7.4                  | 3.5                  | 4.6                  | 5.3                  | 4.2                  | 0.0                  |
 | Perplexity-R1-1776            | **6.5** | **30.0** | :white_check_mark: | 4.7                  | 7.7                  | 2.6                  | 4.9                  | 5.0                  | 5.0                  | 0.0                  |
 | o3-mini-20250131-LOW          | **6.5** | **29.9** | :x:                | 4.9                  | 6.3                  | 3.5                  | 4.6                  | 5.5                  | 4.9                  | 3.8                  |
-| QwQ-32B                       | **6.4** | **29.5** | :white_check_mark: | 4.7                  | 6.6                  | 3.9                  | 4.2                  | 5.2                  | 4.9                  | 0.0                  |
+| qwq-plus                      | **6.4** | **29.5** | :white_check_mark: | 4.7                  | 6.6                  | 3.9                  | 4.2                  | 5.2                  | 4.9                  | 0.0                  |
 | exaone-deep32b-fp16           | **6.4** | **29.5** | :white_check_mark: | 5.7                  | 6.3                  | 3.6                  | 4.5                  | 4.3                  | 5.2                  | 0.0                  |
 | claude-3-7-sonnet-nothink     | **6.3** | **29.0** | :x:                | 5.2                  | 5.9                  | 4.1                  | 3.6                  | 5.0                  | 5.2                  | 3.6                  |
 | claude-3-5-sonnet-20241022    | **6.3** | **28.8** | :x:                | 4.2                  | 6.7                  | 3.8                  | 3.9                  | 5.5                  | 4.8                  | 3.2                  |
@@ -1003,7 +1003,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### QwenQwQ-32B   => 29.5 points
+### qwq-plus   => 29.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
