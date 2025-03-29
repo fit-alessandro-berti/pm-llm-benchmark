@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "DeepSeek-R1-671B-HB" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "nvidia/llama-3.3-nemotron-super-49b-v1" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-exp-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -36,6 +36,7 @@ class Shared:
     SYSTEM_PROMPT = None
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You should think step-by-step."
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant."
+    # SYSTEM_PROMPT = "detailed thinking on"
     TRIAL_CHANGE_EVALUATION_LRM = False
     CUSTOM_TEMPERATURE = None
     #CUSTOM_TEMPERATURE = 0.6
@@ -173,7 +174,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "nemotron-super-49b-v1-thinkenab"]
 
     for p in patterns:
         if p in m_name:
@@ -184,7 +185,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "nemotron-super-49b-v1-thinkenab"]:
         if p in model_name and not "deepseek-v3" in model_name:
             return True
     return False
