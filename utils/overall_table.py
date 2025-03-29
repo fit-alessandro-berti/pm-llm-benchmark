@@ -20,24 +20,35 @@ def format_is_open_source(m_name):
         return ":x:"
 
 
-def manage_file_name(file_name):
+def manage_file_name(file_name, rec_depth=0):
+    if rec_depth > 1:
+        return file_name
+
     if "deepseek-ai" in file_name:
-        return file_name.split("deepseek-ai")[-1]
+        return manage_file_name(file_name.split("deepseek-ai")[-1], rec_depth+1)
 
     if "nvidia" in file_name:
-        return file_name.split("nvidia")[-1]
+        return manage_file_name(file_name.split("nvidia")[-1], rec_depth+1)
 
     if file_name.lower().startswith("qwenqw"):
         file_name = file_name[4:]
-        return file_name
+        return manage_file_name(file_name, rec_depth+1)
 
     if file_name.startswith("microsoft"):
         file_name = file_name[9:]
-        return file_name
+        return manage_file_name(file_name, rec_depth+1)
 
     if file_name.startswith("meta-llama"):
-        file_name = file_name.split("meta-llama")[1]
-        return file_name
+        file_name = file_name[10:]
+        return manage_file_name(file_name, rec_depth+1)
+
+    if file_name.lower().startswith("meta-"):
+        file_name = file_name[5:]
+        return manage_file_name(file_name, rec_depth+1)
+
+    if "nemotron" in file_name.lower():
+        file_name = "nemotron" + file_name.lower().split("nemotron")[-1]
+        return manage_file_name(file_name, rec_depth+1)
 
     return file_name
 
