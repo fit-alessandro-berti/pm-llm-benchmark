@@ -18,8 +18,8 @@ def do_renaming(base_path, original_name, novel_name):
 
 
 if __name__ == "__main__":
-    original_name = "chatgpt-4o-latest_"
-    novel_name = "chatgpt-4o-latest-2025-03-26_"
+    original_name = "nvidiallama-3.3-nemotron-super-49b-v1_"
+    novel_name = "nvidiallama-3.3-nemotron-super-49b-v1-nothink_"
 
     if not original_name.endswith("_"):
         raise Exception("original_name must terminate with _")

@@ -18,7 +18,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | nemotron-70b-instruct         | **6.0** | **27.8** | :white_check_mark: | 4.5                  | 5.7                  | 3.5                  | 4.3                  | 4.7                  | 5.0                  | 0.0                  |
 | QwQ-32B-Preview               | **6.0** | **27.4** | :white_check_mark: | 5.1                  | 6.7                  | 3.1                  | 3.4                  | 5.1                  | 4.0                  | 0.0                  |
 | DeepSeek-V3                   | **5.9** | **27.2** | :white_check_mark: | 4.5                  | 5.8                  | 2.8                  | 4.3                  | 5.1                  | 4.7                  | 0.0                  |
-| nemotron-super-49b-v1         | **5.8** | **26.8** | :white_check_mark: | 3.8                  | 5.7                  | 3.1                  | 4.7                  | 5.0                  | 4.6                  | 0.0                  |
+| nemotron-super-49b-v1-nothink | **5.8** | **26.8** | :white_check_mark: | 3.8                  | 5.7                  | 3.1                  | 4.7                  | 5.0                  | 4.6                  | 0.0                  |
 | Llama-3.3-70B-Instruct        | **5.8** | **26.5** | :white_check_mark: | 4.7                  | 5.7                  | 2.7                  | 4.5                  | 4.4                  | 4.5                  | 0.0                  |
 | qwen2.5-72b-instruct          | **5.7** | **26.2** | :white_check_mark: | 4.5                  | 5.8                  | 2.9                  | 4.2                  | 3.8                  | 4.9                  | 0.0                  |
 | pixtral-large-2411            | **5.7** | **26.0** | :white_check_mark: | 5.1                  | 5.2                  | 3.2                  | 4.0                  | 4.5                  | 4.1                  | :mage_woman: **4.7** |
@@ -646,7 +646,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### nvidiallama-3.3-nemotron-super-49b-v1   => 26.8 points
+### nvidiallama-3.3-nemotron-super-49b-v1-nothink   => 26.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
