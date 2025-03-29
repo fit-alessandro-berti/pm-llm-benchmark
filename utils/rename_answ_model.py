@@ -1,4 +1,5 @@
 import os
+from common import get_base_evaluation_path, EVALUATING_MODEL_NAME
 from overall_table import write_evaluation
 
 
@@ -27,6 +28,6 @@ if __name__ == "__main__":
         raise Exception("novel_name must terminate with _")
 
     do_renaming("../answers", original_name, novel_name)
-    do_renaming("../evaluation-gemini-2.5-pro", original_name, novel_name)
+    do_renaming(os.path.join("..", get_base_evaluation_path(EVALUATING_MODEL_NAME)), original_name, novel_name)
 
     write_evaluation("..", extra=True)
