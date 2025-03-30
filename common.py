@@ -151,7 +151,7 @@ MODELS_DICT = {
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "-omni-"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
@@ -629,14 +629,55 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
 
     payload.update(get_llm_specific_settings())
 
-    response = requests.post(complete_url, headers=headers, json=payload).json()
-    dump_response(response, target_file)
+    streaming_enabled = True
 
-    try:
-        response_message = response["choices"][0]["message"]["content"]
-    except Exception as e:
-        print(response)
-        raise Exception(e)
+    if streaming_enabled:
+        payload["stream"] = True
+        response_message = ""
+        chunk_count = 0
+
+        # We add stream=True to requests so we can iterate over chunks
+        with requests.post(complete_url, headers=headers, json=payload, stream=True) as resp:
+            if resp.status_code != 200:
+                print(resp)
+                print(resp.status_code)
+                print(resp.text)
+
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                decoded_line = line.decode("utf-8")
+
+                # OpenAI-style streaming lines begin with "data: "
+                if decoded_line.startswith("data: "):
+                    data_str = decoded_line[len("data: "):].strip()
+                    if data_str == "[DONE]":
+                        # End of stream
+                        break
+                    try:
+                        data_json = json.loads(data_str)
+                        if "choices" in data_json:
+                            # Each chunk has a delta with partial content
+                            chunk_content = data_json["choices"][0]["delta"].get("content", "")
+                            if chunk_content:
+                                response_message += chunk_content
+                                chunk_count += 1
+                                # print(chunk_count)
+                                if chunk_count % 10 == 0:
+                                    # print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
+                                    pass
+                    except json.JSONDecodeError:
+                        # Possibly a keep-alive or incomplete chunk
+                        traceback.print_exc()
+    else:
+        response = requests.post(complete_url, headers=headers, json=payload).json()
+        dump_response(response, target_file)
+
+        try:
+            response_message = response["choices"][0]["message"]["content"]
+        except Exception as e:
+            print(response)
+            raise Exception(e)
 
     return response_message
 
