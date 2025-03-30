@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "nvidia/llama-3.3-nemotron-super-49b-v1" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "qwen2.5-omni-7b" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-exp-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -410,12 +410,13 @@ def query_text_simple_generic(question, api_url, target_file):
                             if "choices" in data_json:
                                 # Each chunk has a delta with partial content
                                 chunk_content = data_json["choices"][0]["delta"].get("content", "")
-                                response_message += chunk_content
-                                chunk_count += 1
-                                #print(chunk_count)
-                                if chunk_count % 10 == 0:
-                                    #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
-                                    pass
+                                if chunk_content:
+                                    response_message += chunk_content
+                                    chunk_count += 1
+                                    #print(chunk_count)
+                                    if chunk_count % 10 == 0:
+                                        #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
+                                        pass
                         except json.JSONDecodeError:
                             # Possibly a keep-alive or incomplete chunk
                             traceback.print_exc()
