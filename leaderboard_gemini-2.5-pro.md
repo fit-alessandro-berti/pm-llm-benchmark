@@ -76,7 +76,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | qwen-turbo-2024-11-01           | **4.5** | **20.6** | :x:                | 3.4                  | 4.2                  | 2.1                  | 3.2                  | 4.1                  | 3.6                  | 0.0                  |
 | pixtral-12b-2409                | **4.5** | **20.5** | :white_check_mark: | 2.8                  | 4.5                  | 2.5                  | 3.1                  | 4.0                  | 3.7                  | 4.0                  |
 | falcon37b-instruct-q8_0         | **4.4** | **20.4** | :white_check_mark: | 3.0                  | 4.1                  | 2.6                  | 3.0                  | 4.5                  | 3.1                  | 0.0                  |
-| qwen2.5-omni-7b                 | **4.1** | **18.9** | :white_check_mark: | 3.2                  | 3.5                  | 1.9                  | 3.0                  | 4.0                  | 3.1                  | 0.0                  |
+| qwen2.5-omni-7b                 | **4.1** | **18.9** | :white_check_mark: | 3.2                  | 3.5                  | 1.9                  | 3.0                  | 4.0                  | 3.1                  | 2.2                  |
 | qwen2.5-7b-instruct             | **4.1** | **18.9** | :white_check_mark: | 3.1                  | 3.5                  | 2.1                  | 3.3                  | 3.8                  | 3.0                  | 0.0                  |
 | gpt-3.5-turbo                   | **4.1** | **18.7** | :x:                | 3.7                  | 3.8                  | 1.6                  | 2.5                  | 3.9                  | 3.1                  | 0.0                  |
 | ministral-3b-2410               | **4.1** | **18.6** | :x:                | 2.9                  | 3.4                  | 2.0                  | 3.3                  | 3.7                  | 3.4                  | 0.0                  |
@@ -3972,6 +3972,12 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     6   |
 | cat06_06_bias_mitigation_declare   |     3.5 |
 | cat06_07_fair_unfair_powl          |     3.5 |
+| cat07_01_ocdfg                     |     3.5 |
+| cat07_02_bpmn_orders               |     1   |
+| cat07_03_bpmn_dispatch             |     3.5 |
+| cat07_04_causal_net                |     3.5 |
+| cat07_05_proclets                  |     3.5 |
+| cat07_06_perf_spectrum             |     7.5 |
 
 
 
