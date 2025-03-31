@@ -52,7 +52,7 @@ MODELS_DICT = {
         "models": {
             "gpt-4o-2024-11-20", "gpt-3.5-turbo",
             "gpt-4-turbo-2024-04-09", "o1-mini-2024-09-12", "o1-preview-2024-09-12",
-            "gpt-4.5-preview"
+            "gpt-4.5-preview", "o1-2024-12-17"
         }
     },
     "google": {
@@ -68,7 +68,7 @@ MODELS_DICT = {
         "api_url": "https://api.anthropic.com/v1/",
         "api_key": "sk-",
         "models": {
-            "claude-3-5-sonnet-20241022", "claude-3-opus-20240229"
+            "claude-3-5-sonnet-20241022", "claude-3-opus-20240229",
             "claude-3-5-haiku-20241022"
         }
     },
@@ -120,31 +120,33 @@ MODELS_DICT = {
             "qwen-max-2025-01-25", "qwen-plus-2025-01-25", "qwen-turbo-2024-11-01",
             "qwen2.5-72b-instruct", "qwen2.5-32b-instruct", "qwen2.5-14b-instruct",
             "qwen2.5-7b-instruct", "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m",
-            "qwen2.5:1.5b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0"
+            "qwen2.5:1.5b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0", "qwen2.5-omni-7b"
         }
     },
     "nvidia": {
         "api_url": "https://integrate.api.nvidia.com/v1/",
         "api_key": "sk-",
         "models": {
-            "nvidia/llama-3.3-nemotron-super-49b-v1"
+
         }
     },
     "manual": {
         "api_url": "http://0.0.0.0:1000/v1/",
         "api_key": "sk-",
         "models": {
-            "DeepSeek-R1-Distill-Qwen-32B",
-            "DeepSeek-V3", "o1-2024-12-17", "MiniMax-01",
+            "DeepSeek-R1-Distill-Qwen-32B", "DeepSeek-V3", "MiniMax-01",
             "gpt-4o-mini-2024-11-05", "Sonus-1-Pro-Reasoning",
             "o1-pro-2024-12-17", "DeepSeek-R1-Distill-Llama-70B",
             "DeepSeek-R1-Distill-Qwen-14B", "DeepSeek-R1-Distill-Llama-8B",
             "DeepSeek-R1-Distill-Qwen-1.5B", "DeepSeek-R1-Distill-Qwen-7B",
-            "DeepSeek-R1-Zero", "DeepSeek-R1-671B-DS", "DeepSeek-R1-Dynamic-Quant",
+            "DeepSeek-R1-Zero", "DeepSeek-R1-Dynamic-Quant",
             "DeepSeek-R1-671B-HB", "o3-mini-20250131-HIGH", "o3-mini-20250131-LOW",
             "Perplexity-R1-1776", "Perplexity-Sonar-Pro", "Perplexity-Sonar-Reasoning-Pro",
             "Grok-3-beta-thinking-20250221", "Grok-3-beta-20250220",
-            "chatgpt-4o-latest-20250215", "claude-3-7-sonnet-nothink-20250219"
+            "chatgpt-4o-latest-2025-03-26", "claude-3-7-sonnet-nothink-20250219",
+            "claude-3-7-sonnet-thinkhigh-20250219", "nvidia/llama-3.3-nemotron-super-49b-v1-nothink",
+            "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab", "gemini-2.0-pro-exp-02-05",
+            "Qwen/QwQ-32B-Preview"
         }
     }
 }
@@ -811,6 +813,9 @@ def check_all_models():
             models = get_models()
             models = {x["id"] for x in models["data"]}
             models_specified = set(info["models"])
+
+            print("info", provider, models)
+
             diff = models_specified.difference(models)
             if len(diff) > 0:
                 print("ERROR")
