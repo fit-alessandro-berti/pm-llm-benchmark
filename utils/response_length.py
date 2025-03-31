@@ -22,15 +22,16 @@ mck.sort()
 df = []
 
 for model in mck:
-    models_counter[model].sort()
-    lst = models_counter[model]
-    el_min = lst[0]
-    el_max = lst[-1]
-    el_fquart = lst[int(len(lst)*0.25)]
-    el_median = lst[int(len(lst)*0.5)]
-    el_tquart = lst[int(len(lst)*0.75)]
+    if True or "qwq" in model.lower():
+        models_counter[model].sort()
+        lst = models_counter[model]
+        el_min = lst[0]
+        el_max = lst[-1]
+        el_fquart = lst[int(len(lst)*0.25)]
+        el_median = lst[int(len(lst)*0.5)]
+        el_tquart = lst[int(len(lst)*0.75)]
 
-    df.append({"Model": model, "Min": el_min, "1stQuart": el_fquart, "Median": el_median, "3rdQuart": el_tquart, "Max": el_max})
+        df.append({"Model": model, "Min": el_min, "1stQuart": el_fquart, "Median": el_median, "3rdQuart": el_tquart, "Max": el_max})
 
 
 df = pd.DataFrame(df)
