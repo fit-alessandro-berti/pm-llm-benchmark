@@ -8,7 +8,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | Model                           | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:--------------------------------|:--------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
 | Grok-3-beta-thinking-20250221   | **8.4** | **38.8** | :x:                | :mage_woman: **6.4** | :mage_woman: **8.1** | :mage_woman: **6.3** | :mage_woman: **5.8** | :mage_woman: **5.9** | :mage_woman: **6.4** | :mage_woman: **0.0** |
-| DeepSeek-R1-671B-HB             | **7.6** | **34.8** | :white_check_mark: | **6.2**              | :mage_woman: **8.1** | 4.8                  | **5.6**              | 4.7                  | 5.4                  | :mage_woman: **0.0** |
+| DeepSeek-R1                     | **7.6** | **34.8** | :white_check_mark: | **6.2**              | :mage_woman: **8.1** | 4.8                  | **5.6**              | 4.7                  | 5.4                  | :mage_woman: **0.0** |
 | nemotron-super-49b-v1-thinkenab | **7.4** | **33.9** | :white_check_mark: | 5.1                  | 7.7                  | **6.1**              | 4.9                  | 4.6                  | 5.5                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Dynamic-Quant       | **6.6** | **30.4** | :white_check_mark: | 5.4                  | 7.4                  | 3.5                  | 4.6                  | 5.3                  | 4.2                  | :mage_woman: **0.0** |
 | Perplexity-R1-1776              | **6.5** | **30.0** | :white_check_mark: | 4.7                  | 7.7                  | 2.6                  | 4.9                  | 5.0                  | 5.0                  | :mage_woman: **0.0** |
@@ -79,7 +79,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### DeepSeek-R1-671B-HB   => 34.8 points
+### deepseek-aiDeepSeek-R1   => 34.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|

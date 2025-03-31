@@ -7,7 +7,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 | Model                           | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:--------------------------------|:--------|:---------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| DeepSeek-R1-671B-HB             | **7.6** | **34.8** | :white_check_mark: | :mage_woman: **6.2** | :mage_woman: **8.1** | 4.8                  | :mage_woman: **5.6** | 4.7                  | **5.4**              | 0.0                  |
+| DeepSeek-R1                     | **7.6** | **34.8** | :white_check_mark: | :mage_woman: **6.2** | :mage_woman: **8.1** | 4.8                  | :mage_woman: **5.6** | 4.7                  | **5.4**              | 0.0                  |
 | nemotron-super-49b-v1-thinkenab | **7.4** | **33.9** | :white_check_mark: | 5.1                  | 7.7                  | :mage_woman: **6.1** | 4.9                  | 4.6                  | :mage_woman: **5.5** | 0.0                  |
 | DeepSeek-V3-0324                | **6.6** | **30.4** | :white_check_mark: | 5.8                  | 6.5                  | 3.8                  | 4.8                  | 4.8                  | 4.6                  | 0.0                  |
 | DeepSeek-R1-Dynamic-Quant       | **6.6** | **30.4** | :white_check_mark: | 5.4                  | 7.4                  | 3.5                  | 4.6                  | **5.3**              | 4.2                  | 0.0                  |
@@ -65,7 +65,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | Llama-3.2-1B-Instruct           | **1.9** | **8.9**  | :white_check_mark: | 1.3                  | 1.7                  | 0.8                  | 1.1                  | 2.4                  | 1.6                  | 0.0                  |
 | DeepSeek-R1-Distill-Qwen-1.5B   | **1.7** | **7.8**  | :white_check_mark: | 1.1                  | 1.6                  | 1.1                  | 1.0                  | 1.7                  | 1.4                  | 0.0                  |
 
-### DeepSeek-R1-671B-HB   => 34.8 points
+### deepseek-aiDeepSeek-R1   => 34.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -648,7 +648,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### DeepSeek-V3   => 27.2 points
+### deepseek-aiDeepSeek-V3   => 27.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
