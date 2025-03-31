@@ -69,7 +69,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "claude-3-5-sonnet-20241022", "claude-3-opus-20240229",
-            "claude-3-5-haiku-20241022"
+            "claude-3-5-haiku-20241022", "claude-3-7-sonnet-20250219"
         }
     },
     "mistral": {
@@ -97,7 +97,8 @@ MODELS_DICT = {
             "nvidia/Llama-3.1-Nemotron-70B-Instruct", "google/gemma-2-9b-it",
             "microsoft/phi-4", "microsoft/WizardLM-2-8x22B", "Qwen/QwQ-32B",
             "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct",
-            "deepseek-ai/DeepSeek-V3-0324"
+            "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B"
         }
     },
     "ollama_local": {
@@ -127,26 +128,23 @@ MODELS_DICT = {
         "api_url": "https://integrate.api.nvidia.com/v1/",
         "api_key": "sk-",
         "models": {
-
+            "nvidia/llama-3.3-nemotron-super-49b-v1"
         }
     },
     "manual": {
         "api_url": "http://0.0.0.0:1000/v1/",
         "api_key": "sk-",
         "models": {
-            "DeepSeek-R1-Distill-Qwen-32B", "DeepSeek-V3", "MiniMax-01",
-            "gpt-4o-mini-2024-11-05", "Sonus-1-Pro-Reasoning",
-            "o1-pro-2024-12-17", "DeepSeek-R1-Distill-Llama-70B",
+            "DeepSeek-V3", "MiniMax-01", "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab",
+            "gpt-4o-mini-2024-11-05", "Sonus-1-Pro-Reasoning", "o1-pro-2024-12-17",
             "DeepSeek-R1-Distill-Qwen-14B", "DeepSeek-R1-Distill-Llama-8B",
             "DeepSeek-R1-Distill-Qwen-1.5B", "DeepSeek-R1-Distill-Qwen-7B",
             "DeepSeek-R1-Zero", "DeepSeek-R1-Dynamic-Quant",
             "DeepSeek-R1-671B-HB", "o3-mini-20250131-HIGH", "o3-mini-20250131-LOW",
             "Perplexity-R1-1776", "Perplexity-Sonar-Pro", "Perplexity-Sonar-Reasoning-Pro",
             "Grok-3-beta-thinking-20250221", "Grok-3-beta-20250220",
-            "chatgpt-4o-latest-2025-03-26", "claude-3-7-sonnet-nothink-20250219",
-            "claude-3-7-sonnet-thinkhigh-20250219", "nvidia/llama-3.3-nemotron-super-49b-v1-nothink",
-            "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab", "gemini-2.0-pro-exp-02-05",
-            "Qwen/QwQ-32B-Preview"
+            "chatgpt-4o-latest-2025-03-26", "claude-3-7-sonnet-thinkhigh-20250219",
+            "gemini-2.0-pro-exp-02-05", "Qwen/QwQ-32B-Preview",
         }
     }
 }

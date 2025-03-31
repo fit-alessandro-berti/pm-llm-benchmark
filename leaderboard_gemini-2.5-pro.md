@@ -26,7 +26,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | o3-mini-20250131-LOW            | **6.5** | **29.9** | :x:                | 4.9                  | 6.3                  | 3.5                  | 4.6                  | 5.5                  | 4.9                  | 3.8                  |
 | QwQ-32B                         | **6.4** | **29.5** | :white_check_mark: | 4.7                  | 6.6                  | 3.9                  | 4.2                  | 5.2                  | 4.9                  | 0.0                  |
 | exaone-deep32b-fp16             | **6.4** | **29.5** | :white_check_mark: | 5.7                  | 6.3                  | 3.6                  | 4.5                  | 4.3                  | 5.2                  | 0.0                  |
-| claude-3-7-sonnet-nothink       | **6.3** | **29.0** | :x:                | 5.2                  | 5.9                  | 4.1                  | 3.6                  | 5.0                  | 5.2                  | 3.6                  |
+| claude-3-7-sonnet-20250219      | **6.3** | **29.0** | :x:                | 5.2                  | 5.9                  | 4.1                  | 3.6                  | 5.0                  | 5.2                  | 3.6                  |
 | claude-3-5-sonnet-20241022      | **6.3** | **28.8** | :x:                | 4.2                  | 6.7                  | 3.8                  | 3.9                  | 5.5                  | 4.8                  | 3.2                  |
 | gemini-2.0-pro-exp-02-05        | **6.2** | **28.7** | :x:                | 4.9                  | 5.7                  | 3.6                  | 4.2                  | 5.1                  | 5.4                  | 5.0                  |
 | gemini-1.5-pro-002              | **6.2** | **28.7** | :x:                | 4.4                  | 5.8                  | 3.0                  | 4.4                  | 5.5                  | 5.6                  | 4.7                  |
@@ -42,7 +42,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | grok-2-1212                     | **5.9** | **27.0** | :x:                | 4.9                  | 6.2                  | 3.3                  | 3.5                  | 4.5                  | 4.6                  | 0.0                  |
 | qwen-max-2025-01-25             | **5.8** | **26.9** | :x:                | 4.7                  | 5.5                  | 3.0                  | 3.6                  | 5.0                  | 5.0                  | 3.8                  |
 | gemini-2.0-flash                | **5.8** | **26.8** | :x:                | 4.6                  | 6.1                  | 3.4                  | 3.0                  | 4.5                  | 5.2                  | 3.8                  |
-| nemotron-super-49b-v1-nothink   | **5.8** | **26.8** | :white_check_mark: | 3.8                  | 5.7                  | 3.1                  | 4.7                  | 5.0                  | 4.6                  | 0.0                  |
+| nemotron-super-49b-v1           | **5.8** | **26.8** | :white_check_mark: | 3.8                  | 5.7                  | 3.1                  | 4.7                  | 5.0                  | 4.6                  | 0.0                  |
 | Llama-3.3-70B-Instruct          | **5.8** | **26.5** | :white_check_mark: | 4.7                  | 5.7                  | 2.7                  | 4.5                  | 4.4                  | 4.5                  | 0.0                  |
 | qwen2.5-72b-instruct            | **5.7** | **26.2** | :white_check_mark: | 4.5                  | 5.8                  | 2.9                  | 4.2                  | 3.8                  | 4.9                  | 0.0                  |
 | pixtral-large-2411              | **5.7** | **26.0** | :white_check_mark: | 5.1                  | 5.2                  | 3.2                  | 4.0                  | 4.5                  | 4.1                  | 4.7                  |
@@ -1165,7 +1165,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### claude-3-7-sonnet-nothink-20250219   => 29.0 points
+### claude-3-7-sonnet-20250219   => 29.0 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -2067,7 +2067,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### nvidiallama-3.3-nemotron-super-49b-v1-nothink   => 26.8 points
+### nvidiallama-3.3-nemotron-super-49b-v1   => 26.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -2397,7 +2397,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### DeepSeek-R1-Distill-Qwen-32B   => 25.8 points
+### deepseek-aiDeepSeek-R1-Distill-Qwen-32B   => 25.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -2727,7 +2727,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### DeepSeek-R1-Distill-Llama-70B   => 24.3 points
+### deepseek-aiDeepSeek-R1-Distill-Llama-70B   => 24.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|

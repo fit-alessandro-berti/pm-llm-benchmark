@@ -556,7 +556,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### DeepSeek-R1-Distill-Qwen-32B   => 25.8 points
+### deepseek-aiDeepSeek-R1-Distill-Qwen-32B   => 25.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -609,7 +609,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### DeepSeek-R1-Distill-Llama-70B   => 24.3 points
+### deepseek-aiDeepSeek-R1-Distill-Llama-70B   => 24.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
