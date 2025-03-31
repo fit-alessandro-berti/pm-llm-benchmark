@@ -22,7 +22,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | Grok-3-beta-20250220            | **6.6** | **30.4** | :x:                | 5.2                  | 6.5                  | 3.7                  | 3.9                  | 5.7                  | 5.4                  | 3.8                  |
 | DeepSeek-V3-0324                | **6.6** | **30.4** | :white_check_mark: | 5.8                  | 6.5                  | 3.8                  | 4.8                  | 4.8                  | 4.6                  | 0.0                  |
 | DeepSeek-R1-Dynamic-Quant       | **6.6** | **30.4** | :white_check_mark: | 5.4                  | 7.4                  | 3.5                  | 4.6                  | 5.3                  | 4.2                  | 0.0                  |
-| Perplexity-R1-1776              | **6.5** | **30.0** | :white_check_mark: | 4.7                  | 7.7                  | 2.6                  | 4.9                  | 5.0                  | 5.0                  | 0.0                  |
+| r1-1776                         | **6.5** | **30.0** | :white_check_mark: | 4.7                  | 7.7                  | 2.6                  | 4.9                  | 5.0                  | 5.0                  | 0.0                  |
 | o3-mini-20250131-LOW            | **6.5** | **29.9** | :x:                | 4.9                  | 6.3                  | 3.5                  | 4.6                  | 5.5                  | 4.9                  | 3.8                  |
 | QwQ-32B                         | **6.4** | **29.5** | :white_check_mark: | 4.7                  | 6.6                  | 3.9                  | 4.2                  | 5.2                  | 4.9                  | 0.0                  |
 | exaone-deep32b-fp16             | **6.4** | **29.5** | :white_check_mark: | 5.7                  | 6.3                  | 3.6                  | 4.5                  | 4.3                  | 5.2                  | 0.0                  |
@@ -47,7 +47,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | qwen2.5-72b-instruct            | **5.7** | **26.2** | :white_check_mark: | 4.5                  | 5.8                  | 2.9                  | 4.2                  | 3.8                  | 4.9                  | 0.0                  |
 | pixtral-large-2411              | **5.7** | **26.0** | :white_check_mark: | 5.1                  | 5.2                  | 3.2                  | 4.0                  | 4.5                  | 4.1                  | 4.7                  |
 | gpt-4-turbo-2024-04-09          | **5.6** | **25.9** | :x:                | 4.5                  | 5.4                  | 3.6                  | 3.9                  | 4.7                  | 4.0                  | 4.1                  |
-| Perplexity-Sonar-Pro            | **5.6** | **25.9** | :x:                | 4.5                  | 5.3                  | 3.0                  | 4.0                  | 5.0                  | 4.0                  | 0.0                  |
+| sonar-pro                       | **5.6** | **25.9** | :x:                | 4.5                  | 5.3                  | 3.0                  | 4.0                  | 5.0                  | 4.0                  | 0.0                  |
 | DeepSeek-R1-Distill-Qwen-32B    | **5.6** | **25.8** | :white_check_mark: | 5.1                  | 6.2                  | 3.5                  | 3.2                  | 3.8                  | 4.0                  | 0.0                  |
 | gemini-2.0-flash-lite           | **5.5** | **25.5** | :x:                | 4.3                  | 6.2                  | 2.5                  | 3.3                  | 4.9                  | 4.2                  | 4.2                  |
 | Sonus-1-Pro-Reasoning           | **5.4** | **24.7** | :x:                | 4.4                  | 5.2                  | 3.0                  | 2.9                  | 4.8                  | 4.6                  | 0.0                  |
@@ -70,7 +70,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | qwen2.5-14b-instruct-1m         | **4.8** | **22.0** | :white_check_mark: | 3.7                  | 4.7                  | 1.7                  | 3.6                  | 4.5                  | 3.9                  | 0.0                  |
 | Llama-3.2-90B-Vision-Instruct   | **4.7** | **21.8** | :white_check_mark: | 3.9                  | 4.3                  | 2.5                  | 3.6                  | 4.5                  | 3.0                  | 2.5                  |
 | falcon310b-instruct-q8_0        | **4.7** | **21.5** | :white_check_mark: | 3.5                  | 4.8                  | 1.9                  | 3.2                  | 4.2                  | 3.9                  | 0.0                  |
-| Perplexity-Sonar-Reasoning-Pro  | **4.7** | **21.5** | :x:                | 3.4                  | 5.6                  | 2.1                  | 2.4                  | 4.8                  | 3.2                  | 0.0                  |
+| sonar-reasoning-pro             | **4.7** | **21.5** | :x:                | 3.4                  | 5.6                  | 2.1                  | 2.4                  | 4.8                  | 3.2                  | 0.0                  |
 | exaone-deep2.4b-fp16            | **4.6** | **21.1** | :white_check_mark: | 3.8                  | 5.8                  | 1.8                  | 2.9                  | 3.4                  | 3.3                  | 0.0                  |
 | googlegemma-2-9b-it             | **4.6** | **21.0** | :white_check_mark: | 3.2                  | 3.5                  | 2.9                  | 3.3                  | 4.7                  | 3.5                  | 0.0                  |
 | qwen-turbo-2024-11-01           | **4.5** | **20.6** | :x:                | 3.4                  | 4.2                  | 2.1                  | 3.2                  | 4.1                  | 3.6                  | 0.0                  |
@@ -947,7 +947,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### Perplexity-R1-1776   => 30.0 points
+### r1-1776   => 30.0 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -2344,7 +2344,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### Perplexity-Sonar-Pro   => 25.9 points
+### sonar-pro   => 25.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -3598,7 +3598,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### Perplexity-Sonar-Reasoning-Pro   => 21.5 points
+### sonar-reasoning-pro   => 21.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|

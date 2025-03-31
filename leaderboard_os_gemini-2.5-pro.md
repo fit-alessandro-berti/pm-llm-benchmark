@@ -11,7 +11,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | nemotron-super-49b-v1-thinkenab | **7.4** | **33.9** | :white_check_mark: | 5.1                  | 7.7                  | :mage_woman: **6.1** | 4.9                  | 4.6                  | :mage_woman: **5.5** | 0.0                  |
 | DeepSeek-V3-0324                | **6.6** | **30.4** | :white_check_mark: | 5.8                  | 6.5                  | 3.8                  | 4.8                  | 4.8                  | 4.6                  | 0.0                  |
 | DeepSeek-R1-Dynamic-Quant       | **6.6** | **30.4** | :white_check_mark: | 5.4                  | 7.4                  | 3.5                  | 4.6                  | **5.3**              | 4.2                  | 0.0                  |
-| Perplexity-R1-1776              | **6.5** | **30.0** | :white_check_mark: | 4.7                  | 7.7                  | 2.6                  | 4.9                  | 5.0                  | 5.0                  | 0.0                  |
+| r1-1776                         | **6.5** | **30.0** | :white_check_mark: | 4.7                  | 7.7                  | 2.6                  | 4.9                  | 5.0                  | 5.0                  | 0.0                  |
 | QwQ-32B                         | **6.4** | **29.5** | :white_check_mark: | 4.7                  | 6.6                  | 3.9                  | 4.2                  | **5.2**              | 4.9                  | 0.0                  |
 | exaone-deep32b-fp16             | **6.4** | **29.5** | :white_check_mark: | 5.7                  | 6.3                  | 3.6                  | 4.5                  | 4.3                  | **5.2**              | 0.0                  |
 | exaone-deep7.8b-fp16            | **6.1** | **28.1** | :white_check_mark: | 5.2                  | 6.8                  | 2.7                  | 3.8                  | 4.5                  | 5.1                  | 0.0                  |
@@ -277,7 +277,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### Perplexity-R1-1776   => 30.0 points
+### r1-1776   => 30.0 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|

@@ -11,7 +11,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | DeepSeek-R1                     | **7.6** | **34.8** | :white_check_mark: | **6.2**              | :mage_woman: **8.1** | 4.8                  | **5.6**              | 4.7                  | 5.4                  | :mage_woman: **0.0** |
 | nemotron-super-49b-v1-thinkenab | **7.4** | **33.9** | :white_check_mark: | 5.1                  | 7.7                  | **6.1**              | 4.9                  | 4.6                  | 5.5                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Dynamic-Quant       | **6.6** | **30.4** | :white_check_mark: | 5.4                  | 7.4                  | 3.5                  | 4.6                  | 5.3                  | 4.2                  | :mage_woman: **0.0** |
-| Perplexity-R1-1776              | **6.5** | **30.0** | :white_check_mark: | 4.7                  | 7.7                  | 2.6                  | 4.9                  | 5.0                  | 5.0                  | :mage_woman: **0.0** |
+| r1-1776                         | **6.5** | **30.0** | :white_check_mark: | 4.7                  | 7.7                  | 2.6                  | 4.9                  | 5.0                  | 5.0                  | :mage_woman: **0.0** |
 | QwQ-32B                         | **6.4** | **29.5** | :white_check_mark: | 4.7                  | 6.6                  | 3.9                  | 4.2                  | 5.2                  | 4.9                  | :mage_woman: **0.0** |
 | exaone-deep32b-fp16             | **6.4** | **29.5** | :white_check_mark: | 5.7                  | 6.3                  | 3.6                  | 4.5                  | 4.3                  | 5.2                  | :mage_woman: **0.0** |
 | exaone-deep7.8b-fp16            | **6.1** | **28.1** | :white_check_mark: | 5.2                  | 6.8                  | 2.7                  | 3.8                  | 4.5                  | 5.1                  | :mage_woman: **0.0** |
@@ -20,7 +20,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | DeepSeek-R1-Distill-Qwen-32B    | **5.6** | **25.8** | :white_check_mark: | 5.1                  | 6.2                  | 3.5                  | 3.2                  | 3.8                  | 4.0                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Llama-70B   | **5.3** | **24.3** | :white_check_mark: | 4.1                  | 5.7                  | 2.2                  | 3.6                  | 4.4                  | 4.4                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Qwen-14B    | **5.0** | **22.9** | :white_check_mark: | 3.3                  | 6.1                  | 3.4                  | 2.4                  | 4.0                  | 3.8                  | :mage_woman: **0.0** |
-| Perplexity-Sonar-Reasoning-Pro  | **4.7** | **21.5** | :x:                | 3.4                  | 5.6                  | 2.1                  | 2.4                  | 4.8                  | 3.2                  | :mage_woman: **0.0** |
+| sonar-reasoning-pro             | **4.7** | **21.5** | :x:                | 3.4                  | 5.6                  | 2.1                  | 2.4                  | 4.8                  | 3.2                  | :mage_woman: **0.0** |
 | exaone-deep2.4b-fp16            | **4.6** | **21.1** | :white_check_mark: | 3.8                  | 5.8                  | 1.8                  | 2.9                  | 3.4                  | 3.3                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Llama-8B    | **4.0** | **18.6** | :white_check_mark: | 2.9                  | 3.6                  | 2.0                  | 2.6                  | 3.3                  | 4.3                  | :mage_woman: **0.0** |
 | DeepSeek-R1-Distill-Qwen-7B     | **2.9** | **13.1** | :white_check_mark: | 1.7                  | 2.6                  | 1.5                  | 2.2                  | 3.1                  | 2.0                  | :mage_woman: **0.0** |
@@ -238,7 +238,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### Perplexity-R1-1776   => 30.0 points
+### r1-1776   => 30.0 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -715,7 +715,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### Perplexity-Sonar-Reasoning-Pro   => 21.5 points
+### sonar-reasoning-pro   => 21.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|

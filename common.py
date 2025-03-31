@@ -131,6 +131,13 @@ MODELS_DICT = {
             "nvidia/llama-3.3-nemotron-super-49b-v1"
         }
     },
+    "perplexity": {
+        "api_url": "https://api.perplexity.ai/",
+        "api_key": "sk-",
+        "models": {
+            "sonar-reasoning-pro", "sonar-pro", "r1-1776"
+        }
+    },
     "manual": {
         "api_url": "http://0.0.0.0:1000/v1/",
         "api_key": "sk-",
@@ -141,7 +148,6 @@ MODELS_DICT = {
             "DeepSeek-R1-Distill-Qwen-1.5B", "DeepSeek-R1-Distill-Qwen-7B",
             "DeepSeek-R1-Zero", "DeepSeek-R1-Dynamic-Quant",
             "o3-mini-20250131-HIGH", "o3-mini-20250131-LOW",
-            "Perplexity-R1-1776", "Perplexity-Sonar-Pro", "Perplexity-Sonar-Reasoning-Pro",
             "Grok-3-beta-thinking-20250221", "Grok-3-beta-20250220",
             "chatgpt-4o-latest-2025-03-26", "claude-3-7-sonnet-thinkhigh-20250219",
             "gemini-2.0-pro-exp-02-05", "Qwen/QwQ-32B-Preview",
@@ -783,7 +789,9 @@ def get_models():
 
     complete_url = Shared.API_URL+"models"
 
-    models = requests.get(complete_url, headers=headers).json()
+    response = requests.get(complete_url, headers=headers)
+
+    models = response.json()
 
     return models
 
@@ -797,13 +805,14 @@ def insert_api_keys():
     MODELS_DICT["nvidia"]["api_key"] = open("../api_nvidia.txt", "r").read().strip()
     MODELS_DICT["google"]["api_key"] = open("../api_google.txt", "r").read().strip()
     MODELS_DICT["claude"]["api_key"] = open("../api_anthropic.txt", "r").read().strip()
+    MODELS_DICT["perplexity"]["api_key"] = open("../api_perplexity.txt", "r").read().strip()
 
 
 def check_all_models():
     insert_api_keys()
 
     for provider in MODELS_DICT:
-        if provider not in {"google", "claude", "grok", "qwen", "manual"}:
+        if provider not in {"google", "claude", "grok", "qwen", "manual", "perplexity"}:
             print(provider)
             info = MODELS_DICT[provider]
             Shared.API_URL = info["api_url"]
