@@ -52,7 +52,8 @@ MODELS_DICT = {
         "models": {
             "gpt-4o-2024-11-20", "gpt-3.5-turbo",
             "gpt-4-turbo-2024-04-09", "o1-mini-2024-09-12", "o1-preview-2024-09-12",
-            "gpt-4.5-preview", "o1-2024-12-17"
+            "gpt-4.5-preview", "o1-2024-12-17", "gpt-4o-mini-2024-07-18",
+            "o3-mini-2025-01-31"
         }
     },
     "google": {
@@ -95,7 +96,7 @@ MODELS_DICT = {
             "meta-llama/Llama-3.2-90B-Vision-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct",
             "meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.2-3B-Instruct",
             "nvidia/Llama-3.1-Nemotron-70B-Instruct", "google/gemma-2-9b-it",
-            "microsoft/phi-4", "microsoft/WizardLM-2-8x22B", "Qwen/QwQ-32B",
+            "microsoft/phi-4", "microsoft/WizardLM-2-8x22B",
             "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct",
             "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"
@@ -143,12 +144,11 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "MiniMax-01", "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab",
-            "gpt-4o-mini-2024-11-05", "Sonus-1-Pro-Reasoning", "o1-pro-2024-12-17",
+            "Sonus-1-Pro-Reasoning", "o1-pro-2024-12-17",
             "DeepSeek-R1-Distill-Qwen-14B", "DeepSeek-R1-Distill-Llama-8B",
             "DeepSeek-R1-Distill-Qwen-1.5B", "DeepSeek-R1-Distill-Qwen-7B",
             "DeepSeek-R1-Zero", "DeepSeek-R1-Dynamic-Quant",
-            "o3-mini-20250131-HIGH", "o3-mini-20250131-LOW",
-            "Grok-3-beta-thinking-20250221", "Grok-3-beta-20250220",
+            "o3-mini-20250131-HIGH", "Grok-3-beta-thinking-20250221", "Grok-3-beta-20250220",
             "chatgpt-4o-latest-2025-03-26", "claude-3-7-sonnet-thinkhigh-20250219",
             "gemini-2.0-pro-exp-02-05", "Qwen/QwQ-32B-Preview",
         }
