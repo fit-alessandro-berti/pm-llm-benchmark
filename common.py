@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "qwen2.5-omni-7b" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "qwen-qwq-32b" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-exp-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -27,19 +27,20 @@ class Shared:
     # API_URL = "https://api.x.ai/v1/"
     # API_URL = "https://api.mistral.ai/v1/"
     # API_URL = "https://api.anthropic.com/v1/"
-    # API_URL = "https://api.groq.com/openai/v1/"
+    API_URL = "https://api.groq.com/openai/v1/"
     # API_URL = "https://api.deepseek.com/"
     # API_URL = "https://api.hyperbolic.xyz/v1/"
     # API_URL = "https://api.perplexity.ai/"
     # API_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/"
     # API_URL = "https://integrate.api.nvidia.com/v1/"
     SYSTEM_PROMPT = None
-    # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You should think step-by-step."
-    # SYSTEM_PROMPT = "You are a helpful and harmless assistant."
+    # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You should think step-by-step. "
+    SYSTEM_PROMPT = "You are a helpful and harmless assistant. Disable backtracking and validation."
+
     # SYSTEM_PROMPT = "detailed thinking on"
     TRIAL_CHANGE_EVALUATION_LRM = False
     CUSTOM_TEMPERATURE = None
-    #CUSTOM_TEMPERATURE = 0.6
+    CUSTOM_TEMPERATURE = 0.6
     TRIAL_SEVERE_EVALUATION = True
     ANTHROPIC_THINKING_TOKENS = 98304
     #ANTHROPIC_THINKING_TOKENS = None
