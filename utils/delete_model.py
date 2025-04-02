@@ -16,7 +16,7 @@ def do_deletion(base_path, original_name):
 
 
 if __name__ == "__main__":
-    original_name = "chatgpt-4o-latest-20250215_"
+    original_name = "gpt-4o-mini-2024-11-05_"
 
     if not original_name.endswith("_"):
         raise Exception("original_name must terminate with _")
