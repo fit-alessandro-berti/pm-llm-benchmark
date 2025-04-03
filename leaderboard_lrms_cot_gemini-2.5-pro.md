@@ -1,8 +1,5 @@
 A score in the range **22-26** is considered **sufficient**; a score in the range **26-30** is considered **fair**; a score in the range **30-34** is considered **good**; and a score **>34** is considered **excellent**.
 
-
-**As of 2025-01-26, the chain of thought of Large Reasoning Models, if provided, is considered in the assessment of answers.**
-
 ## Large Reasoning Models Leaderboard (Models with CoT) (1-shot; gemini-2.5-pro-exp-03-25 used as a judge)
 
 | Model                           | Avg     | Score    | OS                 | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |

@@ -164,8 +164,6 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     output = []
     output.append(
         "A score in the range **22-26** is considered **sufficient**; a score in the range **26-30** is considered **fair**; a score in the range **30-34** is considered **good**; and a score **>34** is considered **excellent**.")
-    output.append(
-        "\n**As of 2025-01-26, the chain of thought of Large Reasoning Models, if provided, is considered in the assessment of answers.**")
 
     output.append("## %s (1-shot; %s used as a judge)" % (leaderboard_title, EVALUATING_MODEL_NAME))
     output.append(overall_table)
@@ -202,6 +200,8 @@ def write_evaluation(base_path, extra=True):
                 require_vision=False, require_reasoning=True, require_reasoning_custom=True, leaderboard_title="Large Reasoning Models Leaderboard (Models with CoT)")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=False,
                 require_vision=False, leaderboard_title="Open-Source Leaderboard")
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_QWEN_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True, require_vision=False,
+                leaderboard_title="QWEN Leaderboard", reg_expr="qwen")
 
 
 if __name__ == "__main__":
