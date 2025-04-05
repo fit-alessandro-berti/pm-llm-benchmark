@@ -10,10 +10,10 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "qwen2.5-omni-7b" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "openrouter/quasar-alpha" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
-EVALUATING_MODEL_NAME = "gemini-2.5-pro-exp-03-25" if len(sys.argv) < 3 else sys.argv[2]
+EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
 
 
 class Shared:
@@ -33,6 +33,7 @@ class Shared:
     # API_URL = "https://api.perplexity.ai/"
     # API_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/"
     # API_URL = "https://integrate.api.nvidia.com/v1/"
+    # API_URL = "https://openrouter.ai/api/v1/"
     SYSTEM_PROMPT = None
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You should think step-by-step."
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant."
@@ -851,7 +852,7 @@ def clean_model_name(m_name):
 
 
 def get_base_evaluation_path(model_name):
-    return "evaluation" if "gpt-4o" in model_name else "evaluation-" + clean_model_name(model_name).split("-exp")[0]
+    return "evaluation" if "gpt-4o" in model_name else "evaluation-" + clean_model_name(model_name).split("-exp")[0].split("-preview")[0]
 
 
 if __name__ == "__main__":

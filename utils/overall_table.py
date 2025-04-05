@@ -184,7 +184,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
 
 def get_suffix_name(e_m_name):
-    return e_m_name.split("-exp")[0]
+    return e_m_name.split("-exp")[0].split("-preview")[0]
 
 
 def write_evaluation(base_path, extra=True):
