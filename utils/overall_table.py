@@ -202,6 +202,8 @@ def write_evaluation(base_path, extra=True):
                 require_vision=False, leaderboard_title="Open-Source Leaderboard")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_QWEN_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True, require_vision=False,
                 leaderboard_title="QWEN Leaderboard", reg_expr="qwen")
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_LLAMA_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True, require_vision=False,
+                leaderboard_title="LLAMA Leaderboard", reg_expr="llama")
 
 
 if __name__ == "__main__":
