@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "openrouter/quasar-alpha" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "meta-llama/llama-4-scout" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -158,7 +158,7 @@ MODELS_DICT = {
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "-omni-"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "-omni-", "llama-4"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
@@ -170,7 +170,7 @@ def is_visual_model(model_name):
 
 def is_open_source(m_name):
     m_name = m_name.lower()
-    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "qwen-plus", "qwen-turbo", "qwen-max", "sonar-"]
+    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "qwen-plus", "qwen-turbo", "qwen-max", "sonar-", "quasar"]
 
     for p in patterns:
         if p in m_name:
