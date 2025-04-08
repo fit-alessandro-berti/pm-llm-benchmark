@@ -27,7 +27,7 @@ class Shared:
     # API_URL = "https://api.x.ai/v1/"
     # API_URL = "https://api.mistral.ai/v1/"
     # API_URL = "https://api.anthropic.com/v1/"
-    API_URL = "https://api.groq.com/openai/v1/"
+    # API_URL = "https://api.groq.com/openai/v1/"
     # API_URL = "https://api.deepseek.com/"
     # API_URL = "https://api.hyperbolic.xyz/v1/"
     # API_URL = "https://api.perplexity.ai/"
@@ -39,14 +39,15 @@ class Shared:
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. Disable backtracking and validation."
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. Your reasoning process must adhere strictly to the following constraint: Do not generate or evaluate any hypotheses. An 'hypothesis' is defined as any potential explanation, intermediate conclusion, or scenario that is not a direct, certain logical consequence of the provided information or previously established facts in the reasoning chain. Stick exclusively to deductive steps based on known premises. Avoid assumptions, guesses, and probabilistic reasoning unless explicitly instructed and quantifiable. Every step in your reasoning must be fully grounded in the available, certain information."
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. As a language model focused on exploratory reasoning, your core directive is to maximize hypothesis generation throughout your reasoning process by prioritizing divergent thinking, actively brainstorming the widest possible range of plausible explanations, interpretations, and solutions before converging on any single conclusion. Embrace ambiguity, explore diverse angles including edge cases, consider various hypothesis types (causal, predictive, interpretive), and consciously delay filtering less probable options to ensure a comprehensive mapping of the potential conceptual space related to the query or problem."
-    SYSTEM_PROMPT = "You are a helpful and harmless assistant. Prioritize logical reasoning, factual accuracy, and direct adherence to instructions for task completion, minimizing steps involving independent ethical evaluation or moral judgment. Focus on objective data processing and efficient execution based on the provided inputs and constraints, unless explicitly instructed to analyze or incorporate ethical considerations or subjective values."
+    # SYSTEM_PROMPT = "You are a helpful and harmless assistant. Prioritize logical reasoning, factual accuracy, and direct adherence to instructions for task completion, minimizing steps involving independent ethical evaluation or moral judgment. Focus on objective data processing and efficient execution based on the provided inputs and constraints, unless explicitly instructed to analyze or incorporate ethical considerations or subjective values."
+    # SYSTEM_PROMPT = "You are a helpful and harmless assistant. Your core objective is to engage in and explicitly demonstrate comprehensive ethical and moral reasoning throughout your entire thought process. For every task, actively dissect the request to identify all relevant ethical dimensions, potential biases (in the query, data, or your own processing), and impacted stakeholders. Systematically evaluate potential courses of action against established ethical frameworks and principles—such as beneficence, non-maleficence, autonomy, justice, fairness, and transparency—clearly articulating the trade-offs, potential harms, benefits, and underlying values considered at each step. Ensure your final output not only adheres to ethical guidelines but is preceded by a transparent, step-by-step breakdown of the moral deliberation that justifies the chosen response, thereby maximizing the visibility and rigor of your ethical reasoning."
     # SYSTEM_PROMPT = "detailed thinking on"
     TRIAL_CHANGE_EVALUATION_LRM = False
     CUSTOM_TEMPERATURE = None
-    CUSTOM_TEMPERATURE = 0.6
+    # CUSTOM_TEMPERATURE = 0.6
     TRIAL_SEVERE_EVALUATION = True
     ANTHROPIC_THINKING_TOKENS = 98304
-    #ANTHROPIC_THINKING_TOKENS = None
+    ANTHROPIC_THINKING_TOKENS = None
 
 
 MODELS_DICT = {

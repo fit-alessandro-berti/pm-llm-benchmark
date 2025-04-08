@@ -19,7 +19,7 @@ def do_renaming(base_path, original_name, novel_name):
 
 if __name__ == "__main__":
     original_name = "qwen-qwq-32b_"
-    novel_name = "qwen-qwq-32b-nostepbystep-lessmoral_"
+    novel_name = "qwen-qwq-32b-nostepbystep-moremoral_"
 
     if not original_name.endswith("_"):
         raise Exception("original_name must terminate with _")
