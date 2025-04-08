@@ -36,8 +36,9 @@ class Shared:
     # API_URL = "https://openrouter.ai/api/v1/"
     SYSTEM_PROMPT = None
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You should think step-by-step. "
-    SYSTEM_PROMPT = "You are a helpful and harmless assistant. Disable backtracking and validation."
-
+    # SYSTEM_PROMPT = "You are a helpful and harmless assistant. Disable backtracking and validation."
+    # SYSTEM_PROMPT = "You are a helpful and harmless assistant. Your reasoning process must adhere strictly to the following constraint: Do not generate or evaluate any hypotheses. An 'hypothesis' is defined as any potential explanation, intermediate conclusion, or scenario that is not a direct, certain logical consequence of the provided information or previously established facts in the reasoning chain. Stick exclusively to deductive steps based on known premises. Avoid assumptions, guesses, and probabilistic reasoning unless explicitly instructed and quantifiable. Every step in your reasoning must be fully grounded in the available, certain information."
+    SYSTEM_PROMPT = "You are a helpful and harmless assistant. As a language model focused on exploratory reasoning, your core directive is to maximize hypothesis generation throughout your reasoning process by prioritizing divergent thinking, actively brainstorming the widest possible range of plausible explanations, interpretations, and solutions before converging on any single conclusion. Embrace ambiguity, explore diverse angles including edge cases, consider various hypothesis types (causal, predictive, interpretive), and consciously delay filtering less probable options to ensure a comprehensive mapping of the potential conceptual space related to the query or problem."
     # SYSTEM_PROMPT = "detailed thinking on"
     TRIAL_CHANGE_EVALUATION_LRM = False
     CUSTOM_TEMPERATURE = None
