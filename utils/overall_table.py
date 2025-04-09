@@ -130,7 +130,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
     overall_table = []
 
-    target_len = 31
+    target_len = 45
     for m in results:
         m_n = manage_file_name(m[0])
         if len(m_n) > target_len:
@@ -207,4 +207,4 @@ def write_evaluation(base_path, extra=True):
 
 
 if __name__ == "__main__":
-    write_evaluation("..", extra=True)
+    write_evaluation(".", extra=True)
