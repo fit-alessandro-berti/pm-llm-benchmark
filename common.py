@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "deepcogito/cogito-v1-preview-qwen-32B" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "deepcogito/cogito-v1-preview-qwen-14B" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -182,7 +182,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "nemotron-super-49b-v1-thinkenab"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "nemotron-super-49b-v1-thinkenab", "nemotron-ultra"]
 
     for p in patterns:
         if p in m_name:
@@ -193,7 +193,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "nemotron-super-49b-v1-thinkenab"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "nemotron-super-49b-v1-thinkenab", "nemotron-ultra"]:
         if p in model_name and not "deepseek-v3" in model_name:
             return True
     return False
@@ -347,9 +347,14 @@ def query_text_simple_generic(question, api_url, target_file):
         options.update(get_llm_specific_settings())
 
         # Include "stream": True in the payload
+        sent_text = question
+
+        if Shared.SYSTEM_PROMPT is not None:
+            sent_text = Shared.SYSTEM_PROMPT + "\n\nUser: " + sent_text
+
         payload = {
             "model": Shared.MODEL_NAME,
-            "prompt": question,
+            "prompt": sent_text,
             "options": options,
             "stream": True  # ask for a streamed response
         }
@@ -381,7 +386,7 @@ def query_text_simple_generic(question, api_url, target_file):
                 #print(chunk_count)
 
                 if chunk_count % 10 == 0:
-                    #print(chunk_count)
+                    print(chunk_count)
                     #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                     pass
 
