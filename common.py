@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "meta-llama/llama-4-scout" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "deepcogito/cogito-v1-preview-qwen-32B" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -22,7 +22,7 @@ class Shared:
     MAX_REQUESTED_TOKENS = 16384
     API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.openai.com/v1/"
-    # API_URL = "http://137.226.117.70:11434/v1/"
+    # API_URL = "http://137.226.117.70:8000/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
     # API_URL = "https://api.x.ai/v1/"
     # API_URL = "https://api.mistral.ai/v1/"
@@ -38,12 +38,13 @@ class Shared:
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You should think step-by-step."
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant."
     # SYSTEM_PROMPT = "detailed thinking on"
+    # SYSTEM_PROMPT = "Enable deep thinking subroutine."
     TRIAL_CHANGE_EVALUATION_LRM = False
     CUSTOM_TEMPERATURE = None
     #CUSTOM_TEMPERATURE = 0.6
     TRIAL_SEVERE_EVALUATION = True
     ANTHROPIC_THINKING_TOKENS = 98304
-    #ANTHROPIC_THINKING_TOKENS = None
+    ANTHROPIC_THINKING_TOKENS = None
 
 
 MODELS_DICT = {
