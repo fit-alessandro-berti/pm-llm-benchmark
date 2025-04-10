@@ -4,14 +4,14 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 | Model                         | Score    | OS                 | LRM   | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
 |:------------------------------|:---------|:-------------------|:------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| openrouterquasar-alpha        | **33.3** | :x:                | :x:   | **5.5**              | :mage_woman: **7.5** | 3.5                  | :mage_woman: **5.5** | :mage_woman: **5.5** | :mage_woman: **5.8** | 0.0                  |
+| openrouterquasar-alpha        | **33.3** | :x:                | :x:   | **5.5**              | :mage_woman: **7.5** | 3.5                  | :mage_woman: **5.5** | :mage_woman: **5.5** | :mage_woman: **5.8** | :mage_woman: **5.2** |
 | gpt-4.5-preview               | **32.6** | :x:                | :x:   | **5.7**              | **7.4**              | :mage_woman: **4.2** | 4.9                  | **5.2**              | 5.3                  | 4.2                  |
 | chatgpt-4o-latest-2025-03-26  | **30.9** | :x:                | :x:   | **5.5**              | 6.3                  | 3.8                  | 4.7                  | 5.1                  | **5.5**              | **4.9**              |
 | DeepSeek-V3-0324              | **30.4** | :white_check_mark: | :x:   | :mage_woman: **5.8** | 6.5                  | 3.8                  | 4.8                  | 4.8                  | 4.6                  | 0.0                  |
 | claude-3-7-sonnet-20250219    | **29.0** | :x:                | :x:   | 5.2                  | 5.9                  | **4.1**              | 3.6                  | 5.0                  | 5.2                  | 3.6                  |
 | claude-3-5-sonnet-20241022    | **28.8** | :x:                | :x:   | 4.2                  | 6.7                  | 3.8                  | 3.9                  | :mage_woman: **5.5** | 4.8                  | 3.2                  |
-| gemini-2.0-pro-exp-02-05      | **28.7** | :x:                | :x:   | 4.9                  | 5.7                  | 3.6                  | 4.2                  | 5.1                  | 5.4                  | :mage_woman: **5.0** |
-| gemini-1.5-pro-002            | **28.7** | :x:                | :x:   | 4.4                  | 5.8                  | 3.0                  | 4.4                  | :mage_woman: **5.5** | **5.6**              | **4.7**              |
+| gemini-2.0-pro-exp-02-05      | **28.7** | :x:                | :x:   | 4.9                  | 5.7                  | 3.6                  | 4.2                  | 5.1                  | 5.4                  | **5.0**              |
+| gemini-1.5-pro-002            | **28.7** | :x:                | :x:   | 4.4                  | 5.8                  | 3.0                  | 4.4                  | :mage_woman: **5.5** | **5.6**              | 4.7                  |
 | nemotron-70b-instruct         | **27.8** | :white_check_mark: | :x:   | 4.5                  | 5.7                  | 3.5                  | 4.3                  | 4.7                  | 5.0                  | 0.0                  |
 | claude-3-opus-20240229        | **27.6** | :x:                | :x:   | 4.6                  | 5.6                  | :mage_woman: **4.2** | 3.5                  | 4.7                  | 5.0                  | 2.7                  |
 | qwen-plus-2025-01-25          | **27.2** | :x:                | :x:   | 4.3                  | 5.8                  | 2.8                  | 3.9                  | **5.2**              | 5.2                  | 3.0                  |
@@ -24,7 +24,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | gpt-4o-2024-05-13             | **26.8** | :x:                | :x:   | 5.1                  | 5.4                  | 3.2                  | 4.0                  | 4.8                  | 4.2                  | 3.5                  |
 | Llama-3.3-70B-Instruct        | **26.5** | :white_check_mark: | :x:   | 4.7                  | 5.7                  | 2.7                  | 4.5                  | 4.4                  | 4.5                  | 0.0                  |
 | qwen2.5-72b-instruct          | **26.2** | :white_check_mark: | :x:   | 4.5                  | 5.8                  | 2.9                  | 4.2                  | 3.8                  | 4.9                  | 0.0                  |
-| pixtral-large-2411            | **26.0** | :white_check_mark: | :x:   | 5.1                  | 5.2                  | 3.2                  | 4.0                  | 4.5                  | 4.1                  | **4.7**              |
+| pixtral-large-2411            | **26.0** | :white_check_mark: | :x:   | 5.1                  | 5.2                  | 3.2                  | 4.0                  | 4.5                  | 4.1                  | 4.7                  |
 | gpt-4-turbo-2024-04-09        | **25.9** | :x:                | :x:   | 4.5                  | 5.4                  | 3.6                  | 3.9                  | 4.7                  | 4.0                  | 4.1                  |
 | sonar-pro                     | **25.9** | :x:                | :x:   | 4.5                  | 5.3                  | 3.0                  | 4.0                  | 5.0                  | 4.0                  | 0.0                  |
 | gemini-2.0-flash-lite         | **25.5** | :x:                | :x:   | 4.3                  | 6.2                  | 2.5                  | 3.3                  | 4.9                  | 4.2                  | 4.2                  |
@@ -121,6 +121,12 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     9.2 |
 | cat06_06_bias_mitigation_declare   |     3.5 |
 | cat06_07_fair_unfair_powl          |     9   |
+| cat07_01_ocdfg                     |     9.5 |
+| cat07_02_bpmn_orders               |     7.5 |
+| cat07_03_bpmn_dispatch             |     6   |
+| cat07_04_causal_net                |     9.8 |
+| cat07_05_proclets                  |     9.5 |
+| cat07_06_perf_spectrum             |     9.7 |
 
 
 

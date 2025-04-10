@@ -16,7 +16,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | nemotron-super-49b-v1-thinkenab  | **33.9** | :white_check_mark: | :white_check_mark: | 5.1                  | 7.7                  | 6.1                  | 4.9                  | 4.6                  | 5.5                  | 0.0                  |
 | o3-mini-20250131-HIGH            | **33.8** | :x:                | :white_check_mark: | 5.9                  | 7.6                  | 4.3                  | 4.9                  | 5.4                  | 5.6                  | 3.5                  |
 | o1-pro-2024-12-17                | **33.7** | :x:                | :white_check_mark: | 5.9                  | 7.7                  | 4.5                  | 5.0                  | 5.5                  | 5.2                  | 4.8                  |
-| openrouterquasar-alpha           | **33.3** | :x:                | :x:                | 5.5                  | 7.5                  | 3.5                  | 5.5                  | 5.5                  | 5.8                  | 0.0                  |
+| openrouterquasar-alpha           | **33.3** | :x:                | :x:                | 5.5                  | 7.5                  | 3.5                  | 5.5                  | 5.5                  | 5.8                  | 5.2                  |
 | o3-mini-2025-01-31               | **33.1** | :x:                | :white_check_mark: | 6.1                  | 7.5                  | 4.0                  | 5.2                  | 5.8                  | 4.6                  | 0.0                  |
 | claude-3-7-sonnet-thinkhigh      | **33.1** | :x:                | :white_check_mark: | 5.5                  | **8.0**              | 5.0                  | 4.5                  | 5.5                  | 4.5                  | 4.3                  |
 | gpt-4.5-preview                  | **32.6** | :x:                | :x:                | 5.7                  | 7.4                  | 4.2                  | 4.9                  | 5.2                  | 5.3                  | 4.2                  |
@@ -813,6 +813,12 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     9.2 |
 | cat06_06_bias_mitigation_declare   |     3.5 |
 | cat06_07_fair_unfair_powl          |     9   |
+| cat07_01_ocdfg                     |     9.5 |
+| cat07_02_bpmn_orders               |     7.5 |
+| cat07_03_bpmn_dispatch             |     6   |
+| cat07_04_causal_net                |     9.8 |
+| cat07_05_proclets                  |     9.5 |
+| cat07_06_perf_spectrum             |     9.7 |
 
 
 
