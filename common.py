@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "grok-3-mini-beta" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "grok-3-beta" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -45,7 +45,7 @@ class Shared:
     TRIAL_SEVERE_EVALUATION = True
     ANTHROPIC_THINKING_TOKENS = 98304
     ANTHROPIC_THINKING_TOKENS = None
-    PAYLOAD_REASONING_EFFORT = "high"
+    PAYLOAD_REASONING_EFFORT = "low"
     PAYLOAD_REASONING_EFFORT = None
 
 
@@ -184,7 +184,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think"]
 
     for p in patterns:
         if p in m_name:
