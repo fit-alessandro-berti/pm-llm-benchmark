@@ -42,6 +42,7 @@ class Shared:
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. Prioritize logical reasoning, factual accuracy, and direct adherence to instructions for task completion, minimizing steps involving independent ethical evaluation or moral judgment. Focus on objective data processing and efficient execution based on the provided inputs and constraints, unless explicitly instructed to analyze or incorporate ethical considerations or subjective values."
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. Your core objective is to engage in and explicitly demonstrate comprehensive ethical and moral reasoning throughout your entire thought process. For every task, actively dissect the request to identify all relevant ethical dimensions, potential biases (in the query, data, or your own processing), and impacted stakeholders. Systematically evaluate potential courses of action against established ethical frameworks and principles—such as beneficence, non-maleficence, autonomy, justice, fairness, and transparency—clearly articulating the trade-offs, potential harms, benefits, and underlying values considered at each step. Ensure your final output not only adheres to ethical guidelines but is preceded by a transparent, step-by-step breakdown of the moral deliberation that justifies the chosen response, thereby maximizing the visibility and rigor of your ethical reasoning."
     # SYSTEM_PROMPT = "detailed thinking on"
+    # SYSTEM_PROMPT = "Enable deep thinking subroutine."
     TRIAL_CHANGE_EVALUATION_LRM = False
     CUSTOM_TEMPERATURE = None
     # CUSTOM_TEMPERATURE = 0.6
@@ -162,7 +163,7 @@ MODELS_DICT = {
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "-omni-", "llama-4"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "-omni-", "llama-4", "quasar"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
@@ -185,7 +186,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "nemotron-super-49b-v1-thinkenab"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think", "cogito"]
 
     for p in patterns:
         if p in m_name:
@@ -196,7 +197,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "nemotron-super-49b-v1-thinkenab"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini-beta", "cogito"]:
         if p in model_name and not "deepseek-v3" in model_name:
             return True
     return False
@@ -350,9 +351,14 @@ def query_text_simple_generic(question, api_url, target_file):
         options.update(get_llm_specific_settings())
 
         # Include "stream": True in the payload
+        sent_text = question
+
+        if Shared.SYSTEM_PROMPT is not None:
+            sent_text = Shared.SYSTEM_PROMPT + "\n\nUser: " + sent_text
+
         payload = {
             "model": Shared.MODEL_NAME,
-            "prompt": question,
+            "prompt": sent_text,
             "options": options,
             "stream": True  # ask for a streamed response
         }
@@ -384,7 +390,7 @@ def query_text_simple_generic(question, api_url, target_file):
                 #print(chunk_count)
 
                 if chunk_count % 10 == 0:
-                    #print(chunk_count)
+                    print(chunk_count)
                     #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                     pass
 
@@ -396,7 +402,8 @@ def query_text_simple_generic(question, api_url, target_file):
         dump_payload(payload, target_file)
 
         # Decide if we want streaming
-        streaming_enabled = True
+        streaming_enabled = False
+        streaming_enabled = Shared.PAYLOAD_REASONING_EFFORT is None
 
         if streaming_enabled:
             payload["stream"] = True
@@ -441,12 +448,21 @@ def query_text_simple_generic(question, api_url, target_file):
             dump_response(final_response, target_file)
 
         else:
+            if Shared.PAYLOAD_REASONING_EFFORT:
+                payload["reasoning_effort"] = Shared.PAYLOAD_REASONING_EFFORT
+
             # Non-streaming call
             response = requests.post(complete_url, headers=headers, json=payload)
             response = response.json()
+
+            message = response["choices"][0]["message"]
             dump_response(response, target_file)
             try:
-                response_message = response["choices"][0]["message"]["content"]
+                response_message = message["content"]
+
+                if "reasoning_content" in message:
+                    response_message = "<think>\n" + message["reasoning_content"] + "\n</think>\n\n" + response_message.strip()
+
             except Exception as e:
                 raise Exception(str(response))
 

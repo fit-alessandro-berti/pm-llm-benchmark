@@ -20,6 +20,13 @@ def format_is_open_source(m_name):
         return ":x:"
 
 
+def format_is_lrm(m_name):
+    if is_large_reasoning_model(m_name):
+        return ":white_check_mark:"
+    else:
+        return ":x:"
+
+
 def manage_file_name(file_name, rec_depth=0):
     if rec_depth > 1:
         return file_name
@@ -54,7 +61,8 @@ def manage_file_name(file_name, rec_depth=0):
 
 
 def execute(evaluation_folder, target_file, include_closed_source=True, require_vision=False,
-            require_reasoning=False, require_reasoning_custom=False, leaderboard_title="Overall Leaderboard", reg_expr=None):
+            require_reasoning=False, require_reasoning_custom=False, require_not_reasoning=False,
+            leaderboard_title="Overall Leaderboard", reg_expr=None):
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
     models = {x: y for x, y in models.items() if y >= 44}
@@ -75,7 +83,10 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     max_c10 = 0.0
 
     for m in models:
-        if (include_closed_source or is_open_source(m)) and (not require_reasoning or (is_large_reasoning_model(m) and (not require_reasoning_custom or force_custom_evaluation_lrm(m)))):
+        if (include_closed_source or is_open_source(m)) and \
+                (not require_reasoning or (is_large_reasoning_model(m) and \
+                                           (not require_reasoning_custom or force_custom_evaluation_lrm(m)))) and \
+                (not require_not_reasoning or not is_large_reasoning_model(m)):
             if reg_expr is None or reg_expr.lower() in m.lower():
                 res, this_json = execute_script(evaluation_folder, m)
 
@@ -150,15 +161,17 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
         average = float(m[1]) / 4.6
 
         if m[1] == m[2]:
-            entry = {"Model": m_n, "Avg": "**%.1f**" % (average), "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
-                     "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+            entry = {"Model": m_n, "Score": "**%.1f**" % (m[1]),
+                     "OS": format_is_open_source(m[0]), "LRM": format_is_lrm(m[0]),
+                     "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         else:
-            entry = {"Model": m_n, "Avg": "**%.1f**" % (average), "Score": "**%.1f**" % (m[1]), "OS": format_is_open_source(m[0]), "C1": m[4],
-                     "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+            entry = {"Model": m_n, "Score": "**%.1f**" % (m[1]),
+                     "OS": format_is_open_source(m[0]), "LRM": format_is_lrm(m[0]),
+                     "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Avg", "Score", "OS", "PCo", "CC", "PMo", "PQ", "HG", "FA", ":nerd_face: VI"]
+    overall_table.columns = ["Model", "Score", "OS", "LRM", "PCo", "CC", "PMo", "PQ", "HG", "FA", ":nerd_face: VI"]
     overall_table = overall_table.to_markdown(index=False)
 
     output = []
@@ -198,6 +211,8 @@ def write_evaluation(base_path, extra=True):
     if extra and e_m_name.startswith("gemini-2.5-pro"):
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_cot_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
                 require_vision=False, require_reasoning=True, require_reasoning_custom=True, leaderboard_title="Large Reasoning Models Leaderboard (Models with CoT)")
+        execute(evaluation_folder, os.path.join(base_path, "leaderboard_nolrms_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
+                require_vision=False, require_not_reasoning=True, leaderboard_title="Base LLMs Leaderboard")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=False,
                 require_vision=False, leaderboard_title="Open-Source Leaderboard")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_QWEN_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True, require_vision=False,
