@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "deepcogito/cogito-v1-preview-qwen-14B" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "grok-3-mini-beta" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -45,6 +45,8 @@ class Shared:
     TRIAL_SEVERE_EVALUATION = True
     ANTHROPIC_THINKING_TOKENS = 98304
     ANTHROPIC_THINKING_TOKENS = None
+    PAYLOAD_REASONING_EFFORT = "high"
+    PAYLOAD_REASONING_EFFORT = None
 
 
 MODELS_DICT = {
@@ -182,7 +184,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "nemotron-super-49b-v1-thinkenab", "nemotron-ultra"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab"]
 
     for p in patterns:
         if p in m_name:
@@ -193,7 +195,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "nemotron-super-49b-v1-thinkenab", "nemotron-ultra"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab"]:
         if p in model_name and not "deepseek-v3" in model_name:
             return True
     return False
@@ -398,7 +400,8 @@ def query_text_simple_generic(question, api_url, target_file):
         dump_payload(payload, target_file)
 
         # Decide if we want streaming
-        streaming_enabled = True
+        streaming_enabled = False
+        streaming_enabled = Shared.PAYLOAD_REASONING_EFFORT is None
 
         if streaming_enabled:
             payload["stream"] = True
@@ -443,12 +446,21 @@ def query_text_simple_generic(question, api_url, target_file):
             dump_response(final_response, target_file)
 
         else:
+            if Shared.PAYLOAD_REASONING_EFFORT:
+                payload["reasoning_effort"] = Shared.PAYLOAD_REASONING_EFFORT
+
             # Non-streaming call
             response = requests.post(complete_url, headers=headers, json=payload)
             response = response.json()
+
+            message = response["choices"][0]["message"]
             dump_response(response, target_file)
             try:
-                response_message = response["choices"][0]["message"]["content"]
+                response_message = message["content"]
+
+                if "reasoning_content" in message:
+                    response_message = "<think>\n" + message["reasoning_content"] + "\n</think>\n\n" + response_message.strip()
+
             except Exception as e:
                 raise Exception(str(response))
 

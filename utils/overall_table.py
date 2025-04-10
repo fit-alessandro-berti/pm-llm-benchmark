@@ -130,7 +130,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
     overall_table = []
 
-    target_len = 31
+    target_len = 33
     for m in results:
         m_n = manage_file_name(m[0])
         if len(m_n) > target_len:

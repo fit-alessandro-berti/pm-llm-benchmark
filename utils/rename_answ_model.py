@@ -18,8 +18,8 @@ def do_renaming(base_path, original_name, novel_name):
 
 
 if __name__ == "__main__":
-    original_name = "qwen-qwq-32b_"
-    novel_name = "qwen-qwq-32b-stepbystep_"
+    original_name = "nvidiallama-3.1-nemotron-ultra-253b-v1free_"
+    novel_name = "nvidiallama-3.1-nemotron-ultra-253b-v1-thinkenab_"
 
     if not original_name.endswith("_"):
         raise Exception("original_name must terminate with _")
