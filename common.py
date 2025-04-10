@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "openrouter/quasar-alpha" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "cogito:14b-v1-preview-qwen-fp16" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -22,7 +22,7 @@ class Shared:
     MAX_REQUESTED_TOKENS = 16384
     API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.openai.com/v1/"
-    # API_URL = "http://137.226.117.70:8000/v1/"
+    # API_URL = "http://137.226.117.70:11434/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
     # API_URL = "https://api.x.ai/v1/"
     # API_URL = "https://api.mistral.ai/v1/"
@@ -184,7 +184,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think", "cogito"]
 
     for p in patterns:
         if p in m_name:
@@ -195,7 +195,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini-beta"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini-beta", "cogito"]:
         if p in model_name and not "deepseek-v3" in model_name:
             return True
     return False
