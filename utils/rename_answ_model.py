@@ -19,7 +19,7 @@ def do_renaming(base_path, original_name, novel_name):
 
 if __name__ == "__main__":
     original_name = "grok-3-mini-beta_"
-    novel_name = "grok-3-mini-beta-high_"
+    novel_name = "grok-3-mini-beta-low_"
 
     if not original_name.endswith("_"):
         raise Exception("original_name must terminate with _")
