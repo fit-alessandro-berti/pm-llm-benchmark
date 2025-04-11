@@ -1,0 +1,193 @@
+### 1. Identified Anomalies in Temporal Profile
+
+**a) Receive to Approve (RP):**  
+- **Average:** ~25 hours  
+- **Standard Deviation:** 1 hour (suspiciously low)  
+- **Issue:** Approvals are happening with very consistent timing, which may indicate non-human-driven scheduling or batch processing.  
+
+**b) Approve to Notify (PN):**  
+- **Average:** 7 days  
+- **Standard Deviation:** 2 days (very high)  
+- **Issue:** There is significant variation; sometimes notification is prompt, sometimes delayed by over a week. Indicates possible bottlenecks or inconsistent process hand-offs.  
+
+**c) Assign to Close (AC):**  
+- **Average:** 2 hours  
+- **Standard Deviation:** 1 hour  
+- **Issue:** Claims are being closed quickly after assignment, potentially skipping required evaluations or approvals.  
+
+**d) Evaluate to Notify (EN):**  
+- **Average:** 5 minutes  
+- **Standard Deviation:** 1 minute  
+- **Issue:** Notification is happening almost immediately after evaluation, suggesting automated or possibly bypassed checks, which may not be plausible for real-world review or approvals.  
+
+---
+
+### 2. Hypotheses for Each Anomaly
+
+**a) RP (Consistent Approval Delay):**  
+- Approvals might be scheduled by an automated batch process executed at fixed intervals.
+- System-imposed wait periods or automated triggers causing uniform timing.
+- Potential bypass of manual approval steps, or time is being set programmatically, not based on real work done.
+
+**b) PN (Highly Variable Notification Delay):**  
+- Manual notifications subject to adjuster availability, holidays, or backlogs.
+- Notification is dependent on external systems or integrations that occasionally fail or queue up messages.
+- Inconsistent staffing or process prioritization for communicating outcomes to customers.
+
+**c) AC (Rapid Closure After Assignment):**  
+- Certain claims may be automatically closed upon assignment (e.g., duplicates/fraud/simple errors).
+- Process may skip evaluation and approval for specific claim types (e.g., very low-value or non-covered claims).
+- Data entry mistakes, where events like Evaluate or Approve are not being recorded.
+
+**d) EN (Instant Notification After Evaluation):**  
+- Evaluation and notification are triggered by the same automated workflow step.
+- Evaluation step is superficial or system-generated without human review.
+- Approval might be missing/skipped in records; the workflow jumps from evaluation to notification without appropriate checks.
+
+---
+
+### 3. SQL Queries to Verify Hypotheses
+
+#### a) Claims with Highly Consistent RP Timing  
+```sql
+SELECT
+    c.claim_id,
+    MIN(CASE WHEN e.activity = 'R' THEN e.timestamp END) AS receive_time,
+    MIN(CASE WHEN e.activity = 'P' THEN e.timestamp END) AS approve_time,
+    EXTRACT(EPOCH FROM (MIN(CASE WHEN e.activity = 'P' THEN e.timestamp END) - MIN(CASE WHEN e.activity = 'R' THEN e.timestamp END))) AS r_to_p_seconds
+FROM
+    claim_events e
+    JOIN claims c ON c.claim_id = e.claim_id
+GROUP BY
+    c.claim_id
+HAVING
+    MIN(CASE WHEN e.activity = 'P' THEN e.timestamp END) IS NOT NULL
+ORDER BY
+    abs(EXTRACT(EPOCH FROM (MIN(CASE WHEN e.activity = 'P' THEN e.timestamp END) - MIN(CASE WHEN e.activity = 'R' THEN e.timestamp END))) - 90000) < 3600 -- within 1hr of avg
+;
+```
+**Review:** Claims where RP is almost always 25 hours ±1 hour.
+
+---
+
+#### b) Claims with Long PN Delays and High Variance  
+```sql
+SELECT
+    c.claim_id,
+    MIN(CASE WHEN e.activity = 'P' THEN e.timestamp END) AS approve_time,
+    MIN(CASE WHEN e.activity = 'N' THEN e.timestamp END) AS notify_time,
+    EXTRACT(EPOCH FROM (MIN(CASE WHEN e.activity = 'N' THEN e.timestamp END) - MIN(CASE WHEN e.activity = 'P' THEN e.timestamp END))) AS p_to_n_seconds
+FROM
+    claim_events e
+    JOIN claims c ON c.claim_id = e.claim_id
+GROUP BY
+    c.claim_id
+HAVING
+    p_to_n_seconds IS NOT NULL
+    AND (p_to_n_seconds > 604800 + 2*172800 OR p_to_n_seconds < 604800 - 2*172800)  -- outside 2 standard deviations
+ORDER BY
+    p_to_n_seconds DESC
+LIMIT 50;
+```
+**Review:** Extremely delayed or unusually fast notifications after approval.
+
+---
+
+#### c) Closures Immediately Following Assignment  
+```sql
+SELECT
+    c.claim_id,
+    MIN(CASE WHEN e.activity = 'A' THEN e.timestamp END) AS assign_time,
+    MIN(CASE WHEN e.activity = 'C' THEN e.timestamp END) AS close_time,
+    EXTRACT(EPOCH FROM (MIN(CASE WHEN e.activity = 'C' THEN e.timestamp END) - MIN(CASE WHEN e.activity = 'A' THEN e.timestamp END))) AS a_to_c_seconds,
+    cr.claim_type
+FROM
+    claim_events e
+    JOIN claims cr ON cr.claim_id = e.claim_id
+    JOIN claims c ON c.claim_id = e.claim_id
+GROUP BY
+    c.claim_id, cr.claim_type
+HAVING
+    a_to_c_seconds < 7200   -- less than 2 hours
+ORDER BY
+    a_to_c_seconds
+;
+```
+**Review:** Claims closed very shortly after assignment; check if particular claim types dominate.
+
+---
+
+#### d) EN Almost Immediate Notification  
+```sql
+SELECT
+    c.claim_id,
+    MIN(CASE WHEN e.activity = 'E' THEN e.timestamp END) AS eval_time,
+    MIN(CASE WHEN e.activity = 'N' THEN e.timestamp END) AS notif_time,
+    EXTRACT(EPOCH FROM (MIN(CASE WHEN e.activity = 'N' THEN e.timestamp END) - MIN(CASE WHEN e.activity = 'E' THEN e.timestamp END))) AS e_to_n_seconds,
+    cr.claim_type
+FROM
+    claim_events e
+    JOIN claims cr ON cr.claim_id = e.claim_id
+    JOIN claims c ON c.claim_id = e.claim_id
+GROUP BY
+    c.claim_id, cr.claim_type
+HAVING
+    e_to_n_seconds < 600   -- less than 10 minutes
+ORDER BY
+    e_to_n_seconds
+;
+```
+**Review:** Rapid or instantaneous notification after evaluation; check if claim type is a factor.
+
+---
+
+#### e) Correlate Anomalous Timing with Adjusters or Regions  
+```sql
+SELECT
+    a.adjuster_id,
+    a.name,
+    a.region,
+    COUNT(DISTINCT c.claim_id) AS claim_count,
+    AVG(EXTRACT(EPOCH FROM (MIN(CASE WHEN e.activity = 'N' THEN e.timestamp END) - MIN(CASE WHEN e.activity = 'P' THEN e.timestamp END)))) AS avg_p_to_n_time
+FROM
+    claim_events e
+    JOIN claims c ON c.claim_id = e.claim_id
+    JOIN adjusters a ON e.resource = a.name  -- or another applicable join
+GROUP BY
+    a.adjuster_id, a.name, a.region
+ORDER BY
+    avg_p_to_n_time DESC
+;
+```
+**Review:** Identify adjusters or regions where approval-to-notification is unusually delayed.
+
+---
+
+#### f) Check for Missing Intermediate Steps (AC without E or P)
+```sql
+SELECT
+    c.claim_id,
+    MIN(CASE WHEN e.activity = 'A' THEN e.timestamp END) AS assign_time,
+    MIN(CASE WHEN e.activity = 'C' THEN e.timestamp END) AS close_time,
+    COUNT(CASE WHEN e.activity = 'E' THEN 1 END) AS eval_count,
+    COUNT(CASE WHEN e.activity = 'P' THEN 1 END) AS approve_count
+FROM
+    claim_events e
+    JOIN claims c ON c.claim_id = e.claim_id
+GROUP BY
+    c.claim_id
+HAVING
+    eval_count = 0 OR approve_count = 0
+    AND assign_time IS NOT NULL
+    AND close_time IS NOT NULL
+    AND EXTRACT(EPOCH FROM (close_time - assign_time)) < 7200
+ORDER BY
+    close_time - assign_time
+;
+```
+**Review:** Claims closed after assignment without recorded evaluation or approval steps.
+
+---
+
+**Note:**  
+For all queries, further filtering or group-by can be applied to segment by `claim_type`, `region`, or specific `resource`/`adjuster` as needed for root cause analysis.

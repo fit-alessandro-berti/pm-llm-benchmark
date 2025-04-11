@@ -1,0 +1,197 @@
+Absolutely. Here’s an analysis of anomalies/undesirable behaviors in the provided process event logs, possible causes, and a set of **investigative SQL queries** you might run for further insight.
+
+---
+
+## **Anomaly & Behavior Analysis**
+
+### 1. **Out-of-Order Activities**
+- **Case 1002**: `Confirm Shipment` and `Ship Goods` occurred **before** `Perform Credit Check` and `Validate Stock`.
+- **Case 1003**: `Ship Goods` and `Issue Invoice` happened **before** `Confirm Shipment`.
+- **Case 1004**: `Receive Payment` happened immediately after `Register Order`, before both `Issue Invoice` and shipment.
+
+**Why is this a problem?**  
+The normal process dictates a sequential flow: registering the order, credit check, stock validation, shipment confirmation, goods shipping, invoicing, and finally payment. Deviations may violate business controls or risk management rules.
+
+---
+
+### 2. **Missing Activities**
+- **Case 1004**: No `Perform Credit Check` or `Validate Stock` occurred before proceeding to shipping and invoicing.
+
+---
+
+### 3. **Premature or Late Activities**
+- In **case 1002**, `Confirm Shipment` carries the flag `attempted_early=Y`, supporting the earlier shipping confirmation than the Credit/Stock checks.
+- **Case 1003**: `Confirm Shipment` is flagged as `late_confirmation=Y`, and occurs after shipping and invoicing.
+
+---
+
+### 4. **Role/Department Issues**
+- Payments (`Receive Payment`) are always performed by `FinanceTeam_02`, even where process order is odd (e.g., **Case 1004**’s payment directly after order registration).
+- Shipping is carried out by various warehouse staff, but confirmation by logistics manager, which is structurally fine.
+
+---
+
+### 5. **Potential Policy or Control Violations**
+- Invoicing before shipment (`Issue Invoice` before `Ship Goods`), e.g., in **case 1003**.
+- Payment before shipment and invoice (**case 1004**).
+
+---
+
+## **Hypotheses for Process Deviations**
+
+- **System Error:** System-enforced event ordering might be broken, allowing out-of-sequence events.
+- **Policy/Training Issue:** Staff may not be following the SOP or may not be aware of proper sequence.
+- **Bypassing Controls:** Users may have found ways to work around constraints for speed.
+- **Exception Handling:** The process permits exceptions (e.g., prepayment for trusted customers), either formally or due to lack of validation.
+- **Data Quality Errors:** Manual data entry could cause events to be logged with incorrect timestamps or labels.
+
+---
+
+## **Proposed SQL Queries for Investigation**
+
+Each query is paired to a hypothesis or anomaly category.
+
+### **1. Orders with Events Out of Normal Sequence**
+
+```sql
+SELECT
+  case_id,
+  MIN(CASE WHEN activity = 'Register Order' THEN timestamp END) AS register_order_time,
+  MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) AS credit_check_time,
+  MIN(CASE WHEN activity = 'Validate Stock' THEN timestamp END) AS validate_stock_time,
+  MIN(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) AS confirm_shipment_time,
+  MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS ship_goods_time,
+  MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS issue_invoice_time,
+  MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS receive_payment_time
+FROM order_event_log
+GROUP BY case_id
+HAVING
+  -- Credit check after shipment or after invoice
+  (MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) >
+   MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END)
+   OR
+   MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) >
+   MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END))
+  OR
+  -- Payment before invoice/ship
+  (MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) <
+   MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END)
+   OR
+   MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) <
+   MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END))
+  OR
+  -- Confirm Shipment after Ship Goods
+  (MIN(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) >
+   MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END));
+```
+*Purpose: Detect all cases with core out-of-sequence process events.*
+
+---
+
+### **2. Cases Missing Critical Steps**
+
+```sql
+SELECT case_id
+FROM orders
+WHERE case_id NOT IN (
+  SELECT DISTINCT case_id
+  FROM order_event_log
+  WHERE activity = 'Perform Credit Check'
+)
+   OR case_id NOT IN (
+  SELECT DISTINCT case_id
+  FROM order_event_log
+  WHERE activity = 'Validate Stock'
+);
+```
+*Purpose: Find orders lacking credit or stock validation.*
+
+---
+
+### **3. Frequency of Early or Late Flags in Event Data**
+
+```sql
+SELECT
+  activity,
+  COUNT(*) AS count,
+  SUM((additional_info LIKE '%early=Y%')::int) AS early_count,
+  SUM((additional_info LIKE '%late_confirmation=Y%')::int) AS late_count
+FROM order_event_log
+GROUP BY activity
+ORDER BY activity;
+```
+*Purpose: See how often process steps are flagged as out-of-order by operatives.*
+
+---
+
+### **4. Roles Performing Payment/Shipment/Invoice Activities**
+
+```sql
+SELECT oel.activity, oel.resource, r.role, r.department, COUNT(*) AS count
+FROM order_event_log oel
+LEFT JOIN resources r ON oel.resource = r.resource_id
+WHERE oel.activity IN ('Receive Payment', 'Issue Invoice', 'Ship Goods', 'Confirm Shipment')
+GROUP BY oel.activity, oel.resource, r.role, r.department
+ORDER BY oel.activity, count DESC;
+```
+*Purpose: Verify if only proper roles/departments are performing key steps.*
+
+---
+
+### **5. Cases with Payment Before Invoice or Goods Shipped**
+
+```sql
+SELECT case_id, 
+  MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS payment_time,
+  MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS invoice_time,
+  MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS ship_goods_time
+FROM order_event_log
+GROUP BY case_id
+HAVING
+  MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) <
+  COALESCE(MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END), 'infinity'::timestamp)
+  OR
+  MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) <
+  COALESCE(MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END), 'infinity'::timestamp);
+```
+*Purpose: Confirm and quantify cases with premature payment.*
+
+---
+
+### **6. Time-to-Completion and Skip Patterns Across All Orders**
+
+```sql
+SELECT
+  case_id,
+  COUNT(DISTINCT activity) AS num_activities,
+  MIN(timestamp) AS first_event,
+  MAX(timestamp) AS last_event,
+  EXTRACT(epoch FROM (MAX(timestamp)-MIN(timestamp)))/3600 AS duration_hours
+FROM order_event_log
+GROUP BY case_id
+ORDER BY duration_hours DESC;
+```
+*Purpose: Find fast-track or skipped cases (e.g., payment and closure within minutes).*
+
+---
+
+### **7. Additional Check: Orders with Duplicate or Repeated Activities**
+
+```sql
+SELECT case_id, activity, COUNT(*) as activity_count
+FROM order_event_log
+GROUP BY case_id, activity
+HAVING COUNT(*) > 1
+ORDER BY case_id, activity;
+```
+*Purpose: Detect process loops or repeated activities not typical for the defined flow.*
+
+---
+
+## **Summary**
+
+- **Anomalies found:** Out-of-sequence steps, missing steps, payment/invoicing before shipment, unusual flags, missing roles.
+- **Likely causes:** Process loopholes, enforcement gaps, exceptions, or data quality issues.
+- **Next Steps:** Run above queries to locate systematic issues, scope of the problem, and responsible parties/roles.
+
+Let me know if you want to focus on a particular anomaly or need the expected results from the example data set!
