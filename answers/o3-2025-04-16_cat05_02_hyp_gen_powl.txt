@@ -1,0 +1,214 @@
+
+1.  What is “strange” in the POWL model?
+
+
+a. Rework loop between Evaluate (E) and Approve (P)  
+   •  The loop is defined as LOOP(E,P).  
+   •  That semantics allows the following execution patterns:
+     –  E  exit                (claim is evaluated but never approved)  
+     –  E  P  exit            (normal case)  
+     –  E  P  E  exit        (evaluate again after approving)  
+     –  … repeated E / P forever
+   •  Approve can therefore occur several times or even before the last
+     evaluation.
+
+b. XOR “notify  skip”  
+   •  The model explicitly allows N to be skipped by choosing  (the silent
+     transition “skip”).  
+   •  Customers may therefore never be informed that the claim was
+     approved / rejected.
+
+c. Missing / weakened ordering constraints  
+   •  The edge loop  xor is present, but xor  C (close) is **not**.  
+   •  An additional edge A  C was added deliberately.  
+   •  Consequently C may be executed
+       – right after Assign Adjuster, i.e. before any E, P or N, or  
+       – in parallel with the loop, so that events that logically belong
+         to an already closed claim can still be recorded.
+
+d. No guarantee that activities really appear at all  
+   •  Because the loop can be left after the first E and the XOR can skip
+     N, an ideal trace
+        RAEPNC
+     is not enforced; many shorter or scrambled traces are allowed.
+
+
+2.  Plausible business / technical reasons (hypotheses)
+
+
+H1.  Incremental rule changes  
+     –  The company recently allowed “straightthrough” settlement of very
+       small claims.  A developer added the fast lane (AC) but did not
+       finish the datadriven condition that should restrict it to small
+       amounts.
+
+H2.  Communication gap between business and IT  
+     –  Business analysts wanted the possibility to **reenter** evaluation
+       *before* approval, but the modeler implemented a full EP loop that
+       also enables “PE”.
+
+H3.  Emergency bugfix in production  
+     –  A defect once blocked customer notifications.  Operations added
+       the “skipN” branch to keep the process running and never removed
+       it afterwards.
+
+H4.  Modelling tool limitation / misuse  
+     –  The modeller used a partial order editor without adding all edges,
+       believing that “implicit transitive closure” would forbid early
+       closing.  In POWL that assumption is wrong, hence the anomaly.
+
+H5.  Data import noise  
+     –  Historical event logs contained outoforder timestamps; the
+       modeller copied that ordering into the model to obtain a good
+       conformance score, thereby legitimising bad data instead of
+       cleaning it.
+
+
+3.  How to test the hypotheses with SQL
+
+
+Below, “ce” is an alias for claim_events.
+
+3.1  Claims closed without E or without P
+------------------------------------------------
+SELECT  c.claim_id
+FROM    claims            AS c
+JOIN    claim_events      AS ce_close
+          ON ce_close.claim_id = c.claim_id
+         AND ce_close.activity = 'C'
+LEFT JOIN claim_events      AS ce_eval
+          ON ce_eval.claim_id = c.claim_id
+         AND ce_eval.activity = 'E'
+LEFT JOIN claim_events      AS ce_appr
+          ON ce_appr.claim_id = c.claim_id
+         AND ce_appr.activity = 'P'
+WHERE   ce_eval.claim_id IS NULL        -- never evaluated
+    OR  ce_appr.claim_id IS NULL;       -- never approved
+
+3.2  “Premature close” – C happens before first E or P
+-------------------------------------------------------
+WITH first_times AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity='C' THEN timestamp END) AS t_c,
+         MIN(CASE WHEN activity='E' THEN timestamp END) AS t_e,
+         MIN(CASE WHEN activity='P' THEN timestamp END) AS t_p
+  FROM   claim_events
+  GROUP  BY claim_id)
+SELECT  claim_id, t_c, t_e, t_p
+FROM    first_times
+WHERE   t_c < COALESCE(t_e, 'infinity')
+    OR  t_c < COALESCE(t_p, 'infinity');
+
+3.3  Multiple approvals (loop iterating)
+----------------------------------------
+SELECT  claim_id, COUNT(*) AS approvals
+FROM    claim_events
+WHERE   activity = 'P'
+GROUP   BY claim_id
+HAVING  COUNT(*) > 1;
+
+3.4  “Approve before Evaluate” (wrong order)
+--------------------------------------------
+WITH first_times AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity='E' THEN timestamp END) AS t_e,
+         MIN(CASE WHEN activity='P' THEN timestamp END) AS t_p
+  FROM   claim_events
+  GROUP  BY claim_id)
+SELECT  claim_id, t_e, t_p
+FROM    first_times
+WHERE   t_p < t_e;
+
+3.5  Evaluate again after final Approve (PE pattern)
+-----------------------------------------------------
+WITH last_times AS (
+  SELECT claim_id,
+         MAX(CASE WHEN activity='P' THEN timestamp END) AS last_p,
+         MAX(CASE WHEN activity='E' THEN timestamp END) AS last_e
+  FROM   claim_events
+  GROUP  BY claim_id)
+SELECT  claim_id
+FROM    last_times
+WHERE   last_e > last_p;
+
+3.6  Notification skipped
+-------------------------
+WITH flags AS (
+  SELECT claim_id,
+         BOOL_OR(activity = 'N') AS has_notify,
+         BOOL_OR(activity = 'C') AS has_close
+  FROM   claim_events
+  GROUP  BY claim_id)
+SELECT  claim_id
+FROM    flags
+WHERE   has_close
+  AND  NOT has_notify;
+
+(You may add a timeordering test similar to 3.2 to see whether N comes
+after C.)
+
+3.7  Fastlane hypothesis – “small amount, early close”
+-------------------------------------------------------
+SELECT  cl.claim_id, cl.claim_amount, MIN(ce.timestamp) AS close_time
+FROM    claims       AS cl
+JOIN    claim_events AS ce
+       ON ce.claim_id = cl.claim_id
+      AND ce.activity = 'C'
+WHERE   cl.claim_amount < 5000                      -- threshold to tune
+  AND  NOT EXISTS (SELECT 1 FROM claim_events
+                   WHERE claim_id = cl.claim_id
+                     AND activity IN ('E','P'))
+ORDER BY cl.claim_amount;
+
+3.8  Wrong adjuster specialisation (qualityofdata check)
+----------------------------------------------------------
+/* relies on resource holding adjuster_id in the event log */
+SELECT  ce.claim_id, ce.resource AS adjuster_id, ad.specialization,
+        cl.claim_type
+FROM    claim_events ce
+JOIN    adjusters   ad   ON ad.adjuster_id = ce.resource::INT
+JOIN    claims      cl   ON cl.claim_id   = ce.claim_id
+WHERE   ce.activity = 'A'
+  AND  ((cl.claim_type = 'home_insurance'  AND ad.specialization <> 'home')
+        OR
+        (cl.claim_type = 'auto_insurance'  AND ad.specialization <> 'auto'));
+
+
+4.  Interpreting the query results
+
+
+•  If queries 3.1 and 3.2 return many rows, the “premature close” branch
+   (A  C) is really used; that supports H1 or H3.
+
+•  Significant counts in 3.3, 3.4 or 3.5 indicate the EP loop is taken
+   in unintended directions, confirming H2 or H4.
+
+•  A high proportion of claims in 3.6 shows that the XORskip of
+   customer notification is not merely theoretical, hinting at H3.
+
+•  Query 3.7 links premature closing to small amounts; if that correlates
+   well, H1 (fasttrack for lowvalue claims) becomes plausible.
+
+•  Query 3.8 checks data quality and role compliance; mismatches would
+   lend weight to H4/H5.
+
+
+5.  Next steps
+
+
+1.  Produce dashboards (e.g. percentages of the above queries per month)
+    to see whether anomalies increase after certain system releases.
+
+2.  Replay the real event log against an *ideal* process model
+    (RAEPNC) with a conformance checker; highlight every moveonmodel
+    required to repair the trace.
+
+3.  Interview process owners with the collected evidence:
+    •  If anomalies are legitimate, encode the conditions explicitly
+       (e.g., FastTrack gateway “claim_amount < X”).  
+    •  Otherwise, tighten the model (add loopC edge, remove AC edge,
+       replace XOR with mandatory N).
+
+By combining the analytical SQL checks with stakeholder feedback you can
+decide whether to 1) keep, 2) remodel or 3) technically block the
+detected anomalous paths.

@@ -1,0 +1,135 @@
+Anomalies in the Temporal Profile Model
+
+1. R  P (Receive  Approve)  
+   – Average  25 h but STDEV only 1 h  
+   – Implies almost every claim is approved on a rigid schedule, with little natural variation.
+
+2. P  N (Approve  Notify)  
+   – Average = 7 days, STDEV = 2 days  
+   – Very long and highly variable delay between approval and customer notification.
+
+3. A  C (Assign  Close)  
+   – Average = 2 h, STDEV = 1 h  
+   – Claims are sometimes closed almost immediately after assignment, skipping Evaluate/Approve.
+
+4. E  N (Evaluate  Notify)  
+   – Average = 5 min, STDEV = 1 min  
+   – Notifications following evaluations are unrealistically fast, suggesting skipped steps or automation.
+
+Possible Hypotheses
+
+• R  P low variance  
+  – A batchjob or scheduler runs approvals at fixed hourly intervals.  
+  – Manual approvals are only entered once per hour (dataentry batching).
+
+• P  N long/high variance  
+  – Notification responsibilities fall to a small team, creating a backlog.  
+  – Notifications depend on an external system with intermittent outages.  
+  – Some claim types trigger manual review before notification (e.g., highseverity cases).
+
+• A  C rapid closure  
+  – Lowvalue claims are autoclosed upon assignment without evaluation.  
+  – A particular adjuster or region policy prematurely closes claims.  
+
+• E  N very quick transition  
+  – A trigger in the system immediately sends notifications upon evaluation (skipping “Approve”).  
+  – Mislabelled events: some E events are actually notifications but logged incorrectly.
+
+Verification Approaches via SQL
+
+1. Identify claims where R  P deviates from expected window  
+```sql
+WITH times AS (
+  SELECT
+    ce1.claim_id,
+    ce1.timestamp AS t_receive,
+    ce2.timestamp AS t_approve,
+    EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS delta_secs
+  FROM claim_events ce1
+  JOIN claim_events ce2
+    ON ce1.claim_id = ce2.claim_id
+   AND ce1.activity = 'R'
+   AND ce2.activity = 'P'
+)
+SELECT *
+FROM times
+WHERE delta_secs < 3600 - 3*3600   -- much shorter than 1h±3
+   OR delta_secs > 90000 + 3*3600  -- much longer than 25h±3
+ORDER BY delta_secs DESC;
+```
+
+2. Correlate P  N delays with claim_type, region, adjuster  
+```sql
+WITH delays AS (
+  SELECT
+    ce_p.claim_id,
+    c.claim_type,
+    a.region,
+    EXTRACT(EPOCH FROM (ce_n.timestamp - ce_p.timestamp))/86400 AS days_delay
+  FROM claim_events ce_p
+  JOIN claim_events ce_n
+    ON ce_p.claim_id = ce_n.claim_id AND ce_p.activity = 'P' AND ce_n.activity = 'N'
+  JOIN claims c ON c.claim_id = ce_p.claim_id
+  JOIN adjusters a ON a.adjuster_id = ce_p.resource::int
+)
+SELECT
+  claim_type,
+  region,
+  COUNT(*) AS cnt,
+  AVG(days_delay) AS avg_delay,
+  STDDEV(days_delay) AS sd_delay
+FROM delays
+GROUP BY claim_type, region
+ORDER BY avg_delay DESC;
+```
+
+3. Find claims closed immediately after Assign (A  C within 2 h ± 3)  
+```sql
+SELECT
+  ce_a.claim_id,
+  c.customer_id,
+  ce_a.resource AS assigner,
+  EXTRACT(EPOCH FROM (ce_c.timestamp - ce_a.timestamp))/3600 AS hours_to_close
+FROM claim_events ce_a
+JOIN claim_events ce_c
+  ON ce_a.claim_id = ce_c.claim_id
+ AND ce_a.activity = 'A'
+ AND ce_c.activity = 'C'
+JOIN claims c ON c.claim_id = ce_a.claim_id
+WHERE EXTRACT(EPOCH FROM (ce_c.timestamp - ce_a.timestamp)) <= 7200 + 3*3600
+ORDER BY hours_to_close;
+```
+
+4. Check E  N transitions happening too quickly  
+```sql
+SELECT
+  ce_e.claim_id,
+  ce_e.timestamp AS evaluated_at,
+  ce_n.timestamp AS notified_at,
+  EXTRACT(EPOCH FROM (ce_n.timestamp - ce_e.timestamp)) AS secs_between
+FROM claim_events ce_e
+JOIN claim_events ce_n
+  ON ce_e.claim_id = ce_n.claim_id
+ AND ce_e.activity = 'E'
+ AND ce_n.activity = 'N'
+WHERE EXTRACT(EPOCH FROM (ce_n.timestamp - ce_e.timestamp)) < 300 - 3*60
+   OR EXTRACT(EPOCH FROM (ce_n.timestamp - ce_e.timestamp)) > 300 + 3*60
+ORDER BY secs_between;
+```
+
+5. Spot patterns in claims that skip Evaluate or Approve  
+```sql
+SELECT
+  ce.claim_id,
+  MIN(ce.timestamp) FILTER (WHERE ce.activity='R') AS t_receive,
+  MIN(ce.timestamp) FILTER (WHERE ce.activity='A') AS t_assign,
+  MIN(ce.timestamp) FILTER (WHERE ce.activity='E') AS t_evaluate,
+  MIN(ce.timestamp) FILTER (WHERE ce.activity='P') AS t_approve,
+  MIN(ce.timestamp) FILTER (WHERE ce.activity='C') AS t_close
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING t_assign IS NOT NULL
+   AND t_close IS NOT NULL
+   AND (t_evaluate IS NULL OR t_approve IS NULL)
+ORDER BY t_close - t_assign;
+```

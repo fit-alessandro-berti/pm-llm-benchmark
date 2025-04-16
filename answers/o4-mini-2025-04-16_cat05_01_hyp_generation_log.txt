@@ -1,0 +1,119 @@
+Below is a sketch of the main anomalies we see in the sample cases, some hypotheses about root causes, and a set of SQL queries you can run against your `order_event_log`, `orders` and `resources` tables to investigate further.
+
+1.  Anomalies & hypotheses  
+   a.  Outoforder shipments  
+       – Case 1002: “Confirm Shipment” and “Ship Goods” occur before “Perform Credit Check” and “Validate Stock.”  
+       – Hypotheses:  
+         •  Manual override for “priority” orders or servicelevel agreements  
+         •  Interface/system bug that logs some events with wrong timestamps  
+         •  Rogue user or inadequate training allowing bypass of credit/stock checks  
+   b.  Missing or skipped steps  
+       – Case 1003: No “Validate Stock” event at all; “Ship Goods” happens immediately after credit check.  
+       – Hypotheses:  
+         •  Stockvalidation system outage or hardcoded fallback  
+         •  Process exception for small/standard orders  
+   c.  Premature payments/invoicing  
+       – Case 1004: “Receive Payment” before “Issue Invoice” and even before any shipment confirmation.  
+       – Hypotheses:  
+         •  Cashiers posting payments without invoicing (system bug or bad UI)  
+         •  Test transactions or reconciliation entries in prod  
+   d.  Shipments with “shipment_scheduled=N”  
+       – Case 1004: Confirm Shipment says “N” but later “Ship Goods” is logged.  
+       – Hypotheses:  
+         •  Logistics manager manually forces pick/pack after autocancel  
+         •  Data inconsistency between scheduling and execution modules  
+
+2.  Investigation queries  
+
+a.  Find all cases where Ship Goods happened before credit check or stock validation:  
+```sql
+SELECT
+  case_id,
+  MIN(CASE WHEN activity='Ship Goods'           THEN timestamp END) AS ship_ts,
+  MIN(CASE WHEN activity='Perform Credit Check' THEN timestamp END) AS credit_ts,
+  MIN(CASE WHEN activity='Validate Stock'       THEN timestamp END) AS stock_ts
+FROM order_event_log
+GROUP BY case_id
+HAVING
+     ship_ts < COALESCE(credit_ts, '9999-12-31'::timestamp)
+  OR ship_ts < COALESCE(stock_ts,  '9999-12-31'::timestamp);
+```
+
+b.  Identify cases missing one or more required activities:  
+```sql
+SELECT
+  case_id,
+  COUNT(DISTINCT activity)                          AS total_events,
+  COUNT(DISTINCT CASE WHEN activity='Validate Stock'       THEN 1 END) AS has_stock,
+  COUNT(DISTINCT CASE WHEN activity='Perform Credit Check' THEN 1 END) AS has_credit
+FROM order_event_log
+GROUP BY case_id
+HAVING
+    COUNT(DISTINCT CASE WHEN activity='Validate Stock'       THEN 1 END) = 0
+ OR COUNT(DISTINCT CASE WHEN activity='Perform Credit Check' THEN 1 END) = 0;
+```
+
+c.  Cases with payment before invoicing:  
+```sql
+SELECT
+  case_id
+FROM order_event_log
+GROUP BY case_id
+HAVING
+  MIN(CASE WHEN activity='Receive Payment' THEN timestamp END)
+  <
+  MIN(CASE WHEN activity='Issue Invoice'    THEN timestamp END);
+```
+
+d.  Ship Goods after a “shipment_scheduled=N” confirm:  
+```sql
+SELECT DISTINCT l.case_id
+FROM order_event_log l
+JOIN order_event_log c
+  ON l.case_id = c.case_id
+WHERE
+  c.activity = 'Confirm Shipment'
+  AND c.additional_info LIKE '%shipment_scheduled=N%'
+  AND l.activity = 'Ship Goods';
+```
+
+e.  Correlate anomalies with order type (e.g., priority vs. standard):  
+```sql
+WITH anomalies AS (
+  /* reuse query (a) or (c) to tag case_id as anomalous */
+  SELECT case_id FROM /* … */ 
+)
+SELECT
+  o.order_type,
+  COUNT(DISTINCT a.case_id) AS num_anomalies,
+  COUNT(DISTINCT o.case_id) AS total_orders
+FROM orders o
+LEFT JOIN anomalies a
+  ON o.case_id = a.case_id
+GROUP BY o.order_type;
+```
+
+f.  See which roles/departments are most often involved in anomalous steps:  
+```sql
+WITH anomaly_events AS (
+  SELECT case_id
+  FROM /* pick one anomaly definition, e.g. paymentbeforeinvoice */
+  GROUP BY case_id
+  HAVING /* … */
+)
+SELECT
+  r.department,
+  r.role,
+  el.activity,
+  COUNT(*) AS occurrences
+FROM order_event_log el
+JOIN resources r
+  ON el.resource = r.resource_id
+JOIN anomaly_events a
+  ON el.case_id = a.case_id
+GROUP BY r.department, r.role, el.activity
+ORDER BY occurrences DESC;
+```
+
+—  
+These queries will flag outoforder, missing, or contradictory events; correlate them with order attributes and with the people/systems executing them; and help you surface patterns for further rootcause analysis (system bugs, policy exceptions, training gaps, etc.).
