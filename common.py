@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "gpt-4.1-nano-2025-04-14" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "gemini-2.5-flash-preview-04-17" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -559,6 +559,14 @@ def query_text_simple_google(question, api_url, target_file):
             ]}
         ]
     }
+
+    if "gemini-2.5-flash" in Shared.MODEL_NAME:
+        payload["generationConfig"] = {
+            "thinkingConfig": {
+                "thinkingBudget": Shared.ANTHROPIC_THINKING_TOKENS if Shared.ANTHROPIC_THINKING_TOKENS is not None else 0
+            }
+        }
+
     dump_payload(payload, target_file)
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
@@ -769,6 +777,13 @@ def query_image_simple_google(base64_image, api_url, target_file, text):
             ]}
         ]
     }
+
+    if "gemini-2.5-flash" in Shared.MODEL_NAME:
+        payload["generationConfig"] = {
+            "thinkingConfig": {
+                "thinkingBudget": Shared.ANTHROPIC_THINKING_TOKENS if Shared.ANTHROPIC_THINKING_TOKENS is not None else 0
+            }
+        }
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
     dump_response(response, target_file)
