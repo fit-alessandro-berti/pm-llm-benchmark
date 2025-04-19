@@ -178,6 +178,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     output.append(
         "A score in the range **22-26** is considered **sufficient**; a score in the range **26-30** is considered **fair**; a score in the range **30-34** is considered **good**; and a score **>34** is considered **excellent**.")
 
+    output.append("**Update**: Since **19-04-2025**, a normalization step is applied to the score.")
     output.append("## %s (1-shot; %s used as a judge)" % (leaderboard_title, EVALUATING_MODEL_NAME))
     output.append(overall_table)
 

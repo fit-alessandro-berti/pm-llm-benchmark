@@ -163,7 +163,7 @@ MODELS_DICT = {
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "-omni-", "llama-4", "quasar"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o4-mini-2"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
@@ -175,7 +175,7 @@ def is_visual_model(model_name):
 
 def is_open_source(m_name):
     m_name = m_name.lower()
-    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "qwen-plus", "qwen-turbo", "qwen-max", "sonar-", "quasar"]
+    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "qwen-plus", "qwen-turbo", "qwen-max", "sonar-", "quasar", "optimus", "o3-2", "o4-mini-2"]
 
     for p in patterns:
         if p in m_name:
@@ -186,7 +186,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think", "cogito"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think", "cogito", "o3-2", "o4-mini-2"]
 
     for p in patterns:
         if p in m_name:
@@ -231,11 +231,13 @@ def encode_image(image_path):
 
 
 def callback_write(response_message, target_path):
-    response_message = strip_non_unicode_characters(response_message)
+    if response_message and response_message is not None:
+        response_message = strip_non_unicode_characters(response_message)
 
-    F = open(target_path, "w")
-    F.write(response_message)
-    F.close()
+        if response_message:
+            F = open(target_path, "w")
+            F.write(response_message)
+            F.close()
 
 
 def get_llm_specific_settings() -> Dict[str, Any]:
@@ -561,6 +563,14 @@ def query_text_simple_google(question, api_url, target_file):
             ]}
         ]
     }
+
+    if "gemini-2.5-flash" in Shared.MODEL_NAME:
+        payload["generationConfig"] = {
+            "thinkingConfig": {
+                "thinkingBudget": Shared.ANTHROPIC_THINKING_TOKENS if Shared.ANTHROPIC_THINKING_TOKENS is not None else 0
+            }
+        }
+
     dump_payload(payload, target_file)
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
@@ -771,6 +781,13 @@ def query_image_simple_google(base64_image, api_url, target_file, text):
             ]}
         ]
     }
+
+    if "gemini-2.5-flash" in Shared.MODEL_NAME:
+        payload["generationConfig"] = {
+            "thinkingConfig": {
+                "thinkingBudget": Shared.ANTHROPIC_THINKING_TOKENS if Shared.ANTHROPIC_THINKING_TOKENS is not None else 0
+            }
+        }
 
     response = requests.post(complete_url, headers=headers, json=payload).json()
     dump_response(response, target_file)

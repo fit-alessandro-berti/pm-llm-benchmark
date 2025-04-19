@@ -1,0 +1,244 @@
+### Identified Anomalies and Undesirable Behaviors
+
+1. **Out-of-Order Activities (Sequence Violations)**
+   - Case 1002 and 1003 show activities that do not follow the normal process flow:
+     - In case 1002, "Confirm Shipment" and "Ship Goods" happen before "Perform Credit Check" and "Validate Stock."
+     - In case 1003, "Ship Goods" occurs before "Confirm Shipment."
+   - These deviations could indicate system processing errors, process compliance violations, or intentional shortcuts (e.g., priority shipping or rush orders).
+
+2. **Missing or Early Activities**
+   - Case 1004 shows "Receive Payment" occurring before "Issue Invoice" and other supply chain activities.
+   - Early receipt of payment could be a legitimate pre-payment scenario, but it is unusual and should be verified.
+   - Missing activities or wrong orders may indicate data entry errors or missing event logging.
+
+3. **Repeated or Suspicious Events**
+   - Cases show "Confirm Shipment" sometimes before "Validate Stock" or much earlier than expected. This might reflect logistics trying to confirm shipments prematurely ("attempted_early=Y").
+   - Such behavior suggests possible miscommunication between departments or incorrect process execution.
+
+4. **Late or Delayed Activities**
+   - Case 1003 logs "Confirm Shipment" after "Issue Invoice" and after "Ship Goods," noted as `late_confirmation=Y`. Late confirmation might cause downstream process delays, affecting customer satisfaction.
+
+5. **Resource Role and Department Mismatches**
+   - Checking if activities are performed by correct roles is crucial; for instance:
+     - "Perform Credit Check" should be done by Finance (CreditOfficer).
+     - "Register Order" by Sales.
+     - "Validate Stock" and "Ship Goods" by Logistics.
+   - Mismatches could indicate lack of training, fraud, or role confusion.
+
+### Hypotheses on Causes
+
+- **Process or System Configuration Issues:** Process engine or workflow system might not enforce strict activity sequencing.
+- **Human Error:** Staff might not be following intended process steps or might be inputting records out of sequence.
+- **Policy Violations / Exceptions:** Some orders might be deliberately fast-tracked or handled differently (especially priority orders).
+- **Data Capture Problems:** Event logging timestamps could be inaccurate or events could be recorded late.
+- **Resource Allocation Problems:** Roles might be misassigned or overloaded, causing out-of-sequence event executions.
+
+---
+
+### Relevant SQL Queries for Further Investigation
+
+#### 1. Find Orders with Out-of-Sequence Events vs. the Defined Process
+
+Check if activities happen out of the normal order (e.g., "Ship Goods" before "Confirm Shipment" or "Perform Credit Check"):
+
+```sql
+WITH event_order AS (
+  SELECT
+    case_id,
+    activity,
+    MIN(timestamp) AS first_occurrence
+  FROM order_event_log
+  GROUP BY case_id, activity
+),
+
+normal_flow AS (
+  SELECT *, 
+    ROW_NUMBER() OVER (ORDER BY activity_order) AS expected_sequence
+  FROM (
+    VALUES
+      ('Register Order', 1),
+      ('Perform Credit Check', 2),
+      ('Validate Stock', 3),
+      ('Confirm Shipment', 4),
+      ('Ship Goods', 5),
+      ('Issue Invoice', 6),
+      ('Receive Payment', 7)
+  ) AS t(activity, activity_order)
+),
+
+case_activity_sequence AS (
+  SELECT
+    e.case_id,
+    e.activity,
+    nf.expected_sequence,
+    e.first_occurrence
+  FROM event_order e
+  JOIN normal_flow nf ON e.activity = nf.activity
+)
+
+SELECT 
+  c1.case_id,
+  c1.activity AS activity_1,
+  c2.activity AS activity_2,
+  c1.first_occurrence AS time_1,
+  c2.first_occurrence AS time_2
+FROM case_activity_sequence c1
+JOIN case_activity_sequence c2 
+  ON c1.case_id = c2.case_id
+  AND c1.expected_sequence < c2.expected_sequence
+WHERE c1.first_occurrence > c2.first_occurrence
+ORDER BY c1.case_id, c1.expected_sequence;
+```
+
+_This query identifies pairs of events occurring in the wrong order relative to the normal process._
+
+---
+
+#### 2. Detect Activities Executed by Unexpected Roles or Departments
+
+Check if activities are handled by proper resource roles or departments, e.g., "Perform Credit Check" should only be done by Credit Analyst in Finance:
+
+```sql
+SELECT 
+  oel.case_id,
+  oel.event_id,
+  oel.activity,
+  oel.resource,
+  r.role,
+  r.department
+FROM order_event_log oel
+LEFT JOIN resources r ON oel.resource = r.resource_id
+WHERE 
+  (oel.activity = 'Perform Credit Check' AND (r.role IS NULL OR r.role NOT IN ('Credit Analyst')))
+  OR (oel.activity = 'Register Order' AND (r.role IS NULL OR r.role NOT IN ('Sales Executive')))
+  OR (oel.activity IN ('Validate Stock', 'Ship Goods') AND (r.role IS NULL OR r.department <> 'Logistics'))
+  OR (oel.activity IN ('Issue Invoice', 'Receive Payment') AND (r.department <> 'Finance'));
+```
+
+_This reveals potential resource misassignment for critical activities._
+
+---
+
+#### 3. List Orders with Early Receipt of Payment (Payment Before Invoice or Other Activities)
+
+```sql
+WITH events AS (
+  SELECT 
+    case_id,
+    activity,
+    MIN(timestamp) AS ts
+  FROM order_event_log
+  WHERE activity IN ('Issue Invoice', 'Receive Payment')
+  GROUP BY case_id, activity
+)
+
+SELECT 
+  p.case_id,
+  p.ts AS payment_time,
+  i.ts AS invoice_time
+FROM events p
+LEFT JOIN events i ON p.case_id = i.case_id AND i.activity = 'Issue Invoice'
+WHERE p.activity = 'Receive Payment'
+  AND (i.ts IS NULL OR p.ts < i.ts)
+ORDER BY p.ts;
+```
+
+_This query identifies cases where payment is received before invoice issuance or without invoice._
+
+---
+
+#### 4. Identify Orders with Missing Key Activities
+
+To find cases missing critical steps like "Perform Credit Check," "Validate Stock," or "Confirm Shipment":
+
+```sql
+WITH activities AS (
+  SELECT DISTINCT case_id, activity
+  FROM order_event_log
+)
+
+SELECT o.case_id
+FROM orders o
+LEFT JOIN activities a1 ON o.case_id = a1.case_id AND a1.activity = 'Perform Credit Check'
+LEFT JOIN activities a2 ON o.case_id = a2.case_id AND a2.activity = 'Validate Stock'
+LEFT JOIN activities a3 ON o.case_id = a3.case_id AND a3.activity = 'Confirm Shipment'
+WHERE a1.activity IS NULL OR a2.activity IS NULL OR a3.activity IS NULL;
+```
+
+_This detects cases with missing essential process steps._
+
+---
+
+#### 5. Analyze Time Between Process Steps for Delays or Suspicious Timing
+
+For example, time difference between "Register Order" and "Perform Credit Check":
+
+```sql
+WITH timepoints AS (
+  SELECT
+    case_id,
+    activity,
+    MIN(timestamp) AS ts
+  FROM order_event_log
+  WHERE activity IN ('Register Order', 'Perform Credit Check')
+  GROUP BY case_id, activity
+)
+
+SELECT
+  t1.case_id,
+  t1.ts AS register_order_time,
+  t2.ts AS credit_check_time,
+  EXTRACT(EPOCH FROM (t2.ts - t1.ts))/60 AS minutes_diff
+FROM timepoints t1
+JOIN timepoints t2 ON t1.case_id = t2.case_id
+WHERE t1.activity = 'Register Order' AND t2.activity = 'Perform Credit Check'
+ORDER BY minutes_diff DESC;
+```
+
+_Large or negative time differences indicate delays or incorrect timestamps._
+
+---
+
+#### 6. Examine Early "Confirm Shipment" or "Ship Goods" Activities
+
+Orders where these logistics activities happen significantly earlier than Finance approval or credit checks:
+
+```sql
+WITH event_times AS (
+  SELECT 
+    case_id,
+    activity,
+    MIN(timestamp) AS ts
+  FROM order_event_log
+  GROUP BY case_id, activity
+)
+
+SELECT
+  c.case_id,
+  c.ts AS confirm_shipment_time,
+  p.ts AS perform_credit_check_time,
+  v.ts AS validate_stock_time
+FROM event_times c
+LEFT JOIN event_times p ON c.case_id = p.case_id AND p.activity = 'Perform Credit Check'
+LEFT JOIN event_times v ON c.case_id = v.case_id AND v.activity = 'Validate Stock'
+WHERE c.activity = 'Confirm Shipment'
+  AND (c.ts < COALESCE(p.ts, TIMESTAMP '9999-12-31') 
+       OR c.ts < COALESCE(v.ts, TIMESTAMP '9999-12-31'))
+ORDER BY c.case_id;
+```
+
+_This highlights logistics actions occurring before critical financial or stock validation steps._
+
+---
+
+### Summary
+
+By running these queries, you can:
+
+- Identify process flow deviations and time anomalies.
+- Detect role and department mismatches.
+- Find missing mandatory activities.
+- Understand timing and ordering irregularities that may affect process quality or compliance.
+- Drill down to specific cases and resources responsible to improve training, system configuration, or procedural enforcement.
+
+These investigations should reveal whether anomalies are due to human errors, system flaws, policy exceptions, or possible fraud.
