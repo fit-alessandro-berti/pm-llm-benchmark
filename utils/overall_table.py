@@ -223,4 +223,4 @@ def write_evaluation(base_path, extra=True):
 
 
 if __name__ == "__main__":
-    write_evaluation(".", extra=True)
+    write_evaluation("..", extra=True)
