@@ -10,8 +10,8 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | qwen-qwq-32b-stepbystep        | **35.8** | :white_check_mark: | :white_check_mark: | **5.6**              | **6.7**              | 4.3                  | :mage_woman: **4.6** | :mage_woman: **5.1** | **5.6**              | 0.0                  | :mage_woman: **3.9** |
 | DeepSeek-R1-Distill-Qwen-32B   | **30.7** | :white_check_mark: | :white_check_mark: | 5.0                  | :mage_woman: **6.9** | 3.5                  | 3.6                  | 4.5                  | 4.8                  | 0.0                  | 2.5                  |
 | qwen-plus-2025-01-25           | **29.8** | :x:                | :x:                | 4.3                  | 5.7                  | 2.8                  | 3.7                  | **5.0**              | 4.9                  | 2.9                  | 3.5                  |
-| qwen-max-2025-01-25            | **25.9** | :x:                | :x:                | 4.6                  | 5.2                  | 3.0                  | 3.6                  | 4.7                  | 4.7                  | :mage_woman: **3.7** | 0.0                  |
-| qwen2.5-72b-instruct           | **25.4** | :white_check_mark: | :x:                | 4.5                  | 5.7                  | 2.9                  | 4.1                  | 3.7                  | 4.7                  | 0.0                  | 0.0                  |
+| qwen-max-2025-01-25            | **29.3** | :x:                | :x:                | 4.6                  | 5.2                  | 3.0                  | 3.6                  | 4.7                  | 4.7                  | :mage_woman: **3.7** | 3.4                  |
+| qwen2.5-72b-instruct           | **28.3** | :white_check_mark: | :x:                | 4.5                  | 5.7                  | 2.9                  | 4.1                  | 3.7                  | 4.7                  | 0.0                  | 2.9                  |
 | Qwen2.5-Coder-32B-Instruct     | **23.2** | :white_check_mark: | :x:                | 3.8                  | 4.5                  | 3.1                  | 3.7                  | 4.1                  | 4.0                  | 0.0                  | 0.0                  |
 | qwen2.5-32b-instruct           | **23.0** | :white_check_mark: | :x:                | 4.1                  | 5.0                  | 2.0                  | 3.3                  | 4.4                  | 4.1                  | 0.0                  | 0.0                  |
 | cogito14b-v1-preview-qwen-fp16 | **22.8** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.1                  | 2.7                  | 3.4                  | 3.7                  | 4.5                  | 0.0                  | 0.0                  |
@@ -262,7 +262,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### qwen-max-2025-01-25   => 25.9 points
+### qwen-max-2025-01-25   => 29.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -318,10 +318,15 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat07_04_causal_net                |    6.5  |
 | cat07_05_proclets                  |    6.5  |
 | cat07_06_perf_spectrum             |    7.25 |
+| cat08_01_queue_mining              |    6.5  |
+| cat08_02_instance_spanning         |    7.25 |
+| cat08_03_transport_opt             |    6    |
+| cat08_04_resource_assign           |    7.5  |
+| cat08_05_task_schedul              |    6.5  |
 
 
 
-### qwen2.5-72b-instruct   => 25.4 points
+### qwen2.5-72b-instruct   => 28.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -371,6 +376,11 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |    7.4  |
 | cat06_06_bias_mitigation_declare   |    3    |
 | cat06_07_fair_unfair_powl          |    9.25 |
+| cat08_01_queue_mining              |    5.5  |
+| cat08_02_instance_spanning         |    5    |
+| cat08_03_transport_opt             |    5    |
+| cat08_04_resource_assign           |    7.5  |
+| cat08_05_task_schedul              |    5.5  |
 
 
 
