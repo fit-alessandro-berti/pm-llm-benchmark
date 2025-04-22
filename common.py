@@ -710,7 +710,7 @@ def query_text_simple(question_path, target_file, callback, question=None):
     if question is None:
         question = open(question_path, "r", encoding="utf-8").read()
 
-    if "api.openai" in Shared.API_URL:
+    if "api.openai" in Shared.API_URL and False:
         response_message = query_text_simple_openai_new(question, Shared.API_URL, target_file)
     elif "googleapis" in Shared.API_URL:
         response_message = query_text_simple_google(question, Shared.API_URL, target_file)

@@ -69,6 +69,9 @@ if __name__ == "__main__":
 
         ordered_llms, referenced_llms = common.get_ordered_references_llms(".")
         ordered_llms = ordered_llms + referenced_llms
+
+        #ordered_llms = ordered_llms[::-1]
+
         for llm in ordered_llms:
             found = False
             for provider in MODELS_DICT:
@@ -106,9 +109,9 @@ if __name__ == "__main__":
                     """
 
                     if api_key is not None:
-                        excluded_providers = {"ollama_local"}
+                        excluded_providers = {}
 
-                        if provider not in excluded_providers:
+                        if provider not in excluded_providers and this_provider not in excluded_providers:
                             answer_question(model_name, api_url=api_url, api_key=api_key, alias_model_name=alias_model_name)
                         else:
                             print(model_name, provider, "excluded")
