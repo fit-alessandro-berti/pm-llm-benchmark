@@ -2,7 +2,7 @@ import os
 import pandas as pd
 from collections import Counter
 from utils.table_per_model import execute_script
-from common import EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, is_open_source, is_large_reasoning_model, force_custom_evaluation_lrm
+from common import EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, is_open_source, is_large_reasoning_model, force_custom_evaluation_lrm, is_excluded_from_table
 
 
 def format_numb_in_table(score, max_score, good_diff=0.3):
@@ -65,7 +65,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
             leaderboard_title="Overall Leaderboard", reg_expr=None):
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
-    models = {x: y for x, y in models.items() if y >= 44}
+    models = {x: y for x, y in models.items() if y >= 44 and not is_excluded_from_table(x)}
 
     temp = {}
     results = []
