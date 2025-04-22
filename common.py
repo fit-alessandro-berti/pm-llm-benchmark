@@ -241,6 +241,27 @@ def is_excluded_from_table(model_name):
     return False
 
 
+def get_ordered_references_llms(base_path="."):
+    try:
+        from utils import overall_table
+        output, all_jsons, ordered_llms = overall_table.execute(os.path.join(base_path, "evaluation-gemini-2.5-pro"),
+                                                                None, include_closed_source=True, require_vision=False,
+                                                                leaderboard_title="Overall Leaderboard")
+    except:
+        traceback.print_exc()
+        ordered_llms = []
+
+    referenced_llms = set()
+    for provider in MODELS_DICT:
+        info = MODELS_DICT[provider]
+        referenced_llms = referenced_llms.union(info["models"])
+    referenced_llms = {x for x in referenced_llms if not is_excluded_from_table(x)}
+    referenced_llms = [clean_model_name(x) for x in referenced_llms if
+                       clean_model_name(x) not in ordered_llms]
+
+    return ordered_llms, referenced_llms
+
+
 def is_visual_model(model_name):
     patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o4-mini-2"]
 

@@ -63,21 +63,11 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
 
 
 if __name__ == "__main__":
-    if True:
-        from utils import overall_table
+    if False:
         e_m_name = common.clean_model_name(common.EVALUATING_MODEL_NAME)
         common.insert_api_keys()
-        try:
-            output, all_jsons, ordered_llms = overall_table.execute("evaluation-gemini-2.5-pro", None, include_closed_source=True, require_vision=False,
-                leaderboard_title="Overall Leaderboard")
-        except:
-            traceback.print_exc()
-            ordered_llms = []
-        referenced_llms = set()
-        for provider in MODELS_DICT:
-            info = MODELS_DICT[provider]
-            referenced_llms = referenced_llms.union(info["models"])
-        referenced_llms = [common.clean_model_name(x) for x in referenced_llms if common.clean_model_name(x) not in ordered_llms]
+
+        ordered_llms, referenced_llms = common.get_ordered_references_llms(".")
         ordered_llms = ordered_llms + referenced_llms
         for llm in ordered_llms:
             found = False
