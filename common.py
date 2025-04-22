@@ -145,6 +145,20 @@ MODELS_DICT = {
             "sonar-reasoning-pro", "sonar-pro", "r1-1776"
         }
     },
+    "groq": {
+        "api_url": "https://api.groq.com/openai/v1/",
+        "api_key": "sk-",
+        "models": {
+
+        }
+    },
+    "openrouter": {
+        "api_url": "https://openrouter.ai/api/v1/",
+        "api_key": "sk-",
+        "models": {
+            "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick"
+        }
+    },
     "manual": {
         "api_url": "http://0.0.0.0:1000/v1/",
         "api_key": "sk-",
@@ -847,6 +861,8 @@ def insert_api_keys():
     MODELS_DICT["google"]["api_key"] = open("../api_google.txt", "r").read().strip()
     MODELS_DICT["claude"]["api_key"] = open("../api_anthropic.txt", "r").read().strip()
     MODELS_DICT["perplexity"]["api_key"] = open("../api_perplexity.txt", "r").read().strip()
+    MODELS_DICT["groq"]["api_key"] = open("../api_groq.txt", "r").read().strip()
+    MODELS_DICT["openrouter"]["api_key"] = open("../api_openrouter.txt", "r").read().strip()
 
 
 def check_all_models():
