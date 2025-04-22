@@ -11,9 +11,9 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | gpt-4.5-preview                | **35.1** | :x:                | :x:   | 5.4                  | 6.9                  | **4.2**              | 4.8                  | 4.9                  | 4.9                  | 4.1                  | **4.0**              |
 | gemini-2.5-flash-04-17-nothink | **34.6** | :x:                | :x:   | 4.8                  | 6.5                  | 3.4                  | 4.7                  | 5.1                  | :mage_woman: **5.8** | :mage_woman: **5.2** | :mage_woman: **4.3** |
 | gpt-4.1-mini-2025-04-14        | **34.3** | :x:                | :x:   | 5.4                  | 6.4                  | 3.1                  | 4.6                  | :mage_woman: **5.8** | 5.0                  | 4.1                  | 3.9                  |
-| chatgpt-4o-latest-2025-03-26   | **29.5** | :x:                | :x:   | 5.4                  | 6.0                  | 3.7                  | 4.5                  | 4.8                  | 5.1                  | **4.9**              | 0.0                  |
-| DeepSeek-V3-0324               | **28.9** | :white_check_mark: | :x:   | 5.5                  | 6.2                  | 3.7                  | 4.5                  | 4.5                  | 4.5                  | 0.0                  | 0.0                  |
-| claude-3-7-sonnet-20250219     | **28.2** | :x:                | :x:   | 5.0                  | 5.8                  | 4.1                  | 3.5                  | 4.8                  | 4.9                  | 3.5                  | 0.0                  |
+| chatgpt-4o-latest-2025-03-26   | **33.7** | :x:                | :x:   | 5.4                  | 6.0                  | 3.7                  | 4.5                  | 4.8                  | 5.1                  | **4.9**              | **4.1**              |
+| DeepSeek-V3-0324               | **32.2** | :white_check_mark: | :x:   | 5.5                  | 6.2                  | 3.7                  | 4.5                  | 4.5                  | 4.5                  | 0.0                  | 3.3                  |
+| claude-3-7-sonnet-20250219     | **32.2** | :x:                | :x:   | 5.0                  | 5.8                  | 4.1                  | 3.5                  | 4.8                  | 4.9                  | 3.5                  | **4.0**              |
 | claude-3-5-sonnet-20241022     | **27.8** | :x:                | :x:   | 4.2                  | 6.5                  | 3.7                  | 3.7                  | 5.1                  | 4.7                  | 3.3                  | 0.0                  |
 | gemini-1.5-pro-002             | **27.7** | :x:                | :x:   | 4.3                  | 5.5                  | 3.0                  | 4.4                  | 5.3                  | 5.2                  | 4.5                  | 0.0                  |
 | claude-3-opus-20240229         | **26.9** | :x:                | :x:   | 4.5                  | 5.5                  | 4.0                  | 3.5                  | 4.6                  | 4.8                  | 2.7                  | 0.0                  |
@@ -388,7 +388,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### chatgpt-4o-latest-2025-03-26   => 29.5 points
+### chatgpt-4o-latest-2025-03-26   => 33.7 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -444,10 +444,15 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat07_04_causal_net                |   10.5  |
 | cat07_05_proclets                  |    7.5  |
 | cat07_06_perf_spectrum             |    9.25 |
+| cat08_01_queue_mining              |    7.6  |
+| cat08_02_instance_spanning         |    7.75 |
+| cat08_03_transport_opt             |    8.75 |
+| cat08_04_resource_assign           |    8.5  |
+| cat08_05_task_schedul              |    8.75 |
 
 
 
-### deepseek-aiDeepSeek-V3-0324   => 28.9 points
+### deepseek-aiDeepSeek-V3-0324   => 32.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -497,10 +502,15 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |    6    |
 | cat06_06_bias_mitigation_declare   |    3    |
 | cat06_07_fair_unfair_powl          |    6.5  |
+| cat08_01_queue_mining              |    6.5  |
+| cat08_02_instance_spanning         |    6.5  |
+| cat08_03_transport_opt             |    7    |
+| cat08_04_resource_assign           |    6.5  |
+| cat08_05_task_schedul              |    6.8  |
 
 
 
-### claude-3-7-sonnet-20250219   => 28.2 points
+### claude-3-7-sonnet-20250219   => 32.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -556,6 +566,11 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat07_04_causal_net                |    6    |
 | cat07_05_proclets                  |    7.75 |
 | cat07_06_perf_spectrum             |    1    |
+| cat08_01_queue_mining              |    9.25 |
+| cat08_02_instance_spanning         |    7.25 |
+| cat08_03_transport_opt             |    7.5  |
+| cat08_04_resource_assign           |    7.5  |
+| cat08_05_task_schedul              |    8.75 |
 
 
 
