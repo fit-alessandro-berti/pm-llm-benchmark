@@ -2,7 +2,7 @@ import os
 import traceback
 import time
 import sys
-from common import query_text_simple, query_image_simple, callback_write, set_api_key, is_visual_model, check_missing_models, check_all_models, MODELS_DICT
+from common import query_text_simple, query_image_simple, callback_write, set_api_key, is_visual_model, MODELS_DICT, Shared
 import common
 
 WAITING_TIME_RETRY = 15
@@ -60,22 +60,14 @@ def answer_question(model_name, api_url=None, api_key=None):
 
 if __name__ == "__main__":
     if False:
-        check_missing_models()
-        check_all_models()
-        for provider in MODELS_DICT:
-            info = MODELS_DICT[provider]
-            for model in info["models"]:
-                answer_question(model, api_url=info["api_url"], api_key=info["api_key"])
-    elif False:
         from utils import overall_table
         e_m_name = common.clean_model_name(common.EVALUATING_MODEL_NAME)
         common.insert_api_keys()
-        #check_missing_models()
-        #check_all_models()
         try:
-            output, all_jsons, ordered_llms = overall_table.execute("evaluation", "leaderboard_"+e_m_name+".md", include_closed_source=True, require_vision=False,
+            output, all_jsons, ordered_llms = overall_table.execute("evaluation-gemini-2.5-pro", None, include_closed_source=True, require_vision=False,
                 leaderboard_title="Overall Leaderboard")
         except:
+            traceback.print_exc()
             ordered_llms = []
         referenced_llms = set()
         for provider in MODELS_DICT:
@@ -89,7 +81,19 @@ if __name__ == "__main__":
                 info = MODELS_DICT[provider]
                 cleaned_models = {common.clean_model_name(x): x for x in info["models"]}
                 if llm in cleaned_models:
-                    answer_question(cleaned_models[llm], api_url=info["api_url"], api_key=info["api_key"])
+                    if provider == "manual":
+                        ref = MODELS_DICT[provider]["models"][cleaned_models[llm]]
+                        if "provider" in ref and ref["provider"] in MODELS_DICT:
+                            api_url = MODELS_DICT[ref["provider"]]["api_url"]
+                            api_key = MODELS_DICT[ref["provider"]]["api_key"]
+                            base_model = ref["base_model"]
+                    else:
+                        api_url = info["api_url"]
+                        api_key = info["api_key"]
+                    answer_question(cleaned_models[llm], api_url=api_url, api_key=api_key)
+                    Shared.SYSTEM_PROMPT = None
+                    Shared.ANTHROPIC_THINKING_TOKENS = None
+                    Shared.PAYLOAD_REASONING_EFFORT = None
                     found = True
                     break
             if not found:

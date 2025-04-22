@@ -188,11 +188,11 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
     output = "\n\n".join(output)
 
-    F = open(target_file, "w")
-    F.write(output)
-    F.close()
-
-    print("wrote", target_file)
+    if target_file is not None:
+        F = open(target_file, "w")
+        F.write(output)
+        F.close()
+        print("wrote", target_file)
 
     return output, all_jsons, [m[0] for m in results]
 
