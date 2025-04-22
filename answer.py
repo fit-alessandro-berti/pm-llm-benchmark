@@ -63,7 +63,7 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
 
 
 if __name__ == "__main__":
-    if True:
+    if False:
         e_m_name = common.clean_model_name(common.EVALUATING_MODEL_NAME)
         common.insert_api_keys()
 
