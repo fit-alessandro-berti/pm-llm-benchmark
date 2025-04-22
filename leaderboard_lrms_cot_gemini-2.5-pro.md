@@ -24,7 +24,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | exaone-deep2.4b-fp16             | **23.5** | :white_check_mark: | :white_check_mark: | 3.7                  | 5.3                  | 1.8                  | 2.9                  | 3.2                  | 3.2                  | :mage_woman: **0.0** | 3.4                  |
 | cogito14b-v1-preview-qwen-fp16   | **22.8** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.1                  | 2.7                  | 3.4                  | 3.7                  | 4.5                  | :mage_woman: **0.0** | 0.0                  |
 | deepseek-r1-distill-llama-8b     | **20.6** | :white_check_mark: | :white_check_mark: | 2.6                  | 4.1                  | 1.9                  | 2.5                  | 4.1                  | 4.0                  | :mage_woman: **0.0** | 1.5                  |
-| deepseek-r1-distill-qwen-1.5b    | **9.1**  | :white_check_mark: | :white_check_mark: | 1.3                  | 1.6                  | 0.9                  | 1.0                  | 2.7                  | 1.6                  | :mage_woman: **0.0** | 0.0                  |
+| deepseek-r1-distill-qwen-1.5b    | **9.9**  | :white_check_mark: | :white_check_mark: | 1.3                  | 1.6                  | 0.9                  | 1.0                  | 2.7                  | 1.6                  | :mage_woman: **0.0** | 0.8                  |
 
 ### grok-3-mini-beta-high   => 42.0 points
 
@@ -1060,7 +1060,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### deepseekdeepseek-r1-distill-qwen-1.5b   => 9.1 points
+### deepseekdeepseek-r1-distill-qwen-1.5b   => 9.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -1110,4 +1110,9 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     2   |
 | cat06_06_bias_mitigation_declare   |     1   |
 | cat06_07_fair_unfair_powl          |     1   |
+| cat08_01_queue_mining              |     2.5 |
+| cat08_02_instance_spanning         |     1   |
+| cat08_03_transport_opt             |     1   |
+| cat08_04_resource_assign           |     1.4 |
+| cat08_05_task_schedul              |     2   |
 

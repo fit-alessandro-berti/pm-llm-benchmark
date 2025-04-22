@@ -17,8 +17,8 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | deepseek-r1-distill-llama-8b     | **20.6** | :white_check_mark: | :white_check_mark: | 2.6                  | 4.1                  | 1.9                  | 2.5                  | 4.1                  | 4.0                  | 0.0                  | 1.5                  |
 | Llama-3.1-8B-Instruct            | **18.3** | :white_check_mark: | :x:                | 2.4                  | 2.8                  | 1.6                  | 2.3                  | 4.3                  | 2.8                  | 0.0                  | 2.1                  |
 | Llama-3.2-11B-Vision-Instruct    | **16.8** | :white_check_mark: | :x:                | 2.8                  | 3.0                  | 1.9                  | 2.0                  | 3.0                  | 2.0                  | 2.1                  | 2.0                  |
-| Llama-3.2-3B-Instruct            | **14.1** | :white_check_mark: | :x:                | 2.4                  | 2.7                  | 1.3                  | 2.1                  | 3.4                  | 2.1                  | 0.0                  | 0.0                  |
-| Llama-3.2-1B-Instruct            | **8.9**  | :white_check_mark: | :x:                | 1.3                  | 1.7                  | 0.8                  | 1.1                  | 2.4                  | 1.6                  | 0.0                  | 0.0                  |
+| Llama-3.2-3B-Instruct            | **15.4** | :white_check_mark: | :x:                | 2.4                  | 2.7                  | 1.3                  | 2.1                  | 3.4                  | 2.1                  | 0.0                  | 1.4                  |
+| Llama-3.2-1B-Instruct            | **10.3** | :white_check_mark: | :x:                | 1.3                  | 1.7                  | 0.8                  | 1.1                  | 2.4                  | 1.6                  | 0.0                  | 1.4                  |
 
 ### nvidiallama-3.1-nemotron-ultra-253b-v1-thinkenab   => 37.0 points
 
@@ -682,7 +682,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### meta-llamaLlama-3.2-3B-Instruct   => 14.1 points
+### meta-llamaLlama-3.2-3B-Instruct   => 15.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -732,10 +732,15 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |    4    |
 | cat06_06_bias_mitigation_declare   |    2.5  |
 | cat06_07_fair_unfair_powl          |    1.5  |
+| cat08_01_queue_mining              |    1    |
+| cat08_02_instance_spanning         |    4    |
+| cat08_03_transport_opt             |    3    |
+| cat08_04_resource_assign           |    3.5  |
+| cat08_05_task_schedul              |    2.5  |
 
 
 
-### meta-llamaLlama-3.2-1B-Instruct   => 8.9 points
+### meta-llamaLlama-3.2-1B-Instruct   => 10.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -785,4 +790,9 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     3.5 |
 | cat06_06_bias_mitigation_declare   |     1   |
 | cat06_07_fair_unfair_powl          |     1   |
+| cat08_01_queue_mining              |     3   |
+| cat08_02_instance_spanning         |     1.5 |
+| cat08_03_transport_opt             |     3.5 |
+| cat08_04_resource_assign           |     3.5 |
+| cat08_05_task_schedul              |     2.5 |
 

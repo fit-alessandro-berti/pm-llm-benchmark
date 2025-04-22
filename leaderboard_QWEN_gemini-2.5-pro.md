@@ -22,9 +22,9 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | qwen2.5-7b-instruct            | **21.1** | :white_check_mark: | :x:                | 3.1                  | 3.5                  | 2.1                  | 3.2                  | 3.6                  | 3.0                  | 0.0                  | 2.6                  |
 | qwen2.5-omni-7b                | **21.1** | :white_check_mark: | :x:                | 3.2                  | 3.5                  | 1.9                  | 3.0                  | 3.8                  | 3.1                  | 2.2                  | 2.4                  |
 | qwen2.5-7b-instruct-1m         | **19.7** | :white_check_mark: | :x:                | 3.0                  | 3.0                  | 1.9                  | 2.5                  | 3.5                  | 3.0                  | 0.0                  | 2.8                  |
-| qwen2.53b-instruct-q8_0        | **14.0** | :white_check_mark: | :x:                | 2.1                  | 2.1                  | 1.6                  | 2.1                  | 3.3                  | 2.7                  | 0.0                  | 0.0                  |
-| qwen2.51.5b-instruct-q6_K      | **11.2** | :white_check_mark: | :x:                | 2.2                  | 1.8                  | 1.1                  | 1.6                  | 2.8                  | 1.7                  | 0.0                  | 0.0                  |
-| deepseek-r1-distill-qwen-1.5b  | **9.1**  | :white_check_mark: | :white_check_mark: | 1.3                  | 1.6                  | 0.9                  | 1.0                  | 2.7                  | 1.6                  | 0.0                  | 0.0                  |
+| qwen2.53b-instruct-q8_0        | **16.3** | :white_check_mark: | :x:                | 2.1                  | 2.1                  | 1.6                  | 2.1                  | 3.3                  | 2.7                  | 0.0                  | 2.2                  |
+| qwen2.51.5b-instruct-q6_K      | **13.1** | :white_check_mark: | :x:                | 2.2                  | 1.8                  | 1.1                  | 1.6                  | 2.8                  | 1.7                  | 0.0                  | 1.9                  |
+| deepseek-r1-distill-qwen-1.5b  | **9.9**  | :white_check_mark: | :white_check_mark: | 1.3                  | 1.6                  | 0.9                  | 1.0                  | 2.7                  | 1.6                  | 0.0                  | 0.8                  |
 
 ### qwen-qwq-32b-nostepbystep   => 36.9 points
 
@@ -967,7 +967,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### qwen2.53b-instruct-q8_0   => 14.0 points
+### qwen2.53b-instruct-q8_0   => 16.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -1017,10 +1017,15 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |    3    |
 | cat06_06_bias_mitigation_declare   |    2    |
 | cat06_07_fair_unfair_powl          |    2    |
+| cat08_01_queue_mining              |    4.5  |
+| cat08_02_instance_spanning         |    4    |
+| cat08_03_transport_opt             |    4.5  |
+| cat08_04_resource_assign           |    4    |
+| cat08_05_task_schedul              |    5.5  |
 
 
 
-### qwen2.51.5b-instruct-q6_K   => 11.2 points
+### qwen2.51.5b-instruct-q6_K   => 13.1 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -1070,10 +1075,15 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     2   |
 | cat06_06_bias_mitigation_declare   |     2   |
 | cat06_07_fair_unfair_powl          |     1.5 |
+| cat08_01_queue_mining              |     2   |
+| cat08_02_instance_spanning         |     3.5 |
+| cat08_03_transport_opt             |     3.8 |
+| cat08_04_resource_assign           |     6.5 |
+| cat08_05_task_schedul              |     3.5 |
 
 
 
-### deepseekdeepseek-r1-distill-qwen-1.5b   => 9.1 points
+### deepseekdeepseek-r1-distill-qwen-1.5b   => 9.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -1123,4 +1133,9 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     2   |
 | cat06_06_bias_mitigation_declare   |     1   |
 | cat06_07_fair_unfair_powl          |     1   |
+| cat08_01_queue_mining              |     2.5 |
+| cat08_02_instance_spanning         |     1   |
+| cat08_03_transport_opt             |     1   |
+| cat08_04_resource_assign           |     1.4 |
+| cat08_05_task_schedul              |     2   |
 
