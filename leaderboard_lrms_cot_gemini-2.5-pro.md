@@ -19,12 +19,12 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | deepseekdeepseek-r1-zerofree      | **29.9** | :white_check_mark: | :white_check_mark: | 5.0                  | 4.7                  | 3.5                  | 4.0                  | 5.0                  | 4.1                  | :mage_woman: **0.0** | 3.6                  |
 | DeepSeek-R1-Distill-Llama-70B     | **28.6** | :white_check_mark: | :white_check_mark: | 4.7                  | 6.1                  | 2.7                  | 4.3                  | 4.0                  | 4.5                  | :mage_woman: **0.0** | 2.3                  |
 | exaone-deep32b-fp16               | **28.1** | :white_check_mark: | :white_check_mark: | 5.4                  | 6.1                  | 3.5                  | 4.3                  | 4.0                  | 4.8                  | :mage_woman: **0.0** | 0.0                  |
-| deepseekdeepseek-r1-distill-qwen  | **25.9** | :white_check_mark: | :white_check_mark: | 4.5                  | 6.9                  | 3.8                  | 3.0                  | 3.8                  | 3.9                  | :mage_woman: **0.0** | 0.0                  |
+| deepseekdeepseek-r1-distill-qwen  | **26.6** | :white_check_mark: | :white_check_mark: | 4.5                  | 6.9                  | 3.8                  | 3.0                  | 3.8                  | 3.9                  | :mage_woman: **0.0** | 0.7                  |
 | sonar-reasoning-pro               | **24.5** | :x:                | :white_check_mark: | 3.4                  | 5.4                  | 2.1                  | 2.3                  | 4.5                  | 3.2                  | :mage_woman: **0.0** | 3.7                  |
 | exaone-deep2.4b-fp16              | **23.5** | :white_check_mark: | :white_check_mark: | 3.7                  | 5.3                  | 1.8                  | 2.9                  | 3.2                  | 3.2                  | :mage_woman: **0.0** | 3.4                  |
 | cogito14b-v1-preview-qwen-fp16    | **22.8** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.1                  | 2.7                  | 3.4                  | 3.7                  | 4.5                  | :mage_woman: **0.0** | 0.0                  |
 | deepseekdeepseek-r1-distill-llama | **19.1** | :white_check_mark: | :white_check_mark: | 2.6                  | 4.1                  | 1.9                  | 2.5                  | 4.1                  | 4.0                  | :mage_woman: **0.0** | 0.0                  |
-| DeepSeek-R1-Distill-Qwen-1.5B     | **9.1**  | :white_check_mark: | :white_check_mark: | 1.3                  | 1.6                  | 0.9                  | 1.0                  | 2.7                  | 1.6                  | :mage_woman: **0.0** | 0.0                  |
+| deepseekdeepseek-r1-distill-qwen  | **9.1**  | :white_check_mark: | :white_check_mark: | 1.3                  | 1.6                  | 0.9                  | 1.0                  | 2.7                  | 1.6                  | :mage_woman: **0.0** | 0.0                  |
 
 ### grok-3-mini-beta-high   => 42.0 points
 
@@ -775,7 +775,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### deepseekdeepseek-r1-distill-qwen-14b   => 25.9 points
+### deepseekdeepseek-r1-distill-qwen-14b   => 26.6 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -825,6 +825,8 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     7.4 |
 | cat06_06_bias_mitigation_declare   |     6.6 |
 | cat06_07_fair_unfair_powl          |     2   |
+| cat08_01_queue_mining              |     4.2 |
+| cat08_02_instance_spanning         |     2.5 |
 
 
 
@@ -1050,7 +1052,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### DeepSeek-R1-Distill-Qwen-1.5B   => 9.1 points
+### deepseekdeepseek-r1-distill-qwen-1.5b   => 9.1 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
