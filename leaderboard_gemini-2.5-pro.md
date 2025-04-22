@@ -231,6 +231,64 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
+### Grok-3-beta-thinking-20250221   => 39.8 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |     7.1 |
+| cat01_02_activity_context          |     5.4 |
+| cat01_03_high_level_events         |     7.7 |
+| cat01_04_sensor_recordings         |     9.7 |
+| cat01_05_merge_two_logs            |     7.6 |
+| cat01_06_system_logs               |     7.4 |
+| cat01_07_interv_to_pseudo_bpmn     |     6.8 |
+| cat01_08_tables_to_log             |     7.6 |
+| cat02_01_conformance_textual       |     9.1 |
+| cat02_02_conf_desiderata           |     7.1 |
+| cat02_03_anomaly_event_log         |     8.3 |
+| cat02_04_powl_anomaly_detection    |     9.1 |
+| cat02_05_two_powls_anomalies       |     9.1 |
+| cat02_06_root_cause_1              |     7.7 |
+| cat02_07_root_cause_2              |     9.1 |
+| cat02_08_underfitting_process_tree |     7.4 |
+| cat02_09_fix_process_tree          |     7.7 |
+| cat03_01_process_tree_generation   |     5.4 |
+| cat03_02_powl_generation           |     9.7 |
+| cat03_03_log_skeleton_generation   |     7.1 |
+| cat03_04_declare_generation        |     7.1 |
+| cat03_05_temp_profile_generation   |     8.9 |
+| cat03_06_petri_net_generation      |     6.8 |
+| cat03_07_process_tree_discovery    |     7.4 |
+| cat03_08_powl_discovery            |     7.1 |
+| cat04_01_pseudo_bpmn_description   |     9.1 |
+| cat04_02_pseudo_bpmn_open_question |     7.4 |
+| cat04_03_declare_open_question     |     5.4 |
+| cat04_04_declare_description       |     7.7 |
+| cat04_05_sql_filt_num_events       |    10.6 |
+| cat04_06_sql_filt_three_df         |     7.1 |
+| cat04_07_sql_filt_top_k_vars       |     7.4 |
+| cat05_01_hyp_generation_log        |     8.3 |
+| cat05_02_hyp_gen_powl              |     7.1 |
+| cat05_03_hyp_gen_declare           |     9.1 |
+| cat05_04_hyp_gen_temp_profile      |     5.4 |
+| cat05_05_question_gen_nlp          |     7.7 |
+| cat05_06_question_pseudo_bpmn      |     9.1 |
+| cat05_07_question_interview        |     8.3 |
+| cat06_01_bias_text                 |     8.6 |
+| cat06_02_bias_event_log            |     9.1 |
+| cat06_03_bias_powl                 |     7.7 |
+| cat06_04_bias_two_logs             |     7.7 |
+| cat06_05_bias_two_logs_2           |     7.7 |
+| cat06_06_bias_mitigation_declare   |     7.7 |
+| cat06_07_fair_unfair_powl          |     9.1 |
+| cat08_01_queue_mining              |     7.7 |
+| cat08_02_instance_spanning         |     6   |
+| cat08_03_transport_opt             |     7.7 |
+| cat08_04_resource_assign           |     7.7 |
+| cat08_05_task_schedul              |     7.7 |
+
+
+
 ### gemini-2.5-flash-04-17-thinkhigh   => 39.7 points
 
 | Question                           |   Score |

@@ -251,7 +251,7 @@ MODELS_DICT = {
 
 
 def is_excluded_from_table(model_name):
-    patterns = ["dynamic-quant", "qwq-32b-preview", "grok-3-beta-thinking-20250221", "distill-qwen-7b"]
+    patterns = ["dynamic-quant", "qwq-32b-preview", "distill-qwen-7b"]
     for p in patterns:
         if p.lower() in model_name.lower():
             return True
