@@ -75,8 +75,7 @@ MODELS_DICT = {
         "api_url": "https://api.anthropic.com/v1/",
         "api_key": "sk-",
         "models": {
-            "claude-3-5-sonnet-20241022", "claude-3-opus-20240229",
-            "claude-3-5-haiku-20241022", "claude-3-7-sonnet-20250219"
+            "claude-3-7-sonnet-20250219"
         }
     },
     "mistral": {
@@ -163,6 +162,21 @@ MODELS_DICT = {
         "api_url": "http://0.0.0.0:1000/v1/",
         "api_key": "sk-",
         "models": {
+            "claude-3-5-sonnet-20241022": {
+                "provider": "claude",
+                "base_model": "claude-3-5-sonnet-20241022",
+                "max_tokens": 8192
+            },
+            "claude-3-opus-20240229": {
+                "provider": "claude",
+                "base_model": "claude-3-5-sonnet-20241022",
+                "max_tokens": 4096
+            },
+            "claude-3-5-haiku-20241022": {
+                "provider": "claude",
+                "base_model": "claude-3-5-sonnet-20241022",
+                "max_tokens": 8192
+            },
             "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab": {
                 "provider": "nvidia",
                 "base_model": "nvidia/llama-3.3-nemotron-super-49b-v1",
@@ -643,6 +657,10 @@ def query_text_simple_anthropic(question, api_url, target_file):
                     continue
     else:
         with requests.post(complete_url, headers=headers, json=payload) as resp:
+            if resp.status_code != 200:
+                print(resp)
+                print(resp.text)
+                print(resp.status_code)
             respj = resp.json()
             response_message = respj["content"][-1]["text"]
 
