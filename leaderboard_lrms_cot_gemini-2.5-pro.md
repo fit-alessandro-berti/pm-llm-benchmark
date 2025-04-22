@@ -7,12 +7,12 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | Model                            | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       | OPT                  |
 |:---------------------------------|:---------|:-------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
 | grok-3-mini-beta-high            | **42.0** | :x:                | :white_check_mark: | :mage_woman: **6.3** | :mage_woman: **7.4** | :mage_woman: **6.3** | :mage_woman: **5.9** | :mage_woman: **5.9** | :mage_woman: **5.9** | :mage_woman: **0.0** | :mage_woman: **4.2** |
-| nemotron-ultra-253b-v1-thinkenab | **33.3** | :white_check_mark: | :white_check_mark: | **6.0**              | 6.8                  | 5.3                  | 4.5                  | 5.1                  | 5.6                  | :mage_woman: **0.0** | 0.0                  |
-| qwen-qwq-32b-nostepbystep        | **33.2** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.4                  | **6.0**              | 4.5                  | 4.9                  | **5.7**              | :mage_woman: **0.0** | 0.0                  |
-| DeepSeek-R1                      | **33.0** | :white_check_mark: | :white_check_mark: | 5.9                  | :mage_woman: **7.4** | 4.7                  | 5.2                  | 4.7                  | 5.1                  | :mage_woman: **0.0** | 0.0                  |
-| nemotron-super-49b-v1-thinkenab  | **32.5** | :white_check_mark: | :white_check_mark: | 5.0                  | **7.3**              | **6.0**              | 4.8                  | 4.4                  | 5.0                  | :mage_woman: **0.0** | 0.0                  |
-| grok-3-mini-beta-low             | **32.1** | :x:                | :white_check_mark: | 5.7                  | 6.9                  | 4.0                  | 5.1                  | 4.9                  | 5.4                  | :mage_woman: **0.0** | 0.0                  |
-| qwen-qwq-32b-stepbystep          | **31.9** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.7                  | 4.3                  | 4.6                  | 5.1                  | 5.6                  | :mage_woman: **0.0** | 0.0                  |
+| nemotron-ultra-253b-v1-thinkenab | **37.0** | :white_check_mark: | :white_check_mark: | **6.0**              | 6.8                  | 5.3                  | 4.5                  | 5.1                  | 5.6                  | :mage_woman: **0.0** | 3.7                  |
+| qwen-qwq-32b-nostepbystep        | **36.9** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.4                  | **6.0**              | 4.5                  | 4.9                  | **5.7**              | :mage_woman: **0.0** | 3.7                  |
+| DeepSeek-R1                      | **36.8** | :white_check_mark: | :white_check_mark: | 5.9                  | :mage_woman: **7.4** | 4.7                  | 5.2                  | 4.7                  | 5.1                  | :mage_woman: **0.0** | 3.8                  |
+| nemotron-super-49b-v1-thinkenab  | **36.4** | :white_check_mark: | :white_check_mark: | 5.0                  | **7.3**              | **6.0**              | 4.8                  | 4.4                  | 5.0                  | :mage_woman: **0.0** | 3.9                  |
+| grok-3-mini-beta-low             | **36.3** | :x:                | :white_check_mark: | 5.7                  | 6.9                  | 4.0                  | 5.1                  | 4.9                  | 5.4                  | :mage_woman: **0.0** | :mage_woman: **4.2** |
+| qwen-qwq-32b-stepbystep          | **35.8** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.7                  | 4.3                  | 4.6                  | 5.1                  | 5.6                  | :mage_woman: **0.0** | 3.9                  |
 | DeepSeek-R1-Distill-Qwen-32B     | **28.2** | :white_check_mark: | :white_check_mark: | 5.0                  | 6.9                  | 3.5                  | 3.6                  | 4.5                  | 4.8                  | :mage_woman: **0.0** | 0.0                  |
 | r1-1776                          | **28.2** | :white_check_mark: | :white_check_mark: | 4.4                  | **7.2**              | 2.4                  | 4.8                  | 4.8                  | 4.6                  | :mage_woman: **0.0** | 0.0                  |
 | exaone-deep32b-fp16              | **28.1** | :white_check_mark: | :white_check_mark: | 5.4                  | 6.1                  | 3.5                  | 4.3                  | 4.0                  | 4.8                  | :mage_woman: **0.0** | 0.0                  |
@@ -80,7 +80,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### nvidiallama-3.1-nemotron-ultra-253b-v1-thinkenab   => 33.3 points
+### nvidiallama-3.1-nemotron-ultra-253b-v1-thinkenab   => 37.0 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -130,10 +130,15 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     9.1 |
 | cat06_06_bias_mitigation_declare   |     6.6 |
 | cat06_07_fair_unfair_powl          |     9.1 |
+| cat08_01_queue_mining              |     7.4 |
+| cat08_02_instance_spanning         |     6.6 |
+| cat08_03_transport_opt             |     7.6 |
+| cat08_04_resource_assign           |     8.3 |
+| cat08_05_task_schedul              |     7.4 |
 
 
 
-### qwen-qwq-32b-nostepbystep   => 33.2 points
+### qwen-qwq-32b-nostepbystep   => 36.9 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -183,10 +188,15 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     9.1 |
 | cat06_06_bias_mitigation_declare   |     7.4 |
 | cat06_07_fair_unfair_powl          |     6.6 |
+| cat08_01_queue_mining              |     7.4 |
+| cat08_02_instance_spanning         |     6.8 |
+| cat08_03_transport_opt             |     7.4 |
+| cat08_04_resource_assign           |     8.3 |
+| cat08_05_task_schedul              |     7.4 |
 
 
 
-### deepseek-aiDeepSeek-R1   => 33.0 points
+### deepseek-aiDeepSeek-R1   => 36.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -236,10 +246,15 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     7.4 |
 | cat06_06_bias_mitigation_declare   |     4.2 |
 | cat06_07_fair_unfair_powl          |     7.4 |
+| cat08_01_queue_mining              |     7.7 |
+| cat08_02_instance_spanning         |     7.1 |
+| cat08_03_transport_opt             |     7.7 |
+| cat08_04_resource_assign           |     7.7 |
+| cat08_05_task_schedul              |     7.7 |
 
 
 
-### nvidiallama-3.3-nemotron-super-49b-v1-thinkenab   => 32.5 points
+### nvidiallama-3.3-nemotron-super-49b-v1-thinkenab   => 36.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -289,10 +304,15 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     7.4 |
 | cat06_06_bias_mitigation_declare   |     5.4 |
 | cat06_07_fair_unfair_powl          |     6.6 |
+| cat08_01_queue_mining              |     9.1 |
+| cat08_02_instance_spanning         |     7.7 |
+| cat08_03_transport_opt             |     7.6 |
+| cat08_04_resource_assign           |     7.1 |
+| cat08_05_task_schedul              |     7.7 |
 
 
 
-### grok-3-mini-beta-low   => 32.1 points
+### grok-3-mini-beta-low   => 36.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -342,10 +362,15 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     7.4 |
 | cat06_06_bias_mitigation_declare   |     7.4 |
 | cat06_07_fair_unfair_powl          |     7.7 |
+| cat08_01_queue_mining              |     7.7 |
+| cat08_02_instance_spanning         |     9.1 |
+| cat08_03_transport_opt             |     9.1 |
+| cat08_04_resource_assign           |     7.4 |
+| cat08_05_task_schedul              |     9.1 |
 
 
 
-### qwen-qwq-32b-stepbystep   => 31.9 points
+### qwen-qwq-32b-stepbystep   => 35.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -395,6 +420,11 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     9.1 |
 | cat06_06_bias_mitigation_declare   |     7.4 |
 | cat06_07_fair_unfair_powl          |     7.4 |
+| cat08_01_queue_mining              |     7.6 |
+| cat08_02_instance_spanning         |     7.7 |
+| cat08_03_transport_opt             |     7.6 |
+| cat08_04_resource_assign           |     7.7 |
+| cat08_05_task_schedul              |     8.3 |
 
 
 
