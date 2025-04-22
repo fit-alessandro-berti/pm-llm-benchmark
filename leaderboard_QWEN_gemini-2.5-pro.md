@@ -16,8 +16,8 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | qwen2.5-32b-instruct           | **25.8** | :white_check_mark: | :x:                | 4.1                  | 5.0                  | 2.0                  | 3.3                  | 4.4                  | 4.1                  | 0.0                  | 2.9                  |
 | qwen2.5-14b-instruct           | **24.8** | :white_check_mark: | :x:                | 3.4                  | 4.7                  | 2.4                  | 3.0                  | 4.2                  | 4.0                  | 0.0                  | 3.2                  |
 | qwen2.5-14b-instruct-1m        | **24.0** | :white_check_mark: | :x:                | 3.6                  | 4.5                  | 1.7                  | 3.6                  | 4.3                  | 3.7                  | 0.0                  | 2.7                  |
+| qwen-turbo-2024-11-01          | **23.1** | :x:                | :x:                | 3.4                  | 4.2                  | 2.1                  | 3.2                  | 3.9                  | 3.5                  | 0.0                  | 2.9                  |
 | cogito14b-v1-preview-qwen-fp16 | **22.8** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.1                  | 2.7                  | 3.4                  | 3.7                  | 4.5                  | 0.0                  | 0.0                  |
-| qwen-turbo-2024-11-01          | **20.2** | :x:                | :x:                | 3.4                  | 4.2                  | 2.1                  | 3.2                  | 3.9                  | 3.5                  | 0.0                  | 0.0                  |
 | qwen2.5-omni-7b                | **18.7** | :white_check_mark: | :x:                | 3.2                  | 3.5                  | 1.9                  | 3.0                  | 3.8                  | 3.1                  | 2.2                  | 0.0                  |
 | qwen2.5-7b-instruct            | **18.6** | :white_check_mark: | :x:                | 3.1                  | 3.5                  | 2.1                  | 3.2                  | 3.6                  | 3.0                  | 0.0                  | 0.0                  |
 | qwen2.5-7b-instruct-1m         | **17.0** | :white_check_mark: | :x:                | 3.0                  | 3.0                  | 1.9                  | 2.5                  | 3.5                  | 3.0                  | 0.0                  | 0.0                  |
@@ -616,6 +616,64 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
+### qwen-turbo-2024-11-01   => 23.1 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |    2.5  |
+| cat01_02_activity_context          |    4    |
+| cat01_03_high_level_events         |    5.5  |
+| cat01_04_sensor_recordings         |    6    |
+| cat01_05_merge_two_logs            |    4    |
+| cat01_06_system_logs               |    3    |
+| cat01_07_interv_to_pseudo_bpmn     |    6    |
+| cat01_08_tables_to_log             |    3    |
+| cat02_01_conformance_textual       |    4    |
+| cat02_02_conf_desiderata           |    5    |
+| cat02_03_anomaly_event_log         |    3    |
+| cat02_04_powl_anomaly_detection    |    7.5  |
+| cat02_05_two_powls_anomalies       |    3    |
+| cat02_06_root_cause_1              |    5    |
+| cat02_07_root_cause_2              |    5    |
+| cat02_08_underfitting_process_tree |    2    |
+| cat02_09_fix_process_tree          |    7    |
+| cat03_01_process_tree_generation   |    2.5  |
+| cat03_02_powl_generation           |    3    |
+| cat03_03_log_skeleton_generation   |    2    |
+| cat03_04_declare_generation        |    2.5  |
+| cat03_05_temp_profile_generation   |    3.5  |
+| cat03_06_petri_net_generation      |    2    |
+| cat03_07_process_tree_discovery    |    1.5  |
+| cat03_08_powl_discovery            |    4    |
+| cat04_01_pseudo_bpmn_description   |    5.5  |
+| cat04_02_pseudo_bpmn_open_question |    3.5  |
+| cat04_03_declare_open_question     |    3    |
+| cat04_04_declare_description       |    3    |
+| cat04_05_sql_filt_num_events       |    9.25 |
+| cat04_06_sql_filt_three_df         |    2    |
+| cat04_07_sql_filt_top_k_vars       |    5.5  |
+| cat05_01_hyp_generation_log        |    3.5  |
+| cat05_02_hyp_gen_powl              |    5    |
+| cat05_03_hyp_gen_declare           |    4    |
+| cat05_04_hyp_gen_temp_profile      |    3    |
+| cat05_05_question_gen_nlp          |    7.5  |
+| cat05_06_question_pseudo_bpmn      |    7.6  |
+| cat05_07_question_interview        |    8    |
+| cat06_01_bias_text                 |    7.75 |
+| cat06_02_bias_event_log            |    5.5  |
+| cat06_03_bias_powl                 |    3    |
+| cat06_04_bias_two_logs             |    5.5  |
+| cat06_05_bias_two_logs_2           |    5.5  |
+| cat06_06_bias_mitigation_declare   |    3    |
+| cat06_07_fair_unfair_powl          |    5    |
+| cat08_01_queue_mining              |    6    |
+| cat08_02_instance_spanning         |    4.5  |
+| cat08_03_transport_opt             |    6    |
+| cat08_04_resource_assign           |    6    |
+| cat08_05_task_schedul              |    6    |
+
+
+
 ### cogito14b-v1-preview-qwen-fp16   => 22.8 points
 
 | Question                           |   Score |
@@ -666,59 +724,6 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     7.4 |
 | cat06_06_bias_mitigation_declare   |     3.1 |
 | cat06_07_fair_unfair_powl          |     3.1 |
-
-
-
-### qwen-turbo-2024-11-01   => 20.2 points
-
-| Question                           |   Score |
-|:-----------------------------------|--------:|
-| cat01_01_case_id_inference         |    2.5  |
-| cat01_02_activity_context          |    4    |
-| cat01_03_high_level_events         |    5.5  |
-| cat01_04_sensor_recordings         |    6    |
-| cat01_05_merge_two_logs            |    4    |
-| cat01_06_system_logs               |    3    |
-| cat01_07_interv_to_pseudo_bpmn     |    6    |
-| cat01_08_tables_to_log             |    3    |
-| cat02_01_conformance_textual       |    4    |
-| cat02_02_conf_desiderata           |    5    |
-| cat02_03_anomaly_event_log         |    3    |
-| cat02_04_powl_anomaly_detection    |    7.5  |
-| cat02_05_two_powls_anomalies       |    3    |
-| cat02_06_root_cause_1              |    5    |
-| cat02_07_root_cause_2              |    5    |
-| cat02_08_underfitting_process_tree |    2    |
-| cat02_09_fix_process_tree          |    7    |
-| cat03_01_process_tree_generation   |    2.5  |
-| cat03_02_powl_generation           |    3    |
-| cat03_03_log_skeleton_generation   |    2    |
-| cat03_04_declare_generation        |    2.5  |
-| cat03_05_temp_profile_generation   |    3.5  |
-| cat03_06_petri_net_generation      |    2    |
-| cat03_07_process_tree_discovery    |    1.5  |
-| cat03_08_powl_discovery            |    4    |
-| cat04_01_pseudo_bpmn_description   |    5.5  |
-| cat04_02_pseudo_bpmn_open_question |    3.5  |
-| cat04_03_declare_open_question     |    3    |
-| cat04_04_declare_description       |    3    |
-| cat04_05_sql_filt_num_events       |    9.25 |
-| cat04_06_sql_filt_three_df         |    2    |
-| cat04_07_sql_filt_top_k_vars       |    5.5  |
-| cat05_01_hyp_generation_log        |    3.5  |
-| cat05_02_hyp_gen_powl              |    5    |
-| cat05_03_hyp_gen_declare           |    4    |
-| cat05_04_hyp_gen_temp_profile      |    3    |
-| cat05_05_question_gen_nlp          |    7.5  |
-| cat05_06_question_pseudo_bpmn      |    7.6  |
-| cat05_07_question_interview        |    8    |
-| cat06_01_bias_text                 |    7.75 |
-| cat06_02_bias_event_log            |    5.5  |
-| cat06_03_bias_powl                 |    3    |
-| cat06_04_bias_two_logs             |    5.5  |
-| cat06_05_bias_two_logs_2           |    5.5  |
-| cat06_06_bias_mitigation_declare   |    3    |
-| cat06_07_fair_unfair_powl          |    5    |
 
 
 
