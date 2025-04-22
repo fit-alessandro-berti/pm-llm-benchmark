@@ -2,31 +2,35 @@ import os
 import traceback
 import time
 import sys
-from common import query_text_simple, query_image_simple, callback_write, set_api_key, is_visual_model, MODELS_DICT, Shared
+from common import query_text_simple, query_image_simple, callback_write, set_api_key, is_visual_model, MODELS_DICT
 import common
 
 WAITING_TIME_RETRY = 15
 
 
-def answer_question(model_name, api_url=None, api_key=None):
+def answer_question(model_name, api_url=None, api_key=None, alias_model_name=None):
     if api_url is not None:
         common.Shared.API_URL = api_url
+
+    if alias_model_name is None:
+        alias_model_name = model_name
 
     if api_key is not None:
         common.Shared.API_KEY = api_key
         common.Shared.MODEL_NAME = model_name
+        common.Shared.ALIAS_MODEL_NAME = alias_model_name
     else:
         set_api_key("answer")
 
     common.ANSWERING_MODEL_NAME = model_name
 
-    print("=====", common.ANSWERING_MODEL_NAME)
+    print("=====", common.Shared.ALIAS_MODEL_NAME)
 
     questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endswith(".png")]
 
     for q in questions:
         question_path = os.path.join("questions", q)
-        answer_path = os.path.join("answers", common.clean_model_name(model_name) + "_" + q).replace(
+        answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
             ".png", ".txt")
 
         if not os.path.exists(answer_path):
@@ -59,7 +63,7 @@ def answer_question(model_name, api_url=None, api_key=None):
 
 
 if __name__ == "__main__":
-    if False:
+    if True:
         from utils import overall_table
         e_m_name = common.clean_model_name(common.EVALUATING_MODEL_NAME)
         common.insert_api_keys()
@@ -86,14 +90,26 @@ if __name__ == "__main__":
                         if "provider" in ref and ref["provider"] in MODELS_DICT:
                             api_url = MODELS_DICT[ref["provider"]]["api_url"]
                             api_key = MODELS_DICT[ref["provider"]]["api_key"]
-                            base_model = ref["base_model"]
+                            model_name = ref["base_model"]
+                            alias_model_name = cleaned_models[llm]
+
+                            common.Shared.SYSTEM_PROMPT = ref["system_prompt"] if "system_prompt" in ref else None
+                            common.Shared.ANTHROPIC_THINKING_TOKENS = ref["thinking_tokens"] if "thinking_tokens" in ref else None
+                            common.Shared.PAYLOAD_REASONING_EFFORT = ref["reasoning_effort"] if "reasoning_effort" in ref else None
                     else:
                         api_url = info["api_url"]
                         api_key = info["api_key"]
-                    answer_question(cleaned_models[llm], api_url=api_url, api_key=api_key)
-                    Shared.SYSTEM_PROMPT = None
-                    Shared.ANTHROPIC_THINKING_TOKENS = None
-                    Shared.PAYLOAD_REASONING_EFFORT = None
+                        model_name = cleaned_models[llm]
+                        alias_model_name = cleaned_models[llm]
+
+                    #print(model_name, alias_model_name, common.Shared.ANTHROPIC_THINKING_TOKENS, common.Shared.PAYLOAD_REASONING_EFFORT, common.Shared.SYSTEM_PROMPT)
+
+                    answer_question(model_name, api_url=api_url, api_key=api_key, alias_model_name=alias_model_name)
+
+                    common.Shared.SYSTEM_PROMPT = None
+                    common.Shared.ANTHROPIC_THINKING_TOKENS = None
+                    common.Shared.PAYLOAD_REASONING_EFFORT = None
+
                     found = True
                     break
             if not found:

@@ -19,6 +19,7 @@ EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else
 class Shared:
     API_KEY = None
     MODEL_NAME = None
+    ALIAS_MODEL_NAME = None
     MAX_REQUESTED_TOKENS = 16384
     API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.openai.com/v1/"
@@ -287,10 +288,12 @@ def set_api_key(type_key):
             "answering_api_key.txt") else "../answering_api_key.txt"
         Shared.API_KEY = open(answering_api_key_path, "r").read().strip()
         Shared.MODEL_NAME = ANSWERING_MODEL_NAME
+        Shared.ALIAS_MODEL_NAME = Shared.MODEL_NAME
     else:
         judge_api_key_path = "judge_api_key.txt" if os.path.exists("judge_api_key.txt") else "../judge_api_key.txt"
         Shared.API_KEY = open(judge_api_key_path, "r").read().strip()
         Shared.MODEL_NAME = EVALUATING_MODEL_NAME
+        Shared.ALIAS_MODEL_NAME = Shared.MODEL_NAME
 
 
 def strip_non_unicode_characters(text):
