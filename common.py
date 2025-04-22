@@ -19,6 +19,7 @@ EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else
 class Shared:
     API_KEY = None
     MODEL_NAME = None
+    ALIAS_MODEL_NAME = None
     MAX_REQUESTED_TOKENS = 16384
     API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.openai.com/v1/"
@@ -59,7 +60,8 @@ MODELS_DICT = {
             "gpt-4o-2024-11-20", "gpt-3.5-turbo",
             "gpt-4-turbo-2024-04-09", "o1-mini-2024-09-12", "o1-preview-2024-09-12",
             "gpt-4.5-preview", "o1-2024-12-17", "gpt-4o-mini-2024-07-18",
-            "o3-mini-2025-01-31"
+            "o3-mini-2025-01-31", "gpt-4.1-2025-04-14", "gpt-4.1-mini-2025-04-14",
+            "gpt-4.1-nano-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13"
         }
     },
     "google": {
@@ -84,14 +86,15 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
-            "codestral-2501", "mistral-large-2411", "mistral-small-2501", "mistral-small-2503"
+            "codestral-2501", "mistral-large-2411", "mistral-small-2501", "mistral-small-2503",
+            "open-mixtral-8x22b"
         }
     },
     "grok": {
         "api_url": "https://api.x.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "grok-2-1212"
+            "grok-2-1212", "grok-3-beta"
         }
     },
     "deepinfra": {
@@ -118,7 +121,7 @@ MODELS_DICT = {
             "olmo2:7b-1124-instruct-q8_0", "exaone-deep:32b-fp16",
             "exaone-deep:7.8b-fp16", "exaone-deep:2.4b-fp16",
             "gemma3:27b-it-q8_0", "gemma3:12b-it-q8_0", "gemma3:4b-it-q8_0",
-            "gemma3:1b-it-q8_0", "granite3.2:8b-instruct-q4_K_M",
+            "gemma3:1b-it-q8_0", "granite3.2:8b-instruct-q4_K_M"
         }
     },
     "qwen": {
@@ -135,7 +138,6 @@ MODELS_DICT = {
         "api_url": "https://integrate.api.nvidia.com/v1/",
         "api_key": "sk-",
         "models": {
-            "nvidia/llama-3.3-nemotron-super-49b-v1"
         }
     },
     "perplexity": {
@@ -145,21 +147,121 @@ MODELS_DICT = {
             "sonar-reasoning-pro", "sonar-pro", "r1-1776"
         }
     },
+    "groq": {
+        "api_url": "https://api.groq.com/openai/v1/",
+        "api_key": "sk-",
+        "models": {
+
+        }
+    },
+    "openrouter": {
+        "api_url": "https://openrouter.ai/api/v1/",
+        "api_key": "sk-",
+        "models": {
+            "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick"
+        }
+    },
     "manual": {
         "api_url": "http://0.0.0.0:1000/v1/",
         "api_key": "sk-",
         "models": {
-            "MiniMax-01", "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab",
-            "Sonus-1-Pro-Reasoning", "o1-pro-2024-12-17",
-            "DeepSeek-R1-Distill-Qwen-14B", "DeepSeek-R1-Distill-Llama-8B",
-            "DeepSeek-R1-Distill-Qwen-1.5B", "DeepSeek-R1-Distill-Qwen-7B",
-            "DeepSeek-R1-Zero", "DeepSeek-R1-Dynamic-Quant",
-            "o3-mini-20250131-HIGH", "Grok-3-beta-thinking-20250221", "Grok-3-beta-20250220",
-            "chatgpt-4o-latest-2025-03-26", "claude-3-7-sonnet-thinkhigh-20250219",
-            "gemini-2.0-pro-exp-02-05", "Qwen/QwQ-32B-Preview",
+            "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab": {
+                "provider": "nvidia",
+                "base_model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+                "system_prompt": "detailed thinking on"
+            },
+            "o3-mini-20250131-HIGH": {
+                "provider": "openai",
+                "base_model": "o3-mini-2025-01-31",
+                "reasoning_effort": "high"
+            },
+            "o4-mini-2025-04-16-HIGH": {
+                "provider": "openai",
+                "base_model": "o4-mini-2025-04-16",
+                "reasoning_effort": "high"
+            },
+            "chatgpt-4o-latest-2025-03-26": {
+                "provider": "openai",
+                "base_model": "chatgpt-4o-latest"
+            },
+            "claude-3-7-sonnet-thinkhigh-20250219": {
+                "provider": "claude",
+                "base_model": "claude-3-7-sonnet-20250219",
+                "thinking_tokens": 98304
+            },
+            "qwen-qwq-32b-nostepbystep": {
+                "provider": "groq",
+                "base_model": "qwen-qwq-32b",
+                "system_prompt": "You are a helpful and harmless assistant."
+            },
+            "qwen-qwq-32b-stepbystep": {
+                "provider": "groq",
+                "base_model": "qwen-qwq-32b",
+                "system_prompt": "You are a helpful and harmless assistant. You should think step-by-step."
+            },
+            "grok-3-mini-beta-high": {
+                "provider": "grok",
+                "base_model": "grok-3-mini-beta",
+                "reasoning_effort": "high"
+            },
+            "grok-3-mini-beta-low": {
+                "provider": "grok",
+                "base_model": "grok-3-mini-beta",
+                "reasoning_effort": "low"
+            },
+            "gemini-2.5-flash-04-17-nothink": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-04-17",
+                "thinking_tokens": 0
+            },
+            "gemini-2.5-flash-04-17-thinkhigh": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-04-17",
+                "thinking_tokens": 24576
+            },
+            "nvidia/llama-3.1-nemotron-ultra-253b-v1-thinkenab": {
+                "provider": "nvidia",
+                "base_model": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+                "system_prompt": "detailed thinking on"
+            },
+            "cogito:14b-v1-preview-qwen-fp16": {
+                "provider": "ollama_local",
+                "base_model": "cogito:14b-v1-preview-qwen-fp16",
+                "system_prompt": "Enable deep thinking subroutine."
+            }
         }
     }
 }
+
+
+def is_excluded_from_table(model_name):
+    patterns = ["r1-zero", "dynamic-quant", "qwq-32b-preview", "distill-qwen-1", "distill-llama-8", "distill-qwen-7b",
+                "grok-3-beta-thinking-20250221"]
+    for p in patterns:
+        if p.lower() in model_name.lower():
+            return True
+    return False
+
+
+def get_ordered_references_llms(base_path="."):
+    try:
+        from utils import overall_table
+        output, all_jsons, ordered_llms = overall_table.execute(os.path.join(base_path, "evaluation-gemini-2.5-pro"),
+                                                                None, include_closed_source=True, require_vision=False,
+                                                                leaderboard_title="Overall Leaderboard")
+    except:
+        traceback.print_exc()
+        ordered_llms = []
+
+    referenced_llms = set()
+    for provider in MODELS_DICT:
+        info = MODELS_DICT[provider]
+        referenced_llms = referenced_llms.union(info["models"])
+    referenced_llms = {x for x in referenced_llms if not is_excluded_from_table(x)}
+    referenced_llms = [clean_model_name(x) for x in referenced_llms if
+                       clean_model_name(x) not in ordered_llms]
+
+    return ordered_llms, referenced_llms
 
 
 def is_visual_model(model_name):
@@ -209,10 +311,12 @@ def set_api_key(type_key):
             "answering_api_key.txt") else "../answering_api_key.txt"
         Shared.API_KEY = open(answering_api_key_path, "r").read().strip()
         Shared.MODEL_NAME = ANSWERING_MODEL_NAME
+        Shared.ALIAS_MODEL_NAME = Shared.MODEL_NAME
     else:
         judge_api_key_path = "judge_api_key.txt" if os.path.exists("judge_api_key.txt") else "../judge_api_key.txt"
         Shared.API_KEY = open(judge_api_key_path, "r").read().strip()
         Shared.MODEL_NAME = EVALUATING_MODEL_NAME
+        Shared.ALIAS_MODEL_NAME = Shared.MODEL_NAME
 
 
 def strip_non_unicode_characters(text):
@@ -844,6 +948,8 @@ def insert_api_keys():
     MODELS_DICT["google"]["api_key"] = open("../api_google.txt", "r").read().strip()
     MODELS_DICT["claude"]["api_key"] = open("../api_anthropic.txt", "r").read().strip()
     MODELS_DICT["perplexity"]["api_key"] = open("../api_perplexity.txt", "r").read().strip()
+    MODELS_DICT["groq"]["api_key"] = open("../api_groq.txt", "r").read().strip()
+    MODELS_DICT["openrouter"]["api_key"] = open("../api_openrouter.txt", "r").read().strip()
 
 
 def check_all_models():
@@ -858,6 +964,10 @@ def check_all_models():
             models = get_models()
             models = {x["id"] for x in models["data"]}
             models_specified = set(info["models"])
+
+            for x, y in MODELS_DICT["manual"]["models"].items():
+                if y["provider"] == provider:
+                    models_specified.add(y["base_model"])
 
             print("info", provider, models)
 
@@ -881,6 +991,7 @@ def check_missing_models():
     if diff:
         raise Exception("catalogue_models outdated: "+str(diff))
     diff = set(responding_models).difference(catalogue_models)
+    diff = {x for x in diff if not is_excluded_from_table(x)}
     print(diff)
 
 
