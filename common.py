@@ -57,7 +57,8 @@ MODELS_DICT = {
             "gpt-4o-2024-11-20", "gpt-3.5-turbo",
             "gpt-4-turbo-2024-04-09", "o1-mini-2024-09-12", "o1-preview-2024-09-12",
             "gpt-4.5-preview", "o1-2024-12-17", "gpt-4o-mini-2024-07-18",
-            "o3-mini-2025-01-31"
+            "o3-mini-2025-01-31", "gpt-4.1-2025-04-14", "gpt-4.1-mini-2025-04-14",
+            "gpt-4.1-nano-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13"
         }
     },
     "google": {
@@ -82,14 +83,15 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
-            "codestral-2501", "mistral-large-2411", "mistral-small-2501", "mistral-small-2503"
+            "codestral-2501", "mistral-large-2411", "mistral-small-2501", "mistral-small-2503",
+            "open-mixtral-8x22b"
         }
     },
     "grok": {
         "api_url": "https://api.x.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "grok-2-1212"
+            "grok-2-1212", "grok-3-beta"
         }
     },
     "deepinfra": {
@@ -117,6 +119,7 @@ MODELS_DICT = {
             "exaone-deep:7.8b-fp16", "exaone-deep:2.4b-fp16",
             "gemma3:27b-it-q8_0", "gemma3:12b-it-q8_0", "gemma3:4b-it-q8_0",
             "gemma3:1b-it-q8_0", "granite3.2:8b-instruct-q4_K_M",
+            "cogito:14b-v1-preview-qwen-fp16"
         }
     },
     "qwen": {
@@ -133,7 +136,6 @@ MODELS_DICT = {
         "api_url": "https://integrate.api.nvidia.com/v1/",
         "api_key": "sk-",
         "models": {
-            "nvidia/llama-3.3-nemotron-super-49b-v1"
         }
     },
     "perplexity": {
@@ -147,17 +149,20 @@ MODELS_DICT = {
         "api_url": "http://0.0.0.0:1000/v1/",
         "api_key": "sk-",
         "models": {
-            "MiniMax-01", "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab",
-            "Sonus-1-Pro-Reasoning", "o1-pro-2024-12-17",
-            "DeepSeek-R1-Distill-Qwen-14B", "DeepSeek-R1-Distill-Llama-8B",
-            "DeepSeek-R1-Distill-Qwen-1.5B", "DeepSeek-R1-Distill-Qwen-7B",
-            "DeepSeek-R1-Zero", "DeepSeek-R1-Dynamic-Quant",
-            "o3-mini-20250131-HIGH", "Grok-3-beta-thinking-20250221", "Grok-3-beta-20250220",
+            "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab", "o3-mini-20250131-HIGH",
             "chatgpt-4o-latest-2025-03-26", "claude-3-7-sonnet-thinkhigh-20250219",
-            "gemini-2.0-pro-exp-02-05", "Qwen/QwQ-32B-Preview",
         }
     }
 }
+
+
+def is_excluded_from_table(model_name):
+    patterns = ["r1-zero", "dynamic-quant", "qwq-32b-preview", "distill-qwen-1", "distill-llama-8", "distill-qwen-7b",
+                "grok-3-beta-thinking-20250221"]
+    for p in patterns:
+        if p.lower() in model_name.lower():
+            return True
+    return False
 
 
 def is_visual_model(model_name):
@@ -879,6 +884,7 @@ def check_missing_models():
     if diff:
         raise Exception("catalogue_models outdated: "+str(diff))
     diff = set(responding_models).difference(catalogue_models)
+    diff = {x for x in diff if not is_excluded_from_table(x)}
     print(diff)
 
 
