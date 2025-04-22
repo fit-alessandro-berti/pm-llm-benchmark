@@ -119,7 +119,8 @@ MODELS_DICT = {
             "olmo2:7b-1124-instruct-q8_0", "exaone-deep:32b-fp16",
             "exaone-deep:7.8b-fp16", "exaone-deep:2.4b-fp16",
             "gemma3:27b-it-q8_0", "gemma3:12b-it-q8_0", "gemma3:4b-it-q8_0",
-            "gemma3:1b-it-q8_0", "granite3.2:8b-instruct-q4_K_M"
+            "gemma3:1b-it-q8_0", "granite3.2:8b-instruct-q4_K_M",
+            "qwen2.5:1.5b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0"
         }
     },
     "qwen": {
@@ -128,8 +129,7 @@ MODELS_DICT = {
         "models": {
             "qwen-max-2025-01-25", "qwen-plus-2025-01-25", "qwen-turbo-2024-11-01",
             "qwen2.5-72b-instruct", "qwen2.5-32b-instruct", "qwen2.5-14b-instruct",
-            "qwen2.5-7b-instruct", "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m",
-            "qwen2.5:1.5b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0", "qwen2.5-omni-7b"
+            "qwen2.5-7b-instruct", "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m", "qwen2.5-omni-7b"
         }
     },
     "nvidia": {

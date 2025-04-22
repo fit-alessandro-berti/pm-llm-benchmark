@@ -87,19 +87,30 @@ if __name__ == "__main__":
                             common.Shared.ANTHROPIC_THINKING_TOKENS = ref["thinking_tokens"] if "thinking_tokens" in ref else None
                             common.Shared.PAYLOAD_REASONING_EFFORT = ref["reasoning_effort"] if "reasoning_effort" in ref else None
                             common.Shared.CUSTOM_TEMPERATURE = ref["temperature"] if "temperature" in ref else None
+
+                            this_provider = ref["provider"]
+                        else:
+                            api_key = None
                     else:
                         api_url = info["api_url"]
                         api_key = info["api_key"]
                         model_name = cleaned_models[llm]
                         alias_model_name = cleaned_models[llm]
+                        this_provider = provider
 
                     """
-                    print(model_name, alias_model_name, common.Shared.ANTHROPIC_THINKING_TOKENS, \
+                    print(model_name, alias_model_name, this_provider, common.Shared.ANTHROPIC_THINKING_TOKENS, \
                           common.Shared.PAYLOAD_REASONING_EFFORT, common.Shared.CUSTOM_TEMPERATURE, \
                           common.Shared.SYSTEM_PROMPT)
                     """
 
-                    answer_question(model_name, api_url=api_url, api_key=api_key, alias_model_name=alias_model_name)
+                    if api_key is not None:
+                        excluded_providers = {"ollama_local"}
+
+                        if provider not in excluded_providers:
+                            answer_question(model_name, api_url=api_url, api_key=api_key, alias_model_name=alias_model_name)
+                        else:
+                            print(model_name, provider, "excluded")
 
                     common.Shared.SYSTEM_PROMPT = None
                     common.Shared.ANTHROPIC_THINKING_TOKENS = None
