@@ -39,13 +39,16 @@ def perform_mass_eval():
     if changed:
         overall_table.write_evaluation(".", extra=True)
 
+    return changed
+
 
 if __name__ == "__main__":
     current_directory = os.getcwd()
     parent_directory = os.path.dirname(current_directory)
     os.chdir(parent_directory)
 
+    iterations = sys.maxsize
     iterations = 1
 
     for i in range(iterations):
-        perform_mass_eval()
+        changed = perform_mass_eval()
