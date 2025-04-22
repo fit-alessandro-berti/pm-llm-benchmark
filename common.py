@@ -190,12 +190,14 @@ MODELS_DICT = {
             "qwen-qwq-32b-nostepbystep": {
                 "provider": "groq",
                 "base_model": "qwen-qwq-32b",
-                "system_prompt": "You are a helpful and harmless assistant."
+                "system_prompt": "You are a helpful and harmless assistant.",
+                "temperature": 0.6
             },
             "qwen-qwq-32b-stepbystep": {
                 "provider": "groq",
                 "base_model": "qwen-qwq-32b",
-                "system_prompt": "You are a helpful and harmless assistant. You should think step-by-step."
+                "system_prompt": "You are a helpful and harmless assistant. You should think step-by-step.",
+                "temperature": 0.6
             },
             "grok-3-mini-beta-high": {
                 "provider": "grok",
