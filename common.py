@@ -155,7 +155,9 @@ MODELS_DICT = {
         "api_url": "https://openrouter.ai/api/v1/",
         "api_key": "sk-",
         "models": {
-            "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick"
+            "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick",
+            "deepseek/deepseek-r1-zero:free", "deepseek/deepseek-r1-distill-qwen-14b",
+            "deepseek/deepseek-r1-distill-llama-8b", "deepseek/deepseek-r1-distill-qwen-1.5b"
         }
     },
     "manual": {
@@ -249,8 +251,7 @@ MODELS_DICT = {
 
 
 def is_excluded_from_table(model_name):
-    patterns = ["r1-zero", "dynamic-quant", "qwq-32b-preview", "distill-qwen-1", "distill-llama-8", "distill-qwen-7b",
-                "grok-3-beta-thinking-20250221"]
+    patterns = ["dynamic-quant", "qwq-32b-preview", "grok-3-beta-thinking-20250221", "distill-qwen-7b"]
     for p in patterns:
         if p.lower() in model_name.lower():
             return True
