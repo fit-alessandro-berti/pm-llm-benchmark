@@ -63,7 +63,7 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
 
 
 if __name__ == "__main__":
-    if False:
+    if True:
         e_m_name = common.clean_model_name(common.EVALUATING_MODEL_NAME)
         common.insert_api_keys()
 
@@ -86,19 +86,25 @@ if __name__ == "__main__":
                             common.Shared.SYSTEM_PROMPT = ref["system_prompt"] if "system_prompt" in ref else None
                             common.Shared.ANTHROPIC_THINKING_TOKENS = ref["thinking_tokens"] if "thinking_tokens" in ref else None
                             common.Shared.PAYLOAD_REASONING_EFFORT = ref["reasoning_effort"] if "reasoning_effort" in ref else None
+                            common.Shared.CUSTOM_TEMPERATURE = ref["temperature"] if "temperature" in ref else None
                     else:
                         api_url = info["api_url"]
                         api_key = info["api_key"]
                         model_name = cleaned_models[llm]
                         alias_model_name = cleaned_models[llm]
 
-                    #print(model_name, alias_model_name, common.Shared.ANTHROPIC_THINKING_TOKENS, common.Shared.PAYLOAD_REASONING_EFFORT, common.Shared.SYSTEM_PROMPT)
+                    """
+                    print(model_name, alias_model_name, common.Shared.ANTHROPIC_THINKING_TOKENS, \
+                          common.Shared.PAYLOAD_REASONING_EFFORT, common.Shared.CUSTOM_TEMPERATURE, \
+                          common.Shared.SYSTEM_PROMPT)
+                    """
 
                     answer_question(model_name, api_url=api_url, api_key=api_key, alias_model_name=alias_model_name)
 
                     common.Shared.SYSTEM_PROMPT = None
                     common.Shared.ANTHROPIC_THINKING_TOKENS = None
                     common.Shared.PAYLOAD_REASONING_EFFORT = None
+                    common.Shared.CUSTOM_TEMPERATURE = None
 
                     found = True
                     break
