@@ -4,25 +4,25 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 ## Large Reasoning Models Leaderboard (Models with CoT) (1-shot; gemini-2.5-pro-preview-03-25 used as a judge)
 
-| Model                            | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       |
-|:---------------------------------|:---------|:-------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| grok-3-mini-beta-high            | **37.7** | :x:                | :white_check_mark: | :mage_woman: **6.3** | :mage_woman: **7.4** | :mage_woman: **6.3** | :mage_woman: **5.9** | :mage_woman: **5.9** | :mage_woman: **5.9** | :mage_woman: **0.0** |
-| nemotron-ultra-253b-v1-thinkenab | **33.3** | :white_check_mark: | :white_check_mark: | **6.0**              | 6.8                  | 5.3                  | 4.5                  | 5.1                  | 5.6                  | :mage_woman: **0.0** |
-| qwen-qwq-32b-nostepbystep        | **33.2** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.4                  | **6.0**              | 4.5                  | 4.9                  | **5.7**              | :mage_woman: **0.0** |
-| DeepSeek-R1                      | **33.0** | :white_check_mark: | :white_check_mark: | 5.9                  | :mage_woman: **7.4** | 4.7                  | 5.2                  | 4.7                  | 5.1                  | :mage_woman: **0.0** |
-| nemotron-super-49b-v1-thinkenab  | **32.5** | :white_check_mark: | :white_check_mark: | 5.0                  | **7.3**              | **6.0**              | 4.8                  | 4.4                  | 5.0                  | :mage_woman: **0.0** |
-| grok-3-mini-beta-low             | **32.1** | :x:                | :white_check_mark: | 5.7                  | 6.9                  | 4.0                  | 5.1                  | 4.9                  | 5.4                  | :mage_woman: **0.0** |
-| qwen-qwq-32b-stepbystep          | **31.9** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.7                  | 4.3                  | 4.6                  | 5.1                  | 5.6                  | :mage_woman: **0.0** |
-| DeepSeek-R1-Distill-Qwen-32B     | **28.2** | :white_check_mark: | :white_check_mark: | 5.0                  | 6.9                  | 3.5                  | 3.6                  | 4.5                  | 4.8                  | :mage_woman: **0.0** |
-| r1-1776                          | **28.2** | :white_check_mark: | :white_check_mark: | 4.4                  | **7.2**              | 2.4                  | 4.8                  | 4.8                  | 4.6                  | :mage_woman: **0.0** |
-| exaone-deep32b-fp16              | **28.1** | :white_check_mark: | :white_check_mark: | 5.4                  | 6.1                  | 3.5                  | 4.3                  | 4.0                  | 4.8                  | :mage_woman: **0.0** |
-| exaone-deep7.8b-fp16             | **26.6** | :white_check_mark: | :white_check_mark: | 4.8                  | 6.4                  | 2.6                  | 3.6                  | 4.3                  | 4.8                  | :mage_woman: **0.0** |
-| DeepSeek-R1-Distill-Llama-70B    | **26.3** | :white_check_mark: | :white_check_mark: | 4.7                  | 6.1                  | 2.7                  | 4.3                  | 4.0                  | 4.5                  | :mage_woman: **0.0** |
-| cogito14b-v1-preview-qwen-fp16   | **22.8** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.1                  | 2.7                  | 3.4                  | 3.7                  | 4.5                  | :mage_woman: **0.0** |
-| sonar-reasoning-pro              | **20.9** | :x:                | :white_check_mark: | 3.4                  | 5.4                  | 2.1                  | 2.3                  | 4.5                  | 3.2                  | :mage_woman: **0.0** |
-| exaone-deep2.4b-fp16             | **20.1** | :white_check_mark: | :white_check_mark: | 3.7                  | 5.3                  | 1.8                  | 2.9                  | 3.2                  | 3.2                  | :mage_woman: **0.0** |
+| Model                            | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | :nerd_face: VI       | OPT                  |
+|:---------------------------------|:---------|:-------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
+| grok-3-mini-beta-high            | **42.0** | :x:                | :white_check_mark: | :mage_woman: **6.3** | :mage_woman: **7.4** | :mage_woman: **6.3** | :mage_woman: **5.9** | :mage_woman: **5.9** | :mage_woman: **5.9** | :mage_woman: **0.0** | :mage_woman: **4.2** |
+| nemotron-ultra-253b-v1-thinkenab | **33.3** | :white_check_mark: | :white_check_mark: | **6.0**              | 6.8                  | 5.3                  | 4.5                  | 5.1                  | 5.6                  | :mage_woman: **0.0** | 0.0                  |
+| qwen-qwq-32b-nostepbystep        | **33.2** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.4                  | **6.0**              | 4.5                  | 4.9                  | **5.7**              | :mage_woman: **0.0** | 0.0                  |
+| DeepSeek-R1                      | **33.0** | :white_check_mark: | :white_check_mark: | 5.9                  | :mage_woman: **7.4** | 4.7                  | 5.2                  | 4.7                  | 5.1                  | :mage_woman: **0.0** | 0.0                  |
+| nemotron-super-49b-v1-thinkenab  | **32.5** | :white_check_mark: | :white_check_mark: | 5.0                  | **7.3**              | **6.0**              | 4.8                  | 4.4                  | 5.0                  | :mage_woman: **0.0** | 0.0                  |
+| grok-3-mini-beta-low             | **32.1** | :x:                | :white_check_mark: | 5.7                  | 6.9                  | 4.0                  | 5.1                  | 4.9                  | 5.4                  | :mage_woman: **0.0** | 0.0                  |
+| qwen-qwq-32b-stepbystep          | **31.9** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.7                  | 4.3                  | 4.6                  | 5.1                  | 5.6                  | :mage_woman: **0.0** | 0.0                  |
+| DeepSeek-R1-Distill-Qwen-32B     | **28.2** | :white_check_mark: | :white_check_mark: | 5.0                  | 6.9                  | 3.5                  | 3.6                  | 4.5                  | 4.8                  | :mage_woman: **0.0** | 0.0                  |
+| r1-1776                          | **28.2** | :white_check_mark: | :white_check_mark: | 4.4                  | **7.2**              | 2.4                  | 4.8                  | 4.8                  | 4.6                  | :mage_woman: **0.0** | 0.0                  |
+| exaone-deep32b-fp16              | **28.1** | :white_check_mark: | :white_check_mark: | 5.4                  | 6.1                  | 3.5                  | 4.3                  | 4.0                  | 4.8                  | :mage_woman: **0.0** | 0.0                  |
+| exaone-deep7.8b-fp16             | **26.6** | :white_check_mark: | :white_check_mark: | 4.8                  | 6.4                  | 2.6                  | 3.6                  | 4.3                  | 4.8                  | :mage_woman: **0.0** | 0.0                  |
+| DeepSeek-R1-Distill-Llama-70B    | **26.3** | :white_check_mark: | :white_check_mark: | 4.7                  | 6.1                  | 2.7                  | 4.3                  | 4.0                  | 4.5                  | :mage_woman: **0.0** | 0.0                  |
+| cogito14b-v1-preview-qwen-fp16   | **22.8** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.1                  | 2.7                  | 3.4                  | 3.7                  | 4.5                  | :mage_woman: **0.0** | 0.0                  |
+| sonar-reasoning-pro              | **20.9** | :x:                | :white_check_mark: | 3.4                  | 5.4                  | 2.1                  | 2.3                  | 4.5                  | 3.2                  | :mage_woman: **0.0** | 0.0                  |
+| exaone-deep2.4b-fp16             | **20.1** | :white_check_mark: | :white_check_mark: | 3.7                  | 5.3                  | 1.8                  | 2.9                  | 3.2                  | 3.2                  | :mage_woman: **0.0** | 0.0                  |
 
-### grok-3-mini-beta-high   => 37.7 points
+### grok-3-mini-beta-high   => 42.0 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -72,6 +72,11 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     9.1 |
 | cat06_06_bias_mitigation_declare   |     9.1 |
 | cat06_07_fair_unfair_powl          |     7.4 |
+| cat08_01_queue_mining              |     8.3 |
+| cat08_02_instance_spanning         |     8.3 |
+| cat08_03_transport_opt             |     8.3 |
+| cat08_04_resource_assign           |     9.1 |
+| cat08_05_task_schedul              |     8.3 |
 
 
 

@@ -163,15 +163,15 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
         if m[1] == m[2]:
             entry = {"Model": m_n, "Score": "**%.1f**" % (m[1]),
                      "OS": format_is_open_source(m[0]), "LRM": format_is_lrm(m[0]),
-                     "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+                     "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10], "C8": m[11]}
         else:
             entry = {"Model": m_n, "Score": "**%.1f**" % (m[1]),
                      "OS": format_is_open_source(m[0]), "LRM": format_is_lrm(m[0]),
-                     "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10]}
+                     "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C7": m[10], "C8": m[11]}
         overall_table.append(entry)
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Score", "OS", "LRM", "PCo", "CC", "PMo", "PQ", "HG", "FA", ":nerd_face: VI"]
+    overall_table.columns = ["Model", "Score", "OS", "LRM", "PCo", "CC", "PMo", "PQ", "HG", "FA", ":nerd_face: VI", "OPT"]
     overall_table = overall_table.to_markdown(index=False)
 
     output = []

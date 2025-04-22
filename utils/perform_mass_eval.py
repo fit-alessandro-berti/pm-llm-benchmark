@@ -48,7 +48,7 @@ if __name__ == "__main__":
     os.chdir(parent_directory)
 
     iterations = sys.maxsize
-    iterations = 1
+    #iterations = 1
 
     for i in range(iterations):
         changed = perform_mass_eval()
