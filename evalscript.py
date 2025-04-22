@@ -43,6 +43,8 @@ def perform_evaluation(answering_model_name=None):
     questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endswith(".png")]
     INCLUDE_EVALUATING_MNAME_IN_EVALUATION = False
 
+    something_ever_changed = False
+
     while True:
         missing = False
         for q in questions:
@@ -78,6 +80,8 @@ def perform_evaluation(answering_model_name=None):
 
                 if answer is not None and answer:
                     missing = True
+                    something_ever_changed = True
+
                     try:
                         if question_path.endswith(".txt"):
                             #answer = answer.split("</think>")[-1].strip()
@@ -98,8 +102,11 @@ def perform_evaluation(answering_model_name=None):
         last_hour_answers = files_modified_last_hour("answers", m_name)
         last_hour_evaluations = files_modified_last_hour(base_evaluation_path, m_name)
 
+        if not something_ever_changed:
+            break
+
         if Shared.MASS_EVAL:
-            break_condition = (not missing) or (not last_hour_answers and not last_hour_evaluations)
+            break_condition = (not missing)
         else:
             break_condition = (not missing) and (not last_hour_answers and not last_hour_evaluations)
 
