@@ -163,8 +163,54 @@ MODELS_DICT = {
         "api_url": "http://0.0.0.0:1000/v1/",
         "api_key": "sk-",
         "models": {
-            "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab", "o3-mini-20250131-HIGH",
-            "chatgpt-4o-latest-2025-03-26", "claude-3-7-sonnet-thinkhigh-20250219",
+            "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab": {
+                "provider": "nvidia",
+                "base_model": "nvidia/llama-3.3-nemotron-super-49b-v1"
+            },
+            "o3-mini-20250131-HIGH": {
+                "provider": "openai",
+                "base_model": "o3-mini-2025-01-31"
+            },
+            "o4-mini-2025-04-16-HIGH": {
+                "provider": "openai",
+                "base_model": "o4-mini-2025-04-16"
+            },
+            "chatgpt-4o-latest-2025-03-26": {
+                "provider": "openai",
+                "base_model": "chatgpt-4o-latest"
+            },
+            "claude-3-7-sonnet-thinkhigh-20250219": {
+                "provider": "claude",
+                "base_model": "claude-3-7-sonnet-20250219"
+            },
+            "qwen-qwq-32b-nostepbystep": {
+                "provider": "groq",
+                "base_model": "qwen-qwq-32b"
+            },
+            "qwen-qwq-32b-stepbystep": {
+                "provider": "groq",
+                "base_model": "qwen-qwq-32b"
+            },
+            "grok-3-mini-beta-high": {
+                "provider": "grok",
+                "base_model": "grok-3-mini-beta"
+            },
+            "grok-3-mini-beta-low": {
+                "provider": "grok",
+                "base_model": "grok-3-mini-beta"
+            },
+            "gemini-2.5-flash-04-17-nothink": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-04-17"
+            },
+            "gemini-2.5-flash-04-17-thinkhigh": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-04-17"
+            },
+            "nvidia/llama-3.1-nemotron-ultra-253b-v1-thinkenab": {
+                "provider": "nvidia",
+                "base_model": "nvidia/llama-3.1-nemotron-ultra-253b-v1"
+            },
         }
     }
 }
