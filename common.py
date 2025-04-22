@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "gemini-2.5-flash-04-17-nothink" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "gemini-2.5-pro-exp-03-25" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -211,12 +211,12 @@ MODELS_DICT = {
             },
             "gemini-2.5-flash-04-17-nothink": {
                 "provider": "google",
-                "base_model": "gemini-2.5-flash-04-17",
+                "base_model": "gemini-2.5-flash-preview-04-17",
                 "thinking_tokens": 0
             },
             "gemini-2.5-flash-04-17-thinkhigh": {
                 "provider": "google",
-                "base_model": "gemini-2.5-flash-04-17",
+                "base_model": "gemini-2.5-flash-preview-04-17",
                 "thinking_tokens": 24576
             },
             "nvidia/llama-3.1-nemotron-ultra-253b-v1-thinkenab": {
