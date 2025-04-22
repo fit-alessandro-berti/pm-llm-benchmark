@@ -1,4 +1,4 @@
-A score in the range **22-26** is considered **sufficient**; a score in the range **26-30** is considered **fair**; a score in the range **30-34** is considered **good**; and a score **>34** is considered **excellent**.
+A score in the range **24-29** is considered **sufficient**; a score in the range **29-34** is considered **fair**; a score in the range **34-40** is considered **good**; and a score **>40** is considered **excellent**.
 
 **Update**: Since **19-04-2025**, a normalization step is applied to the score.
 
@@ -13,7 +13,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | qwen-qwq-32b-stepbystep          | **35.8** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.7                  | 4.3                  | 4.6                  | :mage_woman: **5.1** | **5.6**              | 0.0                  | :mage_woman: **3.9** |
 | DeepSeek-V3-0324                 | **32.2** | :white_check_mark: | :x:                | 5.5                  | 6.2                  | 3.7                  | 4.5                  | 4.5                  | 4.5                  | 0.0                  | 3.3                  |
 | DeepSeek-R1-Distill-Qwen-32B     | **30.7** | :white_check_mark: | :white_check_mark: | 5.0                  | 6.9                  | 3.5                  | 3.6                  | 4.5                  | 4.8                  | 0.0                  | 2.5                  |
-| r1-1776                          | **28.2** | :white_check_mark: | :white_check_mark: | 4.4                  | **7.2**              | 2.4                  | 4.8                  | **4.8**              | 4.6                  | 0.0                  | 0.0                  |
+| r1-1776                          | **29.7** | :white_check_mark: | :white_check_mark: | 4.4                  | **7.2**              | 2.4                  | 4.8                  | **4.8**              | 4.6                  | 0.0                  | 1.5                  |
 | exaone-deep32b-fp16              | **28.1** | :white_check_mark: | :white_check_mark: | 5.4                  | 6.1                  | 3.5                  | 4.3                  | 4.0                  | 4.8                  | 0.0                  | 0.0                  |
 | nemotron-70b-instruct            | **26.9** | :white_check_mark: | :x:                | 4.4                  | 5.5                  | 3.5                  | 4.3                  | 4.4                  | 4.8                  | 0.0                  | 0.0                  |
 | exaone-deep7.8b-fp16             | **26.6** | :white_check_mark: | :white_check_mark: | 4.8                  | 6.4                  | 2.6                  | 3.6                  | 4.3                  | 4.8                  | 0.0                  | 0.0                  |
@@ -467,7 +467,7 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 
 
 
-### r1-1776   => 28.2 points
+### r1-1776   => 29.7 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -517,6 +517,8 @@ A score in the range **22-26** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     4.8 |
 | cat06_06_bias_mitigation_declare   |     1   |
 | cat06_07_fair_unfair_powl          |     7.4 |
+| cat08_01_queue_mining              |     7.7 |
+| cat08_02_instance_spanning         |     7.4 |
 
 
 
