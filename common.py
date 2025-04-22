@@ -118,8 +118,7 @@ MODELS_DICT = {
             "olmo2:7b-1124-instruct-q8_0", "exaone-deep:32b-fp16",
             "exaone-deep:7.8b-fp16", "exaone-deep:2.4b-fp16",
             "gemma3:27b-it-q8_0", "gemma3:12b-it-q8_0", "gemma3:4b-it-q8_0",
-            "gemma3:1b-it-q8_0", "granite3.2:8b-instruct-q4_K_M",
-            "cogito:14b-v1-preview-qwen-fp16"
+            "gemma3:1b-it-q8_0", "granite3.2:8b-instruct-q4_K_M"
         }
     },
     "qwen": {
@@ -165,15 +164,18 @@ MODELS_DICT = {
         "models": {
             "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab": {
                 "provider": "nvidia",
-                "base_model": "nvidia/llama-3.3-nemotron-super-49b-v1"
+                "base_model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+                "system_prompt": "detailed thinking on"
             },
             "o3-mini-20250131-HIGH": {
                 "provider": "openai",
-                "base_model": "o3-mini-2025-01-31"
+                "base_model": "o3-mini-2025-01-31",
+                "reasoning_effort": "high"
             },
             "o4-mini-2025-04-16-HIGH": {
                 "provider": "openai",
-                "base_model": "o4-mini-2025-04-16"
+                "base_model": "o4-mini-2025-04-16",
+                "reasoning_effort": "high"
             },
             "chatgpt-4o-latest-2025-03-26": {
                 "provider": "openai",
@@ -181,36 +183,49 @@ MODELS_DICT = {
             },
             "claude-3-7-sonnet-thinkhigh-20250219": {
                 "provider": "claude",
-                "base_model": "claude-3-7-sonnet-20250219"
+                "base_model": "claude-3-7-sonnet-20250219",
+                "thinking_tokens": 98304
             },
             "qwen-qwq-32b-nostepbystep": {
                 "provider": "groq",
-                "base_model": "qwen-qwq-32b"
+                "base_model": "qwen-qwq-32b",
+                "system_prompt": "You are a helpful and harmless assistant."
             },
             "qwen-qwq-32b-stepbystep": {
                 "provider": "groq",
-                "base_model": "qwen-qwq-32b"
+                "base_model": "qwen-qwq-32b",
+                "system_prompt": "You are a helpful and harmless assistant. You should think step-by-step."
             },
             "grok-3-mini-beta-high": {
                 "provider": "grok",
-                "base_model": "grok-3-mini-beta"
+                "base_model": "grok-3-mini-beta",
+                "reasoning_effort": "high"
             },
             "grok-3-mini-beta-low": {
                 "provider": "grok",
-                "base_model": "grok-3-mini-beta"
+                "base_model": "grok-3-mini-beta",
+                "reasoning_effort": "low"
             },
             "gemini-2.5-flash-04-17-nothink": {
                 "provider": "google",
-                "base_model": "gemini-2.5-flash-04-17"
+                "base_model": "gemini-2.5-flash-04-17",
+                "thinking_tokens": 0
             },
             "gemini-2.5-flash-04-17-thinkhigh": {
                 "provider": "google",
-                "base_model": "gemini-2.5-flash-04-17"
+                "base_model": "gemini-2.5-flash-04-17",
+                "thinking_tokens": 24576
             },
             "nvidia/llama-3.1-nemotron-ultra-253b-v1-thinkenab": {
                 "provider": "nvidia",
-                "base_model": "nvidia/llama-3.1-nemotron-ultra-253b-v1"
+                "base_model": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+                "system_prompt": "detailed thinking on"
             },
+            "cogito:14b-v1-preview-qwen-fp16": {
+                "provider": "ollama_local",
+                "base_model": "cogito:14b-v1-preview-qwen-fp16",
+                "system_prompt": "Enable deep thinking subroutine."
+            }
         }
     }
 }
@@ -923,6 +938,10 @@ def check_all_models():
             models = get_models()
             models = {x["id"] for x in models["data"]}
             models_specified = set(info["models"])
+
+            for x, y in MODELS_DICT["manual"]["models"].items():
+                if y["provider"] == provider:
+                    models_specified.add(y["base_model"])
 
             print("info", provider, models)
 
