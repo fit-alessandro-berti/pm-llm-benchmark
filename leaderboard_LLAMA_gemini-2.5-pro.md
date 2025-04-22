@@ -8,7 +8,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 |:---------------------------------|:---------|:-------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
 | nemotron-ultra-253b-v1-thinkenab | **37.0** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.0** | 6.8                  | 5.3                  | **4.5**              | :mage_woman: **5.1** | :mage_woman: **5.6** | 0.0                  | **3.7**              |
 | nemotron-super-49b-v1-thinkenab  | **36.4** | :white_check_mark: | :white_check_mark: | 5.0                  | :mage_woman: **7.3** | :mage_woman: **6.0** | :mage_woman: **4.8** | 4.4                  | 5.0                  | 0.0                  | :mage_woman: **3.9** |
-| nemotron-70b-instruct            | **26.9** | :white_check_mark: | :x:                | 4.4                  | 5.5                  | 3.5                  | 4.3                  | 4.4                  | 4.8                  | 0.0                  | 0.0                  |
+| nemotron-70b-instruct            | **29.8** | :white_check_mark: | :x:                | 4.4                  | 5.5                  | 3.5                  | 4.3                  | 4.4                  | 4.8                  | 0.0                  | 3.0                  |
 | DeepSeek-R1-Distill-Llama-70B    | **26.3** | :white_check_mark: | :white_check_mark: | 4.7                  | 6.1                  | 2.7                  | 4.3                  | 4.0                  | 4.5                  | 0.0                  | 0.0                  |
 | Llama-3.3-70B-Instruct           | **25.6** | :white_check_mark: | :x:                | 4.6                  | 5.4                  | 2.7                  | 4.3                  | 4.2                  | 4.4                  | 0.0                  | 0.0                  |
 | llama-4-maverick                 | **24.5** | :white_check_mark: | :x:                | 4.3                  | 5.3                  | 2.9                  | 3.6                  | **4.9**              | 3.6                  | :mage_woman: **3.7** | 0.0                  |
@@ -135,7 +135,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### nvidiaLlama-3.1-Nemotron-70B-Instruct   => 26.9 points
+### nvidiaLlama-3.1-Nemotron-70B-Instruct   => 29.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -185,6 +185,11 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |    7.6  |
 | cat06_06_bias_mitigation_declare   |    4    |
 | cat06_07_fair_unfair_powl          |    7    |
+| cat08_01_queue_mining              |    5    |
+| cat08_02_instance_spanning         |    5    |
+| cat08_03_transport_opt             |    7.25 |
+| cat08_04_resource_assign           |    6.5  |
+| cat08_05_task_schedul              |    6    |
 
 
 
