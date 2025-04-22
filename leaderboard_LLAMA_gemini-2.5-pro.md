@@ -12,8 +12,8 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | DeepSeek-R1-Distill-Llama-70B    | **28.6** | :white_check_mark: | :white_check_mark: | 4.7                  | 6.1                  | 2.7                  | 4.3                  | 4.0                  | 4.5                  | 0.0                  | 2.3                  |
 | Llama-3.3-70B-Instruct           | **28.4** | :white_check_mark: | :x:                | 4.6                  | 5.4                  | 2.7                  | 4.3                  | 4.2                  | 4.4                  | 0.0                  | 2.8                  |
 | llama-4-maverick                 | **27.2** | :white_check_mark: | :x:                | 4.3                  | 5.3                  | 2.9                  | 3.6                  | **4.9**              | 3.6                  | :mage_woman: **3.7** | 2.7                  |
-| Llama-3.2-90B-Vision-Instruct    | **21.4** | :white_check_mark: | :x:                | 3.9                  | 4.2                  | 2.5                  | 3.5                  | 4.2                  | 3.0                  | 2.5                  | 0.0                  |
-| llama-4-scout                    | **20.9** | :white_check_mark: | :x:                | 3.0                  | 3.9                  | 2.8                  | 3.6                  | 4.3                  | 3.3                  | 3.2                  | 0.0                  |
+| Llama-3.2-90B-Vision-Instruct    | **23.5** | :white_check_mark: | :x:                | 3.9                  | 4.2                  | 2.5                  | 3.5                  | 4.2                  | 3.0                  | 2.5                  | 2.0                  |
+| llama-4-scout                    | **22.6** | :white_check_mark: | :x:                | 3.0                  | 3.9                  | 2.8                  | 3.6                  | 4.3                  | 3.3                  | 3.2                  | 1.6                  |
 | Llama-3.1-8B-Instruct            | **16.1** | :white_check_mark: | :x:                | 2.4                  | 2.8                  | 1.6                  | 2.3                  | 4.3                  | 2.8                  | 0.0                  | 0.0                  |
 | Llama-3.2-11B-Vision-Instruct    | **14.8** | :white_check_mark: | :x:                | 2.8                  | 3.0                  | 1.9                  | 2.0                  | 3.0                  | 2.0                  | 2.1                  | 0.0                  |
 | Llama-3.2-3B-Instruct            | **14.1** | :white_check_mark: | :x:                | 2.4                  | 2.7                  | 1.3                  | 2.1                  | 3.4                  | 2.1                  | 0.0                  | 0.0                  |
@@ -373,7 +373,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### meta-llamaLlama-3.2-90B-Vision-Instruct   => 21.4 points
+### meta-llamaLlama-3.2-90B-Vision-Instruct   => 23.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -429,10 +429,15 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat07_04_causal_net                |    3    |
 | cat07_05_proclets                  |    3    |
 | cat07_06_perf_spectrum             |    3.5  |
+| cat08_01_queue_mining              |    5    |
+| cat08_02_instance_spanning         |    4.5  |
+| cat08_03_transport_opt             |    4    |
+| cat08_04_resource_assign           |    3    |
+| cat08_05_task_schedul              |    4    |
 
 
 
-### meta-llamallama-4-scout   => 20.9 points
+### meta-llamallama-4-scout   => 22.6 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -488,6 +493,11 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat07_04_causal_net                |    4.5  |
 | cat07_05_proclets                  |    6    |
 | cat07_06_perf_spectrum             |    7.25 |
+| cat08_01_queue_mining              |    2.5  |
+| cat08_02_instance_spanning         |    4    |
+| cat08_03_transport_opt             |    3.5  |
+| cat08_04_resource_assign           |    4    |
+| cat08_05_task_schedul              |    2.5  |
 
 
 
