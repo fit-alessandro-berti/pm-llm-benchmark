@@ -1,6 +1,6 @@
-# PM-LLM-Benchmark v 2.0
+# PM-LLM-Benchmark v 2.1
 
-**The current repository shows PM-LLM-Benchmark v 2.0, which contains a different and more complex set of prompts than PM-LLM-Benchmark v 1.0**
+**The current repository shows PM-LLM-Benchmark v 2.1, which contains a different and more complex set of prompts than PM-LLM-Benchmark v 1.0**
 The paper describing PM-LLM-Benchmark v 1.0 is available [here](https://arxiv.org/pdf/2407.13244)
 
 Process mining benefits significantly from the domain knowledge provided by LLMs. However, no process-mining-specific LLM benchmarks have been proposed
@@ -32,6 +32,7 @@ The benchmark includes different categories of questions:
 - **Category 5:** Examines the LLM’s ability to generate valid hypotheses and questions based on the provided artifacts.  
 - **Category 6:** Assesses the LLM’s ability to identify and propose solutions for unfairness in processes.  
 - **Category 7:** Evaluates the LLM’s ability to read and interpret process mining diagrams.  
+- **Category 8:** Evaluates the LLM’s ability to perform process optimizations in popular scenarios.  
 
 ## Leaderboards
 
@@ -39,5 +40,5 @@ The leaderboards include the results of the benchmark, as evaluated by the consi
 
 (**2025-03-27 TO NOW**) [gemini-2.5-pro](leaderboard_gemini-2.5-pro.md)
 
-* (v2, OLD, 2024-12-13 TO 2025-03-26) [gpt-4o-2024-11-20](old/OLD_v2_leaderboard_gpt-4o-2024-11-20.md)
+* (v2.0, OLD, 2024-12-13 TO 2025-03-26) [gpt-4o-2024-11-20](old/OLD_v2_leaderboard_gpt-4o-2024-11-20.md)
 * (v1, OLD, 2024-10-31 TO 2024-12-12) [v1-leaderboard](old/OLD_v1_leaderboard_chatgpt-4o-latest.md)

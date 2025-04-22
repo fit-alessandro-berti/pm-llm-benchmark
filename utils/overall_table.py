@@ -49,8 +49,16 @@ def manage_file_name(file_name, rec_depth=0):
         file_name = file_name[10:]
         return manage_file_name(file_name, rec_depth+1)
 
+    if file_name.startswith("deepseekdeep"):
+        file_name = file_name[8:]
+        return manage_file_name(file_name, rec_depth+1)
+
     if file_name.lower().startswith("meta-"):
         file_name = file_name[5:]
+        return manage_file_name(file_name, rec_depth+1)
+
+    if file_name.lower().endswith("free"):
+        file_name = file_name.split("free")[0]
         return manage_file_name(file_name, rec_depth+1)
 
     if "nemotron" in file_name.lower():

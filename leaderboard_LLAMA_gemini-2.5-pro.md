@@ -14,10 +14,11 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | llama-4-maverick                 | **27.2** | :white_check_mark: | :x:                | 4.3                  | 5.3                  | 2.9                  | 3.6                  | **4.9**              | 3.6                  | :mage_woman: **3.7** | 2.7                  |
 | Llama-3.2-90B-Vision-Instruct    | **23.5** | :white_check_mark: | :x:                | 3.9                  | 4.2                  | 2.5                  | 3.5                  | 4.2                  | 3.0                  | 2.5                  | 2.0                  |
 | llama-4-scout                    | **22.6** | :white_check_mark: | :x:                | 3.0                  | 3.9                  | 2.8                  | 3.6                  | 4.3                  | 3.3                  | 3.2                  | 1.6                  |
-| Llama-3.1-8B-Instruct            | **16.1** | :white_check_mark: | :x:                | 2.4                  | 2.8                  | 1.6                  | 2.3                  | 4.3                  | 2.8                  | 0.0                  | 0.0                  |
-| Llama-3.2-11B-Vision-Instruct    | **14.8** | :white_check_mark: | :x:                | 2.8                  | 3.0                  | 1.9                  | 2.0                  | 3.0                  | 2.0                  | 2.1                  | 0.0                  |
-| Llama-3.2-3B-Instruct            | **14.1** | :white_check_mark: | :x:                | 2.4                  | 2.7                  | 1.3                  | 2.1                  | 3.4                  | 2.1                  | 0.0                  | 0.0                  |
-| Llama-3.2-1B-Instruct            | **8.9**  | :white_check_mark: | :x:                | 1.3                  | 1.7                  | 0.8                  | 1.1                  | 2.4                  | 1.6                  | 0.0                  | 0.0                  |
+| deepseek-r1-distill-llama-8b     | **20.6** | :white_check_mark: | :white_check_mark: | 2.6                  | 4.1                  | 1.9                  | 2.5                  | 4.1                  | 4.0                  | 0.0                  | 1.5                  |
+| Llama-3.1-8B-Instruct            | **18.3** | :white_check_mark: | :x:                | 2.4                  | 2.8                  | 1.6                  | 2.3                  | 4.3                  | 2.8                  | 0.0                  | 2.1                  |
+| Llama-3.2-11B-Vision-Instruct    | **16.8** | :white_check_mark: | :x:                | 2.8                  | 3.0                  | 1.9                  | 2.0                  | 3.0                  | 2.0                  | 2.1                  | 2.0                  |
+| Llama-3.2-3B-Instruct            | **15.4** | :white_check_mark: | :x:                | 2.4                  | 2.7                  | 1.3                  | 2.1                  | 3.4                  | 2.1                  | 0.0                  | 1.4                  |
+| Llama-3.2-1B-Instruct            | **10.3** | :white_check_mark: | :x:                | 1.3                  | 1.7                  | 0.8                  | 1.1                  | 2.4                  | 1.6                  | 0.0                  | 1.4                  |
 
 ### nvidiallama-3.1-nemotron-ultra-253b-v1-thinkenab   => 37.0 points
 
@@ -501,7 +502,65 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### meta-llamaMeta-Llama-3.1-8B-Instruct   => 16.1 points
+### deepseekdeepseek-r1-distill-llama-8b   => 20.6 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |     5.4 |
+| cat01_02_activity_context          |     4.2 |
+| cat01_03_high_level_events         |     3.1 |
+| cat01_04_sensor_recordings         |     2   |
+| cat01_05_merge_two_logs            |     4.2 |
+| cat01_06_system_logs               |     2   |
+| cat01_07_interv_to_pseudo_bpmn     |     3.7 |
+| cat01_08_tables_to_log             |     1.4 |
+| cat02_01_conformance_textual       |     4.2 |
+| cat02_02_conf_desiderata           |     3.1 |
+| cat02_03_anomaly_event_log         |     3.1 |
+| cat02_04_powl_anomaly_detection    |     4.8 |
+| cat02_05_two_powls_anomalies       |     3.1 |
+| cat02_06_root_cause_1              |     5.4 |
+| cat02_07_root_cause_2              |     6.8 |
+| cat02_08_underfitting_process_tree |     3.1 |
+| cat02_09_fix_process_tree          |     7.4 |
+| cat03_01_process_tree_generation   |     1   |
+| cat03_02_powl_generation           |     7.7 |
+| cat03_03_log_skeleton_generation   |     2   |
+| cat03_04_declare_generation        |     1   |
+| cat03_05_temp_profile_generation   |     2   |
+| cat03_06_petri_net_generation      |     1   |
+| cat03_07_process_tree_discovery    |     2   |
+| cat03_08_powl_discovery            |     2   |
+| cat04_01_pseudo_bpmn_description   |     3.1 |
+| cat04_02_pseudo_bpmn_open_question |     6   |
+| cat04_03_declare_open_question     |     2   |
+| cat04_04_declare_description       |     2   |
+| cat04_05_sql_filt_num_events       |    10   |
+| cat04_06_sql_filt_three_df         |     1   |
+| cat04_07_sql_filt_top_k_vars       |     1   |
+| cat05_01_hyp_generation_log        |     3.1 |
+| cat05_02_hyp_gen_powl              |     3.1 |
+| cat05_03_hyp_gen_declare           |     4.2 |
+| cat05_04_hyp_gen_temp_profile      |     5.4 |
+| cat05_05_question_gen_nlp          |     7.7 |
+| cat05_06_question_pseudo_bpmn      |     9.1 |
+| cat05_07_question_interview        |     8.3 |
+| cat06_01_bias_text                 |     6.6 |
+| cat06_02_bias_event_log            |     7.1 |
+| cat06_03_bias_powl                 |     7.4 |
+| cat06_04_bias_two_logs             |     5.4 |
+| cat06_05_bias_two_logs_2           |     7.1 |
+| cat06_06_bias_mitigation_declare   |     4.2 |
+| cat06_07_fair_unfair_powl          |     2   |
+| cat08_01_queue_mining              |     1.4 |
+| cat08_02_instance_spanning         |     4.2 |
+| cat08_03_transport_opt             |     2.5 |
+| cat08_04_resource_assign           |     3.1 |
+| cat08_05_task_schedul              |     3.7 |
+
+
+
+### meta-llamaMeta-Llama-3.1-8B-Instruct   => 18.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -551,10 +610,15 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |    4    |
 | cat06_06_bias_mitigation_declare   |    2.5  |
 | cat06_07_fair_unfair_powl          |    2.5  |
+| cat08_01_queue_mining              |    4    |
+| cat08_02_instance_spanning         |    6    |
+| cat08_03_transport_opt             |    4    |
+| cat08_04_resource_assign           |    4    |
+| cat08_05_task_schedul              |    3.5  |
 
 
 
-### meta-llamaLlama-3.2-11B-Vision-Instruct   => 14.8 points
+### meta-llamaLlama-3.2-11B-Vision-Instruct   => 16.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -610,10 +674,15 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat07_04_causal_net                |    5    |
 | cat07_05_proclets                  |    3    |
 | cat07_06_perf_spectrum             |    4    |
+| cat08_01_queue_mining              |    5    |
+| cat08_02_instance_spanning         |    4    |
+| cat08_03_transport_opt             |    4    |
+| cat08_04_resource_assign           |    4.5  |
+| cat08_05_task_schedul              |    3    |
 
 
 
-### meta-llamaLlama-3.2-3B-Instruct   => 14.1 points
+### meta-llamaLlama-3.2-3B-Instruct   => 15.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -663,10 +732,15 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |    4    |
 | cat06_06_bias_mitigation_declare   |    2.5  |
 | cat06_07_fair_unfair_powl          |    1.5  |
+| cat08_01_queue_mining              |    1    |
+| cat08_02_instance_spanning         |    4    |
+| cat08_03_transport_opt             |    3    |
+| cat08_04_resource_assign           |    3.5  |
+| cat08_05_task_schedul              |    2.5  |
 
 
 
-### meta-llamaLlama-3.2-1B-Instruct   => 8.9 points
+### meta-llamaLlama-3.2-1B-Instruct   => 10.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -716,4 +790,9 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |     3.5 |
 | cat06_06_bias_mitigation_declare   |     1   |
 | cat06_07_fair_unfair_powl          |     1   |
+| cat08_01_queue_mining              |     3   |
+| cat08_02_instance_spanning         |     1.5 |
+| cat08_03_transport_opt             |     3.5 |
+| cat08_04_resource_assign           |     3.5 |
+| cat08_05_task_schedul              |     2.5 |
 
