@@ -18,8 +18,8 @@ def do_renaming(base_path, original_name, novel_name):
 
 
 if __name__ == "__main__":
-    original_name = "gemini-2.5-flash-preview-04-17_"
-    novel_name = "gemini-2.5-flash-04-17-thinkhigh_"
+    original_name = "DeepSeek-R1-Zero_"
+    novel_name = "deepseekdeepseek-r1-zerofree_"
 
     if not original_name.endswith("_"):
         raise Exception("original_name must terminate with _")

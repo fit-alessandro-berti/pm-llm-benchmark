@@ -47,7 +47,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | qwen2.5-7b-instruct              | **21.1** | :white_check_mark: | :x:                | 3.1                  | 3.5                  | 2.1                  | 3.2                  | 3.6                  | 3.0                  | 0.0                  | 2.6                  |
 | qwen2.5-omni-7b                  | **21.1** | :white_check_mark: | :x:                | 3.2                  | 3.5                  | 1.9                  | 3.0                  | 3.8                  | 3.1                  | 2.2                  | 2.4                  |
 | granite3.28b-instruct-q4_K_M     | **20.7** | :white_check_mark: | :x:                | 2.7                  | 3.0                  | 1.7                  | 3.0                  | 4.0                  | 3.0                  | 0.0                  | 3.2                  |
-| qwen2.5-7b-instruct-1m           | **17.0** | :white_check_mark: | :x:                | 3.0                  | 3.0                  | 1.9                  | 2.5                  | 3.5                  | 3.0                  | 0.0                  | 0.0                  |
+| qwen2.5-7b-instruct-1m           | **18.6** | :white_check_mark: | :x:                | 3.0                  | 3.0                  | 1.9                  | 2.5                  | 3.5                  | 3.0                  | 0.0                  | 1.6                  |
 | gemma34b-it-q8_0                 | **16.7** | :white_check_mark: | :x:                | 2.2                  | 3.3                  | 1.3                  | 2.8                  | 4.1                  | 3.1                  | 2.0                  | 0.0                  |
 | command-r7b7b-12-2024-q4_K_M     | **16.6** | :white_check_mark: | :x:                | 2.5                  | 3.0                  | 1.9                  | 2.5                  | 3.4                  | 3.3                  | 0.0                  | 0.0                  |
 | Llama-3.1-8B-Instruct            | **16.1** | :white_check_mark: | :x:                | 2.4                  | 2.8                  | 1.6                  | 2.3                  | 4.3                  | 2.8                  | 0.0                  | 0.0                  |
@@ -2473,7 +2473,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### qwen2.5-7b-instruct-1m   => 17.0 points
+### qwen2.5-7b-instruct-1m   => 18.6 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -2523,6 +2523,9 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |    3.5  |
 | cat06_06_bias_mitigation_declare   |    3    |
 | cat06_07_fair_unfair_powl          |    3    |
+| cat08_01_queue_mining              |    6    |
+| cat08_02_instance_spanning         |    5    |
+| cat08_03_transport_opt             |    5    |
 
 
 
