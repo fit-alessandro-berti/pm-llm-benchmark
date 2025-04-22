@@ -9,7 +9,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | qwen-qwq-32b-nostepbystep      | **36.9** | :white_check_mark: | :white_check_mark: | :mage_woman: **5.7** | 6.4                  | :mage_woman: **6.0** | **4.5**              | **4.9**              | :mage_woman: **5.7** | 0.0                  | **3.7**              |
 | qwen-qwq-32b-stepbystep        | **35.8** | :white_check_mark: | :white_check_mark: | **5.6**              | **6.7**              | 4.3                  | :mage_woman: **4.6** | :mage_woman: **5.1** | **5.6**              | 0.0                  | :mage_woman: **3.9** |
 | DeepSeek-R1-Distill-Qwen-32B   | **30.7** | :white_check_mark: | :white_check_mark: | 5.0                  | :mage_woman: **6.9** | 3.5                  | 3.6                  | 4.5                  | 4.8                  | 0.0                  | 2.5                  |
-| qwen-plus-2025-01-25           | **26.3** | :x:                | :x:                | 4.3                  | 5.7                  | 2.8                  | 3.7                  | **5.0**              | 4.9                  | 2.9                  | 0.0                  |
+| qwen-plus-2025-01-25           | **29.8** | :x:                | :x:                | 4.3                  | 5.7                  | 2.8                  | 3.7                  | **5.0**              | 4.9                  | 2.9                  | 3.5                  |
 | qwen-max-2025-01-25            | **25.9** | :x:                | :x:                | 4.6                  | 5.2                  | 3.0                  | 3.6                  | 4.7                  | 4.7                  | :mage_woman: **3.7** | 0.0                  |
 | qwen2.5-72b-instruct           | **25.4** | :white_check_mark: | :x:                | 4.5                  | 5.7                  | 2.9                  | 4.1                  | 3.7                  | 4.7                  | 0.0                  | 0.0                  |
 | Qwen2.5-Coder-32B-Instruct     | **23.2** | :white_check_mark: | :x:                | 3.8                  | 4.5                  | 3.1                  | 3.7                  | 4.1                  | 4.0                  | 0.0                  | 0.0                  |
@@ -198,7 +198,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### qwen-plus-2025-01-25   => 26.3 points
+### qwen-plus-2025-01-25   => 29.8 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -254,6 +254,11 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat07_04_causal_net                |    4.5  |
 | cat07_05_proclets                  |    3    |
 | cat07_06_perf_spectrum             |    4.5  |
+| cat08_01_queue_mining              |    7.25 |
+| cat08_02_instance_spanning         |    7.75 |
+| cat08_03_transport_opt             |    5    |
+| cat08_04_resource_assign           |    7.5  |
+| cat08_05_task_schedul              |    7.6  |
 
 
 
