@@ -63,7 +63,7 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
 
 
 if __name__ == "__main__":
-    if False:
+    if True:
         e_m_name = common.clean_model_name(common.EVALUATING_MODEL_NAME)
         common.insert_api_keys()
 
@@ -87,6 +87,7 @@ if __name__ == "__main__":
                             common.Shared.ANTHROPIC_THINKING_TOKENS = ref["thinking_tokens"] if "thinking_tokens" in ref else None
                             common.Shared.PAYLOAD_REASONING_EFFORT = ref["reasoning_effort"] if "reasoning_effort" in ref else None
                             common.Shared.CUSTOM_TEMPERATURE = ref["temperature"] if "temperature" in ref else None
+                            common.Shared.MAX_REQUESTED_TOKENS = ref["max_tokens"] if "max_tokens" in ref else None
 
                             this_provider = ref["provider"]
                         else:
@@ -116,6 +117,7 @@ if __name__ == "__main__":
                     common.Shared.ANTHROPIC_THINKING_TOKENS = None
                     common.Shared.PAYLOAD_REASONING_EFFORT = None
                     common.Shared.CUSTOM_TEMPERATURE = None
+                    common.Shared.MAX_REQUESTED_TOKENS = 16384
 
                     found = True
                     break
