@@ -79,9 +79,6 @@ def perform_evaluation(answering_model_name=None):
                     answer = open(answer_path, "r", encoding="utf-8").read()
 
                 if answer is not None and answer:
-                    missing = True
-                    something_ever_changed = True
-
                     try:
                         if question_path.endswith(".txt"):
                             #answer = answer.split("</think>")[-1].strip()
@@ -91,11 +88,17 @@ def perform_evaluation(answering_model_name=None):
                             inquiry, base64_image = forge_eval_prompt.forge(question_path, answer, answering_model_name=answering_model_name)
 
                             query_text_simple(None, evaluation_path, callback_write, question=inquiry)
+
+                            missing = True
+                            something_ever_changed = True
                         elif is_visual_model(EVALUATING_MODEL_NAME):
                             inquiry, base64_image = forge_eval_prompt.forge(question_path, answer, answering_model_name=answering_model_name)
 
                             query_image_simple(None, evaluation_path, callback_write, base64_image=base64_image,
                                                text=inquiry)
+
+                            missing = True
+                            something_ever_changed = True
                     except:
                         traceback.print_exc()
 
