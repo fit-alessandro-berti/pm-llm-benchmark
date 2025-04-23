@@ -712,8 +712,11 @@ def query_text_simple(question_path, target_file, callback, question=None):
     if question is None:
         question = open(question_path, "r", encoding="utf-8").read()
 
-    if "api.openai" in Shared.API_URL and False:
-        response_message = query_text_simple_openai_new(question, Shared.API_URL, target_file)
+    if "api.openai" in Shared.API_URL:
+        try:
+            response_message = query_text_simple_openai_new(question, Shared.API_URL, target_file)
+        except:
+            response_message = query_text_simple_generic(question, Shared.API_URL, target_file)
     elif "googleapis" in Shared.API_URL:
         response_message = query_text_simple_google(question, Shared.API_URL, target_file)
     elif "anthropic" in Shared.API_URL:
@@ -931,8 +934,11 @@ def query_image_simple(question_path, target_file, callback, base64_image=None, 
     if base64_image is None:
         base64_image = encode_image(question_path)
 
-    if "api.openai" in Shared.API_URL and False:
-        response_message = query_image_simple_openai_new(base64_image, Shared.API_URL, target_file, text)
+    if "api.openai" in Shared.API_URL:
+        try:
+            response_message = query_image_simple_openai_new(base64_image, Shared.API_URL, target_file, text)
+        except:
+            response_message = query_image_simple_generic(base64_image, Shared.API_URL, target_file, text)
     elif "googleapis" in Shared.API_URL:
         response_message = query_image_simple_google(base64_image, Shared.API_URL, target_file, text)
     elif "anthropic" in Shared.API_URL:
@@ -982,7 +988,7 @@ def check_all_models():
             Shared.API_URL = info["api_url"]
             Shared.API_KEY = info["api_key"]
             models = get_models()
-            models = {x["id"] for x in models["data"]}
+            models = {x["id"].split(":latest")[0] for x in models["data"]}
             models_specified = set(info["models"])
 
             for x, y in MODELS_DICT["manual"]["models"].items():
