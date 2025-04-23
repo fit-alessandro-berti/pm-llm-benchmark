@@ -119,7 +119,8 @@ MODELS_DICT = {
             "exaone-deep:7.8b-fp16", "exaone-deep:2.4b-fp16",
             "gemma3:27b-it-q8_0", "gemma3:12b-it-q8_0", "gemma3:4b-it-q8_0",
             "gemma3:1b-it-q8_0", "granite3.2:8b-instruct-q4_K_M",
-            "qwen2.5:1.5b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0"
+            "qwen2.5:1.5b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0",
+            "granite3.3"
         }
     },
     "qwen": {
