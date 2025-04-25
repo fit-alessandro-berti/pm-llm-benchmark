@@ -199,6 +199,14 @@ MODELS_DICT = {
                 "provider": "openai",
                 "base_model": "chatgpt-4o-latest"
             },
+            "deepseek/deepseek-r1-distill-qwen-7b": {
+                "provider": "ollama_local",
+                "base_model": "deepseek-r1:7b"
+            },
+            "Qwen/QwQ-32B-Preview": {
+                "provider": "openrouter",
+                "base_model": "qwen/qwq-32b-preview"
+            },
             "claude-3-7-sonnet-thinkhigh-20250219": {
                 "provider": "claude",
                 "base_model": "claude-3-7-sonnet-20250219",
@@ -252,7 +260,7 @@ MODELS_DICT = {
 
 
 def is_excluded_from_table(model_name):
-    patterns = ["dynamic-quant", "qwq-32b-preview", "distill-qwen-7b"]
+    patterns = ["dynamic-quant"]
     for p in patterns:
         if p.lower() in model_name.lower():
             return True
