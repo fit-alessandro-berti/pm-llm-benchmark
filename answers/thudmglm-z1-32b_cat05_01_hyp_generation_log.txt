@@ -1,0 +1,165 @@
+### Identified Anomalies & Hypotheses
+
+**1. Skipping Mandatory Steps**  
+- **Anomalies**:  
+  - Cases like #1004 (`Receive Payment` before `Issue Invoice`) and #1003 (`Ship Goods` before `Validate Stock`).  
+  - Priority orders (e.g., #1002) missing `Perform Credit Check` until late in the workflow.  
+- **Hypotheses**:  
+  - **Process Gaps**: No automated enforcement of step sequences.  
+  - **Employee Negligence**: Staff bypassing mandatory steps for expediency.  
+  - **System Flaws**: Missing alerts for out-of-order activities.  
+
+**SQL Query**: Check for missing mandatory activities (`Perform Credit Check`, `Validate Stock`, etc.):  
+```sql  
+SELECT case_id  
+FROM order_event_log  
+GROUP BY case_id  
+HAVING  
+    MAX(activity = 'Perform Credit Check')::INT = 0  
+    OR MAX(activity = 'Validate Stock')::INT = 0  
+    OR MAX(activity = 'Receive Payment')::INT = 0  
+    -- Add other required steps here  
+;  
+```  
+
+**2. Out-of-Order Events**  
+- **Anomalies**:  
+  - Case #1002 confirms shipment before performing credit checks (`Confirm Shipment` at event #9  `Perform Credit Check` at event #11).  
+  - Payments received before invoices are issued (Case #1004).  
+- **Hypotheses**:  
+  - **Manual Overrides**: Staff skipping steps due to urgency.  
+  - **Integration Issues**: Systems not enforcing dependencies (e.g., `Ship Goods` cannot occur before `Validate Stock`).  
+
+**SQL Query**: Detect `Ship Goods` occurring before `Validate Stock`:  
+```sql  
+SELECT DISTINCT l1.case_id  
+FROM order_event_log l1  
+WHERE l1.activity = 'Ship Goods'  
+AND EXISTS (  
+    SELECT 1  
+    FROM order_event_log l2  
+    WHERE l2.case_id = l1.case_id  
+    AND l2.activity = 'Validate Stock'  
+    AND l2.event_id > l1.event_id  -- Validate Stock occurs AFTER Ship Goods  
+);  
+```  
+
+**3. Payment Processes Violations**  
+- **Anomalies**:  
+  - Case #1004 receives payment (#22) before invoicing (#23).  
+  - `Receive Payment` occurring late or early relative to the invoice (e.g., payment received *after* shipment).  
+- **Hypotheses**:  
+  - **Accounting Errors**: Misconfigured invoice/payment sequence in financial systems.  
+
+**SQL Query**: Find cases where payment precedes invoice:  
+```sql  
+SELECT l1.case_id  
+FROM order_event_log l1  
+WHERE l1.activity = 'Receive Payment'  
+AND EXISTS (  
+    SELECT 1  
+    FROM order_event_log l2  
+    WHERE l2.case_id = l1.case_id  
+    AND l2.activity = 'Issue Invoice'  
+    AND l2.event_id > l1.event_id  -- Invoice issued AFTER payment  
+);  
+```  
+
+**4. Invalid Resource Assignments**  
+- **Anomalies**:  
+  - No explicit issues in sample data, but risks exist (e.g., `WarehouseClerk` processing `Perform Credit Check`).  
+- **Hypotheses**:  
+  - **Access Control Lapses**: Incorrect role assignments in the system.  
+
+**SQL Query**: Flag non-Finance staff performing financial tasks:  
+```sql  
+SELECT l.case_id, l.activity, r.resource_id, r.role  
+FROM order_event_log l  
+JOIN resources r ON l.resource = r.resource_id  
+WHERE ((l.activity LIKE '%Credit Check%' OR l.activity = 'Issue Invoice')  
+AND r.department != 'Finance')  
+UNION ALL  
+SELECT l.case_id, l.activity, r.resource_id, r.role  
+FROM order_event_log l  
+JOIN resources r ON l.resource = r.resource_id  
+WHERE (l.activity IN ('Register Order') AND r.department != 'Sales');  
+```  
+
+**5. Data Integrity Issues in Additional Info**  
+- **Anomalies**:  
+  - Low credit scores (e.g., Case #1002 has `credit_score=650` in a priority order).  
+- **Hypotheses**:  
+  - **Automated System Bugs**: Incorrect credit scoring logic.  
+
+**SQL Query**: Extract and validate `credit_score` values:  
+```sql  
+SELECT l.case_id, l.activity,  
+       SPLIT_PART(REGEXP_MATCH(l.additional_info, 'credit_score=(\d+)', 1), '=', 2)::INT AS credit_score  
+FROM order_event_log l  
+WHERE activity = 'Perform Credit Check'  
+AND credit_score::INT < 600;  
+```  
+
+---
+
+### Comprehensive Investigation Strategy  
+1. **Audit Workflow Sequencing**:  
+   ```sql  
+   -- Check if all activities follow the prescribed order  
+   WITH workflow AS (  
+       SELECT case_id,  
+              ARRAY_AGG(activity ORDER BY event_id) AS steps  
+       FROM order_event_log  
+       GROUP BY case_id  
+   )  
+   SELECT case_id, steps  
+   FROM workflow  
+   WHERE steps[1] != 'Register Order'  
+     OR steps[array_position(steps, 'Ship Goods')] < steps[array_position(steps, 'Validate Stock')]  
+     -- Add other constraints here  
+   ;  
+   ```  
+
+2. **Cross-Reference Order Values**:  
+   ```sql  
+   -- Find high-value orders with skipped steps  
+   SELECT o.case_id, o.order_value, l.steps  
+   FROM orders o  
+   LEFT JOIN (  
+       SELECT case_id, ARRAY_AGG(activity ORDER BY event_id) AS steps  
+       FROM order_event_log  
+       GROUP BY case_id  
+   ) l ON o.case_id = l.case_id  
+   WHERE o.order_value > 2000  
+     AND (  
+         'Perform Credit Check' NOT IN (SELECT unnest(steps))  
+         OR 'Validate Stock' NOT IN (SELECT unnest(steps))  
+     );  
+   ```  
+
+3. **Analyze Resource Productivity**:  
+   ```sql  
+   -- Detect high volume of manual overrides by a specific resource  
+   SELECT resource,  
+          COUNT(CASE WHEN activity IN ('Ship Goods', 'Confirm Shipment') THEN 1 END) AS override_attempts  
+   FROM order_event_log  
+   GROUP BY resource  
+   ORDER BY override_attempts DESC  
+   LIMIT 5;  
+   ```  
+
+4. **Track Payment Timeliness**:  
+   ```sql  
+   -- Flag payments received more than 7 days after order registration  
+   SELECT l1.case_id,  
+          l1.timestamp AS payment_date,  
+          l2.timestamp AS order_date,  
+          (l1.timestamp - l2.timestamp) AS delay_days  
+   FROM order_event_log l1  
+   JOIN order_event_log l2 ON l1.case_id = l2.case_id  
+   WHERE l1.activity = 'Receive Payment'  
+     AND l2.activity = 'Register Order'  
+     AND EXTRACT(DAY FROM (l1.timestamp - l2.timestamp)) > 7;  
+   ```  
+
+By systematically applying these queries, organizations can identify systemic flaws, training gaps, and procedural non-compliance, enabling targeted process improvements.
