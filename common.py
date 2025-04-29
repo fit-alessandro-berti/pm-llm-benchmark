@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "thudm/glm-z1-9b:free" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "Qwen/Qwen3-235B-A22B" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -106,7 +106,7 @@ MODELS_DICT = {
             "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct",
             "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
-            "Qwen/Qwen3-30B-A3B"
+            "Qwen/Qwen3-30B-A3B", "Qwen/Qwen3-32B", "Qwen/Qwen3-14B", "Qwen/Qwen3-235B-A22B"
         }
     },
     "ollama_local": {
@@ -121,7 +121,7 @@ MODELS_DICT = {
             "gemma3:27b-it-q8_0", "gemma3:12b-it-q8_0", "gemma3:4b-it-q8_0",
             "gemma3:1b-it-q8_0", "granite3.2:8b-instruct-q4_K_M",
             "qwen2.5:1.5b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0",
-            "granite3.3"
+            "granite3.3", "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b"
         }
     },
     "qwen": {
@@ -383,8 +383,19 @@ def get_llm_specific_settings() -> Dict[str, Any]:
     if "deepinfra" in Shared.API_URL:
         options["max_tokens"] = Shared.MAX_REQUESTED_TOKENS
 
+    if "qwen3" in model_name.lower():
+        options["temperature"] = 0.6
+        options["top_p"] = 0.95
+        options["top_k"] = 0.20
+        options["min_p"] = 0
+
+
     if Shared.CUSTOM_TEMPERATURE is not None:
         options["temperature"] = Shared.CUSTOM_TEMPERATURE
+
+    if options:
+        #print(options)
+        pass
 
     return options
 
