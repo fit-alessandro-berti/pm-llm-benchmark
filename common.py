@@ -20,7 +20,7 @@ class Shared:
     API_KEY = None
     MODEL_NAME = None
     ALIAS_MODEL_NAME = None
-    MAX_REQUESTED_TOKENS = 16384
+    MAX_REQUESTED_TOKENS = 65536
     API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.openai.com/v1/"
     # API_URL = "http://137.226.117.70:11434/v1/"
@@ -105,7 +105,8 @@ MODELS_DICT = {
             "microsoft/phi-4", "microsoft/WizardLM-2-8x22B",
             "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct",
             "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
+            "Qwen/Qwen3-30B-A3B"
         }
     },
     "ollama_local": {
@@ -313,7 +314,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think", "cogito", "o3-2", "o4-mini-2", "glm-z1"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think", "cogito", "o3-2", "o4-mini-2", "glm-z1", "qwen3"]
 
     for p in patterns:
         if p in m_name:
@@ -324,7 +325,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini-beta", "cogito"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini-beta", "cogito", "qwen3"]:
         if p in model_name and not "deepseek-v3" in model_name:
             return True
     return False
