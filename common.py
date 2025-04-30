@@ -98,9 +98,7 @@ MODELS_DICT = {
         "api_url": "https://api.deepinfra.com/v1/openai/",
         "api_key": "sk-",
         "models": {
-            "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct",
-            "meta-llama/Llama-3.2-90B-Vision-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct",
-            "meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.2-3B-Instruct",
+            "meta-llama/Llama-3.3-70B-Instruct",
             "nvidia/Llama-3.1-Nemotron-70B-Instruct", "google/gemma-2-9b-it",
             "microsoft/phi-4", "microsoft/WizardLM-2-8x22B",
             "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct",
@@ -113,14 +111,12 @@ MODELS_DICT = {
         "api_url": "http://137.226.117.70:11434/v1/",
         "api_key": "sk-",
         "models": {
-            "qwen2.5:3b-instruct-q8_0",
             "falcon3:10b-instruct-q8_0", "falcon3:7b-instruct-q8_0",
-            "falcon3:3b-instruct-q8_0", "command-r7b:7b-12-2024-q4_K_M",
+            "falcon3:3b-instruct-q8_0",
             "olmo2:7b-1124-instruct-q8_0", "exaone-deep:32b-fp16",
             "exaone-deep:7.8b-fp16", "exaone-deep:2.4b-fp16",
             "gemma3:27b-it-q8_0", "gemma3:12b-it-q8_0", "gemma3:4b-it-q8_0",
-            "gemma3:1b-it-q8_0", "granite3.2:8b-instruct-q4_K_M",
-            "qwen2.5:1.5b-instruct-q6_K", "qwen2.5:3b-instruct-q8_0",
+            "gemma3:1b-it-q8_0",
             "granite3.3", "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b"
         }
     },
@@ -128,9 +124,9 @@ MODELS_DICT = {
         "api_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/",
         "api_key": "sk-",
         "models": {
-            "qwen-max-2025-01-25", "qwen-plus-2025-01-25", "qwen-turbo-2024-11-01",
-            "qwen2.5-72b-instruct", "qwen2.5-32b-instruct", "qwen2.5-14b-instruct",
-            "qwen2.5-7b-instruct", "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m", "qwen2.5-omni-7b"
+            "qwen-max-2025-01-25", "qwen-plus-2025-01-25",
+            "qwen2.5-72b-instruct", "qwen2.5-32b-instruct",
+            "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m", "qwen2.5-omni-7b"
         }
     },
     "nvidia": {
@@ -201,10 +197,10 @@ MODELS_DICT = {
                 "provider": "openai",
                 "base_model": "chatgpt-4o-latest"
             },
-            "deepseek/deepseek-r1-distill-qwen-7b": {
-                "provider": "ollama_local",
-                "base_model": "deepseek-r1:7b"
-            },
+            #"deepseek/deepseek-r1-distill-qwen-7b": {
+            #    "provider": "ollama_local",
+            #    "base_model": "deepseek-r1:7b"
+            #},
             "Qwen/QwQ-32B-Preview": {
                 "provider": "openrouter",
                 "base_model": "qwen/qwq-32b-preview"
