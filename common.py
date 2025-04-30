@@ -126,7 +126,7 @@ MODELS_DICT = {
         "models": {
             "qwen-max-2025-01-25", "qwen-plus-2025-01-25",
             "qwen2.5-72b-instruct", "qwen2.5-32b-instruct",
-            "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m", "qwen2.5-omni-7b"
+            "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m", "qwen2.5-omni-7b",
         }
     },
     "nvidia": {
@@ -592,6 +592,10 @@ def query_text_simple_generic(question, api_url, target_file):
 
             # Non-streaming call
             response = requests.post(complete_url, headers=headers, json=payload)
+            #print(response)
+            #print(response.status_code)
+            #print(response.text)
+
             response = response.json()
 
             message = response["choices"][0]["message"]
@@ -851,7 +855,12 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
                         # Possibly a keep-alive or incomplete chunk
                         traceback.print_exc()
     else:
-        response = requests.post(complete_url, headers=headers, json=payload).json()
+        response = requests.post(complete_url, headers=headers, json=payload)
+        #print(response)
+        #print(response.status_code)
+        #print(response.text)
+
+        response = response.json()
         dump_response(response, target_file)
 
         try:
