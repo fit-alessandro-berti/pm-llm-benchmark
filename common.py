@@ -99,7 +99,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "meta-llama/Llama-3.3-70B-Instruct",
-            "nvidia/Llama-3.1-Nemotron-70B-Instruct", "google/gemma-2-9b-it",
+            "nvidia/Llama-3.1-Nemotron-70B-Instruct",
             "microsoft/phi-4", "microsoft/WizardLM-2-8x22B",
             "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct",
             "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
