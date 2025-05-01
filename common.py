@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "Qwen-3-30B-A3B-nothink" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "Qwen-3-235B-A22B-nothink" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
