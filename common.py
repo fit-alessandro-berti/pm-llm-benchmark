@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "Qwen/Qwen3-235B-A22B" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "qwen-turbo-0428" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -124,9 +124,10 @@ MODELS_DICT = {
         "api_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/",
         "api_key": "sk-",
         "models": {
-            "qwen-max-2025-01-25", "qwen-plus-2025-01-25",
+            "qwen-max-2025-01-25",
             "qwen2.5-72b-instruct", "qwen2.5-32b-instruct",
             "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m", "qwen2.5-omni-7b",
+            "qwen-turbo-0428", "qwen-plus-0428",
         }
     },
     "nvidia": {
@@ -310,7 +311,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think", "cogito", "o3-2", "o4-mini-2", "glm-z1", "qwen3"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think", "cogito", "o3-2", "o4-mini-2", "glm-z1", "qwen3", "qwen-turbo", "qwen-plus"]
 
     for p in patterns:
         if p in m_name:
@@ -379,12 +380,16 @@ def get_llm_specific_settings() -> Dict[str, Any]:
     if "deepinfra" in Shared.API_URL:
         options["max_tokens"] = Shared.MAX_REQUESTED_TOKENS
 
-    if "qwen3" in model_name.lower():
+    if "qwen3" in model_name.lower() or "qwen-turbo" in model_name.lower() or "qwen-plus" in model_name.lower():
         options["temperature"] = 0.6
+
+    if "qwen3" in model_name.lower():
         options["top_p"] = 0.95
         options["top_k"] = 0.20
         options["min_p"] = 0
 
+    if "qwen-turbo" in model_name.lower() or "qwen-plus" in model_name.lower():
+        options["enable_thinking"] = True
 
     if Shared.CUSTOM_TEMPERATURE is not None:
         options["temperature"] = Shared.CUSTOM_TEMPERATURE
