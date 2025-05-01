@@ -119,7 +119,8 @@ MODELS_DICT = {
             "exaone-deep:7.8b-fp16", "exaone-deep:2.4b-fp16",
             "gemma3:27b-it-q8_0", "gemma3:12b-it-q8_0", "gemma3:4b-it-q8_0",
             "gemma3:1b-it-q8_0",
-            "granite3.3", "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b"
+            "granite3.3", "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b",
+            "phi4-mini-reasoning"
         }
     },
     "qwen": {
@@ -213,18 +214,6 @@ MODELS_DICT = {
                 "base_model": "Qwen/Qwen3-235B-A22B",
                 "added_to_prompt": " /no_think"
             },
-            """
-            "Qwen-3-32B-nothink": {
-                "provider": "deepinfra",
-                "base_model": "Qwen/Qwen3-32B",
-                "added_to_prompt": " /no_think"
-            },
-            "Qwen-3-14B-nothink": {
-                "provider": "deepinfra",
-                "base_model": "Qwen/Qwen3-14B",
-                "added_to_prompt": " /no_think"
-            },
-            """
             "Qwen/QwQ-32B-Preview": {
                 "provider": "openrouter",
                 "base_model": "qwen/qwq-32b-preview"
@@ -334,7 +323,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think", "cogito", "o3-2", "o4-mini-2", "glm-z1", "qwen3", "qwen-turbo", "qwen-plus"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think", "cogito", "o3-2", "o4-mini-2", "glm-z1", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning"]
 
     for p in patterns:
         if p in m_name:
@@ -345,7 +334,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini-beta", "cogito", "qwen3"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini-beta", "cogito", "qwen3", "phi4-mini-reasoning", "phi4-reasoning"]:
         if p in model_name and not "deepseek-v3" in model_name:
             return True
     return False
