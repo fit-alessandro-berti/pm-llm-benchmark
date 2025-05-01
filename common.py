@@ -214,6 +214,16 @@ MODELS_DICT = {
                 "base_model": "Qwen/Qwen3-235B-A22B",
                 "added_to_prompt": " /no_think"
             },
+            "Qwen-3-32B-nothink": {
+                "provider": "deepinfra",
+                "base_model": "Qwen/Qwen3-32B",
+                "added_to_prompt": " /no_think"
+            },
+            "Qwen-3-14B-nothink": {
+                "provider": "deepinfra",
+                "base_model": "Qwen/Qwen3-14B",
+                "added_to_prompt": " /no_think"
+            },
             "Qwen/QwQ-32B-Preview": {
                 "provider": "openrouter",
                 "base_model": "qwen/qwq-32b-preview"
