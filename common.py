@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "phi4-mini-reasoning" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "phi4-reasoning:plus" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -120,7 +120,7 @@ MODELS_DICT = {
             "gemma3:27b-it-q8_0", "gemma3:12b-it-q8_0", "gemma3:4b-it-q8_0",
             "gemma3:1b-it-q8_0",
             "granite3.3", "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b",
-            "phi4-mini-reasoning"
+            "phi4-mini-reasoning", "phi4-reasoning", "phi4-reasoning:plus"
         }
     },
     "qwen": {
