@@ -388,9 +388,6 @@ def get_llm_specific_settings() -> Dict[str, Any]:
         options["top_k"] = 0.20
         options["min_p"] = 0
 
-    if "qwen-turbo" in model_name.lower() or "qwen-plus" in model_name.lower():
-        options["enable_thinking"] = True
-
     if Shared.CUSTOM_TEMPERATURE is not None:
         options["temperature"] = Shared.CUSTOM_TEMPERATURE
 
