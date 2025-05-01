@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "qwen-turbo-0428" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "Qwen-3-30B-A3B-nothink" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -48,6 +48,8 @@ class Shared:
     ANTHROPIC_THINKING_TOKENS = None
     PAYLOAD_REASONING_EFFORT = "low"
     PAYLOAD_REASONING_EFFORT = None
+    ADDED_TO_PROMPT = " /no_think"
+    ADDED_TO_PROMPT = None
 
 
 MODELS_DICT = {
@@ -127,7 +129,6 @@ MODELS_DICT = {
             "qwen-max-2025-01-25",
             "qwen2.5-72b-instruct", "qwen2.5-32b-instruct",
             "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m", "qwen2.5-omni-7b",
-            "qwen-turbo-0428", "qwen-plus-0428",
         }
     },
     "nvidia": {
@@ -202,6 +203,16 @@ MODELS_DICT = {
             #    "provider": "ollama_local",
             #    "base_model": "deepseek-r1:7b"
             #},
+            "Qwen-3-30B-A3B-nothink": {
+                "provider": "deepinfra",
+                "base_model": "Qwen/Qwen3-30B-A3B",
+                "added_to_prompt": " /no_think"
+            },
+            "Qwen-3-235B-A22B-nothink": {
+                "provider": "deepinfra",
+                "base_model": "Qwen/Qwen3-235B-A22B",
+                "added_to_prompt": " /no_think"
+            },
             "Qwen/QwQ-32B-Preview": {
                 "provider": "openrouter",
                 "base_model": "qwen/qwq-32b-preview"
@@ -378,7 +389,8 @@ def get_llm_specific_settings() -> Dict[str, Any]:
                 options["temperature"] = 1.0
 
     if "deepinfra" in Shared.API_URL:
-        options["max_tokens"] = Shared.MAX_REQUESTED_TOKENS
+        max_tokens = Shared.MAX_REQUESTED_TOKENS if Shared.MAX_REQUESTED_TOKENS is not None else 65536
+        options["max_tokens"] = max_tokens
 
     if "qwen3" in model_name.lower() or "qwen-turbo" in model_name.lower() or "qwen-plus" in model_name.lower():
         options["temperature"] = 0.6
@@ -734,6 +746,9 @@ def query_text_simple_google(question, api_url, target_file):
 def query_text_simple(question_path, target_file, callback, question=None):
     if question is None:
         question = open(question_path, "r", encoding="utf-8").read()
+
+    if Shared.ADDED_TO_PROMPT is not None:
+        question = question + " " + Shared.ADDED_TO_PROMPT
 
     if "api.openai" in Shared.API_URL:
         try:
