@@ -64,7 +64,7 @@ def execute_script(evaluation_folder, model_name):
         numb = float(numbers) if numbers is not None else 1.0
 
         # pre-normalization step
-        numb = min(7.0, numb) + 0.5 * max(numb - 7.0, 0) + 2.0 * max(numb - 9.0, 0)
+        numb = min(7.0, numb) + 0.5 * max(min(numb, 9.0) - 7.0, 0) + 2.0 * max(numb - 9.0, 0)
 
         if force_custom_evaluation_lrm(model_name):
             numb0 = numb

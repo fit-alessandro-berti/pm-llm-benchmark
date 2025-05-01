@@ -1,0 +1,541 @@
+<think>
+Okay, let's see. The problem is about processing an event log in DuckDB using SQL queries. We need to find process variants based on activity sequences ordered by timestamp for each case_id. Then count how many times each variant occurs and take the top K ones. Finally, return all events from those cases that are part of these top K variants.
+
+First step: For each case_id, extract the ordered sequence of activities. So we need to group the records per case and sort them by timestamp. But wait, in SQL, grouping with an ORDER BY clause isn't allowed directly. Hmm. Oh right, maybe use a window function or something like ROW_NUMBER partitioned by case_id order by timestamp.
+
+Wait, but for process variants, each variant is the ordered sequence of activities. So perhaps we can generate all possible prefixes? Like, for each case, take the first k-1 elements and then build sequences step by step. But that's computationally heavy if there are long cases with many unique paths. Alternatively, maybe create a column that represents the activity path as a string or concatenate them in order.
+
+Alternatively, use STRING_AGG function to aggregate activities into a single string per case, ordered by timestamp. Then group by this aggregated string and count each occurrence. That would give us all possible variants, even if they are longer than K steps? Wait no, because once the path diverges, those paths become separate entries in the variant counts.
+
+So first step: Create a column that is the concatenated activity sequence for each case, ordered by timestamp. Then group by this and count.
+
+But how to generate these sequences properly as process variants. For example, if two cases have activities A followed by B versus C followed by D, those are different variants even after one step.
+
+So yes, using STRING_AGG with ORDER BY would create the sequence in order. So:
+
+SELECT case_id,
+       STRING_AGG(activity, ' -> ') AS variant
+FROM event_log
+GROUP BY case_id
+
+Then group again to count each occurrence of a unique variant string.
+
+But DuckDB's STRING_AGG might have different syntax. Let's confirm: In SQL modes where it's allowed, using GROUP BY with an expression in the SELECT would require ORDER BY inside the aggregate function? Wait, no. The standard way is that when you use an aggregated column derived from functions like SUM or COUNT, grouping by it allows for ordering (like AVG salary over department). So here, STRING_AGG(activity, ' -> ') per case_id orders them by default because of how ROW_NUMBER works if not specified. Wait, no. Wait, the ORDER BY in STRING_AGAG must be part of the function call.
+
+So to generate each variant as a string, ordered by timestamp (which is ascending since it's already stored that way), we can use:
+
+STRING_AGG(activity ORDER BY activity) maybe? But wait, the order should be based on timestamp. Oh right! So within each case_id group, the activities are sorted by timestamp. Wait no: The problem states that a process variant is determined by sorting events in that case by their timestamp. So for each case, we need to sort all events by timestamp and then take the sequence.
+
+But when using STRING_AGG with ORDER BY clause inside it? Let me check. For example, in standard SQL, STRING_AGG(array_to_string(column)) orders as per the order of rows unless specified otherwise. But here, since we're grouping by case_id, each group has one row (assuming no duplicates). Wait, but if there are multiple events with same timestamp for different activities? Then they would be ordered based on their appearance in the table.
+
+Wait, maybe we need to generate a path vector where each element is an activity name. So that even if two activities have the same name but occur at different times (or not), they're considered part of the variant sequence. But no, the problem says "ordered sequence of activities", so as long as they are ordered by timestamp within their case.
+
+Wait, in DuckDB, how to generate per-case activity paths? For each case_id, collect all unique sequences up to that point. Hmm. Wait, perhaps we can use a recursive CTE approach here, similar to mining process trees or prefixes.
+
+Alternatively, for the purpose of counting variants and then filtering cases based on whether they are part of top K frequent variants, maybe first generate all possible variant paths as strings (each being an ordered sequence), count their occurrences, select the top K by count. Then, filter the original event log to include only those case_ids that belong to one of these top K variants.
+
+So steps:
+
+1. Generate for each case_id a string representing its activity path in order (sorted by timestamp). Let's call this column 'path'.
+
+2. Group all cases by their 'path' and count how many times each occurs. This gives us the frequency per variant.
+
+3. From this aggregation, select the top K variants ordered by frequency descending. We need to know which paths are considered top K.
+
+4. Then, from the original event_log table, filter only those rows whose case_id is part of these top K 'paths'.
+
+But how do we link step 3 and 4? Because in DuckDB SQL queries can't dynamically assign variables like TOP K unless using window functions or common table expressions (CTEs).
+
+So perhaps structure the query as a CTE that first computes all paths, counts them, finds the top K variants. Then use those variant IDs to filter the original data.
+
+But how do we get unique case_ids from each of these top K variants? Because for example, if two different cases have the same path (same sequence), they are counted under one variant ID. So in step 3, when selecting top K variants, you can assign an alias like 'variant_id' to the count column.
+
+Wait, perhaps:
+
+WITH paths AS (
+    SELECT case_id,
+           STRING_AGG(activity ORDER BY timestamp ASC) AS path
+    FROM event_log
+    GROUP BY case_id
+
+    UNION ALL -- This is needed because if some cases have only one activity, they are already grouped. But maybe not necessary here.
+),
+
+variant_counts AS (
+    SELECT path, COUNT(*) AS cnt
+    FROM paths
+    GROUP BY path
+),
+
+top_variants AS (
+    SELECT path AS variant_path, cnt
+    FROM variant_counts
+    ORDER BY cnt DESC
+    LIMIT K -- Assuming DuckDB supports LIMIT for top K. Need to check.
+
+But the problem is that in SQL standard, you can't use LIMIT with a CTE like this unless it's inside a subquery or window functions. Also, DuckDB might have specific syntax for limits and aggregates over sorted results.
+
+Alternatively, using ROW_NUMBER():
+
+WITH paths AS (
+    SELECT case_id,
+           STRING_AGG(activity ORDER BY timestamp ASC) AS path
+    FROM event_log
+    GROUP BY case_id
+
+),
+variant_counts AS (
+    SELECT path, COUNT(*) as cnt
+    FROM paths
+    GROUP BY path
+),
+
+ranked_variants AS (
+    SELECT variant_path, cnt,
+    ROW_NUMBER() OVER (ORDER BY cnt DESC) as rn
+    FROM variant_counts
+)
+
+Then select the variants where rn <= K.
+
+So then, from event_log e LEFT JOIN ranked_variants r ON e.case_id = r.variant_path? Wait no. Because each case's path is a string that may correspond to multiple rows in top_variants if different cases have same path. So for example, variant_counts has all unique paths with their counts. Then ranked_variants assigns row numbers so that the first K variants are 1-based rank.
+
+Wait, but how do we get back the case_ids of these top K variants? Because each occurrence of a variant_path in event_log's case_id would be included only if it's part of one of those paths. But no: for example, suppose variant A occurs X times and is ranked first. Then any case whose path is 'A' (regardless of how long) will match this rank.
+
+Wait, but the problem requires that we return all events from cases which are part of these top K variants. So even if a case's path is one of the top K paths, regardless of where it occurs in the sequence. But no: for example, suppose variant A is "A -> B", and another variant C is "C". Both have high counts. Then any event from a case with activity 'C' (the first step) would belong to variant C and if it's top K.
+
+But how do we know which variants are in the top K? Because each unique path that exists for some cases, even those of length 1 or more steps, as long as they have high counts. So when generating paths via STRING_AGG, you include all possible activity sequences per case. Then counting them gives each variant's frequency.
+
+So to proceed:
+
+First CTE: generate the 'path' column for every case.
+
+Then compute counts per path (variant_counts).
+
+Assign row numbers in descending order of count (ranked_variants), take top K variants (rn <= K, but need to handle 1-based vs 0-based ranking. For example, if DuckDB uses ROW_NUMBER() as 1-based, then the first variant has rn=1, up to rn=K).
+
+Then, from original event_log e, select only those rows where case_id exists in any of these top K variants.
+
+But how do we link this? Because each row in paths is a unique path. So for example, if 'A -> B' and 'C' are two different variant paths (assuming they have the same count?), but that's unlikely unless there are cases with only C or A followed by B.
+
+Wait, no. Each case_id will generate exactly one path string via STRING_AGG. Then each such unique path is a separate entry in variant_counts. So for example, if some cases end at activity X and others proceed to Y after X, then the variants would be "X", "Y", etc., but also sequences that include both.
+
+Wait, no. Because when you do STRING_AGG ordered by timestamp, each case's path is a concatenation of all its activities in order. So if two cases have different paths even at one activity level (like first activity A vs C), they will generate separate entries in variant_counts.
+
+So the approach would be:
+
+1. For every case, compute its entire activity sequence as a string.
+
+2. Count how many times each such unique string occurs (variant frequency).
+
+3. From these counts, select top K variants by count.
+
+4. Then, from original event_log e, include only those rows where their case_id is part of any variant that was in the top K.
+
+But wait: that's not correct because a single case may generate multiple paths if there are different prefixes? No, no. Each case has exactly one process path (since it's ordered by timestamp). So each row in event_log belongs to exactly one case. Therefore, for each e.row (case_id), there's only one 'path' string.
+
+Therefore, the correct approach is:
+
+- For all rows in event_log, generate their corresponding 'path' strings via STRING_AGG.
+
+- Count the frequency of each path (variant).
+
+- Select the top K variants based on these counts.
+
+Then filter the original event log to include only those cases whose 'path' string is among these top K paths.
+
+But how do we know which case_ids are in the top K? Because for each row e, its case_id may correspond to a path that was one of the top K variant strings. But when you generate all possible paths via STRING_AGG, even if some longer sequences share parts with shorter ones (like "A -> B" and "C", but also "A -> C"), those are different variants.
+
+Wait, no. Each case's entire sequence is generated as a path string. So for example:
+
+Case 1: A at t=1, then B at t=2  path is "A -> B"
+
+Case 2: C at t=3  path is "C"
+
+So the variant counts would have both "A -> B" and "C", each with their own frequency.
+
+Then top K variants are those paths (strings) that occur most frequently across all cases.
+
+Therefore, to filter event_log rows e where case_id's corresponding 'path' string is in the set of top K paths.
+
+But how do we compute this within a single SQL query? Because DuckDB doesn't support dynamic variables like TOP K directly from CTEs unless using window functions and then filtering based on rn <= K.
+
+So here's an approach:
+
+1. Generate all possible path strings for each case (paths CTE).
+
+2. Count the variants in variant_counts.
+
+3. Assign row numbers to these variants ordered by count descending.
+
+4. Select only those rows with rn <= K, but this would give us a list of top K variant paths and their counts. But how do we get back all possible case_ids that correspond to any of these paths?
+
+Wait, perhaps the plan is:
+
+- First compute for each row in event_log (e), its path.
+
+Then aggregate over all rows: group by e.case_id's path string, count them as cnt.
+
+Select from this grouping the top K variants ordered by cnt descending.
+
+But then how do we get back to include only those case_ids whose path is among these?
+
+Alternatively, perhaps use a subquery where for each row in event_log, check if its 'path' exists in the set of top variant paths. But that requires knowing which paths are top K.
+
+So here's the full plan:
+
+Step 1: Create a CTE called all_paths with case_id and path string (ordered by timestamp).
+
+Step 2: Count variants into variant_counts.
+
+Step 3: Assign row numbers to each variant based on count descending, limiting to K rows. Let's call this ranked_variants.
+
+Then in the main query:
+
+FROM event_log e
+JOIN (
+    SELECT DISTINCT ON (case_id) case_id, path
+    FROM all_paths
+    JOIN (
+        -- Subquery that selects top variants by row_number.
+        WITH variant_counts AS (
+            SELECT path, COUNT(*) AS cnt
+            FROM all_paths
+            GROUP BY path
+        ),
+        ranked_variants AS (
+            SELECT path,
+            ROW_NUMBER() OVER (ORDER BY cnt DESC) AS rn
+            FROM variant_counts
+        )
+        SELECT DISTINCT ON (case_id) case_id, rv.path
+        FROM all_paths ap
+        JOIN ranked_variants rv ON ap.path = rv.path
+    ) top_on_ap ON e.case_id = top_on_ap.case_id
+
+) filtered_events
+
+So the inner subquery first gets all paths from all_paths. Then ranks them by count descending (rn). Then for each case_id in all_paths, selects only those rows where path is one of the top variants.
+
+Wait, but how to get DISTINCT ON (case_id)? Because if a case has multiple entries with different paths? No, because each case has exactly one path string. So no duplicates per case.
+
+So this approach would select for each case_id from all_paths the single row in ranked_variants where the path matches. But that's not correct unless every case's path is present in at least one of the top K variants. Which isn't necessarily true, because a very short variant might exist but have low count and thus not be in top K.
+
+Wait no. The steps are:
+
+- All possible paths (each case has exactly one) generated via STRING_AGG.
+
+- Count each occurrence as cnt.
+
+- Select rows from all_paths that match any path present in ranked_variants (which is the top K variants based on cnt).
+
+So for example, if a case's path "C" exists and was counted multiple times across different cases (maybe even some longer paths include C but those are separate), then only the ones where "C" is one of the top K will be included.
+
+But how do we ensure that? For instance, suppose variant_counts has variants A, B, C with counts 1000, 500, 300. Then ranked_variants includes all three sorted by cnt. So in step 3, when joining to select rows where path is one of these top K paths (say k=2), then any case whose path is "A", "B" would be included.
+
+But how do we get the list of those variant_paths from ranked_variants?
+
+So here's a revised approach:
+
+First generate all possible paths in CTE 'paths' as before.
+
+Then, compute counts per variant and assign row numbers to select top K variants (ranked_variants).
+
+Then for each case_id in paths, check if its path is present in the union of the top K variant_paths. But how?
+
+Alternatively, use a subquery where we generate all possible paths from event_log, then join them with their counts and ranks.
+
+Wait, perhaps:
+
+WITH RECURSIVE variants AS (
+    -- Generate sequences step by step (like tree mining)
+    SELECT case_id, activity as path
+    FROM event_log
+
+    UNION ALL
+    SELECT e.case_id,
+           e.activity || ' -> ' || v.path as new_path
+    FROM variants v
+    JOIN event_log e ON v.case_id = e.case_id AND e.timestamp > v.max_timestamp -- Not sure if this works. Hmm, no.
+
+Wait, recursion might not be the right approach here because we need to generate all prefixes of a case's activity sequence. For example, for each case, take its entire path as is (so level 1), then add the first two activities with an intermediate one in between (level 2), etc. But this could lead to exponential growth.
+
+Alternatively, using STRING_AGG on each row via CTE 'paths' gives us all possible paths per case. Then proceed as before.
+
+But back to DuckDB capabilities: How do I limit the top K rows?
+
+Assuming that we can use a subquery with ROW_NUMBER() OVER (ORDER BY cnt DESC) and then filter rn <= K.
+
+So here's the plan:
+
+1. Generate 'paths' CTE as follows:
+
+WITH paths AS (
+    SELECT case_id,
+           STRING_AGG(activity ORDER BY timestamp ASC) AS path
+    FROM event_log
+    GROUP BY case_id
+)
+
+2. Compute variant_counts:
+
+variant_counts AS (
+    SELECT path, COUNT(*) AS cnt
+    FROM paths
+    GROUP BY path
+),
+
+3. Assign row numbers to rank variants by count (assuming rn=1 is highest):
+
+ranked_variants AS (
+    SELECT path as variant_path, cnt,
+    ROW_NUMBER() OVER (ORDER BY cnt DESC) AS rn
+    FROM variant_counts
+)
+
+4. Now select from event_log the rows where case_id's path matches any of the top K variants.
+
+But how to get all paths that are in ranked_variants?
+
+The way to do this is:
+
+SELECT DISTINCT ON (case_id) e.*
+FROM (
+    SELECT e.*, v.variant_path, rv.rn
+    FROM event_log e
+    JOIN paths p ON e.case_id = p.case_id
+    JOIN variant_counts vc ON p.path = vc.path
+    JOIN ranked_variants rv ON vc.variant_path = rv.variant_path AND rv.rn <= K
+
+) t
+
+But this would select all rows from e where the path is one of the top K variants.
+
+Wait, but paths CTE already contains each case's full path. So for example:
+
+If a case has activities A -> B -> C, then in 'paths', its row will have "A -> B -> C". This same variant ("B", if there are other cases with only activity B) would be counted as separate.
+
+So to include all events from the top K variants (any path among them), regardless of their position in the case's sequence.
+
+Thus, for each event e in original event_log, check if its 'path' is present in the list of variant_paths that are in ranked_variants and have rn <= K.
+
+But how do we get this list?
+
+We can generate a subquery where:
+
+SELECT DISTINCT rv.variant_path
+FROM paths p
+JOIN (
+    SELECT vc.variant_path as top_variant
+    FROM variants counts = (VALUES (?)) -- Not sure if DuckDB allows VALUES with parameters.
+) AS tv ON p.path = tv.top_variant AND rv.rn <= K
+
+No, this approach isn't straightforward. Alternatively, use a subquery that selects all variant_paths from ranked_variants where rn <= K.
+
+But then for each e in event_log:
+
+SELECT COUNT(*) as cnt FROM paths WHERE path IN ( SELECT top_variant FROM ... )
+
+Wait, but the problem is how to get those top variants within DuckDB SQL syntax.
+
+Assuming we can use a subquery with ROW_NUMBER() and LIMIT K, here's an approach:
+
+First generate all variant counts into rows of variant_path and cnt. Then select the first K rows sorted by cnt descending (rn <= K).
+
+But in standard SQL, you can't directly do that because CTEs are evaluated once unless WITH <expression> which can create a temporary table.
+
+Alternatively, use DuckDB's specific syntax for top N records:
+
+For example:
+
+WITH all_paths AS (
+    SELECT case_id,
+           STRING_AGG(activity ORDER BY timestamp ASC) as path
+    FROM event_log
+    GROUP BY case_id
+),
+variant_counts AS (
+    SELECT path, COUNT(*) as cnt
+    FROM all_paths
+    GROUP BY path
+),
+ranked_variants AS (
+    SELECT variant_path, cnt, ROW_NUMBER() OVER (ORDER BY cnt DESC) as rn
+    FROM variant_counts
+)
+SELECT top.variant_path, e.*
+FROM ranked_variants rtop
+JOIN event_log e ON e.case_id = any(top.path) -- Wait no. Need to join on case_id and path.
+
+Wait, perhaps:
+
+We need a subquery that for each row in all_paths, checks if its path is present in the first K rows of ranked_variants.
+
+But how?
+
+Another approach: For each variant_path in top_variants (rn <= K), include their corresponding cases. So join on e.case_id = rtop.variant_path AND e.path = tpath where tpath is any row from all_paths that matches one of the paths in top_variants.
+
+Wait, no. Because case_id's path must be exactly equal to a variant_path that's in top_variants.
+
+So for example:
+
+The query would look like this:
+
+SELECT *
+FROM event_log e
+WHERE EXISTS (
+    SELECT 1 FROM ranked_variants rv
+    WHERE rv.variant_path = e.path AND rv.rn <= K
+);
+
+But wait, no. Because the case_id's path (e.path) must be one of the top variant_paths. So for each row in event_log e, check if its own path is equal to any of the paths in ranked_variants where rn <= K.
+
+Yes! That's correct. So:
+
+The query can use an EXISTS clause that checks whether e.case_id's path (e.path) exists in the set of top variant_paths with rn <= K.
+
+So putting it all together:
+
+WITH RECURSIVE -- Not sure if needed
+paths AS (
+    SELECT case_id,
+           STRING_AGG(activity ORDER BY timestamp ASC) as path
+    FROM event_log
+    GROUP BY case_id
+),
+variant_counts AS (
+    SELECT path, COUNT(*) AS cnt
+    FROM paths
+    GROUP BY path
+),
+ranked_variants AS (
+    SELECT variant_path, cnt,
+    ROW_NUMBER() OVER (ORDER BY cnt DESC) as rn
+    FROM variant_counts
+)
+SELECT e.*
+FROM event_log e
+WHERE EXISTS (
+    SELECT 1 FROM ranked_variants rv
+    WHERE rv.variant_path = e.path AND rv.rn <= K
+);
+
+But wait, this would include all events from cases where their path is in the top K variants. However, note that each case's path is unique per ROW (since there's only one row per case_id in paths). So for example, if a variant "A -> B" occurs multiple times across different cases, then e.path would be "A -> B", and as long as this path is among the top K variants, those events are included.
+
+This should work. But let's test with an example:
+
+Suppose there are three cases:
+
+Case 1: A  B
+
+Case 2: C
+
+Case 3: D  E
+
+Variant counts would be "A -> B" (count=1), "C" (1), "D -> E" (1). So all variants have the same count. Then K is say 2. The top two variants are ["A -> B", "C"], so events from case 1 and case 2 would be included.
+
+But if there's another variant F with higher count, then only those cases' paths that match any of the top K paths (based on counts) are returned.
+
+Now, what about performance? Generating all possible path strings via STRING_AGG could consume a lot of memory. But according to DuckDB's capabilities, this is acceptable as per their documentation.
+
+Another point: In some databases, when using GROUP BY with an aggregate function like STRING_AGG that orders by timestamp (which may be in descending order if the table isn't sorted), but here we are explicitly ORDERING the activities by activity and then by timestamp? Wait no. The problem states that within each case, events should be ordered by their timestamp. So to generate the path correctly as per chronological order.
+
+Thus, in the paths CTE, using STRING_AGG(activity ORDER BY timestamp ASC) is correct.
+
+Now, regarding the DuckDB syntax for ROW_NUMBER() OVER (ORDER BY cnt DESC). Yes, that's standard SQL and supported.
+
+Putting it all together:
+
+The final query should be a combination of these steps. So the answer would look like this in DuckDB SQL:
+
+WITH paths AS (
+    SELECT case_id,
+           STRING_AGG(activity ORDER BY timestamp ASC) AS path
+    FROM event_log
+    GROUP BY case_id
+),
+variant_counts AS (
+    SELECT path, COUNT(*) AS cnt
+    FROM paths
+    GROUP BY path
+),
+ranked_variants AS (
+    SELECT variant_path, ROW_NUMBER() OVER (ORDER BY cnt DESC) AS rn
+    FROM variant_counts
+)
+SELECT e.*
+FROM event_log e
+WHERE EXISTS (
+    SELECT 1
+    FROM ranked_variants rv
+    WHERE rv.variant_path = e.path AND rv.rn <= K
+);
+
+But wait, the paths CTE uses STRING_AGG which in DuckDB returns a single string per case. So for each row in 'paths', there's one path per case_id. Then variant_counts groups by this path and counts.
+
+Then ranked_variants assigns rn based on count descending. Finally, we select all events where their own e.path is among the paths that have rn <= K.
+
+Yes, that's correct. And DuckDB's EXISTS clause works here.
+
+But wait: What about cases where a case has only one activity? Then its path would be just that single activity. So if there are multiple such cases (e.g., three different activities C), each with count 1, then the top K variants might include "C", but since they all have same counts, DuckDB's ROW_NUMBER() over ORDER BY cnt DESC would assign rn=1 to them? Or how does it handle ties?
+
+In standard SQL, ROW_NUMBER() resets when there's a tie. So if two variant paths have the same count and are tied for first place (rn=1), but K is 2, then both would be included.
+
+But in DuckDB, I think it's similar: ROW_NUMBER() OVER ORDER BY cnt DESC will assign rn values incrementally even with ties. For example, if variants A, B, C all have the same count of 100, then each gets a row number from 1 to K (if there are three and K=3). So in this case, any variant that is among the top K would be selected.
+
+Therefore, the query should work as intended.
+
+But let's test another scenario: if some variants appear once but others multiple times. For example:
+
+Variant "X" occurs twice across different cases  count 2.
+
+Variant "Y -> Z" occurs three times  count 3.
+
+Then ranked_variants will have Y->Z with rn=1 and X with rn=2 (if K=2). So both would be included if they are in the top two. But since Y's count is higher, it's first, then X second. If K=2, include both.
+
+But what about variants that appear multiple times but have lower counts? They won't be included unless their path matches one of the paths with high enough rn.
+
+Therefore, this approach correctly filters to only those events whose case_id's activity sequence (path) is among the top K frequent process variants.
+</think>
+
+To solve this problem, we need to determine the most common process variants from an event log stored in DuckDB and return all corresponding events for these top variants. A **process variant** is defined as the ordered sequence of activities executed by a case, sorted by timestamp.
+
+### Approach
+1. **Generate Paths**: For each `case_id`, generate the complete activity path using STRING_AGG to concatenate activities in chronological order.
+2. **Count Variants**: Aggregate these paths to count how many times each variant occurs.
+3. **Rank Variants**: Use window functions (ROW_NUMBER) to rank variants by their frequency, selecting the top K variants.
+4. **Filter Events**: Return events from cases whose activity path matches one of the top K ranked variants.
+
+### Solution Code
+```sql
+WITH paths AS (
+    SELECT case_id,
+           STRING_AGG(activity ORDER BY timestamp ASC) AS path
+    FROM event_log
+    GROUP BY case_id
+),
+variant_counts AS (
+    SELECT path, COUNT(*) AS cnt
+    FROM paths
+    GROUP BY path
+),
+ranked_variants AS (
+    SELECT variant_path, ROW_NUMBER() OVER (ORDER BY cnt DESC) AS rn
+    FROM variant_counts
+)
+SELECT e.*
+FROM event_log e
+WHERE EXISTS (
+    SELECT 1
+    FROM ranked_variants rv
+    WHERE rv.variant_path = e.path AND rv.rn <= K
+);
+```
+
+### Explanation
+1. **paths CTE**: Aggregates activities for each `case_id` into a single string representing the ordered sequence of activities.
+2. **variant_counts CTE**: Counts how frequently each unique activity path (variant) appears in the event log.
+3. **ranked_variants CTE**: Ranks these variants by their frequency using ROW_NUMBER, with higher counts receiving lower row numbers.
+4. **Main Query**: Filters events to include only those from cases whose paths match one of the top K ranked variants.
+
+This approach ensures that we efficiently determine and utilize the most common process pathways while adhering to SQL best practices in DuckDB.
