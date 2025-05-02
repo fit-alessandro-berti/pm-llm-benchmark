@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "phi4-reasoning:plus" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "qwen-plus-2025-04-28" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -130,6 +130,7 @@ MODELS_DICT = {
             "qwen-max-2025-01-25",
             "qwen2.5-72b-instruct", "qwen2.5-32b-instruct",
             "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m", "qwen2.5-omni-7b",
+            "qwen-plus-2025-04-28", "qwen-turbo-2025-04-28"
         }
     },
     "nvidia": {
@@ -344,7 +345,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini-beta", "cogito", "qwen3", "phi4-mini-reasoning", "phi4-reasoning"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini-beta", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning"]:
         if p in model_name and not "deepseek-v3" in model_name:
             return True
     return False
@@ -443,6 +444,9 @@ def get_llm_specific_settings() -> Dict[str, Any]:
         options["top_p"] = 0.95
         options["top_k"] = 0.20
         options["min_p"] = 0
+
+    if "qwen-turbo" in model_name.lower() or "qwen-plus" in model_name.lower():
+        options["enable_thinking"] = True
 
     if Shared.CUSTOM_TEMPERATURE is not None:
         options["temperature"] = Shared.CUSTOM_TEMPERATURE
@@ -605,10 +609,16 @@ def query_text_simple_generic(question, api_url, target_file):
         if streaming_enabled:
             payload["stream"] = True
             response_message = ""
+            thinking_content = ""
+
             chunk_count = 0
 
             # We add stream=True to requests so we can iterate over chunks
             with requests.post(complete_url, headers=headers, json=payload, stream=True) as resp:
+                #print(resp)
+                #print(resp.status_code)
+                #print(resp.text)
+
                 for line in resp.iter_lines():
                     if not line:
                         continue
@@ -625,6 +635,8 @@ def query_text_simple_generic(question, api_url, target_file):
                             if "choices" in data_json:
                                 # Each chunk has a delta with partial content
                                 chunk_content = data_json["choices"][0]["delta"].get("content", "")
+                                chunk_reasoning_content = data_json["choices"][0]["delta"].get("reasoning_content", "")
+
                                 if chunk_content:
                                     response_message += chunk_content
                                     chunk_count += 1
@@ -632,9 +644,20 @@ def query_text_simple_generic(question, api_url, target_file):
                                     if chunk_count % 10 == 0:
                                         #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                                         pass
+                                elif chunk_reasoning_content:
+                                    thinking_content += chunk_reasoning_content
+                                    chunk_count += 1
+                                    #print("thinking", chunk_count)
+                                    if chunk_count % 10 == 0:
+                                        #print("thinking", chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
+                                        pass
                         except json.JSONDecodeError:
                             # Possibly a keep-alive or incomplete chunk
                             traceback.print_exc()
+
+            if thinking_content:
+                response_message = ["<think>", thinking_content, "</think>", response_message]
+                response_message = "\n".join(response_message)
 
             # Optionally store the final result so you can debug
             final_response = {
