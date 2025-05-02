@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "phi4-reasoning:plus" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "qwen-plus-2025-04-28" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
@@ -130,6 +130,7 @@ MODELS_DICT = {
             "qwen-max-2025-01-25",
             "qwen2.5-72b-instruct", "qwen2.5-32b-instruct",
             "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m", "qwen2.5-omni-7b",
+            "qwen-plus-2025-04-28", "qwen-turbo-2025-04-28"
         }
     },
     "nvidia": {
@@ -222,6 +223,16 @@ MODELS_DICT = {
             "Qwen-3-14B-nothink": {
                 "provider": "deepinfra",
                 "base_model": "Qwen/Qwen3-14B",
+                "added_to_prompt": " /no_think"
+            },
+            "Qwen-3-8B-nothink": {
+                "provider": "openrouter",
+                "base_model": "qwen/qwen3-8b",
+                "added_to_prompt": " /no_think"
+            },
+            "Qwen-3-4B-nothink": {
+                "provider": "openrouter",
+                "base_model": "qwen/qwen3-4b:free",
                 "added_to_prompt": " /no_think"
             },
             "Qwen/QwQ-32B-Preview": {
@@ -411,7 +422,7 @@ def get_llm_specific_settings() -> Dict[str, Any]:
         options["top_k"] = 0.20
         options["min_p"] = 0
 
-    if "qwen-turbo" in model_name.lower():
+    if "qwen-turbo" in model_name.lower() or "qwen-plus" in model_name.lower():
         options["enable_thinking"] = True
 
     if Shared.CUSTOM_TEMPERATURE is not None:
