@@ -225,16 +225,6 @@ MODELS_DICT = {
                 "base_model": "Qwen/Qwen3-14B",
                 "added_to_prompt": " /no_think"
             },
-            "Qwen-3-8B-nothink": {
-                "provider": "openrouter",
-                "base_model": "qwen/qwen3-8b",
-                "added_to_prompt": " /no_think"
-            },
-            "Qwen-3-4B-nothink": {
-                "provider": "openrouter",
-                "base_model": "qwen/qwen3-4b:free",
-                "added_to_prompt": " /no_think"
-            },
             "Qwen/QwQ-32B-Preview": {
                 "provider": "openrouter",
                 "base_model": "qwen/qwq-32b-preview"
@@ -592,6 +582,10 @@ def query_text_simple_generic(question, api_url, target_file):
 
             # We add stream=True to requests so we can iterate over chunks
             with requests.post(complete_url, headers=headers, json=payload, stream=True) as resp:
+                #print(resp)
+                #print(resp.status_code)
+                #print(resp.text)
+
                 for line in resp.iter_lines():
                     if not line:
                         continue
