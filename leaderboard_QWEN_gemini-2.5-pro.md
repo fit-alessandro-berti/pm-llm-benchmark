@@ -2,7 +2,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 **Update**: Since **19-04-2025**, a normalization step is applied to the score.
 
-## QWEN Leaderboard (1-shot; gemini-2.5-pro-preview-03-25 used as a judge)
+## QWEN Leaderboard (1-shot; gemini-2.5-pro-preview-05-06 used as a judge)
 
 | Model                          | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | OPT                  | :nerd_face: VI       |
 |:-------------------------------|:---------|:-------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
