@@ -10,10 +10,10 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "qwen-plus-2025-04-28" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "gemini-2.5-pro-preview-05-06" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
-EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-03-25" if len(sys.argv) < 3 else sys.argv[2]
+EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-05-06" if len(sys.argv) < 3 else sys.argv[2]
 
 
 class Shared:
@@ -70,7 +70,7 @@ MODELS_DICT = {
         "models": {
             "gemini-1.5-pro-002", "gemini-2.0-flash",
             "gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-lite",
-            "gemini-2.5-pro-exp-03-25"
+            "gemini-2.5-pro-preview-05-06"
         }
     },
     "claude": {
