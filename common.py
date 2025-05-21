@@ -256,16 +256,6 @@ MODELS_DICT = {
                 "base_model": "grok-3-mini-beta",
                 "reasoning_effort": "low"
             },
-            "gemini-2.5-flash-04-17-nothink": {
-                "provider": "google",
-                "base_model": "gemini-2.5-flash-preview-04-17",
-                "thinking_tokens": 0
-            },
-            "gemini-2.5-flash-04-17-thinkhigh": {
-                "provider": "google",
-                "base_model": "gemini-2.5-flash-preview-04-17",
-                "thinking_tokens": 24576
-            },
             "gemini-2.5-flash-05-20-nothink": {
                 "provider": "google",
                 "base_model": "gemini-2.5-flash-preview-05-20",
