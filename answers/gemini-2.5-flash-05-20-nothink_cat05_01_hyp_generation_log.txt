@@ -1,0 +1,265 @@
+Based on the assumed normal process flow and the provided event log data, here are some identified anomalies and undesirable behaviors, along with hypotheses and SQL queries to investigate them:
+
+---
+
+### Anomaly 1: Activities Occurring Out of Expected Sequence (Skipping or Reordering)
+
+**Observed Anomalies:**
+
+*   **Case 1002:** `Confirm Shipment` (event 9) occurs *before* `Perform Credit Check` (event 11) and `Validate Stock` (event 12).
+*   **Case 1003:** `Ship Goods` (event 17) occurs *before* `Confirm Shipment` (event 19). Also, `Ship Goods` happens before `Validate Stock` (which is entirely missing for this case).
+*   **Case 1004:** `Receive Payment` (event 22) occurs *before* `Issue Invoice` (event 23). This is unusual, as payment typically follows invoicing. `Confirm Shipment` (event 24) also shows `shipment_scheduled=N`, but `Ship Goods` (event 25) still occurred.
+
+**Hypotheses:**
+
+1.  **Process Bypass/Manual Override:** Certain high-priority orders or trusted customers might bypass standard checks (e.g., credit, stock validation) to expedite shipment. This could be intentional but needs to be documented and justified.
+2.  **System/Workflow Glitch:** The automated workflow system might be malfunctioning, allowing steps to be completed out of sequence or skipped entirely.
+3.  **Human Error/Lack of Training:** Employees might be unfamiliar with the correct process flow or making mistakes, performing activities in the wrong order.
+4.  **Data Entry Error:** Timestamps or activity entries might have been incorrectly recorded.
+5.  **Policy Violation:** Intentional circumvention of company policy, potentially to meet targets or for fraudulent reasons.
+6.  **Edge Cases/Specific Order Types:** `priority` orders (like case 1002) might have a modified process flow.
+
+**SQL Queries to Investigate:**
+
+**Query 1.1: Identify cases where 'Confirm Shipment' occurs before 'Perform Credit Check'.**
+
+```sql
+SELECT
+    le.case_id,
+    le.activity AS current_activity,
+    le.timestamp AS current_timestamp,
+    prev_cc.activity AS credit_check_activity,
+    prev_cc.timestamp AS credit_check_timestamp
+FROM
+    order_event_log le
+JOIN
+    order_event_log prev_cc ON le.case_id = prev_cc.case_id
+WHERE
+    le.activity = 'Confirm Shipment'
+    AND prev_cc.activity = 'Perform Credit Check'
+    AND le.timestamp < prev_cc.timestamp;
+```
+
+**Query 1.2: Identify cases where 'Ship Goods' occurs before 'Confirm Shipment'.**
+
+```sql
+SELECT
+    le.case_id,
+    le.activity AS ship_goods_activity,
+    le.timestamp AS ship_goods_timestamp,
+    prev_cs.activity AS confirm_shipment_activity,
+    prev_cs.timestamp AS confirm_shipment_timestamp
+FROM
+    order_event_log le
+JOIN
+    order_event_log prev_cs ON le.case_id = prev_cs.case_id
+WHERE
+    le.activity = 'Ship Goods'
+    AND prev_cs.activity = 'Confirm Shipment'
+    AND le.timestamp < prev_cs.timestamp;
+```
+
+**Query 1.3: Identify cases where 'Validate Stock' is entirely missing before 'Ship Goods'.**
+(This assumes 'Validate Stock' should always precede 'Ship Goods' for cases where it exists).
+
+```sql
+SELECT DISTINCT
+    oel.case_id
+FROM
+    order_event_log oel
+WHERE
+    oel.activity = 'Ship Goods'
+    AND NOT EXISTS (
+        SELECT 1
+        FROM order_event_log oel_stock
+        WHERE oel_stock.case_id = oel.case_id
+          AND oel_stock.activity = 'Validate Stock'
+          AND oel_stock.timestamp < oel.timestamp
+    );
+```
+
+**Query 1.4: Identify cases where 'Receive Payment' occurs before 'Issue Invoice'.**
+
+```sql
+SELECT
+    le.case_id,
+    le.activity AS receive_payment_activity,
+    le.timestamp AS receive_payment_timestamp,
+    prev_ii.activity AS issue_invoice_activity,
+    prev_ii.timestamp AS issue_invoice_timestamp
+FROM
+    order_event_log le
+JOIN
+    order_event_log prev_ii ON le.case_id = prev_ii.case_id
+WHERE
+    le.activity = 'Receive Payment'
+    AND prev_ii.activity = 'Issue Invoice'
+    AND le.timestamp < prev_ii.timestamp;
+```
+
+**Query 1.5: Combine out-of-sequence activities with order type and resource role for pattern analysis.**
+
+```sql
+WITH ActivitySequence AS (
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        LAG(activity) OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS prev_activity,
+        LEAD(activity) OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS next_activity
+    FROM
+        order_event_log
+)
+SELECT
+    asa.case_id,
+    o.order_type,
+    asa.prev_activity,
+    asa.activity AS current_activity_out_of_order,
+    asa.next_activity,
+    asa.timestamp,
+    r.role AS current_resource_role,
+    r.department AS current_resource_department
+FROM
+    ActivitySequence asa
+JOIN
+    orders o ON asa.case_id = o.case_id
+JOIN
+    order_event_log oel_current ON asa.case_id = oel_current.case_id AND asa.timestamp = oel_current.timestamp AND asa.activity = oel_current.activity
+JOIN
+    resources r ON oel_current.resource = r.resource_id
+WHERE
+    (asa.activity = 'Confirm Shipment' AND asa.prev_activity IN ('Register Order', 'Ship Goods')) OR -- Confirm Shipment immediately after Register Order or after Ship Goods
+    (asa.activity = 'Ship Goods' AND asa.prev_activity IN ('Register Order', 'Perform Credit Check', 'Issue Invoice')) OR -- Ship Goods too early
+    (asa.activity = 'Receive Payment' AND asa.prev_activity IN ('Register Order', 'Perform Credit Check', 'Validate Stock', 'Confirm Shipment', 'Ship Goods')) -- Payment too early
+ORDER BY
+    asa.case_id, asa.timestamp;
+```
+
+---
+
+### Anomaly 2: Inconsistent or Contradictory `additional_info`
+
+**Observed Anomalies:**
+
+*   **Case 1004:** `Confirm Shipment` has `additional_info = 'shipment_scheduled=N'`, but then `Ship Goods` still occurs.
+
+**Hypotheses:**
+
+1.  **System Discrepancy:** The `Confirm Shipment` activity might be recorded as 'N' due to an initial failure or dependency, but a manual override or another system process allowed the `Ship Goods` to proceed without updating the `Confirm Shipment` status.
+2.  **Lack of Integration:** Different systems or modules are not properly integrated, leading to inconsistent status updates.
+3.  **Data Entry Error:** The `additional_info` was incorrectly recorded.
+4.  **Process Deviation:** A known exception handling path allows shipping even if initially not scheduled, but this path is not clearly reflected in the standard `Confirm Shipment` entry.
+
+**SQL Queries to Investigate:**
+
+**Query 2.1: Find cases where 'Confirm Shipment' indicates 'N' but 'Ship Goods' still occurred afterwards.**
+
+```sql
+SELECT
+    cs.case_id,
+    cs.timestamp AS confirm_shipment_timestamp,
+    cs.additional_info AS confirm_shipment_info,
+    sg.timestamp AS ship_goods_timestamp,
+    sg.additional_info AS ship_goods_info
+FROM
+    order_event_log cs
+JOIN
+    order_event_log sg ON cs.case_id = sg.case_id
+WHERE
+    cs.activity = 'Confirm Shipment'
+    AND cs.additional_info LIKE '%shipment_scheduled=N%'
+    AND sg.activity = 'Ship Goods'
+    AND sg.timestamp > cs.timestamp;
+```
+
+---
+
+### Anomaly 3: Potentially Suspicious Activity Timing / Resource Behavior
+
+**Observed Anomalies:**
+
+*   **Case 1002, Event 9:** `Confirm Shipment` (LogisticsMgr_2) happens very quickly after `Register Order` (5 minutes later). This seems unusually fast for a complex process. The `additional_info` "attempted_early=Y" further suggests an unusual action.
+*   **Case 1003, Event 19:** `Confirm Shipment` (LogisticsMgr_2) has `additional_info = 'late_confirmation=Y'`, indicating an issue.
+*   **General:** Some cases (e.g., 1001, 1004) complete within hours, while payment for 1001, 1002, 1003 takes days. This is expected for payment, but the initial phase speed differences could be investigated.
+
+**Hypotheses:**
+
+1.  **Efficiency vs. Due Diligence Trade-off:** Extremely fast processing might indicate shortcuts or a lack of proper checks (e.g., "attempted_early=Y").
+2.  **Resource Overload/Underload:** Some resources might be unusually fast/slow, indicating potential training needs or workload issues.
+3.  **Fraud/Collusion:** In extreme cases, bypassing standard procedures (e.g., early shipment confirmation) could be indicative of fraudulent activities.
+4.  **System Performance Issues:** Delays in confirmation (`late_confirmation=Y`) could point to system bottlenecks or manual intervention taking too long.
+
+**SQL Queries to Investigate:**
+
+**Query 3.1: Identify cases with very fast 'Confirm Shipment' after 'Register Order'.**
+
+```sql
+SELECT
+    ro.case_id,
+    ro.timestamp AS register_order_timestamp,
+    cs.timestamp AS confirm_shipment_timestamp,
+    EXTRACT(EPOCH FROM (cs.timestamp - ro.timestamp))/60 AS time_diff_minutes, -- Time in minutes
+    cs.resource,
+    cs.additional_info AS confirm_shipment_info
+FROM
+    order_event_log ro
+JOIN
+    order_event_log cs ON ro.case_id = cs.case_id
+WHERE
+    ro.activity = 'Register Order'
+    AND cs.activity = 'Confirm Shipment'
+    AND (EXTRACT(EPOCH FROM (cs.timestamp - ro.timestamp))/60) < 10 -- Less than 10 minutes, adjust threshold as needed
+ORDER BY
+    time_diff_minutes;
+```
+
+**Query 3.2: Analyze resources involved in 'late_confirmation' or 'attempted_early' shipments.**
+
+```sql
+SELECT
+    oel.case_id,
+    oel.activity,
+    oel.timestamp,
+    oel.resource,
+    r.role,
+    r.department,
+    oel.additional_info
+FROM
+    order_event_log oel
+JOIN
+    resources r ON oel.resource = r.resource_id
+WHERE
+    oel.activity = 'Confirm Shipment'
+    AND (oel.additional_info LIKE '%attempted_early=Y%' OR oel.additional_info LIKE '%late_confirmation=Y%');
+```
+
+**Query 3.3: Average time taken for different process steps, broken down by resource role/department.**
+
+```sql
+WITH ActivityTimes AS (
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS prev_timestamp,
+        resource
+    FROM
+        order_event_log
+)
+SELECT
+    at.activity,
+    r.role,
+    r.department,
+    AVG(EXTRACT(EPOCH FROM (at.timestamp - at.prev_timestamp))) AS avg_time_seconds,
+    COUNT(DISTINCT at.case_id) AS num_cases
+FROM
+    ActivityTimes at
+JOIN
+    resources r ON at.resource = r.resource_id
+WHERE
+    at.prev_timestamp IS NOT NULL
+GROUP BY
+    at.activity, r.role, r.department
+ORDER BY
+    at.activity, avg_time_seconds DESC;
+```
