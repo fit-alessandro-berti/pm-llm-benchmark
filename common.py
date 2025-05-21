@@ -70,7 +70,7 @@ MODELS_DICT = {
         "models": {
             "gemini-1.5-pro-002", "gemini-2.0-flash",
             "gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-lite",
-            "gemini-2.5-pro-preview-05-06"
+            "gemini-2.5-pro-preview-05-06", "gemma-3n-e4b-it"
         }
     },
     "claude": {
