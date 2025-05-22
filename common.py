@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "gemini-2.5-flash-05-20-thinkhigh" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "claude-4-opus-20250514" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-05-06" if len(sys.argv) < 3 else sys.argv[2]
@@ -20,7 +20,7 @@ class Shared:
     API_KEY = None
     MODEL_NAME = None
     ALIAS_MODEL_NAME = None
-    MAX_REQUESTED_TOKENS = 65536
+    MAX_REQUESTED_TOKENS = 32000
     API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.openai.com/v1/"
     # API_URL = "http://137.226.117.70:11434/v1/"
@@ -44,7 +44,7 @@ class Shared:
     CUSTOM_TEMPERATURE = None
     #CUSTOM_TEMPERATURE = 0.6
     TRIAL_SEVERE_EVALUATION = True
-    ANTHROPIC_THINKING_TOKENS = 98304
+    ANTHROPIC_THINKING_TOKENS = 16000
     ANTHROPIC_THINKING_TOKENS = None
     PAYLOAD_REASONING_EFFORT = "low"
     PAYLOAD_REASONING_EFFORT = None
@@ -77,7 +77,9 @@ MODELS_DICT = {
         "api_url": "https://api.anthropic.com/v1/",
         "api_key": "sk-",
         "models": {
-            "claude-3-7-sonnet-20250219"
+            "claude-3-7-sonnet-20250219",
+            "claude-4-opus-20250514",
+            "claude-4-sonnet-20250514"
         }
     },
     "mistral": {

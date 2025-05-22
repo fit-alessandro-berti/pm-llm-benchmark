@@ -120,7 +120,7 @@ if __name__ == "__main__":
                     common.Shared.ANTHROPIC_THINKING_TOKENS = None
                     common.Shared.PAYLOAD_REASONING_EFFORT = None
                     common.Shared.CUSTOM_TEMPERATURE = None
-                    common.Shared.MAX_REQUESTED_TOKENS = 65536
+                    common.Shared.MAX_REQUESTED_TOKENS = 32000
                     common.Shared.ADDED_TO_PROMPT = None
 
                     found = True
