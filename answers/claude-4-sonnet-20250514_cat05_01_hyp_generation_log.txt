@@ -1,0 +1,182 @@
+Looking at this order event log data, I can identify several concerning anomalies and process deviations that warrant investigation. Let me analyze the patterns and propose SQL queries to investigate further.
+
+## Identified Anomalies
+
+### 1. **Sequence Violations and Missing Critical Steps**
+- **Case 1002**: Ships goods before performing credit check or stock validation
+- **Case 1003**: Missing stock validation entirely
+- **Case 1004**: Payment received before invoice issued, missing credit check and stock validation
+
+### 2. **Temporal Anomalies**
+- **Case 1002**: Ships goods only 20 minutes after order registration
+- **Case 1003**: Ships goods before confirming shipment
+- **Case 1004**: Payment received 5 minutes after order registration
+
+### 3. **Control Gaps**
+- Multiple cases bypass mandatory risk controls (credit checks, stock validation)
+- Post-facto confirmations and validations
+
+## Investigative SQL Queries
+
+### Query 1: Identify cases with missing critical control activities
+```sql
+-- Find orders missing mandatory control steps
+WITH mandatory_activities AS (
+    SELECT DISTINCT case_id FROM order_event_log WHERE activity = 'Register Order'
+),
+control_checks AS (
+    SELECT case_id,
+           MAX(CASE WHEN activity = 'Perform Credit Check' THEN 1 ELSE 0 END) as has_credit_check,
+           MAX(CASE WHEN activity = 'Validate Stock' THEN 1 ELSE 0 END) as has_stock_validation
+    FROM order_event_log 
+    GROUP BY case_id
+)
+SELECT m.case_id, 
+       c.has_credit_check, 
+       c.has_stock_validation,
+       o.order_value,
+       o.order_type
+FROM mandatory_activities m
+LEFT JOIN control_checks c ON m.case_id = c.case_id
+LEFT JOIN orders o ON m.case_id = o.case_id
+WHERE c.has_credit_check = 0 OR c.has_stock_validation = 0
+ORDER BY o.order_value DESC;
+```
+
+### Query 2: Detect sequence violations in critical process steps
+```sql
+-- Identify cases where goods are shipped before completing prerequisite checks
+WITH activity_timestamps AS (
+    SELECT case_id,
+           MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) as ship_time,
+           MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) as credit_time,
+           MAX(CASE WHEN activity = 'Validate Stock' THEN timestamp END) as stock_time,
+           MAX(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) as confirm_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT case_id,
+       ship_time,
+       credit_time,
+       stock_time,
+       confirm_time,
+       CASE 
+           WHEN ship_time < credit_time OR credit_time IS NULL THEN 'Shipped before credit check'
+           WHEN ship_time < stock_time OR stock_time IS NULL THEN 'Shipped before stock validation'
+           WHEN ship_time < confirm_time OR confirm_time IS NULL THEN 'Shipped before confirmation'
+       END as violation_type
+FROM activity_timestamps
+WHERE ship_time IS NOT NULL 
+  AND (ship_time < credit_time OR credit_time IS NULL 
+       OR ship_time < stock_time OR stock_time IS NULL
+       OR ship_time < confirm_time OR confirm_time IS NULL);
+```
+
+### Query 3: Analyze unusually fast processing times
+```sql
+-- Find cases with suspiciously short processing times
+WITH case_durations AS (
+    SELECT case_id,
+           MIN(timestamp) as start_time,
+           MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) as ship_time,
+           COUNT(DISTINCT activity) as activity_count
+    FROM order_event_log
+    GROUP BY case_id
+    HAVING MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) IS NOT NULL
+)
+SELECT cd.case_id,
+       cd.start_time,
+       cd.ship_time,
+       EXTRACT(EPOCH FROM (cd.ship_time - cd.start_time))/60 as processing_minutes,
+       cd.activity_count,
+       o.order_value,
+       o.order_type
+FROM case_durations cd
+JOIN orders o ON cd.case_id = o.case_id
+WHERE EXTRACT(EPOCH FROM (cd.ship_time - cd.start_time))/60 < 60  -- Less than 1 hour
+ORDER BY processing_minutes ASC;
+```
+
+### Query 4: Investigate payment-before-invoice anomalies
+```sql
+-- Detect cases where payment is received before invoice is issued
+WITH payment_invoice_timing AS (
+    SELECT case_id,
+           MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) as payment_time,
+           MAX(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) as invoice_time,
+           MAX(CASE WHEN activity = 'Receive Payment' THEN additional_info END) as payment_info
+    FROM order_event_log
+    WHERE activity IN ('Receive Payment', 'Issue Invoice')
+    GROUP BY case_id
+)
+SELECT pit.case_id,
+       pit.payment_time,
+       pit.invoice_time,
+       pit.payment_info,
+       o.order_value,
+       EXTRACT(EPOCH FROM (pit.invoice_time - pit.payment_time))/60 as minutes_diff
+FROM payment_invoice_timing pit
+JOIN orders o ON pit.case_id = o.case_id
+WHERE pit.payment_time < pit.invoice_time
+ORDER BY minutes_diff DESC;
+```
+
+### Query 5: Analyze resource behavior patterns for policy violations
+```sql
+-- Identify resources involved in process violations and their departments
+WITH violation_cases AS (
+    SELECT DISTINCT case_id 
+    FROM order_event_log 
+    WHERE case_id IN (
+        SELECT case_id FROM (
+            SELECT case_id,
+                   MAX(CASE WHEN activity = 'Perform Credit Check' THEN 1 ELSE 0 END) as has_credit,
+                   MAX(CASE WHEN activity = 'Validate Stock' THEN 1 ELSE 0 END) as has_stock
+            FROM order_event_log 
+            GROUP BY case_id
+        ) sub WHERE has_credit = 0 OR has_stock = 0
+    )
+)
+SELECT oel.resource,
+       r.role,
+       r.department,
+       COUNT(*) as violation_count,
+       STRING_AGG(DISTINCT oel.activity, ', ') as activities_performed,
+       STRING_AGG(DISTINCT oel.case_id::text, ', ') as case_ids
+FROM order_event_log oel
+JOIN violation_cases vc ON oel.case_id = vc.case_id
+LEFT JOIN resources r ON oel.resource = r.resource_id
+GROUP BY oel.resource, r.role, r.department
+ORDER BY violation_count DESC;
+```
+
+### Query 6: Check for high-value orders with insufficient controls
+```sql
+-- Examine control bypass patterns for high-value orders
+SELECT o.case_id,
+       o.order_value,
+       o.order_type,
+       MAX(CASE WHEN oel.activity = 'Perform Credit Check' THEN 1 ELSE 0 END) as has_credit_check,
+       MAX(CASE WHEN oel.activity = 'Validate Stock' THEN 1 ELSE 0 END) as has_stock_check,
+       MIN(oel.timestamp) as order_start,
+       MAX(CASE WHEN oel.activity = 'Ship Goods' THEN oel.timestamp END) as ship_time,
+       STRING_AGG(DISTINCT oel.resource, ', ') as involved_resources
+FROM orders o
+LEFT JOIN order_event_log oel ON o.case_id = oel.case_id
+WHERE o.order_value > 1500  -- Focus on higher value orders
+GROUP BY o.case_id, o.order_value, o.order_type
+HAVING MAX(CASE WHEN oel.activity = 'Perform Credit Check' THEN 1 ELSE 0 END) = 0
+    OR MAX(CASE WHEN oel.activity = 'Validate Stock' THEN 1 ELSE 0 END) = 0
+ORDER BY o.order_value DESC;
+```
+
+## Hypotheses for Investigation
+
+1. **System Integration Issues**: The payment-before-invoice pattern suggests possible ERP system integration problems
+2. **Emergency Override Procedures**: Fast processing might indicate use of emergency procedures without proper documentation
+3. **Training Deficiencies**: Resources may not understand mandatory process sequences
+4. **Fraud Risk**: Deliberate control bypasses, especially for high-value orders
+5. **Process Design Flaws**: The system may allow activities to proceed without proper prerequisites
+6. **Resource Capacity Issues**: Staff shortcuts due to workload pressures
+
+These queries will help identify patterns of non-compliance, resource accountability, and potential systemic issues requiring process redesign or additional controls.

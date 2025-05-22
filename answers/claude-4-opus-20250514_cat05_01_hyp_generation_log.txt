@@ -1,0 +1,237 @@
+Looking at this order processing event log, I can identify several anomalies and concerning patterns that deviate from the expected process flow. Let me analyze these systematically.
+
+## Identified Anomalies
+
+### 1. **Process Steps Executed Out of Order**
+- **Case 1002**: Shipment activities (Confirm Shipment, Ship Goods) occurred BEFORE critical validation steps (Credit Check, Stock Validation)
+- **Case 1003**: Goods were shipped before stock validation and shipment confirmation
+- **Case 1004**: Payment was received immediately after order registration, before any validation or even invoice generation
+
+### 2. **Missing Critical Process Steps**
+- **Case 1003**: No stock validation performed
+- **Case 1004**: Missing Credit Check and Stock Validation entirely
+
+### 3. **Timing Anomalies**
+- **Case 1002**: Extremely rapid progression from order registration to shipment (20 minutes)
+- **Case 1004**: Payment received within 5 minutes of order registration
+
+## Hypotheses for These Anomalies
+
+1. **System Integration Issues**: Different systems might not be properly synchronized, causing events to be logged out of sequence
+2. **Manual Overrides**: Staff might be bypassing standard procedures for urgent orders
+3. **Training Deficiencies**: New employees might not understand the proper process flow
+4. **Priority Order Handling**: Priority orders (like Case 1002) might follow different, undocumented procedures
+5. **Pre-approved Customers**: Some customers might have special arrangements allowing expedited processing
+6. **Data Entry Errors**: Events might be logged retroactively with incorrect timestamps
+
+## SQL Queries to Investigate These Hypotheses
+
+### 1. Identify all cases with out-of-order process execution:
+```sql
+WITH process_order AS (
+    SELECT 
+        case_id,
+        activity,
+        timestamp,
+        CASE activity
+            WHEN 'Register Order' THEN 1
+            WHEN 'Perform Credit Check' THEN 2
+            WHEN 'Validate Stock' THEN 3
+            WHEN 'Confirm Shipment' THEN 4
+            WHEN 'Ship Goods' THEN 5
+            WHEN 'Issue Invoice' THEN 6
+            WHEN 'Receive Payment' THEN 7
+        END as expected_order,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as actual_order
+    FROM order_event_log
+)
+SELECT DISTINCT case_id
+FROM process_order p1
+JOIN process_order p2 ON p1.case_id = p2.case_id
+WHERE p1.expected_order > p2.expected_order 
+  AND p1.actual_order < p2.actual_order;
+```
+
+### 2. Find cases missing critical validation steps:
+```sql
+WITH required_activities AS (
+    SELECT 'Perform Credit Check' as activity
+    UNION ALL SELECT 'Validate Stock'
+),
+case_activities AS (
+    SELECT DISTINCT case_id, activity
+    FROM order_event_log
+)
+SELECT 
+    c.case_id,
+    STRING_AGG(r.activity, ', ') as missing_activities
+FROM (SELECT DISTINCT case_id FROM order_event_log) c
+CROSS JOIN required_activities r
+LEFT JOIN case_activities ca ON c.case_id = ca.case_id AND r.activity = ca.activity
+WHERE ca.activity IS NULL
+GROUP BY c.case_id;
+```
+
+### 3. Analyze timing patterns between consecutive activities:
+```sql
+WITH activity_pairs AS (
+    SELECT 
+        case_id,
+        activity as from_activity,
+        LEAD(activity) OVER (PARTITION BY case_id ORDER BY timestamp) as to_activity,
+        timestamp as from_time,
+        LEAD(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) as to_time,
+        EXTRACT(EPOCH FROM (LEAD(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) - timestamp))/60 as minutes_between
+    FROM order_event_log
+)
+SELECT 
+    from_activity,
+    to_activity,
+    COUNT(*) as frequency,
+    AVG(minutes_between) as avg_minutes,
+    MIN(minutes_between) as min_minutes,
+    MAX(minutes_between) as max_minutes
+FROM activity_pairs
+WHERE to_activity IS NOT NULL
+GROUP BY from_activity, to_activity
+ORDER BY frequency DESC;
+```
+
+### 4. Investigate correlation between order types and process anomalies:
+```sql
+WITH anomaly_cases AS (
+    SELECT DISTINCT case_id
+    FROM order_event_log
+    WHERE 
+        (activity = 'Ship Goods' AND NOT EXISTS (
+            SELECT 1 FROM order_event_log e2 
+            WHERE e2.case_id = order_event_log.case_id 
+            AND e2.activity IN ('Perform Credit Check', 'Validate Stock')
+            AND e2.timestamp < order_event_log.timestamp
+        ))
+        OR
+        (activity = 'Receive Payment' AND NOT EXISTS (
+            SELECT 1 FROM order_event_log e2 
+            WHERE e2.case_id = order_event_log.case_id 
+            AND e2.activity = 'Issue Invoice'
+            AND e2.timestamp < order_event_log.timestamp
+        ))
+)
+SELECT 
+    o.order_type,
+    COUNT(DISTINCT o.case_id) as total_orders,
+    COUNT(DISTINCT a.case_id) as anomaly_orders,
+    ROUND(COUNT(DISTINCT a.case_id)::numeric / COUNT(DISTINCT o.case_id) * 100, 2) as anomaly_percentage
+FROM orders o
+LEFT JOIN anomaly_cases a ON o.case_id = a.case_id
+GROUP BY o.order_type;
+```
+
+### 5. Identify resources involved in anomalous processes:
+```sql
+WITH anomalous_activities AS (
+    SELECT e1.*
+    FROM order_event_log e1
+    WHERE 
+        -- Shipping before validation
+        (e1.activity = 'Ship Goods' AND NOT EXISTS (
+            SELECT 1 FROM order_event_log e2 
+            WHERE e2.case_id = e1.case_id 
+            AND e2.activity IN ('Perform Credit Check', 'Validate Stock')
+            AND e2.timestamp < e1.timestamp
+        ))
+        OR
+        -- Payment before invoice
+        (e1.activity = 'Receive Payment' AND NOT EXISTS (
+            SELECT 1 FROM order_event_log e2 
+            WHERE e2.case_id = e1.case_id 
+            AND e2.activity = 'Issue Invoice'
+            AND e2.timestamp < e1.timestamp
+        ))
+)
+SELECT 
+    r.resource_id,
+    r.role,
+    r.department,
+    COUNT(DISTINCT a.case_id) as anomalous_cases,
+    STRING_AGG(DISTINCT a.activity, ', ') as activities_involved
+FROM anomalous_activities a
+JOIN resources r ON a.resource = r.resource_id
+GROUP BY r.resource_id, r.role, r.department
+ORDER BY anomalous_cases DESC;
+```
+
+### 6. Check for patterns in additional_info that might explain anomalies:
+```sql
+SELECT 
+    case_id,
+    activity,
+    additional_info,
+    timestamp
+FROM order_event_log
+WHERE 
+    additional_info LIKE '%urgent%'
+    OR additional_info LIKE '%priority%'
+    OR additional_info LIKE '%override%'
+    OR additional_info LIKE '%early%'
+    OR additional_info LIKE '%late%'
+ORDER BY case_id, timestamp;
+```
+
+### 7. Analyze time-of-day patterns for anomalous behavior:
+```sql
+WITH anomaly_times AS (
+    SELECT 
+        EXTRACT(HOUR FROM timestamp) as hour_of_day,
+        case_id,
+        activity
+    FROM order_event_log
+    WHERE case_id IN (
+        SELECT DISTINCT case_id
+        FROM order_event_log
+        WHERE activity = 'Ship Goods' 
+        AND NOT EXISTS (
+            SELECT 1 FROM order_event_log e2 
+            WHERE e2.case_id = order_event_log.case_id 
+            AND e2.activity = 'Validate Stock'
+            AND e2.timestamp < order_event_log.timestamp
+        )
+    )
+)
+SELECT 
+    hour_of_day,
+    COUNT(DISTINCT case_id) as anomalous_cases,
+    COUNT(*) as total_activities
+FROM anomaly_times
+GROUP BY hour_of_day
+ORDER BY hour_of_day;
+```
+
+### 8. Find cases where the same resource performs multiple roles:
+```sql
+WITH resource_activities AS (
+    SELECT 
+        e.case_id,
+        e.resource,
+        r.department,
+        COUNT(DISTINCT r.role) OVER (PARTITION BY e.case_id) as roles_per_case,
+        STRING_AGG(DISTINCT e.activity, ', ') OVER (PARTITION BY e.case_id, e.resource) as activities_by_resource
+    FROM order_event_log e
+    JOIN resources r ON e.resource = r.resource_id
+)
+SELECT DISTINCT
+    case_id,
+    resource,
+    department,
+    activities_by_resource
+FROM resource_activities
+WHERE case_id IN (
+    SELECT case_id 
+    FROM order_event_log 
+    GROUP BY case_id, resource 
+    HAVING COUNT(DISTINCT activity) > 1
+)
+ORDER BY case_id, resource;
+```
+
+These queries will help uncover patterns and root causes behind the observed anomalies, enabling better understanding of whether they represent systematic issues, one-off exceptions, or indicators of process violations that need immediate attention.

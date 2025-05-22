@@ -236,6 +236,17 @@ MODELS_DICT = {
                 "base_model": "claude-3-7-sonnet-20250219",
                 "thinking_tokens": 98304
             },
+            "claude-4-sonnet-thinking-20250514": {
+                "provider": "claude",
+                "base_model": "claude-4-sonnet-20250514",
+                "thinking_tokens": 32000,
+            },
+            "claude-4-opus-thinking-20250514": {
+                "provider": "claude",
+                "base_model": "claude-4-opus-20250514",
+                "thinking_tokens": 16000,
+                "max_tokens": 16000
+            },
             "qwen-qwq-32b-nostepbystep": {
                 "provider": "groq",
                 "base_model": "qwen-qwq-32b",
@@ -684,7 +695,7 @@ def query_text_simple_anthropic(question, api_url, target_file):
     if Shared.ANTHROPIC_THINKING_TOKENS is not None:
         payload["thinking"] = {"type": "enabled", "budget_tokens": Shared.ANTHROPIC_THINKING_TOKENS}
         payload["max_tokens"] += Shared.ANTHROPIC_THINKING_TOKENS
-        payload["max_tokens"] = min(128000, payload["max_tokens"])
+        payload["max_tokens"] = min(64000, payload["max_tokens"])
 
     dump_payload(payload, target_file)
 
