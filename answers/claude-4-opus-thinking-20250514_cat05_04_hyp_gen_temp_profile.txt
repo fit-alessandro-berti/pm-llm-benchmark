@@ -1,0 +1,184 @@
+## Temporal Profile Analysis
+
+### Identified Anomalies
+
+1. **Receive to Approve (RP)**: Average time of ~25 hours with an unusually low standard deviation (1 hour). This rigid timing pattern suggests potential batch processing or artificial scheduling constraints.
+
+2. **Approve to Notify (PN)**: Exceptionally long average delay of 7 days with high variability (2-day STDEV). This indicates severe bottlenecks or inconsistent notification processes.
+
+3. **Assign to Close (AC)**: Direct transition averaging only 2 hours suggests claims being closed without proper evaluation or approval steps.
+
+4. **Evaluate to Notify (EN)**: Extremely rapid transition (5 minutes average) indicates potential automation issues or process shortcuts.
+
+### Hypotheses for Anomalies
+
+**1. Batch Processing Systems**
+- The RP rigid timing might indicate scheduled batch approvals running at fixed intervals
+- PN delays could be due to weekly notification batches
+
+**2. Process Circumvention**
+- AC direct transitions suggest emergency closures or automatic rejections
+- EN rapid transitions might indicate automated notifications without proper review
+
+**3. Resource Constraints**
+- PN delays could reflect understaffed notification departments
+- Certain adjusters might be bypassing standard procedures due to workload
+
+**4. System Integration Issues**
+- Automated systems might be creating artificial timing patterns
+- Manual interventions could be causing unexpected delays
+
+### SQL Verification Queries
+
+**1. Investigate RP Timing Rigidity**
+```sql
+WITH receive_approve AS (
+    SELECT 
+        r.claim_id,
+        r.timestamp as receive_time,
+        p.timestamp as approve_time,
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) as time_diff_seconds,
+        c.claim_type,
+        c.claim_amount
+    FROM claim_events r
+    JOIN claim_events p ON r.claim_id = p.claim_id
+    JOIN claims c ON r.claim_id = c.claim_id
+    WHERE r.activity = 'R' AND p.activity = 'P'
+)
+SELECT 
+    claim_type,
+    COUNT(*) as claim_count,
+    AVG(time_diff_seconds) as avg_time,
+    STDDEV(time_diff_seconds) as std_dev,
+    MIN(time_diff_seconds) as min_time,
+    MAX(time_diff_seconds) as max_time
+FROM receive_approve
+GROUP BY claim_type
+ORDER BY std_dev ASC;
+```
+
+**2. Analyze PN Delays by Resource and Time Period**
+```sql
+WITH approve_notify AS (
+    SELECT 
+        p.claim_id,
+        p.timestamp as approve_time,
+        n.timestamp as notify_time,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))/86400 as days_to_notify,
+        p.resource as approver,
+        n.resource as notifier,
+        DATE_TRUNC('week', p.timestamp) as approval_week
+    FROM claim_events p
+    JOIN claim_events n ON p.claim_id = n.claim_id
+    WHERE p.activity = 'P' AND n.activity = 'N'
+)
+SELECT 
+    approval_week,
+    approver,
+    COUNT(*) as claims_approved,
+    AVG(days_to_notify) as avg_days_to_notify,
+    MAX(days_to_notify) as max_days_to_notify
+FROM approve_notify
+WHERE days_to_notify > 3
+GROUP BY approval_week, approver
+ORDER BY avg_days_to_notify DESC;
+```
+
+**3. Identify Direct AC Transitions (Skipped Steps)**
+```sql
+WITH claim_sequences AS (
+    SELECT 
+        claim_id,
+        activity,
+        timestamp,
+        LEAD(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) as next_activity,
+        resource
+    FROM claim_events
+)
+SELECT 
+    cs.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    cs.resource as adjuster,
+    cs.timestamp as assign_time,
+    ce.timestamp as close_time,
+    EXTRACT(EPOCH FROM (ce.timestamp - cs.timestamp))/3600 as hours_to_close
+FROM claim_sequences cs
+JOIN claim_events ce ON cs.claim_id = ce.claim_id AND ce.activity = 'C'
+JOIN claims c ON cs.claim_id = c.claim_id
+WHERE cs.activity = 'A' 
+    AND cs.next_activity = 'C'
+    AND NOT EXISTS (
+        SELECT 1 FROM claim_events 
+        WHERE claim_id = cs.claim_id 
+        AND activity IN ('E', 'P') 
+        AND timestamp BETWEEN cs.timestamp AND ce.timestamp
+    );
+```
+
+**4. Examine Rapid EN Transitions**
+```sql
+WITH eval_notify AS (
+    SELECT 
+        e.claim_id,
+        e.timestamp as eval_time,
+        n.timestamp as notify_time,
+        EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) as seconds_to_notify,
+        e.resource as evaluator,
+        e.additional_info
+    FROM claim_events e
+    JOIN claim_events n ON e.claim_id = n.claim_id
+    WHERE e.activity = 'E' AND n.activity = 'N'
+        AND n.timestamp > e.timestamp
+)
+SELECT 
+    evaluator,
+    COUNT(*) as rapid_notifications,
+    AVG(seconds_to_notify) as avg_seconds,
+    COUNT(CASE WHEN seconds_to_notify < 180 THEN 1 END) as under_3_minutes
+FROM eval_notify
+WHERE seconds_to_notify < 600  -- Under 10 minutes
+GROUP BY evaluator
+HAVING COUNT(*) > 5
+ORDER BY avg_seconds ASC;
+```
+
+**5. Comprehensive Anomaly Detection Query**
+```sql
+WITH activity_pairs AS (
+    SELECT 
+        e1.claim_id,
+        e1.activity as from_activity,
+        e2.activity as to_activity,
+        EXTRACT(EPOCH FROM (e2.timestamp - e1.timestamp)) as time_diff_seconds,
+        c.claim_type,
+        c.claim_amount,
+        adj.region
+    FROM claim_events e1
+    JOIN claim_events e2 ON e1.claim_id = e2.claim_id AND e2.timestamp > e1.timestamp
+    JOIN claims c ON e1.claim_id = c.claim_id
+    LEFT JOIN claim_events ae ON ae.claim_id = e1.claim_id AND ae.activity = 'A'
+    LEFT JOIN adjusters adj ON ae.resource = adj.name
+),
+expected_times AS (
+    SELECT 'R' as from_act, 'P' as to_act, 90000 as avg_time, 3600 as std_dev
+    UNION ALL SELECT 'P', 'N', 604800, 172800
+    UNION ALL SELECT 'A', 'C', 7200, 3600
+    UNION ALL SELECT 'E', 'N', 300, 60
+)
+SELECT 
+    ap.claim_id,
+    ap.from_activity || '' || ap.to_activity as transition,
+    ap.time_diff_seconds,
+    et.avg_time as expected_avg,
+    ABS(ap.time_diff_seconds - et.avg_time) / et.std_dev as z_score,
+    ap.claim_type,
+    ap.region
+FROM activity_pairs ap
+JOIN expected_times et ON ap.from_activity = et.from_act AND ap.to_activity = et.to_act
+WHERE ABS(ap.time_diff_seconds - et.avg_time) > 3 * et.std_dev
+ORDER BY z_score DESC
+LIMIT 100;
+```
+
+These queries will help identify specific instances of timing anomalies, reveal patterns by claim type or adjuster, and highlight systemic issues in the claim handling process.
