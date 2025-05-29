@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "deepseek-ai/DeepSeek-R1-0528" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "grok-3-mini" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-05-06" if len(sys.argv) < 3 else sys.argv[2]
@@ -260,15 +260,10 @@ MODELS_DICT = {
                 "system_prompt": "You are a helpful and harmless assistant. You should think step-by-step.",
                 "temperature": 0.6
             },
-            "grok-3-mini-beta-high": {
+            "grok-3-mini-high": {
                 "provider": "grok",
-                "base_model": "grok-3-mini-beta",
+                "base_model": "grok-3-mini",
                 "reasoning_effort": "high"
-            },
-            "grok-3-mini-beta-low": {
-                "provider": "grok",
-                "base_model": "grok-3-mini-beta",
-                "reasoning_effort": "low"
             },
             "gemini-2.5-flash-05-20-nothink": {
                 "provider": "google",
@@ -296,7 +291,7 @@ MODELS_DICT = {
 
 
 def is_excluded_from_table(model_name):
-    patterns = ["dynamic-quant"]
+    patterns = ["dynamic-quant", "grok-3-mini-beta"]
     for p in patterns:
         if p.lower() in model_name.lower():
             return True
