@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "grok-3-mini-high" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "phi4-reasoning" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-05-06" if len(sys.argv) < 3 else sys.argv[2]
@@ -95,7 +95,7 @@ MODELS_DICT = {
         "api_url": "https://api.x.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "grok-2-1212", "grok-3-beta"
+            "grok-2-1212", "grok-3"
         }
     },
     "deepinfra": {
