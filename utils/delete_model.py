@@ -16,12 +16,12 @@ def do_deletion(base_path, original_name):
 
 
 if __name__ == "__main__":
-    original_name = "gemini-2.5-flash-04-17-nothink_"
+    original_name = "o3-2025-04-16_"
 
     if not original_name.endswith("_"):
         raise Exception("original_name must terminate with _")
 
-    do_deletion("../answers", original_name)
+    #do_deletion("../answers", original_name)
     do_deletion(os.path.join("..", get_base_evaluation_path(EVALUATING_MODEL_NAME)), original_name)
 
     write_evaluation("..", extra=True)
