@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "claude-4-opus-thinking-20250514" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "deepseek-ai/DeepSeek-R1-0528" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-05-06" if len(sys.argv) < 3 else sys.argv[2]
@@ -108,7 +108,8 @@ MODELS_DICT = {
             "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct",
             "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
-            "Qwen/Qwen3-30B-A3B", "Qwen/Qwen3-32B", "Qwen/Qwen3-14B", "Qwen/Qwen3-235B-A22B"
+            "Qwen/Qwen3-30B-A3B", "Qwen/Qwen3-32B", "Qwen/Qwen3-14B", "Qwen/Qwen3-235B-A22B",
+            "deepseek-ai/DeepSeek-R1-0528"
         }
     },
     "ollama_local": {
@@ -622,6 +623,7 @@ def query_text_simple_generic(question, api_url, target_file):
                                     chunk_count += 1
                                     #print(chunk_count)
                                     if chunk_count % 10 == 0:
+                                        print(chunk_count, len(response_message))
                                         #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                                         pass
                                 elif chunk_reasoning_content:
