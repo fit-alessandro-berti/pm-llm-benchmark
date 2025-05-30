@@ -24,8 +24,10 @@ def perform_mass_eval():
     answer_models_keys.sort(key=lambda x: (ordered.index(x) if x in ordered else sys.maxsize, x))
 
     answer_models_keys = [x for x in answer_models_keys if evaluations_models[x] != answers_models[x]]
-    answer_models_keys.sort(key=lambda x: (answers_models[x] - evaluations_models[x], 0 if x.lower().startswith(
-        "gpt") else 1 if "gpt" in x.lower() else 2 if x.lower().startswith("o") else 3, x.lower()))
+    answer_models_keys.sort(key=lambda x: (0 if answers_models[x] - evaluations_models[x] < 10 else 1,
+                                           0 if x.lower().startswith("gpt") else 1 if "gpt" in x.lower() else 2 if x.lower().startswith("o") else 3 if x.lower().startswith("claude") else 4,
+                                           answers_models[x] - evaluations_models[x],
+                                           x.lower()))
     print(answer_models_keys)
 
     overall_table.write_evaluation(".", extra=True)
