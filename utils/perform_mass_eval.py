@@ -9,7 +9,7 @@ from utils import overall_table
 def perform_mass_eval():
     answers = os.listdir("answers")
     answers_models = Counter([x.split("_cat")[0] for x in answers])
-    #answers_models = {x: y for x, y in answers_models.items() if y >= 44}
+    # answers_models = {x: y for x, y in answers_models.items() if y >= 44}
 
     e_m_name = clean_model_name(EVALUATING_MODEL_NAME)
     base_evaluation_path = get_base_evaluation_path(e_m_name)
@@ -24,6 +24,8 @@ def perform_mass_eval():
     answer_models_keys.sort(key=lambda x: (ordered.index(x) if x in ordered else sys.maxsize, x))
 
     answer_models_keys = [x for x in answer_models_keys if evaluations_models[x] != answers_models[x]]
+    answer_models_keys.sort(key=lambda x: (answers_models[x] - evaluations_models[x], 0 if x.lower().startswith(
+        "gpt") else 1 if "gpt" in x.lower() else 2 if x.lower().startswith("o") else 3, x.lower()))
     print(answer_models_keys)
 
     overall_table.write_evaluation(".", extra=True)
@@ -48,7 +50,7 @@ if __name__ == "__main__":
     os.chdir(parent_directory)
 
     iterations = sys.maxsize
-    #iterations = 1
+    # iterations = 1
 
     for i in range(iterations):
         changed = perform_mass_eval()
