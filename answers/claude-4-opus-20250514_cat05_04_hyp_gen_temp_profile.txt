@@ -1,0 +1,177 @@
+## Temporal Profile Analysis
+
+### Identified Anomalies
+
+1. **R to P (Receive to Approve): ~25 hours with extremely low STDEV (1 hour)**
+   - The rigid timing suggests an artificial constraint or automated approval process
+   - Standard deviation is unusually small for a human-driven approval process
+
+2. **P to N (Approve to Notify): 7 days average with high STDEV (2 days)**
+   - Excessive delay between approval and customer notification
+   - High variability suggests inconsistent handling
+
+3. **A to C (Assign to Close): 2 hours average**
+   - Suspiciously quick closure after assignment
+   - May indicate claims being closed without proper evaluation
+
+4. **E to N (Evaluate to Notify): 5 minutes average**
+   - Unrealistically fast transition
+   - Suggests automated notification or missing intermediate steps
+
+### Hypotheses for Anomalies
+
+1. **Automated Approval System**: The RP timing might indicate an automated pre-approval system for certain claim types or amounts, with manual override causing the small variance.
+
+2. **Notification Backlog**: The PN delay could result from:
+   - Batch processing of notifications (weekly runs)
+   - Resource constraints in the notification department
+   - System integration issues between approval and notification systems
+
+3. **Premature Closures**: Quick AC transitions might indicate:
+   - Duplicate claims being immediately closed
+   - Claims rejected for missing documentation
+   - Fraudulent claims flagged by the system
+
+4. **Auto-notification on Evaluation**: The EN speed suggests evaluation results trigger immediate automated notifications for certain outcomes.
+
+### SQL Verification Queries
+
+#### 1. Analyze RP timing anomalies
+```sql
+WITH claim_timings AS (
+  SELECT 
+    r.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) as receive_to_approve_seconds
+  FROM claim_events r
+  JOIN claim_events p ON r.claim_id = p.claim_id
+  JOIN claims c ON r.claim_id = c.claim_id
+  WHERE r.activity = 'R' AND p.activity = 'P'
+)
+SELECT 
+  claim_type,
+  COUNT(*) as claim_count,
+  AVG(receive_to_approve_seconds)/3600 as avg_hours,
+  STDDEV(receive_to_approve_seconds)/3600 as stddev_hours,
+  MIN(receive_to_approve_seconds)/3600 as min_hours,
+  MAX(receive_to_approve_seconds)/3600 as max_hours
+FROM claim_timings
+GROUP BY claim_type
+ORDER BY avg_hours;
+```
+
+#### 2. Investigate PN delays by resource and region
+```sql
+WITH approval_notification_gap AS (
+  SELECT 
+    p.claim_id,
+    p.resource as approver,
+    n.resource as notifier,
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))/86400 as days_to_notify,
+    c.claim_amount,
+    adj.region
+  FROM claim_events p
+  JOIN claim_events n ON p.claim_id = n.claim_id
+  JOIN claims c ON p.claim_id = c.claim_id
+  LEFT JOIN adjusters adj ON p.resource = adj.name
+  WHERE p.activity = 'P' AND n.activity = 'N'
+)
+SELECT 
+  region,
+  COUNT(*) as total_claims,
+  AVG(days_to_notify) as avg_days,
+  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_to_notify) as median_days,
+  COUNT(CASE WHEN days_to_notify > 10 THEN 1 END) as extreme_delays
+FROM approval_notification_gap
+GROUP BY region
+HAVING COUNT(*) > 10
+ORDER BY avg_days DESC;
+```
+
+#### 3. Identify suspiciously quick AC closures
+```sql
+WITH quick_closures AS (
+  SELECT 
+    a.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    a.resource as adjuster,
+    cl.resource as closer,
+    EXTRACT(EPOCH FROM (cl.timestamp - a.timestamp))/3600 as hours_to_close,
+    cl.additional_info
+  FROM claim_events a
+  JOIN claim_events cl ON a.claim_id = cl.claim_id
+  JOIN claims c ON a.claim_id = c.claim_id
+  WHERE a.activity = 'A' AND cl.activity = 'C'
+    AND EXTRACT(EPOCH FROM (cl.timestamp - a.timestamp)) < 7200  -- Less than 2 hours
+)
+SELECT 
+  claim_id,
+  claim_type,
+  claim_amount,
+  adjuster,
+  hours_to_close,
+  additional_info
+FROM quick_closures
+WHERE NOT EXISTS (
+  SELECT 1 FROM claim_events e 
+  WHERE e.claim_id = quick_closures.claim_id 
+    AND e.activity IN ('E', 'P')
+    AND e.timestamp BETWEEN (SELECT timestamp FROM claim_events WHERE claim_id = quick_closures.claim_id AND activity = 'A')
+                        AND (SELECT timestamp FROM claim_events WHERE claim_id = quick_closures.claim_id AND activity = 'C')
+)
+ORDER BY hours_to_close;
+```
+
+#### 4. Examine EN rapid transitions
+```sql
+WITH eval_notify_times AS (
+  SELECT 
+    e.claim_id,
+    e.resource as evaluator,
+    n.resource as notifier,
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) as seconds_to_notify,
+    c.claim_type,
+    c.claim_amount,
+    e.additional_info as eval_info,
+    n.additional_info as notify_info
+  FROM claim_events e
+  JOIN claim_events n ON e.claim_id = n.claim_id
+  JOIN claims c ON e.claim_id = c.claim_id
+  WHERE e.activity = 'E' AND n.activity = 'N'
+    AND n.timestamp > e.timestamp
+)
+SELECT 
+  claim_type,
+  COUNT(*) as count,
+  AVG(seconds_to_notify)/60 as avg_minutes,
+  COUNT(CASE WHEN seconds_to_notify < 300 THEN 1 END) as under_5_min,
+  COUNT(CASE WHEN evaluator = notifier THEN 1 END) as same_resource
+FROM eval_notify_times
+GROUP BY claim_type
+HAVING COUNT(*) > 5
+ORDER BY avg_minutes;
+```
+
+#### 5. Overall process conformance check
+```sql
+WITH process_paths AS (
+  SELECT 
+    claim_id,
+    STRING_AGG(activity, '' ORDER BY timestamp) as path,
+    COUNT(*) as step_count
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT 
+  path,
+  COUNT(*) as frequency,
+  ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage
+FROM process_paths
+GROUP BY path
+ORDER BY frequency DESC
+LIMIT 20;
+```
+
+These queries will help identify specific instances of timing anomalies, correlate them with business attributes, and understand whether certain patterns are systematic or isolated incidents.

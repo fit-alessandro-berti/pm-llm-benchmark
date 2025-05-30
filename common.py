@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "mistral-medium-2505" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "Grok-3-beta-thinking-20250221" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-05-06" if len(sys.argv) < 3 else sys.argv[2]
@@ -20,7 +20,7 @@ class Shared:
     API_KEY = None
     MODEL_NAME = None
     ALIAS_MODEL_NAME = None
-    MAX_REQUESTED_TOKENS = 65536
+    MAX_REQUESTED_TOKENS = 32000
     API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.openai.com/v1/"
     # API_URL = "http://137.226.117.70:11434/v1/"
@@ -44,7 +44,7 @@ class Shared:
     CUSTOM_TEMPERATURE = None
     #CUSTOM_TEMPERATURE = 0.6
     TRIAL_SEVERE_EVALUATION = True
-    ANTHROPIC_THINKING_TOKENS = 98304
+    ANTHROPIC_THINKING_TOKENS = 16000
     ANTHROPIC_THINKING_TOKENS = None
     PAYLOAD_REASONING_EFFORT = "low"
     PAYLOAD_REASONING_EFFORT = None
@@ -58,7 +58,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gpt-4o-2024-11-20", "gpt-3.5-turbo",
-            "gpt-4-turbo-2024-04-09", "o1-mini-2024-09-12", "o1-preview-2024-09-12",
+            "gpt-4-turbo-2024-04-09", "o1-mini-2024-09-12",
             "gpt-4.5-preview", "o1-2024-12-17", "gpt-4o-mini-2024-07-18",
             "o3-mini-2025-01-31", "gpt-4.1-2025-04-14", "gpt-4.1-mini-2025-04-14",
             "gpt-4.1-nano-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13"
@@ -68,16 +68,17 @@ MODELS_DICT = {
         "api_url": "https://generativelanguage.googleapis.com/v1beta/",
         "api_key": "sk-",
         "models": {
-            "gemini-1.5-pro-002", "gemini-2.0-flash",
-            "gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-lite",
-            "gemini-2.5-pro-preview-05-06"
+            "gemini-1.5-pro-002", "gemini-2.0-flash", "gemini-2.0-flash-lite",
+            "gemini-2.5-pro-preview-05-06", "gemma-3n-e4b-it"
         }
     },
     "claude": {
         "api_url": "https://api.anthropic.com/v1/",
         "api_key": "sk-",
         "models": {
-            "claude-3-7-sonnet-20250219"
+            "claude-3-7-sonnet-20250219",
+            "claude-4-opus-20250514",
+            "claude-4-sonnet-20250514"
         }
     },
     "mistral": {
@@ -93,7 +94,7 @@ MODELS_DICT = {
         "api_url": "https://api.x.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "grok-2-1212", "grok-3-beta"
+            "grok-2-1212", "grok-3"
         }
     },
     "deepinfra": {
@@ -106,7 +107,8 @@ MODELS_DICT = {
             "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct",
             "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
-            "Qwen/Qwen3-30B-A3B", "Qwen/Qwen3-32B", "Qwen/Qwen3-14B", "Qwen/Qwen3-235B-A22B"
+            "Qwen/Qwen3-30B-A3B", "Qwen/Qwen3-32B", "Qwen/Qwen3-14B", "Qwen/Qwen3-235B-A22B",
+            "deepseek-ai/DeepSeek-R1-0528"
         }
     },
     "ollama_local": {
@@ -234,6 +236,17 @@ MODELS_DICT = {
                 "base_model": "claude-3-7-sonnet-20250219",
                 "thinking_tokens": 98304
             },
+            "claude-4-sonnet-thinking-20250514": {
+                "provider": "claude",
+                "base_model": "claude-4-sonnet-20250514",
+                "thinking_tokens": 32000,
+            },
+            "claude-4-opus-thinking-20250514": {
+                "provider": "claude",
+                "base_model": "claude-4-opus-20250514",
+                "thinking_tokens": 16000,
+                "max_tokens": 16000
+            },
             "qwen-qwq-32b-nostepbystep": {
                 "provider": "groq",
                 "base_model": "qwen-qwq-32b",
@@ -246,24 +259,24 @@ MODELS_DICT = {
                 "system_prompt": "You are a helpful and harmless assistant. You should think step-by-step.",
                 "temperature": 0.6
             },
-            "grok-3-mini-beta-high": {
+            "grok-3-mini-high": {
                 "provider": "grok",
-                "base_model": "grok-3-mini-beta",
+                "base_model": "grok-3-mini-fast",
                 "reasoning_effort": "high"
             },
-            "grok-3-mini-beta-low": {
+            "grok-3-mini-low": {
                 "provider": "grok",
-                "base_model": "grok-3-mini-beta",
+                "base_model": "grok-3-mini-fast",
                 "reasoning_effort": "low"
             },
-            "gemini-2.5-flash-04-17-nothink": {
+            "gemini-2.5-flash-05-20-nothink": {
                 "provider": "google",
-                "base_model": "gemini-2.5-flash-preview-04-17",
+                "base_model": "gemini-2.5-flash-preview-05-20",
                 "thinking_tokens": 0
             },
-            "gemini-2.5-flash-04-17-thinkhigh": {
+            "gemini-2.5-flash-05-20-thinkhigh": {
                 "provider": "google",
-                "base_model": "gemini-2.5-flash-preview-04-17",
+                "base_model": "gemini-2.5-flash-preview-05-20",
                 "thinking_tokens": 24576
             },
             "nvidia/llama-3.1-nemotron-ultra-253b-v1-thinkenab": {
@@ -282,7 +295,7 @@ MODELS_DICT = {
 
 
 def is_excluded_from_table(model_name):
-    patterns = ["dynamic-quant"]
+    patterns = ["dynamic-quant", "grok-3-mini-beta"]
     for p in patterns:
         if p.lower() in model_name.lower():
             return True
@@ -334,7 +347,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini-beta", "-think", "cogito", "o3-2", "o4-mini-2", "glm-z1", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm-z1", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning"]
 
     for p in patterns:
         if p in m_name:
@@ -345,7 +358,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini-beta", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning"]:
         if p in model_name and not "deepseek-v3" in model_name:
             return True
     return False
@@ -642,6 +655,7 @@ def query_text_simple_generic(question, api_url, target_file):
                                     chunk_count += 1
                                     #print(chunk_count)
                                     if chunk_count % 10 == 0:
+                                        print(chunk_count, len(response_message))
                                         #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                                         pass
                                 elif chunk_reasoning_content:
@@ -715,7 +729,7 @@ def query_text_simple_anthropic(question, api_url, target_file):
     if Shared.ANTHROPIC_THINKING_TOKENS is not None:
         payload["thinking"] = {"type": "enabled", "budget_tokens": Shared.ANTHROPIC_THINKING_TOKENS}
         payload["max_tokens"] += Shared.ANTHROPIC_THINKING_TOKENS
-        payload["max_tokens"] = min(128000, payload["max_tokens"])
+        payload["max_tokens"] = min(64000, payload["max_tokens"])
 
     dump_payload(payload, target_file)
 

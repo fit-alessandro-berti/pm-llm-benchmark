@@ -1,6 +1,6 @@
-# PM-LLM-Benchmark v 2.1
+# PM-LLM-Benchmark v 2.2
 
-**The current repository shows PM-LLM-Benchmark v 2.1, which contains a different and more complex set of prompts than PM-LLM-Benchmark v 1.0**
+**The current repository shows PM-LLM-Benchmark v 2.2, which contains a different and more complex set of prompts than PM-LLM-Benchmark v 1.0**
 The paper describing PM-LLM-Benchmark v 1.0 is available [here](https://arxiv.org/pdf/2407.13244)
 
 Process mining benefits significantly from the domain knowledge provided by LLMs. However, no process-mining-specific LLM benchmarks have been proposed
