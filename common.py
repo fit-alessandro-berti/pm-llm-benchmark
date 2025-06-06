@@ -69,7 +69,8 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gemini-1.5-pro-002", "gemini-2.0-flash", "gemini-2.0-flash-lite",
-            "gemini-2.5-pro-preview-05-06", "gemma-3n-e4b-it"
+            "gemini-2.5-pro-preview-05-06", "gemma-3n-e4b-it",
+            "gemini-2.5-pro-preview-06-05"
         }
     },
     "claude": {

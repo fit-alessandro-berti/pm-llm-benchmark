@@ -1,0 +1,175 @@
+Based on the provided temporal profile model and database schema, here is an analysis of process anomalies, hypotheses for their causes, and SQL queries to verify them.
+
+---
+
+### Analysis of Process Anomalies
+
+#### 1. Anomaly: Suspiciously Rigid Timing from Receive (R) to Approve (P)
+
+**Observation:** The average time between a claim being received and approved is approximately 25 hours, but the standard deviation is only 1 hour. This low variability is unusual for a process step that typically involves human evaluation and suggests a non-organic, possibly automated or batch-driven, timeline.
+
+**Hypotheses:**
+
+*   **Batch Processing:** Approvals might not be processed as they are ready but are instead handled in a daily batch job that runs at a fixed time (e.g., every morning at 10 AM). This would result in `Receive-to-Approve` times clustering around 24 hours, with low deviation.
+*   **Service Level Agreement (SLA) Artifact:** The system may be enforcing a strict 24-hour SLA for approvals, and events are logged in a way that artificially meets this target, regardless of the actual processing time.
+
+**Verification via SQL:**
+
+This query checks if 'Approve' (P) events are clustered at specific hours of the day, which would support the batch processing hypothesis.
+
+```sql
+-- Query to analyze the distribution of 'Approve' events by hour of the day
+SELECT
+    EXTRACT(HOUR FROM timestamp) AS hour_of_day,
+    COUNT(*) AS approval_count
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY hour_of_day
+ORDER BY hour_of_day;
+```
+
+---
+
+#### 2. Anomaly: Extremely Long and Variable Delay from Approve (P) to Notify (N)
+
+**Observation:** An average delay of 7 days between a claim's approval and customer notification is excessive. The high standard deviation of 2 days indicates this delay is highly inconsistent—some notifications are sent much faster or slower than the average.
+
+**Hypotheses:**
+
+*   **Manual Notification Bottleneck:** The notification step may be a manual process (e.g., drafting and mailing physical letters) performed by a separate, under-resourced team, creating a significant and variable backlog.
+*   **Claim Prioritization:** High-value or urgent claims may be notified immediately, while lower-value claims are deferred and handled in weekly batches, explaining the long average and high variance.
+*   **Third-Party System Delay:** Notifications might be handled by an external service that only syncs with the main claims system periodically, introducing a systematic delay.
+
+**Verification via SQL:**
+
+This query identifies claims with exceptionally long `Approve-to-Notify` delays and correlates them with claim type and amount to test the prioritization hypothesis.
+
+```sql
+-- Query to find claims with long P-to-N delays and analyze them by type and value
+WITH EventPairs AS (
+    SELECT
+        claim_id,
+        timestamp AS event_time,
+        activity,
+        LEAD(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_event_time,
+        LEAD(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_activity
+    FROM claim_events
+),
+DelayedClaims AS (
+    SELECT
+        claim_id,
+        EXTRACT(epoch FROM (next_event_time - event_time)) AS duration_seconds
+    FROM EventPairs
+    WHERE activity = 'P' AND next_activity = 'N'
+      AND EXTRACT(epoch FROM (next_event_time - event_time)) > 604800 -- Greater than the 7-day average
+)
+SELECT
+    c.claim_type,
+    c.region,
+    AVG(dc.duration_seconds) / 86400.0 AS avg_delay_in_days,
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.claim_amount) AS median_claim_amount,
+    COUNT(*) AS number_of_delayed_claims
+FROM DelayedClaims dc
+JOIN claims c ON dc.claim_id = c.claim_id
+GROUP BY c.claim_type, c.region
+ORDER BY avg_delay_in_days DESC;
+```
+
+---
+
+#### 3. Anomaly: Premature Closure from Assign (A) to Close (C)
+
+**Observation:** The average time of 2 hours from when a claim is assigned to when it is closed is suspiciously fast. This suggests that key steps like `Evaluate` (E) and `Approve` (P) are being bypassed for a subset of claims.
+
+**Hypotheses:**
+
+*   **Simplified Triage Process:** Certain claim types (e.g., "duplicate submission," "missing documentation," "out of policy") may be identified at assignment and closed immediately without a full evaluation.
+*   **Adjuster Error or Misuse:** Adjusters might be incorrectly closing claims immediately after assignment, perhaps to clear their queue or due to a system usability issue.
+*   **Data Logging Error:** An automated 'Close' event might be incorrectly triggered immediately after 'Assign' for certain claims due to a system bug.
+
+**Verification via SQL:**
+
+This query identifies claims that are closed directly after assignment without any intermediate `Evaluate` or `Approve` events and groups them by claim type and adjuster specialization to see if a pattern emerges.
+
+```sql
+-- Query to identify claims that go directly from 'Assign' to 'Close'
+WITH ClaimEventSequences AS (
+    SELECT
+        claim_id,
+        ARRAY_AGG(activity ORDER BY timestamp) AS event_flow,
+        resource
+    FROM claim_events
+    WHERE activity = 'A'
+    GROUP BY claim_id, resource
+)
+, SkippedStepClaims AS (
+    SELECT
+        ce.claim_id,
+        a.specialization AS adjuster_specialization
+    FROM claim_events ce
+    LEFT JOIN adjusters a on ce.resource = a.adjuster_id::varchar
+    WHERE ce.activity = 'A' AND NOT EXISTS (
+        SELECT 1
+        FROM claim_events
+        WHERE claim_id = ce.claim_id AND activity IN ('E', 'P')
+    ) AND EXISTS (
+        SELECT 1
+        FROM claim_events
+        WHERE claim_id = ce.claim_id AND activity = 'C'
+    )
+)
+SELECT
+    c.claim_type,
+    scc.adjuster_specialization,
+    COUNT(*) AS num_prematurely_closed
+FROM SkippedStepClaims scc
+JOIN claims c ON scc.claim_id = c.claim_id
+GROUP BY c.claim_type, scc.adjuster_specialization
+ORDER BY num_prematurely_closed DESC;
+```
+
+---
+
+#### 4. Anomaly: Near-Instantaneous Transition from Evaluate (E) to Notify (N)
+
+**Observation:** An average time of only 5 minutes between `Evaluate` and `Notify` is extremely short and likely skips the `Approve` (P) step, which is a critical control in most insurance processes.
+
+**Hypotheses:**
+
+*   **Automated Low-Value Approvals:** For claims below a certain monetary threshold, the evaluation and approval steps might be combined. Once an adjuster evaluates and enters a decision, the system automatically approves and triggers a notification.
+*   **Denial Workflow:** This fast path may represent a "denial" workflow. If a claim is evaluated and denied, a notification might be sent immediately, bypassing the formal "approval" step entirely.
+*   **Skipped Approval Step:** Adjusters may have the authority to bypass the `Approve` step under certain conditions, transitioning directly from their evaluation to notifying the customer.
+
+**Verification via SQL:**
+
+This query finds claims where the `Evaluate-to-Notify` transition is very fast and checks whether an `Approve` step occurred, while also segmenting the results by claim amount to test the low-value claim hypothesis.
+
+```sql
+-- Query to find claims with a fast E-to-N transition and check for a missing 'P' step
+WITH EventPairs AS (
+    SELECT
+        claim_id,
+        timestamp AS event_time,
+        activity,
+        LEAD(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_event_time,
+        LEAD(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_activity
+    FROM claim_events
+),
+FastTransitions AS (
+    SELECT
+        claim_id,
+        EXTRACT(epoch FROM (next_event_time - event_time)) AS duration_seconds
+    FROM EventPairs
+    WHERE activity = 'E' AND next_activity = 'N'
+      AND EXTRACT(epoch FROM (next_event_time - event_time)) < 600 -- Less than 10 minutes
+)
+SELECT
+    c.claim_type,
+    c.claim_amount,
+    ft.duration_seconds,
+    (SELECT COUNT(*) FROM claim_events ce WHERE ce.claim_id = ft.claim_id AND ce.activity = 'P') AS approval_event_count
+FROM FastTransitions ft
+JOIN claims c ON ft.claim_id = c.claim_id
+ORDER BY c.claim_amount ASC;
+
+```
