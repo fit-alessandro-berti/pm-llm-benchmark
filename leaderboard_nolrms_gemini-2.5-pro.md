@@ -1,6 +1,6 @@
 A score in the range **24-29** is considered **sufficient**; a score in the range **29-34** is considered **fair**; a score in the range **34-40** is considered **good**; and a score **>40** is considered **excellent**.
 
-## Base LLMs Leaderboard (1-shot; gemini-2.5-pro-preview-05-06 used as a judge)
+## Base LLMs Leaderboard (1-shot; gemini-2.5-pro-preview-06-05 used as a judge)
 
 | Model                          | Score    | OS                 | LRM   | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | OPT                  | :nerd_face: VI       |
 |:-------------------------------|:---------|:-------------------|:------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
