@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "magistral-small-2506" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "o3-pro-2025-06-10" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-06-05" if len(sys.argv) < 3 else sys.argv[2]
@@ -325,7 +325,7 @@ def get_ordered_references_llms(base_path="."):
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o4-mini-2", "mistral-medium"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
