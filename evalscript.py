@@ -123,4 +123,6 @@ set_api_key("evaluation")
 if __name__ == "__main__":
     Shared.MASS_EVAL = False
 
+    print(EVALUATING_MODEL_NAME)
+
     perform_evaluation()

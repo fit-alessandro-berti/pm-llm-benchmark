@@ -1,0 +1,165 @@
+ANOMALIES OBSERVED IN THE TEMPORAL PROFILE
+
+1. Receive  Approve  
+   • Avg  25 h, STDEV  1 h (very tight spread)  
+   • A business process that always reaches approval in almost exactly the same time is suspicious.
+
+2. Approve  Notify  
+   • Avg  7 days, STDEV  2 days (long delay, high variability)  
+   • Some customers are notified almost immediately, others only after many days.
+
+3. Assign  Close  
+   • Avg  2 h, STDEV  1 h  
+   • Closing directly after assignment suggests Evaluate / Approve steps may be skipped.
+
+4. Evaluate  Notify  
+   • Avg  5 min, STDEV  1 min  
+   • Too quick for realistic human-driven communication; could be an automated trigger.
+
+5. Evaluate  Close  
+   • Avg  1 h, STDEV  50 min  
+   • Large relative spread hints at inconsistent downstream handling.
+
+----------------------------------------------------------------
+POSSIBLE EXPLANATIONS / HYPOTHESES
+
+A. Batch Automation  
+   • A nightly job might auto-approve every claim received the previous day, creating the uniform 25 h gap.
+
+B. Manual Bottlenecks  
+   • Approval letters printed and mailed once a week could explain the 7-day lag before notifying customers.
+
+C. Fast-Track / Auto-Close Rules  
+   • Low-value or clearly invalid claims could be closed immediately after assignment, bypassing evaluation.
+
+D. Missing or Mis-logged Events  
+   • Some events may be written by background services; others inserted by staff later, producing inconsistent gaps.
+
+E. Resource Constraints  
+   • Specific adjusters, regions, or claim types may experience staffing shortages, amplifying delays.
+
+----------------------------------------------------------------
+SQL VERIFICATION QUERIES
+
+-- 1.  Claims whose Receive  Approve time differs by ±2 × STDEV ( 7200 s) from the 25 h mean
+WITH ra AS (
+  SELECT
+        c.claim_id,
+        MIN(CASE WHEN ce.activity = 'R' THEN ce.timestamp END) AS ts_r,
+        MIN(CASE WHEN ce.activity = 'P' THEN ce.timestamp END) AS ts_p
+  FROM claim_events ce
+  JOIN claims c USING (claim_id)
+  GROUP BY c.claim_id
+)
+SELECT claim_id,
+       EXTRACT(EPOCH FROM (ts_p - ts_r)) AS seconds_rp
+FROM   ra
+WHERE  ts_p IS NOT NULL
+  AND  ABS(EXTRACT(EPOCH FROM (ts_p - ts_r)) - 90000) > 7200;   -- 90000 s = 25 h
+
+-- 2.  Same set, but aggregated by adjuster to see who approves unusually fast/slow
+WITH ra AS (
+  SELECT
+        ce.claim_id,
+        MIN(CASE WHEN ce.activity = 'R' THEN ce.timestamp END) AS ts_r,
+        MIN(CASE WHEN ce.activity = 'P' THEN ce.timestamp END) AS ts_p,
+        MAX(CASE WHEN ce.activity = 'A' THEN ce.resource END)   AS adjuster_id
+  FROM claim_events ce
+  GROUP BY ce.claim_id
+)
+SELECT adjuster_id,
+       COUNT(*)                         AS total_claims,
+       AVG(EXTRACT(EPOCH FROM (ts_p - ts_r))) AS avg_seconds_rp
+FROM   ra
+WHERE  ts_p IS NOT NULL
+GROUP  BY adjuster_id
+ORDER  BY avg_seconds_rp DESC;
+
+-- 3.  Claims closed within 2 h after assignment (possible fast-track closes)
+WITH ac AS (
+  SELECT
+        claim_id,
+        MIN(CASE WHEN activity = 'A' THEN timestamp END) AS ts_a,
+        MIN(CASE WHEN activity = 'C' THEN timestamp END) AS ts_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       EXTRACT(EPOCH FROM (ts_c - ts_a))/3600 AS hours_ac
+FROM   ac
+WHERE  ts_c IS NOT NULL
+  AND  ts_a IS NOT NULL
+  AND  ts_c - ts_a < INTERVAL '2 hours';
+
+-- 4.  Approve  Notify taking more than 3 days (late notifications)
+WITH pn AS (
+  SELECT
+        claim_id,
+        MIN(CASE WHEN activity = 'P' THEN timestamp END) AS ts_p,
+        MIN(CASE WHEN activity = 'N' THEN timestamp END) AS ts_n
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT c.claim_id,
+       c.customer_id,
+       ce.resource                       AS approver_resource,
+       EXTRACT(EPOCH FROM (ts_n - ts_p))/86400 AS days_pn
+FROM   pn
+JOIN   claims c USING (claim_id)
+JOIN   claim_events ce
+       ON ce.claim_id = c.claim_id
+      AND ce.activity = 'P'
+WHERE  ts_n IS NOT NULL
+  AND  ts_n - ts_p > INTERVAL '3 days';
+
+-- 5.  Correlate long PN gaps with claim type and customer region
+WITH pn AS (
+  SELECT
+        cl.claim_id,
+        cl.claim_type,
+        adj.region,
+        MIN(CASE WHEN ce.activity='P' THEN ce.timestamp END) AS ts_p,
+        MIN(CASE WHEN ce.activity='N' THEN ce.timestamp END) AS ts_n
+  FROM claims cl
+  JOIN claim_events ce USING (claim_id)
+  LEFT JOIN adjusters adj
+         ON adj.adjuster_id = (SELECT resource
+                               FROM claim_events
+                               WHERE claim_id = cl.claim_id
+                                 AND activity = 'A'
+                               LIMIT 1)
+  GROUP BY cl.claim_id, cl.claim_type, adj.region
+)
+SELECT claim_type,
+       region,
+       COUNT(*)                                    AS claims,
+       AVG(EXTRACT(EPOCH FROM (ts_n - ts_p))/86400) AS avg_days_pn
+FROM pn
+WHERE ts_n IS NOT NULL
+GROUP BY claim_type, region
+ORDER BY avg_days_pn DESC;
+
+-- 6.  Evaluate  Notify times under 2 minutes (possible auto-notifications)
+WITH en AS (
+  SELECT
+        claim_id,
+        MIN(CASE WHEN activity='E' THEN timestamp END) AS ts_e,
+        MIN(CASE WHEN activity='N' THEN timestamp END) AS ts_n
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       EXTRACT(EPOCH FROM (ts_n - ts_e)) AS seconds_en
+FROM   en
+WHERE  ts_n IS NOT NULL
+  AND  ts_n - ts_e < INTERVAL '2 minutes';
+
+----------------------------------------------------------------
+HOW TO USE THE RESULTS
+
+• Compare outliers from query #1 with adjuster workloads from query #2 to see if certain adjusters drive the rigid 25 h approval.  
+• Investigate claims from query #3 for missing ‘E’ or ‘P’ events; check policy rules allowing immediate closure.  
+• For query #4 / #5, determine whether specific claim types or regions are over-represented in late notifications.  
+• For query #6, verify whether the fast notifications are system-generated and whether regulatory requirements are still met.
+
+These analyses should reveal whether the observed timing patterns are legitimate business practices, logging artefacts, or genuine process problems.

@@ -1,0 +1,175 @@
+=====================================================================
+1. What is “wrong” (or at least suspicious) in the POWL model?
+=====================================================================
+
+a. Evaluate / Approve loop  
+   • The loop children are E and then P.  
+   • Because the operator is LOOP, every repetition starts with E but **may exit _after_ E or after P**; in addition, after a P the loop goes back to E again.  
+   • This means (1) approving the same claim many times, (2) approving  evaluating again (nonsense), and (3) possibly leaving the loop **without ever approving** (exit after the first E).
+
+b. XOR (Notify – Skip)  
+   • An XOR between N and a silent transition allows the model to _completely omit_ informing the customer.  
+   • Nothing forces at least one of the XORbranches to be N.
+
+c. Missing edge xor  C  
+   • C (Close Claim) is **not** ordered after the XOR.  
+   • Therefore N (if it happens) and C may occur in parallel, or C may even precede N.
+
+d. Extra edge A  C  
+   • A direct order from A (Assign Adjuster) to C allows the process to be closed **immediately after an adjuster is assigned**, skipping all subsequent steps.
+
+e. Consequences  
+   • Possible traces permitted by the model but unwanted in reality:  
+     – R, A, C (no evaluation, approval, or customer notification)  
+     – R, A, E, C (evaluated but never approved)  
+     – R, A, E, P, E, P, P, N, C (multiple approvals)  
+     – R, A, E, P, C, N (closed before notification)
+
+=====================================================================
+2. Plausible explanations (hypotheses) for the anomalies
+=====================================================================
+
+H-1  Partial implementation of new rules  
+     • A new “quick-close” path for very small claims was requested, so developers simply added the A  C edge and a skip after E, but never finished the consistency checks.
+
+H-2  Miscommunication between business and IT  
+     • Business analysts assumed “the loop exits only after P”, while the technical spec of pm4py LOOP allows exit after the _first_ child; the misunderstanding yields “evaluate-only” endings.
+
+H-3  Technical workaround / logging limitation  
+     • Notification is executed by an external CRM system that sometimes fails to send a callback; modelers therefore inserted a silent skip branch so the process instance does not get stuck.
+
+H-4  Modelling convenience  
+     • Modeler relied on the partial-order semantics (“everything not connected is concurrent”) and forgot to add xor  C, unintentionally enabling premature closure.
+
+H-5  Tool limitation / import bug  
+     • The design was produced in another modelling tool (e.g., BPMN) and auto-converted to POWL; some gateways and end events were translated to weak partial orders.
+
+=====================================================================
+3. How to test the hypotheses with SQL on the operational data
+=====================================================================
+
+Below are example queries you can run on the claim_events table (activity
+values ‘R’, ‘A’, ‘E’, ‘P’, ‘N’, ‘C’) to see whether the suspicious paths
+actually occur.  Each query returns the claim_id’s that violate the
+intended process.
+
+---------------------------------------------------------------------
+3.1  Claims closed without ever being evaluated OR approved
+---------------------------------------------------------------------
+WITH per_claim AS (
+  SELECT claim_id,
+         bool_or(activity = 'E') AS has_e,
+         bool_or(activity = 'P') AS has_p,
+         bool_or(activity = 'C') AS has_c
+  FROM   claim_events
+  GROUP  BY claim_id
+)
+SELECT claim_id
+FROM   per_claim
+WHERE  has_c                                     -- closed
+  AND (NOT has_e OR NOT has_p);                  -- missing E or P
+
+---------------------------------------------------------------------
+3.2  Closure earlier than evaluation or approval
+---------------------------------------------------------------------
+WITH ordered AS (
+  SELECT claim_id,
+         activity,
+         timestamp,
+         ROW_NUMBER() OVER (PARTITION BY claim_id
+                            ORDER BY timestamp) AS seq
+  FROM   claim_events
+  WHERE  activity IN ('E','P','C')
+)
+SELECT c.claim_id
+FROM   ordered c          -- C rows
+JOIN   ordered e          -- E or P rows
+  ON   e.claim_id = c.claim_id
+WHERE  c.activity = 'C'
+  AND  e.activity IN ('E','P')
+  AND  c.seq < e.seq;     -- C happened first
+
+---------------------------------------------------------------------
+3.3  Multiple approvals for the same claim
+---------------------------------------------------------------------
+SELECT claim_id, COUNT(*) AS approval_cnt
+FROM   claim_events
+WHERE  activity = 'P'
+GROUP  BY claim_id
+HAVING COUNT(*) > 1;
+
+---------------------------------------------------------------------
+3.4  Evaluation occurring AFTER approval inside the same claim
+---------------------------------------------------------------------
+WITH e AS (
+  SELECT claim_id, MIN(timestamp) AS first_e
+  FROM   claim_events
+  WHERE  activity = 'E'
+  GROUP  BY claim_id
+), p AS (
+  SELECT claim_id, MIN(timestamp) AS first_p
+  FROM   claim_events
+  WHERE  activity = 'P'
+  GROUP  BY claim_id
+)
+SELECT p.claim_id
+FROM   p JOIN e USING (claim_id)
+WHERE  first_e > first_p;   -- P earlier than E
+
+---------------------------------------------------------------------
+3.5  Customer notification skipped
+---------------------------------------------------------------------
+WITH per_claim AS (
+  SELECT claim_id,
+         bool_or(activity = 'N') AS has_n,
+         bool_or(activity = 'C') AS has_c
+  FROM   claim_events
+  GROUP  BY claim_id
+)
+SELECT claim_id
+FROM   per_claim
+WHERE has_c AND NOT has_n;
+
+---------------------------------------------------------------------
+3.6  Frequency of each anomalous pattern
+---------------------------------------------------------------------
+/* Counts every type of problem in one shot */
+SELECT 'closed_wo_eval_or_appr' AS anomaly, COUNT(*) FROM (
+  /* query 3.1 here */) q1
+UNION ALL
+SELECT 'closure_before_eval_or_appr', COUNT(*) FROM (
+  /* query 3.2 here */) q2
+UNION ALL
+SELECT 'multi_approval', COUNT(*) FROM (
+  /* query 3.3 here */) q3
+UNION ALL
+SELECT 'approve_before_eval', COUNT(*) FROM (
+  /* query 3.4 here */) q4
+UNION ALL
+SELECT 'notification_skipped', COUNT(*) FROM (
+  /* query 3.5 here */) q5;
+
+---------------------------------------------------------------------
+3.7  Relation to adjuster assignment (why A  C?)
+---------------------------------------------------------------------
+/* Claims that have only R, A, C */
+WITH acts AS (
+  SELECT claim_id, array_agg(DISTINCT activity) AS acts
+  FROM   claim_events
+  GROUP  BY claim_id
+)
+SELECT claim_id
+FROM   acts
+WHERE  acts @> ARRAY['R','A','C']
+  AND  NOT acts && ARRAY['E','P','N'];
+
+======================================================
+4. Next steps after the SQL tests
+======================================================
+
+1. If the queries return non-empty sets, export those traces and run a full conformance check in PM4Py against the “ideal” process tree (RAEPNC).  
+2. For hypotheses H-1/H-2, interview business owners for those claim_ids to understand business intent.  
+3. For H-3, cross-check CRM or email logs for the same claim_ids to see whether notification happened outside the workflow system.  
+4. For H-4/H-5, review the modelling history or conversion logs to see where the extra A  C edge and missing xor  C constraint originated.  
+
+By combining the query results with qualitative follow-up, you can confirm or reject each hypothesis and decide what corrections are necessary in the POWL model and/or in the operational system.
