@@ -4,8 +4,8 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 | Model                             | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | OPT                  | :nerd_face: VI       |
 |:----------------------------------|:---------|:-------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| gemini-2.5-flash-pro-thinkhigh    | **42.4** | :x:                | :white_check_mark: | 6.4                  | **8.3**              | 5.2                  | :mage_woman: **5.6** | :mage_woman: **6.2** | 6.0                  | **4.6**              | 4.7                  |
-| gemini-2.5-flash-pro-thinklow     | **42.2** | :x:                | :white_check_mark: | 5.7                  | :mage_woman: **8.4** | 5.3                  | **5.5**              | **6.1**              | :mage_woman: **6.5** | :mage_woman: **4.7** | :mage_woman: **5.4** |
+| gemini-2.5-pro-thinkhigh          | **42.4** | :x:                | :white_check_mark: | 6.4                  | **8.3**              | 5.2                  | :mage_woman: **5.6** | :mage_woman: **6.2** | 6.0                  | **4.6**              | 4.7                  |
+| gemini-2.5-pro-thinklow           | **42.2** | :x:                | :white_check_mark: | 5.7                  | :mage_woman: **8.4** | 5.3                  | **5.5**              | **6.1**              | :mage_woman: **6.5** | :mage_woman: **4.7** | :mage_woman: **5.4** |
 | gemini-2.5-flash-thinkhigh        | **41.0** | :x:                | :white_check_mark: | 6.1                  | **8.3**              | 4.8                  | **5.4**              | :mage_woman: **6.2** | 5.5                  | :mage_woman: **4.7** | 5.1                  |
 | o3-pro-2025-06-10                 | **39.9** | :x:                | :white_check_mark: | 6.2                  | 7.7                  | 5.3                  | 5.2                  | 5.3                  | 5.9                  | 4.3                  | 5.0                  |
 | Grok-3-beta-thinking-20250221     | **38.5** | :x:                | :white_check_mark: | :mage_woman: **6.9** | 6.9                  | :mage_woman: **6.3** | 3.8                  | 4.8                  | 5.9                  | 3.9                  | 0.0                  |
@@ -122,7 +122,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | gemma31b-it-q8_0                  | **12.6** | :white_check_mark: | :x:                | 1.1                  | 1.9                  | 1.0                  | 1.4                  | 3.2                  | 2.0                  | 1.9                  | 0.0                  |
 | deepseek-r1-distill-qwen-1.5b     | **11.1** | :white_check_mark: | :white_check_mark: | 1.5                  | 1.9                  | 1.0                  | 1.2                  | 2.8                  | 1.7                  | 0.9                  | 0.0                  |
 
-### gemini-2.5-flash-pro-thinkhigh   => 42.4 points
+### gemini-2.5-pro-thinkhigh   => 42.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -186,7 +186,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### gemini-2.5-flash-pro-thinklow   => 42.2 points
+### gemini-2.5-pro-thinklow   => 42.2 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
