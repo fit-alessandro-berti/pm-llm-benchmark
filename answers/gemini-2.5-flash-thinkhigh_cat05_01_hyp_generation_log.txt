@@ -1,0 +1,175 @@
+As a process mining expert, I've analyzed your `order_event_log` data against the "Assumed Normal Process Flow." This analysis reveals several anomalies and undesirable behaviors, which suggest potential deviations from standard operating procedures, system issues, or specific handling for certain order types.
+
+### Identified Anomalies and Undesirable Behaviors
+
+**Normal Process Flow (for reference):**
+1.  Register Order (Sales)
+2.  Perform Credit Check (Finance)
+3.  Validate Stock (Warehouse)
+4.  Confirm Shipment (Logistics)
+5.  Ship Goods (Logistics)
+6.  Issue Invoice (Finance)
+7.  Receive Payment (Finance)
+
+Here are the key deviations observed:
+
+---
+
+#### 1. Pre-Shipment Checks Bypassed or Occurring After Shipment
+
+*   **Description:** The process flow dictates that critical checks like `Perform Credit Check` and `Validate Stock` should happen *before* `Confirm Shipment` and especially `Ship Goods`. In several cases, these checks either occur *after* shipping or are entirely absent.
+*   **Examples:**
+    *   **Case 1002:** `Confirm Shipment` and `Ship Goods` occurred before `Perform Credit Check` and `Validate Stock`. The `Confirm Shipment` event also has `additional_info='attempted_early=Y'`, hinting at a deliberate fast-tracking. This order (`priority`) might bypass standard checks.
+    *   **Case 1003:** `Ship Goods` occurred without any preceding `Validate Stock` event.
+    *   **Case 1004:** `Ship Goods` occurred without *any* `Perform Credit Check` or `Validate Stock` events logged for this order.
+*   **Hypotheses:**
+    *   **Policy Deviation / Rush Orders:** For "priority" or urgent orders, there might be a policy (or an unofficial practice) to expedite shipment, with checks done retrospectively or entirely skipped. This could lead to financial risks (bad credit) or operational issues (shipping non-existent stock).
+    *   **System Bypass / Manual Override:** The system might allow logistics activities to proceed without checks, or there are manual procedures to bypass automated gatekeepers.
+    *   **Training Gaps:** Logistics personnel might be unaware of the strict sequence required for these checks.
+    *   **Data Entry Errors:** Incorrect timestamps or activity logging, though less likely for consistent patterns.
+
+---
+
+#### 2. Payment Received Before Invoice Issued
+
+*   **Description:** A payment is generally expected *after* an invoice has been issued. In one instance, payment was received significantly earlier.
+*   **Example:**
+    *   **Case 1004:** `Receive Payment` (09:05:00) happened before `Issue Invoice` (09:20:00). Furthermore, this payment occurred very early in the overall process, even before most core order fulfillment steps.
+*   **Hypotheses:**
+    *   **Pre-Payment Model:** This might represent a "cash-in-advance" or pre-payment type of order, which is not fully accommodated by the assumed standard process flow. If so, the process definition needs to be updated to reflect this legitimate variant.
+    *   **System/Integration Error:** A payment record might have been created or attributed incorrectly before the invoice was formally generated.
+    *   **Fraud/Manual Override:** Payment was processed outside standard channels or policies.
+
+---
+
+#### 3. Shipment Confirmation After Goods Shipped
+
+*   **Description:** The `Confirm Shipment` activity should precede `Ship Goods` as it confirms readiness for dispatch. In one case, the confirmation happened after the goods were already sent.
+*   **Example:**
+    *   **Case 1003:** `Confirm Shipment` (09:45:00) occurred after `Ship Goods` (09:10:00). The `additional_info='late_confirmation=Y'` explicitly indicates this as a known issue for this specific instance.
+*   **Hypotheses:**
+    *   **Reporting Lag:** The confirmation might have happened in real-time, but the system update or event logging was delayed.
+    *   **Process Inversion:** The actual process is `Ship Goods` then `Confirm Shipment` (e.g., confirmation after physical handover), contradicting the assumed ideal flow.
+    *   **Cleanup / Backfilling:** The confirmation was performed retrospectively to reconcile records after the fact.
+
+---
+
+#### 4. Shipment Despite "Shipment Not Scheduled" Confirmation
+
+*   **Description:** A `Confirm Shipment` event explicitly stated `shipment_scheduled=N`, yet `Ship Goods` still occurred for the same order. This indicates a breakdown in control or communication.
+*   **Example:**
+    *   **Case 1004:** `Confirm Shipment` (09:25:00) includes `additional_info='shipment_scheduled=N'`, but `Ship Goods` (09:50:00) for the same order followed shortly after.
+*   **Hypotheses:**
+    *   **Data Inconsistency / Error:** The `additional_info` was incorrectly logged, or the `Ship Goods` event was erroneously logged.
+    *   **Manual Override / Urgent Action:** Despite the "not scheduled" status, a manual override or urgent request forced the shipment.
+    *   **System Flaw:** The system does not enforce the `shipment_scheduled` status, allowing `Ship Goods` to proceed irrespective of this flag.
+
+---
+
+### SQL Queries for Further Investigation
+
+The following SQL queries can be run against your PostgreSQL database to quantify the occurrence of these anomalies and identify patterns.
+
+#### Query 1: Cases where `Ship Goods` occurred before or without `Perform Credit Check` or `Validate Stock`
+
+This query identifies orders where critical pre-shipment checks were either skipped entirely or completed *after* the goods were shipped, posing a significant risk.
+
+```sql
+SELECT DISTINCT
+    oel.case_id,
+    o.order_type,
+    o.order_value,
+    (SELECT MIN(timestamp) FROM order_event_log WHERE case_id = oel.case_id AND activity = 'Ship Goods') AS ship_goods_time,
+    (SELECT MIN(timestamp) FROM order_event_log WHERE case_id = oel.case_id AND activity = 'Perform Credit Check') AS credit_check_time,
+    (SELECT MIN(timestamp) FROM order_event_log WHERE case_id = oel.case_id AND activity = 'Validate Stock') AS validate_stock_time
+FROM
+    order_event_log oel
+JOIN
+    orders o ON oel.case_id = o.case_id
+WHERE
+    oel.activity = 'Ship Goods'
+    AND (
+        NOT EXISTS (SELECT 1 FROM order_event_log pcc WHERE pcc.case_id = oel.case_id AND pcc.activity = 'Perform Credit Check' AND pcc.timestamp < oel.timestamp)
+        OR NOT EXISTS (SELECT 1 FROM order_event_log vs WHERE vs.case_id = oel.case_id AND vs.activity = 'Validate Stock' AND vs.timestamp < oel.timestamp)
+        OR EXISTS (SELECT 1 FROM order_event_log pcc WHERE pcc.case_id = oel.case_id AND pcc.activity = 'Perform Credit Check' AND pcc.timestamp > oel.timestamp)
+        OR EXISTS (SELECT 1 FROM order_event_log vs WHERE vs.case_id = oel.case_id AND vs.activity = 'Validate Stock' AND vs.timestamp > oel.timestamp)
+    );
+```
+
+#### Query 2: Cases where `Receive Payment` occurred before `Issue Invoice`
+
+This query helps identify "pre-payment" scenarios or issues with the billing-to-payment process.
+
+```sql
+SELECT DISTINCT
+    rp.case_id,
+    rp.timestamp AS payment_timestamp,
+    ii.timestamp AS invoice_timestamp,
+    (rp.timestamp - ii.timestamp) AS time_difference
+FROM
+    order_event_log rp
+JOIN
+    order_event_log ii ON rp.case_id = ii.case_id
+WHERE
+    rp.activity = 'Receive Payment'
+    AND ii.activity = 'Issue Invoice'
+    AND rp.timestamp < ii.timestamp;
+```
+
+#### Query 3: Cases where `Ship Goods` occurred despite `Confirm Shipment` indicating "Not Scheduled"
+
+This query flags potential control bypasses or data discrepancies where shipping proceeded against a negative confirmation.
+
+```sql
+SELECT DISTINCT
+    cs.case_id,
+    cs.timestamp AS confirm_shipment_timestamp,
+    cs.additional_info AS confirm_shipment_info,
+    sg.timestamp AS ship_goods_timestamp
+FROM
+    order_event_log cs
+JOIN
+    order_event_log sg ON cs.case_id = sg.case_id
+WHERE
+    cs.activity = 'Confirm Shipment'
+    AND cs.additional_info LIKE '%shipment_scheduled=N%'
+    AND sg.activity = 'Ship Goods'
+    AND sg.timestamp > cs.timestamp; -- Ensure Ship Goods happened AFTER the 'N' confirmation
+```
+
+#### Query 4: Cases where `Confirm Shipment` occurred *after* `Ship Goods`
+
+This query identifies instances where the confirmation of shipment readiness happened belatedly, possibly indicating a retrospective update or a process step executed out of sequence.
+
+```sql
+SELECT DISTINCT
+    sg.case_id,
+    sg.timestamp AS ship_goods_timestamp,
+    cs.timestamp AS confirm_shipment_timestamp,
+    cs.additional_info AS confirm_shipment_info
+FROM
+    order_event_log sg
+JOIN
+    order_event_log cs ON sg.case_id = cs.case_id
+WHERE
+    sg.activity = 'Ship Goods'
+    AND cs.activity = 'Confirm Shipment'
+    AND cs.timestamp > sg.timestamp; -- Anomaly: Confirmation happened AFTER shipping
+```
+
+#### Query 5: Identify `Ship Goods` cases with *entirely missing* `Perform Credit Check` or `Validate Stock` events
+
+This identifies cases where a core pre-requisite activity for shipping was never logged at all for the entire order lifecycle.
+
+```sql
+SELECT DISTINCT o.case_id, o.order_type, o.order_value
+FROM orders o
+WHERE
+    EXISTS (SELECT 1 FROM order_event_log sg WHERE sg.case_id = o.case_id AND sg.activity = 'Ship Goods') -- Order was shipped
+    AND (
+        NOT EXISTS (SELECT 1 FROM order_event_log pcc WHERE pcc.case_id = o.case_id AND pcc.activity = 'Perform Credit Check') -- But no credit check ever happened
+        OR NOT EXISTS (SELECT 1 FROM order_event_log vs WHERE vs.case_id = o.case_id AND vs.activity = 'Validate Stock')    -- Or no stock validation ever happened
+    );
+```
+
+These queries will help you drill down into the frequency and specifics of each anomaly, allowing you to investigate the underlying causes and potentially enforce stricter process adherence or update your process definitions to account for legitimate variations.

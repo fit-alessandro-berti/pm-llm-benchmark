@@ -1,0 +1,154 @@
+Based on the provided temporal profile model and database schema, here is an analysis of process anomalies, hypotheses for their causes, and SQL queries for verification.
+
+### 1. Identified Anomalies in the Temporal Profile
+
+The temporal profile model reveals several significant anomalies that suggest irregularities in the insurance claim handling process:
+
+*   **Long Delay from Approval to Notification (`P` to `N`):** The average time of 7 days (604,800 seconds) between a claim being approved and the customer being notified is excessively long. The high standard deviation of 2 days indicates this delay is also highly inconsistent.
+*   **Suspiciously Rigid Timing from Receive to Approve (`R` to `P`):** An average time of approximately 25 hours (90,000 seconds) with a very low standard deviation of only 1 hour is unusual for a process step that typically involves human evaluation. This suggests an automated or artificially constrained process.
+*   **Premature Closure After Assignment (`A` to `C`):** The average time of 2 hours from an adjuster being assigned to a claim being closed is very short. This implies that key intermediate steps like Evaluation (`E`) and Approval (`P`) may be getting skipped for a subset of claims.
+*   **Instantaneous Transition from Evaluate to Notify (`E` to `N`):** The 5-minute average time between evaluation and notification is too rapid to accommodate a proper approval (`P`) step, suggesting this step is bypassed in certain scenarios.
+
+### 2. Hypotheses for Anomalies
+
+Here are potential explanations for the observed anomalies:
+
+| Anomaly                               | Hypothesis                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Long Delay (`P` to `N`)**           | **1. Batch Processing:** Customer notifications might be generated in a weekly batch job, causing approvals from early in the week to wait several days. <br/> **2. Manual Bottleneck:** The notification step could be a manual process (e.g., drafting and mailing letters) handled by an understaffed team, creating a significant backlog. |
+| **Rigid Timing (`R` to `P`)**         | **1. Automated Approval Rules:** A system rule may automatically approve certain low-value or low-risk claims exactly 24 hours after submission to meet a strict Service Level Agreement (SLA). <br/> **2. Inflexible Batch Job:** An overnight batch job may be responsible for the approval step, leading to a fixed, non-variable time interval.   |
+| **Premature Closure (`A` to `C`)**    | **1. Fast-Track Rejections:** Claims that are immediately identifiable as invalid (e.g., duplicate submission, missing information) may be closed by adjusters without a full evaluation. <br/> **2. Low-Value Auto-Closure:** A policy might exist to automatically close claims below a certain monetary threshold immediately after assignment.       |
+| **Instantaneous Transition (`E` to `N`)** | **1. Skipped Approval for Denials:** When an adjuster evaluates and decides to deny a claim, the system may log the `E` and `N` events simultaneously, bypassing the `P` (Approve) step entirely. <br/> **2. Automated Adjudication:** For simple claims, an automated system might perform the evaluation and trigger the notification in a single, rapid transaction.         |
+
+### 3. Verification Approaches with SQL Queries
+
+The following PostgreSQL queries can be used to investigate these hypotheses.
+
+---
+
+#### **Query 1: Investigate Long Delays from Approval to Notification (`P` to `N`)**
+
+This query identifies claims with a `P` to `N` delay of more than 5 days and aggregates them by the day of the week the approval occurred. This can help verify the "weekly batch job" hypothesis.
+
+```sql
+WITH p_events AS (
+    SELECT claim_id, "timestamp" AS p_time
+    FROM claim_events
+    WHERE activity = 'P'
+),
+n_events AS (
+    SELECT claim_id, "timestamp" AS n_time
+    FROM claim_events
+    WHERE activity = 'N'
+)
+SELECT
+    -- Extract the day of the week for the approval event
+    EXTRACT(DOW FROM p.p_time) AS approval_day_of_week, -- 0=Sun, 1=Mon... 6=Sat
+    COUNT(*) AS num_delayed_claims,
+    -- Calculate average delay in days
+    AVG(EXTRACT(EPOCH FROM (n.n_time - p.p_time))) / 86400.0 AS avg_delay_days
+FROM p_events p
+JOIN n_events n ON p.claim_id = n.claim_id
+-- Filter for claims where the P -> N delay is greater than 5 days
+WHERE (n.n_time > p.p_time) AND (EXTRACT(EPOCH FROM (n.n_time - p.p_time)) > 432000)
+GROUP BY approval_day_of_week
+ORDER BY approval_day_of_week;
+```
+
+---
+
+#### **Query 2: Investigate Rigid Timing from Receive to Approve (`R` to `P`)**
+
+This query checks for claims approved with suspiciously consistent timing (24-26 hours after receipt) and groups them by `claim_type` and `adjuster_specialization` to see if this pattern is tied to specific rules or teams.
+
+```sql
+WITH r_events AS (
+    SELECT claim_id, "timestamp" AS r_time
+    FROM claim_events
+    WHERE activity = 'R'
+),
+p_events AS (
+    SELECT claim_id, "timestamp" AS p_time, resource
+    FROM claim_events
+    WHERE activity = 'P'
+)
+SELECT
+    c.claim_type,
+    a.specialization,
+    COUNT(c.claim_id) AS num_rigidly_timed_claims
+FROM r_events r
+JOIN p_events p ON r.claim_id = p.claim_id
+JOIN claims c ON r.claim_id = c.claim_id
+LEFT JOIN adjusters a ON p.resource = a.adjuster_id::VARCHAR
+-- Filter for a time difference between 24 and 26 hours (86400 to 93600 seconds)
+WHERE EXTRACT(EPOCH FROM (p.p_time - r.r_time)) BETWEEN 86400 AND 93600
+GROUP BY c.claim_type, a.specialization
+ORDER BY num_rigidly_timed_claims DESC;
+```
+
+---
+
+#### **Query 3: Identify Claims Closed Prematurely After Assignment (`A` to `C`)**
+
+This query finds claims that were closed within 3 hours of being assigned and did not have an `E` (Evaluate) or `P` (Approve) event logged in between. It analyzes these claims by `claim_type` and average `claim_amount` to test the "fast-track rejection" or "low-value auto-closure" hypotheses.
+
+```sql
+WITH event_sequences AS (
+    -- Get the sequence of activities for each claim
+    SELECT
+        claim_id,
+        STRING_AGG(activity, '' ORDER BY "timestamp") AS activity_path,
+        MIN(CASE WHEN activity = 'A' THEN "timestamp" END) AS assign_time,
+        MAX(CASE WHEN activity = 'C' THEN "timestamp" END) AS close_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_type,
+    COUNT(es.claim_id) AS num_prematurely_closed,
+    AVG(c.claim_amount) AS avg_claim_amount
+FROM event_sequences es
+JOIN claims c ON es.claim_id = c.claim_id
+WHERE
+    -- Check for the "Assign then Close" path without evaluation/approval
+    es.activity_path LIKE '%AC%' AND
+    es.activity_path NOT LIKE '%A%E%C%' AND
+    es.activity_path NOT LIKE '%A%P%C%' AND
+    -- Check that the closure happened within 3 hours of assignment
+    es.assign_time IS NOT NULL AND es.close_time IS NOT NULL AND
+    EXTRACT(EPOCH FROM (es.close_time - es.assign_time)) < 10800
+GROUP BY c.claim_type
+ORDER BY num_prematurely_closed DESC;
+```
+
+---
+
+#### **Query 4: Find Claims Skipping Approval (`E` directly to `N`)**
+
+This query identifies claims where notification happened within 10 minutes of evaluation, but no approval event exists between them. This helps verify the "skipped approval for denials" hypothesis.
+
+```sql
+WITH event_pairs AS (
+    -- Use LEAD() to find the next event for each 'E' event
+    SELECT
+        claim_id,
+        "timestamp" AS e_time,
+        LEAD(activity, 1) OVER(PARTITION BY claim_id ORDER BY "timestamp") as next_activity,
+        LEAD("timestamp", 1) OVER(PARTITION BY claim_id ORDER BY "timestamp") as next_time
+    FROM claim_events
+    WHERE activity = 'E'
+)
+SELECT
+    ep.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    EXTRACT(EPOCH FROM (ep.next_time - ep.e_time)) AS seconds_to_notify
+FROM event_pairs ep
+JOIN claims c ON ep.claim_id = c.claim_id
+WHERE
+    -- The next activity is 'N' (Notification)
+    ep.next_activity = 'N'
+    -- The transition happened in under 10 minutes (600 seconds)
+    AND EXTRACT(EPOCH FROM (ep.next_time - ep.e_time)) < 600
+ORDER BY seconds_to_notify ASC;
+```

@@ -279,11 +279,6 @@ MODELS_DICT = {
                 "base_model": "gemini-2.5-flash",
                 "thinking_tokens": 24576
             },
-            "gemini-2.5-flash-nothink": {
-                "provider": "google",
-                "base_model": "gemini-2.5-flash",
-                "thinking_tokens": 0
-            },
             "gemini-2.5-flash-lite-thinkhigh": {
                 "provider": "google",
                 "base_model": "gemini-2.5-flash-lite-preview-06-17",
@@ -293,6 +288,16 @@ MODELS_DICT = {
                 "provider": "google",
                 "base_model": "gemini-2.5-flash-lite-preview-06-17",
                 "thinking_tokens": 0
+            },
+            "gemini-2.5-flash-pro-thinklow": {
+                "provider": "google",
+                "base_model": "gemini-2.5-pro",
+                "thinking_tokens": 2048
+            },
+            "gemini-2.5-flash-pro-thinkhigh": {
+                "provider": "google",
+                "base_model": "gemini-2.5-pro",
+                "thinking_tokens": 32768
             },
             "nvidia/llama-3.1-nemotron-ultra-253b-v1-thinkenab": {
                 "provider": "nvidia",

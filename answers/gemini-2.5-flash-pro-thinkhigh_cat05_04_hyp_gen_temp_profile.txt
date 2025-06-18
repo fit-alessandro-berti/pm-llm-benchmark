@@ -1,0 +1,184 @@
+Based on the provided temporal profile model for the insurance claim handling process, several anomalies are apparent. Below is an analysis of these anomalies, hypotheses for their root causes, and SQL queries to verify these hypotheses.
+
+### 1. Identified Anomalies in the Temporal Profile
+
+The following activity pairs exhibit unusual timing characteristics that deviate from a typical, stable process:
+
+*   **Receive to Approve (`R` -> `P`)**: The average time of ~25 hours is coupled with a very low standard deviation of 1 hour. This suggests a rigid, almost scheduled timing for approvals that is inconsistent with the variable nature of claim processing.
+*   **Approve to Notify (`P` -> `N`)**: An extremely long average delay of 7 days with a high standard deviation of 2 days is a significant bottleneck. This indicates a severe and inconsistent delay between making a decision and communicating it.
+*   **Assign to Close (`A` -> `C`)**: An average time of 2 hours from assignment to closure is suspiciously fast. This may indicate that key intermediate steps like Evaluation (`E`) and Approval (`P`) are being skipped for a subset of claims.
+*   **Evaluate to Notify (`E` -> `N`)**: The 5-minute average time between evaluation and notification is exceptionally short, suggesting either a highly efficient automated process for some claims or that the two events are logged almost simultaneously, which may not reflect the actual business process.
+
+### 2. Hypotheses for Observed Anomalies
+
+#### Anomaly: Receive (`R`) to Approve (`P`) - Low Variance
+*   **Hypothesis 1: Batch Processing.** Approvals might be processed in a daily batch job that runs at a fixed time. Claims received are queued and then approved in bulk, leading to a consistent 24-hour cycle plus minor processing time.
+*   **Hypothesis 2: Fast-Track for Specific Claims.** Certain low-complexity or low-value claim types might be subject to a strict Service Level Agreement (SLA) that mandates approval within a fixed timeframe, leading to low variance.
+
+#### Anomaly: Approve (`P`) to Notify (`N`) - Long and Variable Delay
+*   **Hypothesis 1: Manual Notification Bottleneck.** The notification process might be a manual task (e.g., drafting and mailing physical letters) handled by an understaffed team, causing a significant backlog. The high variance could be due to staff availability or prioritizing certain notifications over others.
+*   **Hypothesis 2: Dependency on Customer Channel.** The delay could vary based on the customer's preferred notification method. Emails might be sent quickly, while physical mail could take days. The variability reflects the mix of communication channels.
+
+#### Anomaly: Assign (`A`) to Close (`C`) - Short Duration
+*   **Hypothesis 1: Premature Closure of Invalid Claims.** Some claims might be identified as duplicates, fraudulent, or out-of-scope immediately after assignment and are closed without a full evaluation.
+*   **Hypothesis 2: Special Handling by Senior Adjusters.** Senior adjusters might be assigned complex claims that have already been partially evaluated, or they may have the authority to close claims directly based on initial information, bypassing formal steps.
+
+#### Anomaly: Evaluate (`E`) to Notify (`N`) - Very Short Duration
+*   **Hypothesis 1: Fully Automated Decisions.** For simple, data-driven claims (e.g., minor auto-glass repair), an automated system may perform the evaluation and trigger an immediate notification (email/SMS) without human intervention.
+*   **Hypothesis 2: Logging Anomaly.** The system might log the 'N' event at the same time as the 'E' event is completed by an adjuster in the user interface, even if the actual communication to the customer is sent later by a different system or process.
+
+### 3. Verification Approaches Using SQL Queries
+
+The following PostgreSQL queries can be used to investigate these hypotheses.
+
+#### Query 1: Investigate Low Variance in (Receive -> Approve)
+
+**Purpose:** To test if the low variance is tied to a specific `claim_type` or if it's a general pattern. This helps verify the "Fast-Track" hypothesis.
+
+```sql
+-- This query calculates the time difference between 'R' and 'P' events
+-- and groups the average and standard deviation by claim_type.
+WITH ranked_events AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        ce.activity,
+        ce.timestamp,
+        -- Find the timestamp of the 'P' event for each claim
+        LEAD(ce.timestamp) OVER (PARTITION BY ce.claim_id ORDER BY ce.timestamp) as next_timestamp,
+        -- Find the activity of the next event
+        LEAD(ce.activity) OVER (PARTITION BY ce.claim_id ORDER BY ce.timestamp) as next_activity
+    FROM claim_events ce
+    JOIN claims c ON ce.claim_id = c.claim_id
+),
+r_to_p_durations AS (
+    SELECT
+        claim_id,
+        claim_type,
+        EXTRACT(EPOCH FROM (next_timestamp - timestamp)) AS duration_seconds
+    FROM ranked_events
+    WHERE activity = 'R' AND next_activity = 'P' -- Checks for direct R -> P, adjust if other events can be in between
+)
+SELECT
+    claim_type,
+    COUNT(*) AS num_claims,
+    AVG(duration_seconds) AS avg_duration_seconds,
+    STDDEV(duration_seconds) AS stdev_duration_seconds
+FROM r_to_p_durations
+GROUP BY claim_type
+ORDER BY stdev_duration_seconds ASC;
+```
+*   **Interpretation:** If a specific `claim_type` shows a low standard deviation close to 3600 seconds (1 hour), it supports the "Fast-Track" hypothesis. If the pattern is consistent across all types, it may point towards batch processing.
+
+---
+#### Query 2: Analyze the Long Delay in (Approve -> Notify)
+
+**Purpose:** To identify if the long P-to-N delay correlates with the resource performing the notification. This can confirm a bottleneck.
+
+```sql
+-- This query finds claims with a long P-to-N delay and aggregates them by the resource that performed the 'N' activity.
+WITH event_times AS (
+    SELECT
+        claim_id,
+        activity,
+        resource,
+        timestamp
+    FROM claim_events
+    WHERE activity IN ('P', 'N')
+),
+p_n_pairs AS (
+    SELECT
+        p.claim_id,
+        n.resource AS notifying_resource,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS p_to_n_duration_seconds
+    FROM event_times p
+    JOIN event_times n ON p.claim_id = n.claim_id
+    WHERE p.activity = 'P' AND n.activity = 'N' AND n.timestamp > p.timestamp
+)
+SELECT
+    notifying_resource,
+    COUNT(*) AS total_notifications,
+    AVG(p_to_n_duration_seconds) / 3600 AS avg_delay_hours,
+    MAX(p_to_n_duration_seconds) / (3600 * 24) AS max_delay_days,
+    STDDEV(p_to_n_duration_seconds) / 3600 AS stdev_delay_hours
+FROM p_n_pairs
+GROUP BY notifying_resource
+ORDER BY avg_delay_hours DESC;
+```
+*   **Interpretation:** If one or a few `notifying_resource` values (e.g., "Manual_Notification_Desk") show a significantly higher average delay, it points to a specific bottleneck.
+
+---
+#### Query 3: Find Claims Closed Directly After Assignment
+
+**Purpose:** To find claims that are closed quickly after assignment, bypassing other steps, and analyze their characteristics (e.g., type, amount).
+
+```sql
+-- This query identifies claims where 'C' is the next event after 'A'
+-- and the duration is less than 3 hours, then lists their details.
+WITH ranked_events AS (
+    SELECT
+        claim_id,
+        activity,
+        timestamp,
+        LEAD(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_activity,
+        LEAD(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_timestamp
+    FROM claim_events
+),
+fast_closures AS (
+    SELECT
+        claim_id,
+        EXTRACT(EPOCH FROM (next_timestamp - timestamp)) AS duration_seconds
+    FROM ranked_events
+    WHERE activity = 'A' AND next_activity = 'C' AND
+          EXTRACT(EPOCH FROM (next_timestamp - timestamp)) < 10800 -- 3 hours
+)
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    c.submission_date,
+    fc.duration_seconds
+FROM fast_closures fc
+JOIN claims c ON fc.claim_id = c.claim_id
+ORDER BY c.claim_amount DESC;
+```
+*   **Interpretation:** A high number of low-value claims or a specific `claim_type` in the results would support the hypothesis that certain claims are closed prematurely based on predefined rules.
+
+---
+#### Query 4: Correlate (Evaluate -> Notify) Speed with Adjuster Specialization
+
+**Purpose:** To check if the very fast E-to-N transition is associated with claims handled by adjusters of a certain specialization, or if it's tied to an automated resource.
+
+```sql
+-- This query calculates the E-to-N duration and correlates it with the specialization of the adjuster who performed the evaluation.
+WITH events_with_adjuster AS (
+    SELECT
+        ce.claim_id,
+        ce.activity,
+        ce.timestamp,
+        ce.resource,
+        a.specialization
+    FROM claim_events ce
+    LEFT JOIN adjusters a ON ce.resource = a.name -- Assuming resource is adjuster name
+    WHERE ce.activity IN ('E', 'N')
+),
+e_n_durations AS (
+    SELECT
+        e.claim_id,
+        e.specialization,
+        e.resource AS evaluating_resource,
+        EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS duration_seconds
+    FROM events_with_adjuster e
+    JOIN events_with_adjuster n ON e.claim_id = n.claim_id
+    WHERE e.activity = 'E' AND n.activity = 'N' AND n.timestamp > e.timestamp
+)
+SELECT
+    specialization,
+    evaluating_resource,
+    COUNT(*) AS num_claims,
+    AVG(duration_seconds) AS avg_duration_seconds
+FROM e_n_durations
+GROUP BY specialization, evaluating_resource
+ORDER BY avg_duration_seconds ASC;
+```
+*   **Interpretation:** If resources named like "AutoSystem" or "RuleEngine" show near-zero durations, it confirms the automation hypothesis. Alternatively, if adjusters with a "home" specialization consistently have short durations, it might indicate a streamlined process for that claim type.
