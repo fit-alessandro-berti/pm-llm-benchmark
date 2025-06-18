@@ -13,7 +13,7 @@ from typing import Dict, Any
 ANSWERING_MODEL_NAME = "o3-pro-2025-06-10" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
-EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-06-05" if len(sys.argv) < 3 else sys.argv[2]
+EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
 
 
 class Shared:
@@ -69,8 +69,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gemini-1.5-pro-002", "gemini-2.0-flash", "gemini-2.0-flash-lite",
-            "gemini-2.5-pro-preview-05-06", "gemma-3n-e4b-it",
-            "gemini-2.5-pro-preview-06-05"
+            "gemma-3n-e4b-it",
         }
     },
     "claude": {
@@ -270,15 +269,30 @@ MODELS_DICT = {
                 "base_model": "grok-3-mini-fast",
                 "reasoning_effort": "low"
             },
-            "gemini-2.5-flash-05-20-nothink": {
+            "gemini-2.5-flash-nothink": {
                 "provider": "google",
-                "base_model": "gemini-2.5-flash-preview-05-20",
+                "base_model": "gemini-2.5-flash",
                 "thinking_tokens": 0
             },
-            "gemini-2.5-flash-05-20-thinkhigh": {
+            "gemini-2.5-flash-thinkhigh": {
                 "provider": "google",
-                "base_model": "gemini-2.5-flash-preview-05-20",
+                "base_model": "gemini-2.5-flash",
                 "thinking_tokens": 24576
+            },
+            "gemini-2.5-flash-nothink": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash",
+                "thinking_tokens": 0
+            },
+            "gemini-2.5-flash-lite-thinkhigh": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-lite-preview-06-17",
+                "thinking_tokens": 24576
+            },
+            "gemini-2.5-flash-lite-nothink": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-lite-preview-06-17",
+                "thinking_tokens": 0
             },
             "nvidia/llama-3.1-nemotron-ultra-253b-v1-thinkenab": {
                 "provider": "nvidia",
