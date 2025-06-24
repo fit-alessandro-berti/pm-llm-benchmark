@@ -289,12 +289,12 @@ MODELS_DICT = {
                 "base_model": "gemini-2.5-flash-lite-preview-06-17",
                 "thinking_tokens": 0
             },
-            "gemini-2.5-flash-pro-thinklow": {
+            "gemini-2.5-pro-thinklow": {
                 "provider": "google",
                 "base_model": "gemini-2.5-pro",
                 "thinking_tokens": 2048
             },
-            "gemini-2.5-flash-pro-thinkhigh": {
+            "gemini-2.5-pro-thinkhigh": {
                 "provider": "google",
                 "base_model": "gemini-2.5-pro",
                 "thinking_tokens": 32768
@@ -791,7 +791,7 @@ def query_text_simple_google(question, api_url, target_file):
         ]
     }
 
-    if "gemini-2.5-flash" in Shared.MODEL_NAME:
+    if "gemini-2.5" in Shared.MODEL_NAME:
         payload["generationConfig"] = {
             "thinkingConfig": {
                 "thinkingBudget": Shared.ANTHROPIC_THINKING_TOKENS if Shared.ANTHROPIC_THINKING_TOKENS is not None else 0
