@@ -794,7 +794,7 @@ def query_text_simple_google(question, api_url, target_file):
     if "gemini-2.5" in Shared.MODEL_NAME:
         payload["generationConfig"] = {
             "thinkingConfig": {
-                "thinkingBudget": Shared.ANTHROPIC_THINKING_TOKENS if Shared.ANTHROPIC_THINKING_TOKENS is not None else 0
+                "thinkingBudget": Shared.ANTHROPIC_THINKING_TOKENS if Shared.ANTHROPIC_THINKING_TOKENS is not None else 8192
             }
         }
 
