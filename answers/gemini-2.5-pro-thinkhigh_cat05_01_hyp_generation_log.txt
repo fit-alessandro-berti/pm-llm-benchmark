@@ -1,0 +1,171 @@
+Of course. Based on the provided database schema, normal process flow, and event log data, here is a detailed analysis of anomalies, hypotheses for their causes, and SQL queries to investigate them.
+
+### Analysis of Anomalies and Undesirable Behaviors
+
+After reviewing the event log data against the "Assumed Normal Process Flow," several anomalies and undesirable behaviors are evident.
+
+#### 1. Process Sequence Violations
+The most significant anomaly is the deviation from the standard sequence of activities. The normal flow implies a specific order of operations that is being violated in multiple cases.
+
+*   **Observation (Case 1002):** The order was shipped (`Ship Goods`) *before* the credit check and stock validation were performed. This is a major business risk, as the company might ship goods to a customer with poor credit or ship an item that wasn't properly validated in the warehouse.
+*   **Observation (Case 1003):** The goods were shipped (`Ship Goods`) *before* the shipment was officially confirmed (`Confirm Shipment`). This suggests a breakdown in coordination within the Logistics department.
+*   **Observation (Case 1004):** Payment was received almost immediately after the order was registered, and the invoice was issued *before* shipment was even confirmed. This could be a valid "pro-forma" or "pre-payment" process, but it deviates significantly from the standard flow.
+
+#### 2. Missing Process Steps
+Critical steps in the defined process are entirely absent in some cases.
+
+*   **Observation (Case 1003):** The `Validate Stock` activity is missing. The process jumps from `Perform Credit Check` directly to `Ship Goods`. This could lead to shipping incorrect items, items that are out of stock (causing backorders), or other fulfillment errors.
+*   **Observation (Case 1004):** Both `Perform Credit Check` and `Validate Stock` are missing. This is highly problematic, especially for a high-value order (`order_value` = 3000.00).
+
+#### 3. Contradictory Information in Event Data
+There are instances where the data within an event seems to conflict with subsequent actions.
+
+*   **Observation (Case 1004):** The `Confirm Shipment` activity has `additional_info` of `shipment_scheduled=N`. Logically, this should halt the process. However, a `Ship Goods` event occurs just 25 minutes later. This indicates a system override or a failure in process controls.
+
+---
+
+### Hypotheses and Investigative SQL Queries
+
+Here are hypotheses for why these anomalies might be occurring, along with specific SQL queries to validate them.
+
+---
+
+#### Hypothesis 1: The process flow differs based on `order_type`, but this isn't formally documented.
+**Rationale:** `priority` orders (like Case 1002) might follow an accelerated, riskier path to meet faster SLAs, intentionally skipping or reordering steps like the credit check. The "standard" flow might not apply to all order types.
+
+**Proposed SQL Query:**
+This query checks if sequence violations (e.g., shipping before credit check) or missing steps are correlated with the `order_type` from the `orders` table.
+
+```sql
+/*
+  Query 1: Identify cases with missing steps and correlate with order type.
+  This query finds all cases missing the 'Perform Credit Check' activity
+  and groups them by order type to see if a pattern emerges.
+*/
+SELECT
+    o.order_type,
+    COUNT(o.case_id) AS num_cases_missing_credit_check,
+    AVG(o.order_value) AS avg_order_value_for_these_cases,
+    SUM(o.order_value) AS total_value_at_risk
+FROM orders AS o
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM order_event_log AS e
+    WHERE e.case_id = o.case_id AND e.activity = 'Perform Credit Check'
+)
+GROUP BY o.order_type
+ORDER BY num_cases_missing_credit_check DESC;
+```
+
+---
+
+#### Hypothesis 2: Certain employees or departments are systematically bypassing process controls.
+**Rationale:** The sequence violations might not be related to order type but rather to the behavior of specific resources or entire departments. This could be due to a lack of training, performance pressures, or a belief that certain steps are unnecessary.
+
+**Proposed SQL Query:**
+This query identifies cases where `Ship Goods` occurred before `Validate Stock` and then aggregates the responsible resources and their departments to see if a particular person or group is a frequent offender.
+
+```sql
+/*
+  Query 2: Find resources who ship goods before stock validation.
+  This query uses Common Table Expressions (CTEs) to find the timestamps for
+  'Ship Goods' and 'Validate Stock' events for each case. It then joins them
+  to find instances where shipping happened first and aggregates by the
+  resource who performed the 'Ship Goods' action.
+*/
+WITH ShipEvents AS (
+    SELECT case_id, resource, timestamp AS ship_timestamp
+    FROM order_event_log
+    WHERE activity = 'Ship Goods'
+),
+StockValidationEvents AS (
+    SELECT case_id, timestamp AS validation_timestamp
+    FROM order_event_log
+    WHERE activity = 'Validate Stock'
+)
+SELECT
+    r.department,
+    s.resource,
+    COUNT(s.case_id) AS num_of_violations
+FROM ShipEvents AS s
+JOIN StockValidationEvents AS v ON s.case_id = v.case_id
+JOIN resources AS r ON s.resource = r.resource_id
+WHERE s.ship_timestamp < v.validation_timestamp
+GROUP BY r.department, s.resource
+ORDER BY num_of_violations DESC;
+```
+
+---
+
+#### Hypothesis 3: The system has control gaps that allow illogical sequences to occur.
+**Rationale:** The issue may not be with the people but with the software. The system might not be configured to enforce the process sequence, allowing a user to click "Ship Goods" even if prerequisite steps are incomplete. The `shipment_scheduled=N` anomaly in Case 1004 strongly supports this hypothesis.
+
+**Proposed SQL Query:**
+This query specifically searches for the contradictory scenario observed in Case 1004: a `Confirm Shipment` event with `shipment_scheduled=N` that is still followed by a `Ship Goods` event for the same case.
+
+```sql
+/*
+  Query 3: Detect cases where shipment proceeded despite being unscheduled.
+  This finds all 'Confirm Shipment' events where additional_info indicates the
+  shipment was NOT scheduled, and then checks if a 'Ship Goods' event
+  nevertheless exists for that same case.
+*/
+SELECT
+    oel.case_id,
+    oel.resource AS confirming_resource,
+    oel.timestamp AS confirmation_time,
+    oel.additional_info
+FROM order_event_log AS oel
+WHERE
+    oel.activity = 'Confirm Shipment'
+    AND oel.additional_info LIKE '%shipment_scheduled=N%'
+    AND EXISTS (
+        SELECT 1
+        FROM order_event_log AS ship_event
+        WHERE ship_event.case_id = oel.case_id
+          AND ship_event.activity = 'Ship Goods'
+    );
+```
+
+---
+
+#### Hypothesis 4: There are significant process bottlenecks causing delays and workarounds.
+**Rationale:** The `late_confirmation` flag in Case 1003 suggests that some steps take too long, potentially encouraging staff in later steps to proceed without waiting for official confirmation. Analyzing the time (duration) between steps can reveal where these bottlenecks are.
+
+**Proposed SQL Query:**
+This query uses the `LEAD()` window function to calculate the time between consecutive steps for each case. It then calculates the average duration between each pair of activities, grouped by the department of the resource who performed the first activity. This can highlight which activities/departments are the slowest.
+
+```sql
+/*
+  Query 4: Analyze average duration between process steps by department.
+  This advanced query calculates the time elapsed between each step in every case.
+  It then averages these durations across all cases to identify which
+  transitions are taking the most time and which department is responsible.
+  This helps pinpoint bottlenecks.
+*/
+WITH EventDurations AS (
+    SELECT
+        case_id,
+        activity,
+        resource,
+        timestamp,
+        LEAD(activity, 1) OVER (PARTITION BY case_id ORDER BY timestamp) AS next_activity,
+        LEAD(timestamp, 1) OVER (PARTITION BY case_id ORDER BY timestamp) - timestamp AS duration_to_next
+    FROM order_event_log
+)
+SELECT
+    r.department,
+    ed.activity AS from_activity,
+    ed.next_activity AS to_activity,
+    COUNT(*) AS number_of_transitions,
+    AVG(EXTRACT(EPOCH FROM ed.duration_to_next)) AS avg_duration_in_seconds
+FROM EventDurations ed
+JOIN resources r ON ed.resource = r.resource_id
+WHERE ed.next_activity IS NOT NULL
+GROUP BY
+    r.department,
+    ed.activity,
+    ed.next_activity
+ORDER BY
+    avg_duration_in_seconds DESC;
+```

@@ -10,10 +10,10 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "o3-pro-2025-06-10" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "mistral-small-2506" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
-EVALUATING_MODEL_NAME = "gemini-2.5-pro-preview-06-05" if len(sys.argv) < 3 else sys.argv[2]
+EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
 
 
 class Shared:
@@ -69,8 +69,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gemini-1.5-pro-002", "gemini-2.0-flash", "gemini-2.0-flash-lite",
-            "gemini-2.5-pro-preview-05-06", "gemma-3n-e4b-it",
-            "gemini-2.5-pro-preview-06-05"
+            "gemma-3n-e4b-it",
         }
     },
     "claude": {
@@ -87,7 +86,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
-            "codestral-2501", "mistral-large-2411", "mistral-small-2501", "mistral-small-2503",
+            "codestral-2501", "mistral-large-2411", "mistral-small-2501", "mistral-small-2503", "mistral-small-2506",
             "open-mixtral-8x22b", "mistral-medium-2505"
         }
     },
@@ -270,15 +269,35 @@ MODELS_DICT = {
                 "base_model": "grok-3-mini-fast",
                 "reasoning_effort": "low"
             },
-            "gemini-2.5-flash-05-20-nothink": {
+            "gemini-2.5-flash-nothink": {
                 "provider": "google",
-                "base_model": "gemini-2.5-flash-preview-05-20",
+                "base_model": "gemini-2.5-flash",
                 "thinking_tokens": 0
             },
-            "gemini-2.5-flash-05-20-thinkhigh": {
+            "gemini-2.5-flash-thinkhigh": {
                 "provider": "google",
-                "base_model": "gemini-2.5-flash-preview-05-20",
+                "base_model": "gemini-2.5-flash",
                 "thinking_tokens": 24576
+            },
+            "gemini-2.5-flash-lite-thinkhigh": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-lite-preview-06-17",
+                "thinking_tokens": 24576
+            },
+            "gemini-2.5-flash-lite-nothink": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-lite-preview-06-17",
+                "thinking_tokens": 0
+            },
+            "gemini-2.5-pro-thinklow": {
+                "provider": "google",
+                "base_model": "gemini-2.5-pro",
+                "thinking_tokens": 2048
+            },
+            "gemini-2.5-pro-thinkhigh": {
+                "provider": "google",
+                "base_model": "gemini-2.5-pro",
+                "thinking_tokens": 32768
             },
             "nvidia/llama-3.1-nemotron-ultra-253b-v1-thinkenab": {
                 "provider": "nvidia",
@@ -325,7 +344,7 @@ def get_ordered_references_llms(base_path="."):
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
@@ -805,10 +824,10 @@ def query_text_simple_google(question, api_url, target_file):
         ]
     }
 
-    if "gemini-2.5-flash" in Shared.MODEL_NAME:
+    if "gemini-2.5" in Shared.MODEL_NAME:
         payload["generationConfig"] = {
             "thinkingConfig": {
-                "thinkingBudget": Shared.ANTHROPIC_THINKING_TOKENS if Shared.ANTHROPIC_THINKING_TOKENS is not None else 0
+                "thinkingBudget": Shared.ANTHROPIC_THINKING_TOKENS if Shared.ANTHROPIC_THINKING_TOKENS is not None else 8192
             }
         }
 

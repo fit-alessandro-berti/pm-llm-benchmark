@@ -1,0 +1,213 @@
+### Identified Anomalies in Temporal Profile
+
+*   **Receive to Approve ('R', 'P'):** The average time is approximately 25 hours, but the standard deviation is unusually low (1 hour). This suggests a highly consistent, possibly rigid, time lag between claim submission and approval, which might not naturally occur in a dynamic process.
+*   **Approve to Notify ('P', 'N'):** The average delay is a substantial 7 days, with a large standard deviation of 2 days. This indicates significant variability in when customers are notified after claim approval, suggesting potential delays or inefficiencies in the notification process.
+*   **Assign to Close ('A', 'C'):** An average of 2 hours between assigning an adjuster and closing a claim, without explicitly including evaluation or approval steps in this direct interval, raises suspicion. It might imply that some claims are being closed very rapidly after assignment, potentially skipping crucial processing stages.
+*   **Evaluate to Notify ('E', 'N'):** The average time of only 5 minutes between evaluation and notification is extremely short. This rapid transition might indicate an automated, potentially rushed, notification process, or that intermediate steps are being bypassed.
+
+### Hypotheses for Anomalies
+
+*   **R to P (Receive to Approve) - Low STDEV:** This could be due to a hardcoded system rule that triggers an approval status after a fixed period, regardless of the actual evaluation progress. Alternatively, it might indicate a highly automated approval workflow where claims are batched and processed at specific intervals, leading to consistent delays.
+*   **P to N (Approve to Notify) - High Average & STDEV:** The long average delay and high variability might be caused by manual notification processes, customer contact issues, or a backlog in the customer service department responsible for sending out notifications. Inconsistent availability of personnel or system issues with the notification channel could also contribute.
+*   **A to C (Assign to Close) - Short Interval:** This pattern might occur if there's a process where claims are automatically closed upon assignment if certain criteria are met (e.g., low value, pre-approved categories), or if there's an error in event logging where the "Close" event is recorded prematurely. It could also point to fraud where claims are staged to appear closed quickly.
+*   **E to N (Evaluate to Notify) - Very Short Interval:** This could be an indication of an automated system that immediately triggers a notification upon completion of the evaluation, potentially skipping a review or approval stage. It might also reflect an issue with how "Evaluate" and "Notify" events are logged, perhaps conflating them or logging them in rapid succession due to system automation.
+
+### SQL Query Verification Approaches
+
+To verify these anomalies, we can analyze the actual time differences between consecutive relevant activities for each claim and compare them to the established temporal profile. We will focus on identifying claims where these durations deviate significantly.
+
+**1. Verify 'R' to 'P' anomaly (suspiciously low STDEV):**
+We want to find claims where the time difference between 'R' and 'P' is consistently near the average, or perhaps even shorter than the expected processing time.
+
+```sql
+WITH ClaimRTime AS (
+    SELECT
+        claim_id,
+        timestamp AS r_timestamp
+    FROM claim_events
+    WHERE activity = 'R'
+),
+ClaimPTime AS (
+    SELECT
+        claim_id,
+        timestamp AS p_timestamp
+    FROM claim_events
+    WHERE activity = 'P'
+),
+RP_Durations AS (
+    SELECT
+        c_r.claim_id,
+        EXTRACT(EPOCH FROM (c_p.p_timestamp - c_r.r_timestamp)) AS duration_seconds
+    FROM ClaimRTime c_r
+    JOIN ClaimPTime c_p ON c_r.claim_id = c_p.claim_id
+    WHERE c_p.p_timestamp > c_r.r_timestamp
+)
+SELECT
+    claim_id,
+    duration_seconds,
+    AVG(duration_seconds) OVER () AS overall_avg_rp,
+    STDDEV(duration_seconds) OVER () AS overall_stdev_rp
+FROM RP_Durations
+ORDER BY ABS(duration_seconds - (SELECT AVG(duration_seconds) FROM RP_Durations)) ASC;
+```
+
+**2. Verify 'P' to 'N' anomaly (long average and high STDEV):**
+We will identify claims where the time between 'P' and 'N' is exceptionally long, or falls far outside the typical range (e.g., > average + 2*STDEV).
+
+```sql
+WITH ClaimPTime AS (
+    SELECT
+        claim_id,
+        timestamp AS p_timestamp
+    FROM claim_events
+    WHERE activity = 'P'
+),
+ClaimNTime AS (
+    SELECT
+        claim_id,
+        timestamp AS n_timestamp
+    FROM claim_events
+    WHERE activity = 'N'
+),
+PN_Durations AS (
+    SELECT
+        c_p.claim_id,
+        EXTRACT(EPOCH FROM (c_n.n_timestamp - c_p.p_timestamp)) AS duration_seconds
+    FROM ClaimPTime c_p
+    JOIN ClaimNTime c_n ON c_p.claim_id = c_n.claim_id
+    WHERE c_n.n_timestamp > c_p.p_timestamp
+)
+SELECT
+    claim_id,
+    duration_seconds,
+    (SELECT AVG(duration_seconds) FROM PN_Durations) AS avg_pn,
+    (SELECT STDDEV(duration_seconds) FROM PN_Durations) AS stdev_pn
+FROM PN_Durations
+WHERE duration_seconds > (SELECT AVG(duration_seconds) + 2 * STDDEV(duration_seconds) FROM PN_Durations)
+ORDER BY duration_seconds DESC;
+```
+
+**3. Verify 'A' to 'C' anomaly (short interval possibly skipping steps):**
+This query aims to find claims where 'C' follows 'A' very quickly, potentially without an intervening 'E' or 'P'. We'll also check the direct 'A' to 'C' duration.
+
+```sql
+WITH ClaimATime AS (
+    SELECT
+        claim_id,
+        timestamp AS a_timestamp,
+        resource AS a_resource -- Include resource for later correlation
+    FROM claim_events
+    WHERE activity = 'A'
+),
+ClaimCTime AS (
+    SELECT
+        claim_id,
+        timestamp AS c_timestamp,
+        resource AS c_resource
+    FROM claim_events
+    WHERE activity = 'C'
+),
+AC_Durations AS (
+    SELECT
+        c_a.claim_id,
+        c_a.a_resource,
+        c_c.c_resource,
+        EXTRACT(EPOCH FROM (c_c.c_timestamp - c_a.a_timestamp)) AS duration_seconds
+    FROM ClaimATime c_a
+    JOIN ClaimCTime c_c ON c_a.claim_id = c_c.claim_id
+    WHERE c_c.c_timestamp > c_a.a_timestamp
+)
+-- Find claims where C is very close to A, and check for intervening steps
+SELECT
+    ad.claim_id,
+    ad.duration_seconds,
+    ad.a_resource,
+    ad.c_resource,
+    CASE
+        WHEN EXISTS (SELECT 1 FROM claim_events ce WHERE ce.claim_id = ad.claim_id AND ce.activity IN ('E', 'P') AND ce.timestamp BETWEEN ad.a_timestamp AND ad.c_timestamp) THEN 'Intervening steps present'
+        ELSE 'No intervening E or P'
+    END AS intermediate_steps_check
+FROM AC_Durations ad
+WHERE ad.duration_seconds < 7200 -- Using the profile's average of 7200 seconds
+ORDER BY ad.duration_seconds ASC;
+```
+
+**4. Verify 'E' to 'N' anomaly (suspiciously short interval):**
+We will look for claims where the time between 'E' and 'N' is close to zero or very small, indicating a potentially rushed process.
+
+```sql
+WITH ClaimETime AS (
+    SELECT
+        claim_id,
+        timestamp AS e_timestamp,
+        resource AS e_resource
+    FROM claim_events
+    WHERE activity = 'E'
+),
+ClaimNTime AS (
+    SELECT
+        claim_id,
+        timestamp AS n_timestamp,
+        resource AS n_resource
+    FROM claim_events
+    WHERE activity = 'N'
+),
+EN_Durations AS (
+    SELECT
+        c_e.claim_id,
+        c_e.e_resource,
+        c_n.n_resource,
+        EXTRACT(EPOCH FROM (c_n.n_timestamp - c_e.e_timestamp)) AS duration_seconds
+    FROM ClaimETime c_e
+    JOIN ClaimNTime c_n ON c_e.claim_id = c_n.claim_id
+    WHERE c_n.n_timestamp > c_e.e_timestamp
+)
+SELECT
+    claim_id,
+    duration_seconds,
+    e_resource,
+    n_resource
+FROM EN_Durations
+WHERE duration_seconds < 300 -- Using the profile's average of 300 seconds
+ORDER BY duration_seconds ASC;
+```
+
+**5. Correlate anomalies with claim types or adjusters:**
+To further investigate, we can join with the `claims` and `adjusters` tables to see if these timing issues are specific to certain claim types, adjusters, or regions.
+
+Example for 'P' to 'N' anomaly, correlating with `claim_type`:
+
+```sql
+WITH ClaimPTime AS (
+    SELECT
+        claim_id,
+        timestamp AS p_timestamp
+    FROM claim_events
+    WHERE activity = 'P'
+),
+ClaimNTime AS (
+    SELECT
+        claim_id,
+        timestamp AS n_timestamp
+    FROM claim_events
+    WHERE activity = 'N'
+),
+PN_Durations AS (
+    SELECT
+        c_p.claim_id,
+        EXTRACT(EPOCH FROM (c_n.n_timestamp - c_p.p_timestamp)) AS duration_seconds
+    FROM ClaimPTime c_p
+    JOIN ClaimNTime c_n ON c_p.claim_id = c_n.claim_id
+    WHERE c_n.n_timestamp > c_p.p_timestamp
+)
+SELECT
+    c.claim_type,
+    AVG(pd.duration_seconds) AS average_pn_duration,
+    STDDEV(pd.duration_seconds) AS stdev_pn_duration,
+    COUNT(*) AS number_of_claims
+FROM PN_Durations pd
+JOIN claims c ON pd.claim_id = c.claim_id
+WHERE pd.duration_seconds > (SELECT AVG(duration_seconds) + 2 * STDDEV(duration_seconds) FROM PN_Durations)
+GROUP BY c.claim_type
+ORDER BY average_pn_duration DESC;
+```
