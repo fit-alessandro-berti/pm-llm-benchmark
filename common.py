@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "inception/mercury" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "o4-mini-2025-04-16-HIGH" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -491,6 +491,9 @@ def query_text_simple_openai_new(question, api_url, target_file):
         "model": Shared.MODEL_NAME,
         "input": question
     }
+
+    if Shared.PAYLOAD_REASONING_EFFORT:
+        payload["reasoning"] = {"effort": Shared.PAYLOAD_REASONING_EFFORT}
 
     if Shared.SYSTEM_PROMPT is not None:
         payload["instructions"] = Shared.SYSTEM_PROMPT
