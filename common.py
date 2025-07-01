@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "o4-mini-2025-04-16-HIGH" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "baidu/ernie-4.5-300b-a47b" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -163,7 +163,7 @@ MODELS_DICT = {
             "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick",
             "deepseek/deepseek-r1-distill-qwen-14b",
             "deepseek/deepseek-r1-distill-llama-8b", "deepseek/deepseek-r1-distill-qwen-1.5b",
-            "thudm/glm-z1-32b", "inception/mercury"
+            "thudm/glm-z1-32b", "inception/mercury", "baidu/ernie-4.5-300b-a47b"
         }
     },
     "manual": {

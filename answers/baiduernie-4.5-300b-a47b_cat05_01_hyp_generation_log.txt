@@ -1,0 +1,200 @@
+# Analysis of Order Event Log Anomalies
+
+## Identified Anomalies and Undesirable Behaviors
+
+1. **Order 1002 - Out-of-Sequence Credit Check**
+   - The "Confirm Shipment" activity occurs before the "Perform Credit Check" activity
+   - This violates the standard process flow where credit check should happen before shipment confirmation
+
+2. **Order 1003 - Shipment Before Confirmation**
+   - The "Ship Goods" activity occurs before the "Confirm Shipment" activity
+   - This is a reverse sequence of the normal process flow
+
+3. **Order 1004 - Payment Before Invoice**
+   - The "Receive Payment" activity occurs before "Issue Invoice"
+   - This is highly unusual as typically invoices are issued before payments are received
+
+4. **Order 1004 - Shipment Without Confirmation**
+   - The "Ship Goods" activity occurs despite "Confirm Shipment" having `shipment_scheduled=N`
+   - Indicates goods were shipped even when shipment wasn't confirmed/scheduled
+
+5. **Order 1001 - Long Payment Delay**
+   - Payment takes 4 days after order registration compared to 1-2 days for other orders
+   - May indicate payment issues or inefficiencies
+
+## Hypotheses for Anomalies
+
+1. **Process Bypass**: Staff manually overriding process sequences
+   - Could be due to pressure to expedite orders or lack of system controls
+   - Might indicate intentional policy violations
+
+2. **System Errors**: Technical issues causing improper event logging
+   - Timestamp errors or activity sequence miscalculations
+   - Possible sync issues between systems
+
+3. **Training Issues**: Staff unfamiliar with proper process flows
+   - New employees or cross-trained staff not following procedures
+   - Lack of proper adherence to SOPs
+
+4. **Special Cases**: Handling of priority orders or exceptions
+   - Order 1002 is a "priority" order which might explain some sequence deviations
+   - However, even priority orders should follow basic business rules
+
+5. **Data Quality Issues**: Incorrect/missing data in the logs
+   - Timestamps might be misrecorded
+   - Resource assignments might be incorrect
+
+## SQL Queries for Investigation
+
+```sql
+-- 1. Find all cases where shipment confirmation didn't happen before shipping
+SELECT 
+    oel1.case_id, 
+    oel1.activity as shipment_confirmed, 
+    oel1.timestamp as confirmation_time,
+    oel2.activity as goods_shipped, 
+    oel2.timestamp as shipment_time,
+    o.order_type
+FROM 
+    order_event_log oel1
+JOIN 
+    order_event_log oel2 
+    ON oel1.case_id = oel2.case_id
+    AND oel2.activity = 'Ship Goods'
+JOIN 
+    orders o 
+    ON oel1.case_id = o.case_id
+WHERE 
+    oel1.activity = 'Confirm Shipment'
+    AND oel1.timestamp > oel2.timestamp;
+
+-- 2. Identify cases where payment was received before invoice was issued
+SELECT 
+    oel1.case_id, 
+    oel1.activity as payment_received, 
+    oel1.timestamp as payment_time,
+    oel2.activity as invoice_issued, 
+    oel2.timestamp as invoice_time
+FROM 
+    order_event_log oel1
+JOIN 
+    order_event_log oel2 
+    ON oel1.case_id = oel2.case_id
+    AND oel2.activity = 'Issue Invoice'
+WHERE 
+    oel1.activity = 'Receive Payment'
+    AND oel1.timestamp < oel2.timestamp;
+
+-- 3. Check if certain resources are more likely to cause process violations
+SELECT 
+    resource, 
+    COUNT(*) as total_events,
+    SUM(CASE WHEN activity = 'Ship Goods' AND 
+                 EXISTS (
+                     SELECT 1 FROM order_event_log oel2 
+                     WHERE oel2.case_id = oel.case_id 
+                     AND oel2.activity = 'Confirm Shipment' 
+                     AND oel2.timestamp > oel.timestamp
+                 ) THEN 1 ELSE 0 END) as ship_before_confirm_count
+FROM 
+    order_event_log oel
+WHERE 
+    activity = 'Ship Goods'
+GROUP BY 
+    resource
+ORDER BY 
+    ship_before_confirm_count DESC;
+
+-- 4. Find all credit checks that happened after shipment confirmation
+SELECT 
+    oel1.case_id, 
+    oel1.activity as credit_check, 
+    oel1.timestamp as credit_check_time,
+    oel2.activity as shipment_confirmed, 
+    oel2.timestamp as confirmation_time,
+    o.order_type
+FROM 
+    order_event_log oel1
+JOIN 
+    order_event_log oel2 
+    ON oel1.case_id = oel2.case_id
+    AND (oel2.activity = 'Confirm Shipment' OR oel2.activity = 'Ship Goods')
+JOIN 
+    orders o 
+    ON oel1.case_id = o.case_id
+WHERE 
+    oel1.activity = 'Perform Credit Check'
+    AND oel1.timestamp > oel2.timestamp;
+
+-- 5. Analyze time between order registration and payment for all cases
+SELECT 
+    case_id,
+    custom.reg_time,
+    oel.timestamp as payment_time,
+    EXTRACT(DAY FROM (oel.timestamp - custom.reg_time)) as days_to_payment,
+    order_value
+FROM 
+    order_event_log oel
+JOIN (
+    SELECT 
+        case_id, 
+        MIN(timestamp) as reg_time
+    FROM 
+        order_event_log
+    WHERE 
+        activity = 'Register Order'
+    GROUP BY 
+        case_id
+) custom ON oel.case_id = custom.case_id
+    AND oel.activity = 'Receive Payment'
+JOIN 
+    orders o ON o.case_id = oel.case_id
+ORDER BY 
+    days_to_payment DESC;
+
+-- 6. Check which resources handled the most problematic cases
+WITH problematic_cases AS (
+    SELECT DISTINCT 
+        case_id
+    FROM 
+        order_event_log
+    WHERE 
+        (activity = 'Confirm Shipment' AND 
+         EXISTS (
+             SELECT 1 FROM order_event_log oel2 
+             WHERE oel2.case_id = order_event_log.case_id 
+             AND oel2.activity = 'Ship Goods' 
+             AND oel2.timestamp < order_event_log.timestamp
+         ))
+    OR
+        (activity = 'Perform Credit Check' AND 
+         EXISTS (
+             SELECT 1 FROM order_event_log oel2 
+             WHERE oel2.case_id = order_event_log.case_id 
+             AND (oel2.activity = 'Ship Goods' OR oel2.activity = 'Confirm Shipment') 
+             AND oel2.timestamp < order_event_log.timestamp
+         ))
+)
+SELECT 
+    r.resource_id,
+    r.department,
+    COALESCE(count_cases.case_count, 0) as problematic_case_count
+FROM 
+    resources r
+LEFT JOIN (
+    SELECT 
+        e.resource,
+        COUNT(DISTINCT e.case_id) as case_count
+    FROM 
+        order_event_log e
+    JOIN 
+        problematic_cases p 
+    ON e.case_id = p.case_id
+    GROUP BY 
+        e.resource
+) count_cases ON r.resource_id = count_cases.resource
+ORDER BY 
+    problematic_case_count DESC;
+```
+
+These queries should help identify patterns in the process deviations, determine if certain resources or departments are more prone to violations, and quantify the extent of each type of anomaly.
