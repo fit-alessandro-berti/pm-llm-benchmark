@@ -201,6 +201,11 @@ MODELS_DICT = {
                 "base_model": "o4-mini-2025-04-16",
                 "reasoning_effort": "high"
             },
+            "o3-pro-2025-06-10-HIGH": {
+                "provider": "openai",
+                "base_model": "o3-pro-2025-06-10",
+                "reasoning_effort": "high"
+            },
             "chatgpt-4o-latest-2025-03-26": {
                 "provider": "openai",
                 "base_model": "chatgpt-4o-latest"
@@ -506,7 +511,7 @@ def query_text_simple_openai_new(question, api_url, target_file):
 
     dump_payload(payload, target_file)
 
-    response = requests.post(complete_url, headers=headers, json=payload)
+    response = requests.post(complete_url, headers=headers, json=payload, timeout=30*60)
     if response.status_code != 200:
         print(response)
         print(response.status_code)
@@ -861,6 +866,9 @@ def query_image_simple_openai_new(base64_image, api_url, target_file, text):
     if Shared.SYSTEM_PROMPT is not None:
         payload["instructions"] = Shared.SYSTEM_PROMPT
 
+    if Shared.PAYLOAD_REASONING_EFFORT:
+        payload["reasoning"] = {"effort": Shared.PAYLOAD_REASONING_EFFORT}
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {Shared.API_KEY}"
@@ -868,7 +876,7 @@ def query_image_simple_openai_new(base64_image, api_url, target_file, text):
 
     dump_payload(payload, target_file)
 
-    response = requests.post(complete_url, headers=headers, json=payload)
+    response = requests.post(complete_url, headers=headers, json=payload, timeout=30*60)
     if response.status_code != 200:
         print(response)
         print(response.status_code)
