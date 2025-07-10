@@ -1,0 +1,155 @@
+### **Anomalies in the Temporal Profile Model**  
+1. **R (Receive)  P (Approve) Avg. ~25 hours, STDEV ~1 hour**: Suspiciously consistent approval times may indicate rigid automated approvals or preferential handling.  
+2. **P (Approve)  N (Notify) Avg. 7 days, STDEV ~2 days**: Extremely long and variable delays between approval and customer notification suggest backlogs or lack of prioritization.  
+3. **E (Evaluate)  N (Notify) Avg. 5 minutes, STDEV ~1 minute**: Unrealistically rapid notification post-evaluation suggests skipping steps (e.g., approval) or premature closure.  
+4. **A (Assign)  C (Close) Avg. 2 hours, STDEV ~1 hour**: Claims close suspiciously fast after assignment, possibly due to premature closures or missing evaluation/approval steps.  
+
+---
+
+### **Hypothesized Causes**  
+1. **RP**:  
+   - Automated approval workflows bypassing human review.  
+   - Target-based performance metrics incentivizing rapid approvals.  
+2. **PN**:  
+   - Manual notification steps delayed due to resource shortages.  
+   - Notification system bottlenecks or ad-hoc prioritization.  
+3. **EN**:  
+   - Overlapping steps (e.g., approval and notification triggered simultaneously).  
+   - System errors skipping required activities.  
+4. **AC**:  
+   - Assigned claims are prematurely closed without evaluation/approval.  
+   - Data entry errors falsely marking claims as closed.  
+
+---
+
+### **SQL Verification Queries**  
+
+#### **1. RP: Claims Approved Too Rapidly**  
+```sql
+WITH r_to_p AS (
+  SELECT 
+    claim_id,
+    Extract(EPOCH FROM (
+      (SELECT timestamp FROM claim_events WHERE activity = 'P' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1) - 
+      (SELECT timestamp FROM claim_events WHERE activity = 'R' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1)
+    )) AS time_diff_seconds
+  FROM claim_events ce
+  WHERE claim_id IN (
+    SELECT DISTINCT claim_id FROM claim_events WHERE activity IN ('R', 'P')
+  )
+  GROUP BY claim_id
+  HAVING Extract(EPOCH FROM (
+    (SELECT timestamp FROM claim_events WHERE activity = 'P' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1) - 
+    (SELECT timestamp FROM claim_events WHERE activity = 'R' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1)
+  )) < 86400 / 2  -- <12 hours (half of avg)
+)
+SELECT 
+  c.claim_id,
+  c.claim_type,
+  r.time_diff_seconds,
+  (SELECT name FROM adjusters WHERE adjuster_id = 
+    (SELECT resource::INTEGER FROM claim_events 
+     WHERE claim_id = r.claim_id AND activity = 'P' LIMIT 1)
+  ) AS approver_name
+FROM r_to_p r
+JOIN claims c ON r.claim_id = c.claim_id;
+```
+
+#### **2. PN: Claims with Excessive Notification Delays**  
+```sql
+WITH p_to_n AS (
+  SELECT 
+    claim_id,
+    Extract(EPOCH FROM (
+      (SELECT timestamp FROM claim_events WHERE activity = 'N' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1) - 
+      (SELECT timestamp FROM claim_events WHERE activity = 'P' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1)
+    )) AS time_diff_seconds
+  FROM claim_events ce
+  WHERE claim_id IN (
+    SELECT DISTINCT claim_id FROM claim_events WHERE activity IN ('P', 'N')
+  )
+  GROUP BY claim_id
+  HAVING Extract(EPOCH FROM (
+    (SELECT timestamp FROM claim_events WHERE activity = 'N' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1) - 
+    (SELECT timestamp FROM claim_events WHERE activity = 'P' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1)
+  )) > 7 * 86400 * 2  -- >14 days (2x avg)
+)
+SELECT 
+  c.claim_id,
+  c.claim_type,
+  p.time_diff_seconds,
+  (SELECT name FROM adjusters WHERE adjuster_id = 
+    (SELECT resource::INTEGER FROM claim_events 
+     WHERE claim_id = p.claim_id AND activity = 'P' LIMIT 1)
+  ) AS approver_name,
+  (SELECT region FROM adjusters WHERE adjuster_id = 
+    (SELECT resource::INTEGER FROM claim_events 
+     WHERE claim_id = p.claim_id AND activity = 'P' LIMIT 1)
+  ) AS approver_region
+FROM p_to_n p
+JOIN claims c ON p.claim_id = c.claim_id;
+```
+
+#### **3. AC: Claims Closed Rapidly After Assignment**  
+```sql
+WITH a_to_c AS (
+  SELECT 
+    claim_id,
+    Extract(EPOCH FROM (
+      (SELECT timestamp FROM claim_events WHERE activity = 'C' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1) - 
+      (SELECT timestamp FROM claim_events WHERE activity = 'A' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1)
+    )) AS time_diff_seconds,
+    COUNT(CASE WHEN activity = 'E' THEN 1 ELSE NULL END) AS evaluation_count,
+    COUNT(CASE WHEN activity = 'P' THEN 1 ELSE NULL END) AS approval_count
+  FROM claim_events ce
+  WHERE claim_id IN (
+    SELECT DISTINCT claim_id FROM claim_events WHERE activity IN ('A', 'C')
+  )
+  GROUP BY claim_id
+  HAVING Extract(EPOCH FROM (
+    (SELECT timestamp FROM claim_events WHERE activity = 'C' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1) - 
+    (SELECT timestamp FROM claim_events WHERE activity = 'A' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1)
+  )) < 7200 / 2  -- <1 hour (half of avg)
+  OR evaluation_count = 0 OR approval_count = 0
+)
+SELECT 
+  c.claim_id,
+  c.claim_type,
+  a.time_diff_seconds,
+  a.evaluation_count,
+  a.approval_count,
+  (SELECT name FROM adjusters WHERE adjuster_id = 
+    (SELECT resource::INTEGER FROM claim_events 
+     WHERE claim_id = a.claim_id AND activity = 'A' LIMIT 1)
+  ) AS assignee_name
+FROM a_to_c a
+JOIN claims c ON a.claim_id = c.claim_id;
+```
+
+#### **4. EN: Rapid EvalNotify Transitions (Missing Steps?)**  
+```sql
+SELECT 
+  c.claim_id,
+  c.claim_type,
+  Extract(EPOCH FROM (
+    (SELECT timestamp FROM claim_events WHERE activity = 'N' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1) - 
+    (SELECT timestamp FROM claim_events WHERE activity = 'E' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1)
+  )) AS eval_to_notify_seconds,
+  (SELECT COUNT(*) FROM claim_events WHERE claim_id = ce.claim_id AND activity IN ('A', 'P')) AS skipped_steps
+FROM claim_events ce
+JOIN claims c ON ce.claim_id = c.claim_id
+WHERE ce.claim_id IN (
+  SELECT DISTINCT claim_id FROM claim_events WHERE activity IN ('E', 'N')
+)
+GROUP BY c.claim_id, c.claim_type
+HAVING Extract(EPOCH FROM (
+  (SELECT timestamp FROM claim_events WHERE activity = 'N' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1) - 
+  (SELECT timestamp FROM claim_events WHERE activity = 'E' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1)
+)) < 300  -- <5 mins (1x STDEV)
+AND (
+  0 = (SELECT COUNT(*) FROM claim_events WHERE claim_id = ce.claim_id AND activity = 'P')  -- No approval
+  OR 
+  0 = (SELECT COUNT(*) FROM claim_events WHERE claim_id = ce.claim_id AND activity = 'C' AND timestamp > 
+    (SELECT timestamp FROM claim_events WHERE activity = 'N' AND claim_id = ce.claim_id ORDER BY timestamp LIMIT 1))
+);  -- No post-notification closure
+```

@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "mistral-small-2506" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "grok-4-0709" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -61,7 +61,8 @@ MODELS_DICT = {
             "gpt-4-turbo-2024-04-09", "o1-mini-2024-09-12",
             "gpt-4.5-preview", "o1-2024-12-17", "gpt-4o-mini-2024-07-18",
             "o3-mini-2025-01-31", "gpt-4.1-2025-04-14", "gpt-4.1-mini-2025-04-14",
-            "gpt-4.1-nano-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13"
+            "gpt-4.1-nano-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13",
+            "o3-pro-2025-06-10"
         }
     },
     "google": {
@@ -94,7 +95,7 @@ MODELS_DICT = {
         "api_url": "https://api.x.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "grok-2-1212", "grok-3"
+            "grok-2-1212", "grok-3", "grok-4-0709"
         }
     },
     "deepinfra": {
@@ -160,9 +161,10 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick",
-            "deepseek/deepseek-r1-zero:free", "deepseek/deepseek-r1-distill-qwen-14b",
+            "deepseek/deepseek-r1-distill-qwen-14b",
             "deepseek/deepseek-r1-distill-llama-8b", "deepseek/deepseek-r1-distill-qwen-1.5b",
-            "thudm/glm-z1-32b", "thudm/glm-z1-9b:free"
+            "thudm/glm-z1-32b", "inception/mercury", "baidu/ernie-4.5-300b-a47b",
+            "openrouter/cypher-alpha:free"
         }
     },
     "manual": {
@@ -197,6 +199,11 @@ MODELS_DICT = {
             "o4-mini-2025-04-16-HIGH": {
                 "provider": "openai",
                 "base_model": "o4-mini-2025-04-16",
+                "reasoning_effort": "high"
+            },
+            "o3-pro-2025-06-10-HIGH": {
+                "provider": "openai",
+                "base_model": "o3-pro-2025-06-10",
                 "reasoning_effort": "high"
             },
             "chatgpt-4o-latest-2025-03-26": {
@@ -344,7 +351,7 @@ def get_ordered_references_llms(base_path="."):
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium", "grok-4"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
@@ -524,6 +531,9 @@ def query_text_simple_openai_new(question, api_url, target_file):
         "input": question
     }
 
+    if Shared.PAYLOAD_REASONING_EFFORT:
+        payload["reasoning"] = {"effort": Shared.PAYLOAD_REASONING_EFFORT}
+
     if Shared.SYSTEM_PROMPT is not None:
         payload["instructions"] = Shared.SYSTEM_PROMPT
 
@@ -534,7 +544,7 @@ def query_text_simple_openai_new(question, api_url, target_file):
 
     dump_payload(payload, target_file)
 
-    response = requests.post(complete_url, headers=headers, json=payload)
+    response = requests.post(complete_url, headers=headers, json=payload, timeout=30*60)
     if response.status_code != 200:
         print(response)
         print(response.status_code)
@@ -638,6 +648,7 @@ def query_text_simple_generic(question, api_url, target_file):
         # Decide if we want streaming
         streaming_enabled = False
         streaming_enabled = Shared.PAYLOAD_REASONING_EFFORT is None
+        #streaming_enabled = False
 
         if streaming_enabled:
             payload["stream"] = True
@@ -707,21 +718,22 @@ def query_text_simple_generic(question, api_url, target_file):
 
             # Non-streaming call
             response = requests.post(complete_url, headers=headers, json=payload)
-            #print(response)
-            #print(response.status_code)
-            #print(response.text)
 
             response = response.json()
 
-            message = response["choices"][0]["message"]
-            dump_response(response, target_file)
             try:
+                dump_response(response, target_file)
+                message = response["choices"][0]["message"]
+
                 response_message = message["content"]
 
                 if "reasoning_content" in message:
                     response_message = "<think>\n" + message["reasoning_content"] + "\n</think>\n\n" + response_message.strip()
 
             except Exception as e:
+                print(response)
+                print(response.status_code)
+
                 raise Exception(str(response))
 
     return response_message
@@ -889,6 +901,9 @@ def query_image_simple_openai_new(base64_image, api_url, target_file, text):
     if Shared.SYSTEM_PROMPT is not None:
         payload["instructions"] = Shared.SYSTEM_PROMPT
 
+    if Shared.PAYLOAD_REASONING_EFFORT:
+        payload["reasoning"] = {"effort": Shared.PAYLOAD_REASONING_EFFORT}
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {Shared.API_KEY}"
@@ -896,7 +911,7 @@ def query_image_simple_openai_new(base64_image, api_url, target_file, text):
 
     dump_payload(payload, target_file)
 
-    response = requests.post(complete_url, headers=headers, json=payload)
+    response = requests.post(complete_url, headers=headers, json=payload, timeout=30*60)
     if response.status_code != 200:
         print(response)
         print(response.status_code)

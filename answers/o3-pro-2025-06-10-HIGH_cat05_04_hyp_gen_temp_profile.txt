@@ -1,0 +1,129 @@
+ANOMALIES DETECTED
+
+1. Receive  Approve (RP)  
+   • Mean  25 h, stdev  1 h – the spread is far tighter than expected for a human-driven decision point.  
+2. Approve  Notify (PN)  
+   • Mean  7 d, stdev  2 d – very long and very volatile; some customers are told almost immediately, others a week or more later.  
+3. Assign  Close (AC)  
+   • Mean  2 h, stdev  1 h – suggests many claims are closed almost straight after being assigned, possibly skipping Evaluate/Approve.  
+4. Evaluate  Notify (EN)  
+   • Mean  5 min, stdev  1 min – unusually fast for composing and sending a customer-facing message.  
+5. General spread inconsistencies  
+   • RE (1 d) versus RP (1.04 d with tiny stdev) hints that “Approve” is happening on a clock rather than when evaluation finishes.  
+   • EC also shows high variability (stdev  50 min) compared with the very rigid RP step.
+
+POSSIBLE CAUSES
+
+• Scheduled batch jobs or robotic process automation driving Approve at fixed intervals (explains low stdev).  
+• Manual backlog between Approve and Notify; notifications done in weekly batches or delayed by legal review.  
+• “Auto-deny/auto-close” rules that end some low-value claims immediately after assignment.  
+• Missing log entries (Evaluate or Approve not recorded), making Assign look directly followed by Close.  
+• Notification step embedded in the evaluation UI (button sends email instantly), producing the 5-minute EN gap.  
+• Resource constraints: certain adjusters, regions or claim types accumulate larger PN delays.
+
+VERIFICATION QUERIES
+
+1. RIGID RECEIVE  APPROVE INTERVAL  
+   Identify claims whose RP duration is outside 23 – 27 h.  
+```sql
+WITH times AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity = 'R' THEN timestamp END) AS t_r,
+         MIN(CASE WHEN activity = 'P' THEN timestamp END) AS t_p
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       EXTRACT(EPOCH FROM (t_p - t_r))/3600 AS hours_between
+FROM times
+WHERE t_r IS NOT NULL
+  AND t_p IS NOT NULL
+  AND (t_p - t_r) NOT BETWEEN INTERVAL '23 hours' AND INTERVAL '27 hours';
+```
+
+2. LONG OR VOLATILE APPROVE  NOTIFY  
+   Show claims taking more than 9 days or less than 3 days from P to N and relate them to claim type and adjuster.  
+```sql
+WITH pn AS (
+  SELECT ce.claim_id,
+         MIN(CASE WHEN activity = 'P' THEN timestamp END) AS t_p,
+         MIN(CASE WHEN activity = 'N' THEN timestamp END) AS t_n
+  FROM claim_events ce
+  GROUP BY ce.claim_id
+)
+SELECT pn.claim_id,
+       c.claim_type,
+       a.adjuster_id,
+       EXTRACT(EPOCH FROM (t_n - t_p))/86400 AS days_between
+FROM pn
+JOIN claims c USING (claim_id)
+LEFT JOIN claim_events cea ON cea.claim_id = pn.claim_id AND cea.activity = 'A'
+LEFT JOIN adjusters a ON a.adjuster_id::text = cea.resource
+WHERE t_p IS NOT NULL
+  AND t_n IS NOT NULL
+  AND ((t_n - t_p) > INTERVAL '9 days'
+       OR (t_n - t_p) < INTERVAL '3 days');
+```
+
+3. POSSIBLE “AUTO-CLOSE” AFTER ASSIGN  
+   Claims closed within 1 h of assignment and lacking Evaluate or Approve events.  
+```sql
+WITH seq AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity = 'A' THEN timestamp END) AS t_a,
+         MIN(CASE WHEN activity = 'C' THEN timestamp END) AS t_c,
+         BOOL_OR(activity = 'E') AS has_e,
+         BOOL_OR(activity = 'P') AS has_p
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       EXTRACT(EPOCH FROM (t_c - t_a)) / 60 AS minutes_a_to_c,
+       has_e, has_p
+FROM seq
+WHERE t_a IS NOT NULL
+  AND t_c IS NOT NULL
+  AND (t_c - t_a) < INTERVAL '1 hour';
+```
+
+4. ULTRA-FAST EVALUATE  NOTIFY  
+   Cases where EN is under 2 min; check if concentrated in a specific UI user/resource.  
+```sql
+WITH en AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity = 'E' THEN timestamp END) AS t_e,
+         MIN(CASE WHEN activity = 'N' THEN timestamp END) AS t_n,
+         MIN(CASE WHEN activity = 'N' THEN resource END) AS notifier
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       notifier,
+       EXTRACT(EPOCH FROM (t_n - t_e)) AS seconds_e_to_n
+FROM en
+WHERE t_e IS NOT NULL
+  AND t_n IS NOT NULL
+  AND (t_n - t_e) < INTERVAL '2 minutes';
+```
+
+5. VARIABILITY IN EVALUATE  CLOSE  
+   Check correlation between long EC gaps and claim amount to see if high-value cases stay open longer.  
+```sql
+WITH ec AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity = 'E' THEN timestamp END) AS t_e,
+         MIN(CASE WHEN activity = 'C' THEN timestamp END) AS t_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT ec.claim_id,
+       c.claim_amount,
+       EXTRACT(EPOCH FROM (t_c - t_e))/3600 AS hours_e_to_c
+FROM ec
+JOIN claims c USING (claim_id)
+WHERE t_e IS NOT NULL
+  AND t_c IS NOT NULL
+ORDER BY hours_e_to_c DESC;
+```
+
+Follow-up: Run these queries regularly and chart the distributions; if patterns cluster by adjuster, region or claim type, the corresponding business rules or system integrations should be reviewed.
