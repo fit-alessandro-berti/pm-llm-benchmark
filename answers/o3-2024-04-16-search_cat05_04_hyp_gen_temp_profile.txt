@@ -1,0 +1,150 @@
+Anomalies detected in the temporal profile model  
+
+1. Receive  Approve (RP)  
+   • Avg  25 h (90 000 s) but STDEV = 1 h (3 600 s)  unusually tight spread for a full-day interval, suggesting an artificial or scripted cadence rather than natural variation.  
+
+2. Approve  Notify (PN)  
+   • Avg = 7 days (604 800 s) with STDEV = 2 days (172 800 s)  very long delay and large spread, indicating either a backlog that periodically clears or ad-hoc fast-track notifications for some claims.  
+
+3. Assign  Close (AC)  
+   • Avg = 2 h (7 200 s). In the intended flow, Evaluate (E) and Approve (P) should occur before Close (C). A rapid AC implies some claims bypass intermediate steps or are withdrawn/denied without evaluation.  
+
+4. Evaluate  Notify (EN)  
+   • Avg = 5 min (300 s) with low STDEV = 1 min (60 s). This is suspiciously quick for any manual follow-up and may mean that an automatic message is fired before approval, or that Evaluate and Approve are sometimes collapsed into a single action mislabeled as E.  
+
+5. Receive  Approve (RP) vs. Receive  Evaluate (RE)  
+   • RE mean is 24 h, yet RP mean is only 1 h longer (25 h). Given that Approve must follow Evaluate, one would expect a wider gap. The narrow difference hints that Evaluate timestamps could be entered retroactively or batched.  
+
+Hypotheses explaining the anomalies  
+
+H1. Scripted nightly batch approvals  
+    Claims sit in “Evaluate” all day; at a fixed time a batch job marks them approved, producing a tight RP distribution.  
+
+H2. Notification queue congestion  
+    Customer notifications are processed by a separate system every few days, causing wide PN variance. Urgent claims may be pushed through manually, explaining occasional short delays.  
+
+H3. Fast-track or auto-close rules  
+    Low-value or duplicate claims may be auto-closed right after assignment (AC) without evaluation.  
+
+H4. Mis-tagged activities  
+    Some tools might record an “Evaluate” event automatically when an adjuster opens a claim, inflating RE counts while true evaluation happens later, or not at all.  
+
+H5. Resource bottlenecks  
+    Particular adjusters or regions could accumulate claims, lengthening PN, while others handle them quickly, producing the high variance.  
+
+Verification approaches (SQL)  
+
+Note: PostgreSQL syntax; adjust for your dialect if needed.
+
+-- 1. Claims whose ReceiveApprove time falls outside  ± 3 (i.e., < 19 h or > 31 h)
+WITH pairs AS (
+  SELECT
+    ce1.claim_id,
+    MIN(ce1.timestamp)  AS receive_ts,
+    MIN(ce2.timestamp)  AS approve_ts,
+    EXTRACT(EPOCH FROM MIN(ce2.timestamp) - MIN(ce1.timestamp)) AS sec_diff
+  FROM claim_events ce1
+  JOIN claim_events ce2 USING (claim_id)
+  WHERE ce1.activity = 'R'
+    AND ce2.activity = 'P'
+  GROUP BY ce1.claim_id
+)
+SELECT *
+FROM pairs
+WHERE sec_diff < 19*3600
+   OR sec_diff > 31*3600;
+
+-- 2. Long PN lags (> 9 days) and very short ones (< 3 days)
+WITH pn AS (
+  SELECT
+    ce1.claim_id,
+    MIN(ce1.timestamp) AS approve_ts,
+    MIN(ce2.timestamp) AS notify_ts,
+    EXTRACT(EPOCH FROM MIN(ce2.timestamp)-MIN(ce1.timestamp))/86400 AS days_diff
+  FROM claim_events ce1
+  JOIN claim_events ce2 USING (claim_id)
+  WHERE ce1.activity = 'P'
+    AND ce2.activity = 'N'
+  GROUP BY ce1.claim_id
+)
+SELECT c.claim_id,
+       c.claim_type,
+       a.adjuster_id,
+       pn.days_diff
+FROM pn
+JOIN claims c   USING (claim_id)
+LEFT JOIN claim_events cea
+       ON cea.claim_id = pn.claim_id AND cea.activity='A'
+LEFT JOIN adjusters a
+       ON a.adjuster_id = cea.resource::INTEGER  -- assuming resource stores adjuster_id
+WHERE pn.days_diff > 9
+   OR pn.days_diff < 3
+ORDER BY pn.days_diff DESC;
+
+-- 3. Claims closed within 2 h of assignment (possible auto-close)
+WITH ac AS (
+  SELECT
+    ce1.claim_id,
+    MIN(ce1.timestamp) AS assign_ts,
+    MIN(ce2.timestamp) AS close_ts,
+    EXTRACT(EPOCH FROM MIN(ce2.timestamp)-MIN(ce1.timestamp)) AS sec_diff
+  FROM claim_events ce1
+  JOIN claim_events ce2 USING (claim_id)
+  WHERE ce1.activity='A'
+    AND ce2.activity='C'
+  GROUP BY ce1.claim_id
+)
+SELECT ac.*, c.claim_type
+FROM ac
+JOIN claims c USING (claim_id)
+WHERE sec_diff <= 7200;
+
+-- 4. Evaluate immediately followed by Notify (< 2 min)
+WITH en AS (
+  SELECT
+    ce1.claim_id,
+    MIN(ce1.timestamp) AS eval_ts,
+    MIN(ce2.timestamp) AS notify_ts,
+    EXTRACT(EPOCH FROM MIN(ce2.timestamp)-MIN(ce1.timestamp)) AS sec_diff
+  FROM claim_events ce1
+  JOIN claim_events ce2 USING (claim_id)
+  WHERE ce1.activity='E'
+    AND ce2.activity='N'
+  GROUP BY ce1.claim_id
+)
+SELECT en.claim_id,
+       en.sec_diff,
+       c.claim_amount,
+       c.claim_type
+FROM en
+JOIN claims c USING (claim_id)
+WHERE en.sec_diff < 120;
+
+-- 5. Correlate PN delay with adjuster and region
+WITH pn_delay AS (
+  SELECT
+    ce1.claim_id,
+    EXTRACT(EPOCH FROM MIN(ce2.timestamp)-MIN(ce1.timestamp))/86400 AS days_diff
+  FROM claim_events ce1
+  JOIN claim_events ce2 USING (claim_id)
+  WHERE ce1.activity='P'
+    AND ce2.activity='N'
+  GROUP BY ce1.claim_id
+),
+assigner AS (
+  SELECT claim_id,
+         ce.resource::INTEGER AS adjuster_id
+  FROM claim_events ce
+  WHERE ce.activity='A'
+)
+SELECT a.region,
+       a.name,
+       ROUND(AVG(p.days_diff),2) AS avg_days,
+       COUNT(*) AS num_claims
+FROM pn_delay p
+JOIN assigner s USING (claim_id)
+JOIN adjusters a ON a.adjuster_id = s.adjuster_id
+GROUP BY a.region, a.name
+ORDER BY avg_days DESC;
+
+Running these queries will reveal which claims and which actors (adjusters, regions, claim types) are associated with each timing anomaly, helping confirm or refute the hypotheses above.

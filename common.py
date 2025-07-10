@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "grok-4-0709" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "o3-2024-04-16-search" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -48,6 +48,7 @@ class Shared:
     ANTHROPIC_THINKING_TOKENS = None
     PAYLOAD_REASONING_EFFORT = "low"
     PAYLOAD_REASONING_EFFORT = None
+    TOOLS_PAYLOAD = None
     ADDED_TO_PROMPT = " /no_think"
     ADDED_TO_PROMPT = None
 
@@ -205,6 +206,16 @@ MODELS_DICT = {
                 "provider": "openai",
                 "base_model": "o3-pro-2025-06-10",
                 "reasoning_effort": "high"
+            },
+            "o3-2024-04-16-search": {
+                "provider": "openai",
+                "base_model": "o3-2025-04-16",
+                "tools": [{"type": "web_search"}]
+            },
+            "o3-2024-04-16-codeinterpr": {
+                "provider": "openai",
+                "base_model": "o3-2025-04-16",
+                "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}]
             },
             "chatgpt-4o-latest-2025-03-26": {
                 "provider": "openai",
@@ -503,6 +514,9 @@ def query_text_simple_openai_new(question, api_url, target_file):
 
     if Shared.SYSTEM_PROMPT is not None:
         payload["instructions"] = Shared.SYSTEM_PROMPT
+
+    if Shared.TOOLS_PAYLOAD is not None:
+        payload["tools"] = Shared.TOOLS_PAYLOAD
 
     headers = {
         "Content-Type": "application/json",
