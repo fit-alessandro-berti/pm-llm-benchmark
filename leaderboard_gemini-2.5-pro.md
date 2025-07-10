@@ -12,7 +12,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | o3-pro-2025-06-10-HIGH            | **39.0** | :x:                | :white_check_mark: | 5.8                  | 7.8                  | 4.6                  | 4.6                  | :mage_woman: **6.3** | 5.6                  | 4.4                  | 4.8                  |
 | o3-2025-04-16                     | **38.5** | :x:                | :white_check_mark: | 6.0                  | 7.5                  | 3.9                  | 4.8                  | **6.2**              | 5.7                  | **4.5**              | 4.7                  |
 | Grok-3-beta-thinking-20250221     | **38.5** | :x:                | :white_check_mark: | :mage_woman: **6.9** | 6.9                  | :mage_woman: **6.3** | 3.8                  | 4.8                  | 5.9                  | 3.9                  | 0.0                  |
-| o3-2024-04-16-search              | **38.3** | :x:                | :white_check_mark: | 6.3                  | 6.6                  | 4.7                  | 4.4                  | 5.8                  | 5.8                  | :mage_woman: **4.8** | 3.5                  |
+| o3-2024-04-16-search              | **38.3** | :x:                | :white_check_mark: | 6.3                  | 6.6                  | 4.7                  | 4.4                  | 5.8                  | 5.8                  | :mage_woman: **4.8** | 4.3                  |
 | phi4-reasoningplus                | **37.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 6.9                  | 5.2                  | 4.8                  | 5.4                  | 5.8                  | 3.9                  | 0.0                  |
 | grok-3-mini-high                  | **37.7** | :x:                | :white_check_mark: | 6.5                  | 6.6                  | 5.2                  | 4.9                  | 4.9                  | 5.7                  | 4.0                  | 0.0                  |
 | gemini-2.5-flash-nothink          | **37.2** | :x:                | :x:                | 5.8                  | 7.1                  | 3.4                  | 5.1                  | 5.5                  | 5.7                  | **4.6**              | 4.8                  |
@@ -685,11 +685,11 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           |    7.4  |
 | cat06_06_bias_mitigation_declare   |    6.5  |
 | cat06_07_fair_unfair_powl          |    9.6  |
-| cat07_01_ocdfg                     |    4.5  |
-| cat07_02_bpmn_orders               |    1    |
-| cat07_03_bpmn_dispatch             |    6.5  |
-| cat07_04_causal_net                |    7.25 |
-| cat07_05_proclets                  |    7.25 |
+| cat07_01_ocdfg                     |    7    |
+| cat07_02_bpmn_orders               |    6.5  |
+| cat07_03_bpmn_dispatch             |    5.5  |
+| cat07_04_causal_net                |    7.75 |
+| cat07_05_proclets                  |    7    |
 | cat07_06_perf_spectrum             |    9    |
 | cat08_01_queue_mining              |    9.2  |
 | cat08_02_instance_spanning         |    9.6  |

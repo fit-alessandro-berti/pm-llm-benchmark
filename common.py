@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "o3-2024-04-16-search" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "o3-2024-04-16-codeinterpr" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -884,6 +884,11 @@ def query_image_simple_openai_new(base64_image, api_url, target_file, text):
 
     if Shared.PAYLOAD_REASONING_EFFORT:
         payload["reasoning"] = {"effort": Shared.PAYLOAD_REASONING_EFFORT}
+
+    if Shared.TOOLS_PAYLOAD is not None:
+        payload["tools"] = Shared.TOOLS_PAYLOAD
+
+        #print(payload["tools"])
 
     headers = {
         "Content-Type": "application/json",
