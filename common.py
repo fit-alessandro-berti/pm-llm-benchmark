@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "o3-pro-2025-06-10-HIGH" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "grok-4-0709" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -95,7 +95,7 @@ MODELS_DICT = {
         "api_url": "https://api.x.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "grok-2-1212", "grok-3"
+            "grok-2-1212", "grok-3", "grok-4-0709"
         }
     },
     "deepinfra": {
@@ -351,7 +351,7 @@ def get_ordered_references_llms(base_path="."):
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium", "grok-4"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
@@ -615,6 +615,7 @@ def query_text_simple_generic(question, api_url, target_file):
         # Decide if we want streaming
         streaming_enabled = False
         streaming_enabled = Shared.PAYLOAD_REASONING_EFFORT is None
+        #streaming_enabled = False
 
         if streaming_enabled:
             payload["stream"] = True
@@ -684,21 +685,22 @@ def query_text_simple_generic(question, api_url, target_file):
 
             # Non-streaming call
             response = requests.post(complete_url, headers=headers, json=payload)
-            #print(response)
-            #print(response.status_code)
-            #print(response.text)
 
             response = response.json()
 
-            message = response["choices"][0]["message"]
-            dump_response(response, target_file)
             try:
+                dump_response(response, target_file)
+                message = response["choices"][0]["message"]
+
                 response_message = message["content"]
 
                 if "reasoning_content" in message:
                     response_message = "<think>\n" + message["reasoning_content"] + "\n</think>\n\n" + response_message.strip()
 
             except Exception as e:
+                print(response)
+                print(response.status_code)
+
                 raise Exception(str(response))
 
     return response_message
