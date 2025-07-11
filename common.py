@@ -49,6 +49,7 @@ class Shared:
     PAYLOAD_REASONING_EFFORT = "low"
     PAYLOAD_REASONING_EFFORT = None
     TOOLS_PAYLOAD = None
+    ADDED_TO_PAYLOAD = None
     ADDED_TO_PROMPT = " /no_think"
     ADDED_TO_PROMPT = None
 
@@ -594,6 +595,11 @@ def query_text_simple_generic(question, api_url, target_file):
     if Shared.TOOLS_PAYLOAD is not None:
         raise Exception("fail")
 
+    if Shared.ADDED_TO_PAYLOAD is not None:
+        payload.update(Shared.ADDED_TO_PAYLOAD)
+
+        #print(payload)
+
     # Check if "11434" in api_url (OLLAMA case)
     if "11434" in api_url:
         # OLLAMA with streaming enabled
@@ -640,7 +646,7 @@ def query_text_simple_generic(question, api_url, target_file):
                 #print(chunk_count)
 
                 if chunk_count % 10 == 0:
-                    print(chunk_count)
+                    #print(chunk_count)
                     #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                     pass
 
@@ -692,7 +698,7 @@ def query_text_simple_generic(question, api_url, target_file):
                                     chunk_count += 1
                                     #print(chunk_count)
                                     if chunk_count % 10 == 0:
-                                        print(chunk_count, len(response_message))
+                                        #print(chunk_count, len(response_message))
                                         #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                                         pass
                                 elif chunk_reasoning_content:
@@ -953,6 +959,9 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
 
     if Shared.TOOLS_PAYLOAD is not None:
         raise Exception("fail")
+
+    if Shared.ADDED_TO_PAYLOAD is not None:
+        payload.update(Shared.ADDED_TO_PAYLOAD)
 
     headers = {
         "Content-Type": "application/json",
