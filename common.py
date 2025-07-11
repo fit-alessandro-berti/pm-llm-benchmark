@@ -227,6 +227,18 @@ MODELS_DICT = {
                 "base_model": "o3-pro-2025-06-10",
                 "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}]
             },
+            "o4-mini-2025-04-16-search-HIGH": {
+                "provider": "openai",
+                "base_model": "o4-mini-2025-04-16",
+                "tools": [{"type": "web_search"}],
+                "reasoning_effort": "high"
+            },
+            "o4-mini-2025-04-16-codeinterpr-HIGH": {
+                "provider": "openai",
+                "base_model": "o4-mini-2025-04-16",
+                "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}],
+                "reasoning_effort": "high"
+            },
             "chatgpt-4o-latest-2025-03-26": {
                 "provider": "openai",
                 "base_model": "chatgpt-4o-latest"
@@ -578,6 +590,9 @@ def query_text_simple_generic(question, api_url, target_file):
         "model": Shared.MODEL_NAME,
         "messages": messages,
     }
+
+    if Shared.TOOLS_PAYLOAD is not None:
+        raise Exception("fail")
 
     # Check if "11434" in api_url (OLLAMA case)
     if "11434" in api_url:
@@ -935,6 +950,9 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
         "messages": messages,
         "max_tokens": Shared.MAX_REQUESTED_TOKENS,
     }
+
+    if Shared.TOOLS_PAYLOAD is not None:
+        raise Exception("fail")
 
     headers = {
         "Content-Type": "application/json",
