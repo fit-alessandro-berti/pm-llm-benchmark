@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "o3-2024-04-16-codeinterpr" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "o3-pro-2024-06-10-search" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -215,6 +215,16 @@ MODELS_DICT = {
             "o3-2024-04-16-codeinterpr": {
                 "provider": "openai",
                 "base_model": "o3-2025-04-16",
+                "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}]
+            },
+            "o3-pro-2024-06-10-search": {
+                "provider": "openai",
+                "base_model": "o3-pro-2025-06-10",
+                "tools": [{"type": "web_search"}]
+            },
+            "o3-pro-2024-06-10-codeinterpr": {
+                "provider": "openai",
+                "base_model": "o3-pro-2025-06-10",
                 "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}]
             },
             "chatgpt-4o-latest-2025-03-26": {

@@ -1,0 +1,170 @@
+ANOMALIES OBSERVED IN THE TEMPORAL PROFILE  
+
+1. Receive  Approve (RP)  
+   • Mean  25 h, STDEV = 1 h (very tight spread).  
+   • A critical, multi-step decision happening almost “on schedule” for every claim implies either (a) a batch job/automated rule that fires at a fixed time of day, or (b) timestamps that are written programmatically rather than when the real work finishes.
+
+2. Approve  Notify (PN)  
+   • Mean = 7 days, STDEV = 2 days (very long and highly variable).  
+   • Suggests that the customer notification is queued behind something—perhaps a weekly mail-merge, legal-hold periods, or a staffing backlog that fluctuates.
+
+3. Assign  Close (AC)  
+   • Mean = 2 h, STDEV = 1 h, yet Evaluate (E) and Approve (P) are supposed to occur after assignment.  
+   • Implies that a subset of claims skips the normal workflow and is closed almost immediately (possible auto-denial, duplicate reporting, or fraud-screen fail).
+
+4. Evaluate  Notify (EN)  
+   • Mean = 5 min, STDEV = 1 min.  
+   • Either the system sends an immediate “we are working on it” message right after evaluation, or evaluation is being logged after the fact (i.e., the real evaluation happened earlier).
+
+5. Receive  Evaluate vs. Receive  Approve  
+   • RE average is 1 day with large spread (8 h), but RP average is only 25 h with a very small spread.  
+   • If evaluation timing is noisy but approval timing is fixed, the two steps may be occurring in the wrong order for some claims or share a bogus clock source.
+
+--------------------------------------------------------------------
+HYPOTHESES FOR EACH ANOMALY  
+
+RP (tight 1 h STDEV)  
+a. Nightly batch job approves low-risk claims automatically.  
+b. SLA setting in workflow engine forces an “approve within 24 h” timer and auto-stamps the event if an adjuster fails to approve manually.  
+c. Time zone normalization bug: timestamps are snapped to the top of the hour when stored.
+
+PN (slow, variable)  
+a. Manual phone calls logged as “Notify” only when the adjuster’s notes are entered—delays depend on workload.  
+b. Compliance hold: certain claim types require cooling-off period before informing the customer.  
+c. E-mail service outages produce backlog surges.
+
+AC (too quick)  
+a. Duplicate/spam claims are auto-closed by a rule engine right after assignment.  
+b. Mis-configured robotic process marks claim finished when it should mark “Initial Review Complete.”  
+c. Adjusters in a particular region close claims prematurely to meet performance KPIs.
+
+EN (too quick)  
+a. System sends an automated acknowledgement rather than the final settlement notice; the activity label should really be “Ack,” not “Notify.”  
+b. Evaluation event written late (after the fact), so the recorded delta is artificially small.
+
+General timing inconsistencies  
+a. Different subsystems write events with different clocks (application server vs. DB server) causing artificial gaps or compressions.  
+b. Human interventions (back-dating, bulk data imports) distort true durations.
+
+--------------------------------------------------------------------
+VERIFICATION APPROACHES (PostgreSQL)  
+
+Common CTE to pivot first/last occurrence of any activity per claim:
+
+```sql
+WITH activity_times AS (
+  SELECT
+      claim_id,
+      MIN(CASE WHEN activity = 'R' THEN timestamp END) AS r_time,
+      MIN(CASE WHEN activity = 'A' THEN timestamp END) AS a_time,
+      MIN(CASE WHEN activity = 'E' THEN timestamp END) AS e_time,
+      MIN(CASE WHEN activity = 'P' THEN timestamp END) AS p_time,
+      MIN(CASE WHEN activity = 'N' THEN timestamp END) AS n_time,
+      MIN(CASE WHEN activity = 'C' THEN timestamp END) AS c_time
+  FROM claim_events
+  GROUP BY claim_id
+)
+```
+
+1. Claims with suspiciously uniform RP interval (inside a narrow 2 h band around the mean)  
+
+```sql
+SELECT claim_id,
+       EXTRACT(EPOCH FROM (p_time - r_time))/3600 AS hours_r_to_p
+FROM activity_times
+WHERE p_time IS NOT NULL AND r_time IS NOT NULL
+  AND ABS(EXTRACT(EPOCH FROM (p_time - r_time)) - 90000) <= 7200; -- ±2 h
+```
+
+2. RP outliers (more than 3 × reported STDEV = 10 800 s)  
+
+```sql
+SELECT *
+FROM (
+  SELECT claim_id,
+         p_time - r_time AS delta,
+         ABS(EXTRACT(EPOCH FROM (p_time - r_time)) - 90000) / 3600 AS dev_hours
+  FROM activity_times
+  WHERE p_time IS NOT NULL AND r_time IS NOT NULL
+) t
+WHERE ABS(EXTRACT(EPOCH FROM delta) - 90000) > 10800;
+```
+
+3. Long PN lags (> 7 days + 2 × STDEV = 11 days) and very short lags (< 1 day)  
+
+```sql
+SELECT claim_id,
+       p_time,
+       n_time,
+       n_time - p_time AS p_to_n_interval
+FROM activity_times
+WHERE p_time IS NOT NULL AND n_time IS NOT NULL
+  AND (
+       n_time - p_time > INTERVAL '11 days'
+       OR n_time - p_time < INTERVAL '1 day'
+      );
+```
+
+4. Fast closes after assignment (< 3 h) with missing E or P  
+
+```sql
+SELECT claim_id,
+       a_time,
+       c_time,
+       c_time - a_time AS a_to_c_interval
+FROM activity_times
+WHERE a_time IS NOT NULL
+  AND c_time IS NOT NULL
+  AND (c_time - a_time) < INTERVAL '3 hours'
+  AND (e_time IS NULL OR p_time IS NULL);
+```
+
+5. Ultra-quick EN transitions (< 2 min)  
+
+```sql
+SELECT claim_id,
+       e_time,
+       n_time,
+       n_time - e_time AS e_to_n_interval
+FROM activity_times
+WHERE e_time IS NOT NULL AND n_time IS NOT NULL
+  AND n_time - e_time < INTERVAL '2 minutes';
+```
+
+6. Correlate anomalies with adjusters or claim types (example for long PN)  
+
+```sql
+SELECT c.claim_type,
+       a.adjuster_id,
+       COUNT(*) AS delayed_count,
+       AVG(n_time - p_time) AS avg_delay
+FROM activity_times t
+JOIN claims c USING (claim_id)
+LEFT JOIN (
+    SELECT claim_id, resource AS adjuster_id
+    FROM claim_events
+    WHERE activity = 'A'
+) a USING (claim_id)
+WHERE n_time - p_time > INTERVAL '11 days'
+GROUP BY c.claim_type, a.adjuster_id
+ORDER BY delayed_count DESC;
+```
+
+7. Region-specific early closures  
+
+```sql
+SELECT ad.region,
+       COUNT(*) AS rapid_close
+FROM activity_times t
+JOIN (
+    SELECT claim_id, resource AS adjuster_id
+    FROM claim_events
+    WHERE activity = 'A'
+) aj USING (claim_id)
+JOIN adjusters ad ON ad.adjuster_id = aj.adjuster_id
+WHERE c_time - a_time < INTERVAL '3 hours'
+GROUP BY ad.region
+ORDER BY rapid_close DESC;
+```
+
+These queries highlight the claims (and responsible actors or segments) that violate the expected timing windows, allowing auditors or process owners to drill into case notes and system logs for root-cause analysis.
