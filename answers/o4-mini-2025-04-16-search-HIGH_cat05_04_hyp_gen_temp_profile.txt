@@ -1,0 +1,189 @@
+## Identified Anomalies
+
+1. **Receive  Approve (R  P)**  
+   - Average interval  25 hours with very low STDEV (1 hour), implying approvals occur almost exactly one day after receipt, regardless of individual claim complexity.
+
+2. **Approve  Notify (P  N)**  
+   - Average interval  7 days with high STDEV (2 days), indicating some claims linger multiple days before notification while others go out much faster.
+
+3. **Assign  Close (A  C)**  
+   - Average interval  2 hours with STDEV = 1 hour, suggesting a subset of claims are closed almost immediately after assignment—potentially bypassing evaluation or approval.
+
+4. **Evaluate  Notify (E  N)**  
+   - Average interval  5 minutes with STDEV = 1 minute, which may reflect an automated “evaluate-and-notify” shortcut that skips intermediary manual checks.
+
+---
+
+## Potential Hypotheses
+
+- **BatchScheduled Approvals:**  
+  Approvals are executed by a nightly batch job (e.g. every 24 hours at 2 AM), yielding a tight distribution around 25 hours with little variability.
+
+- **Notification Backlog:**  
+  A dedicated notifications team processes approved claims in weekly batches or when resources free up, causing long, inconsistent PN delays.
+
+- **AutoClose for Simple Claims:**  
+  Lowvalue or “autoeligible” claims skip detailed evaluation/approval and are closed automatically soon after assignment.
+
+- **RealTime EvaluationDriven Notifications:**  
+  An automated rule triggers notifications immediately upon evaluation completion, collapsing EN to a few minutes.
+
+- **Resource Constraints or Routing Issues:**  
+  High variability could also stem from regional differences or adjuster workloads (e.g. some offices handle notifications slowly).
+
+---
+
+## Verification Queries
+
+Below are sample SQL snippets (PostgreSQL) to flag outliers and correlate them with claim/adjuster attributes. Adjust the Z-factor or thresholds as needed.
+
+---
+
+### 1. Outliers in R  P (Receive to Approve)
+
+```sql
+WITH times AS (
+  SELECT
+    ce_r.claim_id,
+    MIN(ce_r.timestamp)      AS t_receive,
+    MIN(ce_p.timestamp)      AS t_approve,
+    EXTRACT(EPOCH FROM (MIN(ce_p.timestamp) - MIN(ce_r.timestamp))) AS delta_sec
+  FROM claim_events ce_r
+  JOIN claim_events ce_p
+    ON ce_r.claim_id = ce_p.claim_id
+   AND ce_r.activity = 'R'
+   AND ce_p.activity = 'P'
+  GROUP BY ce_r.claim_id
+)
+SELECT
+  t.claim_id,
+  t.delta_sec,
+  CASE
+    WHEN delta_sec < 3600*23 THEN 'Too Fast'
+    WHEN delta_sec > 3600*27 THEN 'Too Slow'
+    ELSE 'Within Expected'
+  END AS status
+FROM times t
+ORDER BY status, delta_sec DESC;
+```
+
+- Flags claims approved in under 23 h or over 27 h (±Z×STDEV around 25 h).
+
+---
+
+### 2. Long Delays in P  N (Approve to Notify)
+
+```sql
+WITH pn AS (
+  SELECT
+    p.claim_id,
+    MIN(p.timestamp) AS t_approve,
+    MIN(n.timestamp) AS t_notify,
+    EXTRACT(EPOCH FROM (MIN(n.timestamp) - MIN(p.timestamp))) AS delay_sec
+  FROM claim_events p
+  JOIN claim_events n
+    ON p.claim_id = n.claim_id
+   AND p.activity = 'P'
+   AND n.activity = 'N'
+  GROUP BY p.claim_id
+)
+SELECT
+  pn.claim_id,
+  pn.delay_sec,
+  c.claim_type,
+  a.region,
+  CASE
+    WHEN delay_sec > 86400*9 THEN 'Extreme Delay'
+    WHEN delay_sec > 86400*7 THEN 'Above Avg'
+    ELSE 'Normal'
+  END AS category
+FROM pn
+JOIN claims c ON pn.claim_id = c.claim_id
+LEFT JOIN adjusters a ON a.adjuster_id = (
+  SELECT resource::INT FROM claim_events
+  WHERE claim_id = pn.claim_id AND activity = 'A' LIMIT 1
+)
+WHERE delay_sec > 86400*5
+ORDER BY delay_sec DESC;
+```
+
+- Lists claims with > 5 days delay, showing claim type and region for correlation.
+
+---
+
+### 3. Premature Closures A  C (Assign to Close)
+
+```sql
+WITH ac AS (
+  SELECT
+    a.claim_id,
+    MIN(a.timestamp) AS t_assign,
+    MIN(c.timestamp) AS t_close,
+    EXTRACT(EPOCH FROM (MIN(c.timestamp) - MIN(a.timestamp))) AS ac_sec,
+    BOOL_OR(event_seq.activity IN ('E','P')) AS saw_eval_or_approve
+  FROM claim_events a
+  JOIN claim_events c
+    ON a.claim_id = c.claim_id
+   AND a.activity = 'A'
+   AND c.activity = 'C'
+  LEFT JOIN (
+    SELECT claim_id, activity FROM claim_events WHERE activity IN ('E','P')
+  ) AS event_seq ON event_seq.claim_id = a.claim_id
+  GROUP BY a.claim_id
+)
+SELECT
+  ac.claim_id,
+  ac.ac_sec,
+  ac.saw_eval_or_approve,
+  cl.claim_amount,
+  cl.claim_type
+FROM ac
+JOIN claims cl ON ac.claim_id = cl.claim_id
+WHERE ac.ac_sec < 3600*4   -- Closed within 4 hours of assignment
+  AND NOT ac.saw_eval_or_approve
+ORDER BY ac_sec;
+```
+
+- Identifies claims closed within 4 hours of assignment without any Evaluate or Approve events.
+
+---
+
+### 4. Rapid Transitions E  N (Evaluate to Notify)
+
+```sql
+WITH en AS (
+  SELECT
+    e.claim_id,
+    MIN(e.timestamp) AS t_eval,
+    MIN(n.timestamp) AS t_notify,
+    EXTRACT(EPOCH FROM (MIN(n.timestamp) - MIN(e.timestamp))) AS en_sec
+  FROM claim_events e
+  JOIN claim_events n
+    ON e.claim_id = n.claim_id
+   AND e.activity = 'E'
+   AND n.activity = 'N'
+  GROUP BY e.claim_id
+)
+SELECT
+  en.claim_id,
+  en.en_sec,
+  cl.specialization       AS claim_subtype,
+  adj.name                AS adjuster_name
+FROM en
+JOIN claims cl ON en.claim_id = cl.claim_id
+LEFT JOIN adjusters adj
+  ON adj.adjuster_id = (
+    SELECT resource::INT
+    FROM claim_events
+    WHERE claim_id = en.claim_id AND activity = 'A'
+    LIMIT 1
+  )
+WHERE en.en_sec < 300     -- Less than 5 minutes
+ORDER BY en_sec;
+```
+
+- Surfaces cases where notification follows evaluation in under 5 minutes, joined with adjuster and claim details.
+
+---
+
+These queries help pinpoint outlier executions, surface systemic patterns by join-ing with `claims` and `adjusters`, and form the basis for deeper root-cause analysis (e.g., batch schedules, automated rules, resource shortages).

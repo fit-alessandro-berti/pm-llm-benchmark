@@ -1,0 +1,161 @@
+Below is a structured example of how you might approach this in three steps:  
+
+1.   Detect and describe the main anomalies in your sample log  
+2.   Hypothesize possible root-causes  
+3.   Give a suite of SQL queries you can run against `order_event_log` (and, where indicated, `orders` and `resources`) to drill into each hypothesis.  
+
+—  
+1. ANOMALIES / UNDESIRABLE BEHAVIORS  
+———————————————————  
+Case 1002  
+  • “Confirm Shipment” (08:25) and “Ship Goods” (08:40) happen before the credit check (09:10) and even before stock validation (09:15).  
+  • Missing the normal “Validate Stock” step prior to shipping.  
+
+Case 1003  
+  • “Ship Goods” (09:10) occurs before “Confirm Shipment” (09:45).  
+  • Entirely missing the “Validate Stock” step.  
+
+Case 1004  
+  • “Receive Payment” (09:05) comes before “Issue Invoice” (09:20).  
+  • “Confirm Shipment” flagged `shipment_scheduled=N` yet goods are still shipped (09:50).  
+
+—  
+2. POSSIBLE ROOT-CAUSE HYPOTHESES  
+———————————————————  
+• Policy / system exception for priority orders (auto-ship, skip credit check/stock)  
+• Resource training gaps or manual overrides (Warehouse or Logistics skipping steps)  
+• Misconfigured automation rules (e.g. “if order_value > X  auto-ship”)  
+• Timestamp recording errors (clocks out of sync)  
+• Dataentry mistakes (wrong activity code, wrong flag)  
+
+—  
+3. INVESTIGATIVE SQL QUERIES  
+———————————————————  
+Below are template queries. You can parameterize activity names or thresholds as needed.  
+
+A) Find cases missing a given activity  
+-----------------------------------------------------  
+-- cases with NO credit check  
+SELECT o.case_id  
+FROM orders o  
+LEFT JOIN (  
+    SELECT DISTINCT case_id  
+    FROM order_event_log  
+    WHERE activity = 'Perform Credit Check'  
+) cc ON o.case_id = cc.case_id  
+WHERE cc.case_id IS NULL;  
+
+-- likewise: replace 'Perform Credit Check' with 'Validate Stock' or 'Confirm Shipment'  
+
+B) Find out-of-order pairs via window functions  
+-----------------------------------------------------  
+WITH seq AS (  
+    SELECT  
+      case_id,  
+      activity,  
+      timestamp,  
+      LAG(activity) OVER (PARTITION BY case_id ORDER BY timestamp) AS prev_act  
+    FROM order_event_log  
+)  
+SELECT DISTINCT case_id  
+FROM seq  
+WHERE  
+    (activity = 'Perform Credit Check' AND prev_act IN ('Confirm Shipment','Ship Goods'))  
+    OR (activity = 'Ship Goods' AND prev_act = 'Perform Credit Check' /* example if CC must precede ship */)  
+;  
+
+C) Find “Ship Goods” BEFORE “Confirm Shipment”  
+-----------------------------------------------------  
+WITH times AS (  
+    SELECT  
+      case_id,  
+      MIN(timestamp) FILTER (WHERE activity='Ship Goods')   AS ship_time,  
+      MIN(timestamp) FILTER (WHERE activity='Confirm Shipment') AS conf_time  
+    FROM order_event_log  
+    GROUP BY case_id  
+)  
+SELECT case_id, ship_time, conf_time  
+FROM times  
+WHERE ship_time < conf_time;  
+
+D) Find “Receive Payment” BEFORE “Issue Invoice”  
+-----------------------------------------------------  
+WITH t AS (  
+    SELECT  
+      case_id,  
+      MIN(timestamp) FILTER (WHERE activity='Receive Payment') AS pay_time,  
+      MIN(timestamp) FILTER (WHERE activity='Issue Invoice')    AS inv_time  
+    FROM order_event_log  
+    GROUP BY case_id  
+)  
+SELECT case_id, pay_time, inv_time  
+FROM t  
+WHERE pay_time < inv_time;  
+
+E) Aggregate anomalies by order_type (are they mostly “priority” orders?)  
+-----------------------------------------------------  
+WITH anomaly_cases AS (  
+    -- reuse C) or D) or your own anomaly definition  
+    SELECT case_id FROM times WHERE ship_time < conf_time  
+)  
+SELECT o.order_type, COUNT(*) AS anomaly_cnt,  
+    COUNT(*)::decimal / (SELECT COUNT(*) FROM orders) AS pct_of_all_cases  
+FROM orders o  
+JOIN anomaly_cases a ON o.case_id = a.case_id  
+GROUP BY o.order_type;  
+
+F) Which resources are most involved in anomalies?  
+-----------------------------------------------------  
+WITH bad_ship AS (  
+    SELECT case_id FROM times WHERE ship_time < conf_time  
+), shipments AS (  
+    SELECT case_id, resource  
+    FROM order_event_log  
+    WHERE activity='Ship Goods'  
+)  
+SELECT r.resource_id, res.role, res.department, COUNT(*) AS num_bad_ships  
+FROM bad_ship b  
+JOIN shipments s ON b.case_id = s.case_id  
+JOIN resources res ON s.resource = res.resource_id  
+GROUP BY r.resource_id, res.role, res.department  
+ORDER BY num_bad_ships DESC;  
+
+G) Correlation of anomalies with order_value (are highvalue orders more prone?)  
+-----------------------------------------------------  
+WITH anomaly_list AS (  
+    -- pick any anomaly filter, e.g. missing credit check  
+    SELECT case_id FROM order_event_log  
+    WHERE activity='Ship Goods'  
+    EXCEPT  
+    SELECT case_id FROM order_event_log WHERE activity='Perform Credit Check'  
+)  
+SELECT  
+    AVG(o.order_value) AS avg_value_all,  
+    AVG(o2.order_value) AS avg_value_anomaly  
+FROM orders o  
+LEFT JOIN anomaly_list a ON o.case_id = a.case_id  
+LEFT JOIN orders o2 ON a.case_id = o2.case_id;  
+
+H) Timelag analysis: how long between “Perform Credit Check”  “Ship Goods”?  
+-----------------------------------------------------  
+SELECT  
+    case_id,  
+    EXTRACT(EPOCH FROM MAX(timestamp) FILTER (WHERE activity='Ship Goods')  
+      - MIN(timestamp) FILTER (WHERE activity='Perform Credit Check'))/3600  
+      AS hours_cc_to_ship  
+FROM order_event_log  
+GROUP BY case_id  
+ORDER BY hours_cc_to_ship DESC  
+LIMIT 20;  
+
+—  
+With these building-blocks you can:  
+• Quantify how many and which cases deviate,  
+• See if anomalies cluster by order_type, order_value or by resource/department,  
+• Measure timedelays,  
+• And test whether “priority” orders or “high-value” ones are systematically being fast-tracked (and skipping controls) or whether this is random data entry/system noise.  
+
+From there you can drill into:  
+– System logs around exception rules  
+– Training/SLAs for specific roles  
+– Clocksync and timestamprecording processes.

@@ -1,0 +1,146 @@
+Anomalies in the Temporal Profile Model
+
+1. R  P (Receive  Approve)  
+   • Avg  90 000 s (~25 h) with STDEV = 3 600 s (1 h)  
+   • Very tight spread for a long operation – suggests a fixedtime batch or artificial gating.  
+
+2. P  N (Approve  Notify)  
+   • Avg = 604 800 s (7 days) with STDEV = 172 800 s (2 days)  
+   • Excessive mean delay + high variability indicates manual backlog, weekend/holiday effects or ad-hoc prioritization.  
+
+3. A  C (Assign  Close)  
+   • Avg = 7 200 s (2 h) with STDEV = 3 600 s (1 h)  
+   • Claims jumping straight from “Assign” to “Close” in 2 h on average—bypassing Evaluate/Approve—suggests auto-closures or policy exemptions.  
+
+4. E  N (Evaluate  Notify)  
+   • Avg = 300 s (5 min) with STDEV = 60 s (1 min)  
+   • Unrealistically fast notification post-evaluation—possibly an automated notification rule that skips manual checks.  
+
+Possible Root-Cause Hypotheses
+
+• Batch Scheduling or System Jobs  
+  – RP locked into a nightly or hourly batch-approval job (hence low variance).  
+  – PN held until a weekly/bi-weekly notification run.  
+
+• Manual Workload Constraints  
+  – PN delays spike when backlog builds; weekends/holidays amplify gaps.  
+  – Certain regional offices only notify on business days.  
+
+• Automated Short-Circuit Paths  
+  – Small claims (under a threshold) are auto-closed immediately after assignment (AC).  
+  – Standardized evaluation + auto-notify rule triggers EN in one click (no real processing).  
+
+• Data-Entry or System Errors  
+  – Mis-logged timestamps (e.g., defaulting to current timestamp on event insert).  
+  – Missing intermediate events flagged as “Close” too early.  
+
+Verification via SQL
+
+Assume a ZETA factor of 3 (i.e. flag diffs outside mean ± 3×STDEV).
+
+1.  RP outside expected window  
+```sql
+SELECT
+  ce_r.claim_id,
+  ce_r.timestamp AS receive_ts,
+  ce_p.timestamp AS approve_ts,
+  EXTRACT(EPOCH FROM ce_p.timestamp - ce_r.timestamp) AS diff_s
+FROM claim_events ce_r
+JOIN claim_events ce_p
+  ON ce_r.claim_id = ce_p.claim_id
+  AND ce_r.activity = 'R'
+  AND ce_p.activity = 'P'
+WHERE ABS(
+    EXTRACT(EPOCH FROM ce_p.timestamp - ce_r.timestamp)
+    - 90000
+  ) > 3 * 3600;
+```
+
+2.  PN excessively long  
+```sql
+SELECT
+  ce_p.claim_id,
+  ce_p.timestamp AS approve_ts,
+  ce_n.timestamp AS notify_ts,
+  EXTRACT(EPOCH FROM ce_n.timestamp - ce_p.timestamp) AS diff_s
+FROM claim_events ce_p
+JOIN claim_events ce_n
+  ON ce_p.claim_id = ce_n.claim_id
+  AND ce_p.activity = 'P'
+  AND ce_n.activity = 'N'
+WHERE EXTRACT(EPOCH FROM ce_n.timestamp - ce_p.timestamp)
+      > 604800 + 3 * 172800;
+```
+
+3.  AC too fast (possible skip of E/P)  
+```sql
+SELECT
+  ce_a.claim_id,
+  ce_a.resource AS assigner,
+  ce_a.timestamp AS assign_ts,
+  ce_c.timestamp AS close_ts,
+  EXTRACT(EPOCH FROM ce_c.timestamp - ce_a.timestamp) AS diff_s
+FROM claim_events ce_a
+JOIN claim_events ce_c
+  ON ce_a.claim_id = ce_c.claim_id
+  AND ce_a.activity = 'A'
+  AND ce_c.activity = 'C'
+WHERE EXTRACT(EPOCH FROM ce_c.timestamp - ce_a.timestamp) < 7200 - 3 * 3600;
+```
+– And check missing E or P in between:
+```sql
+AND NOT EXISTS (
+  SELECT 1 FROM claim_events ce_mid
+  WHERE ce_mid.claim_id = ce_a.claim_id
+    AND ce_mid.activity IN ('E','P')
+    AND ce_mid.timestamp BETWEEN ce_a.timestamp AND ce_c.timestamp
+)
+```
+
+4.  EN almost instantaneous  
+```sql
+SELECT
+  ce_e.claim_id,
+  ce_e.timestamp AS eval_ts,
+  ce_n.timestamp AS notify_ts,
+  EXTRACT(EPOCH FROM ce_n.timestamp - ce_e.timestamp) AS diff_s
+FROM claim_events ce_e
+JOIN claim_events ce_n
+  ON ce_e.claim_id = ce_n.claim_id
+  AND ce_e.activity = 'E'
+  AND ce_n.activity = 'N'
+WHERE EXTRACT(EPOCH FROM ce_n.timestamp - ce_e.timestamp) < 300 - 3 * 60;
+```
+
+5.  Correlate with claim type, adjuster or region  
+```sql
+SELECT
+  c.claim_type,
+  ce.activity,
+  AVG(EXTRACT(EPOCH FROM next_evt.timestamp - ce.timestamp)) AS avg_diff_s,
+  STDDEV_POP(EXTRACT(EPOCH FROM next_evt.timestamp - ce.timestamp)) AS sd_diff_s
+FROM claim_events ce
+JOIN claim_events next_evt
+  ON ce.claim_id = next_evt.claim_id
+     AND <activitypair condition>
+JOIN claims c
+  ON ce.claim_id = c.claim_id
+GROUP BY c.claim_type, ce.activity;
+```
+Or by adjuster:
+```sql
+SELECT
+  a.region,
+  ce.activity,
+  AVG(EXTRACT(EPOCH FROM next_evt.timestamp - ce.timestamp)) AS avg_s,
+  COUNT(*) AS cnt
+FROM claim_events ce
+JOIN claim_events next_evt
+  ON ce.claim_id = next_evt.claim_id
+     AND ce.activity = 'R' AND next_evt.activity = 'P'
+JOIN adjusters a
+  ON ce.resource::INTEGER = a.adjuster_id
+GROUP BY a.region, ce.activity;
+```
+
+By running these queries you can pinpoint exactly which claims, adjusters, regions or claim types exhibit the timing anomalies and investigate upstream causes (batch jobs, policy rules or dataquality issues).
