@@ -207,22 +207,22 @@ MODELS_DICT = {
                 "base_model": "o3-pro-2025-06-10",
                 "reasoning_effort": "high"
             },
-            "o3-2024-04-16-search": {
+            "o3-2025-04-16-search": {
                 "provider": "openai",
                 "base_model": "o3-2025-04-16",
                 "tools": [{"type": "web_search"}]
             },
-            "o3-2024-04-16-codeinterpr": {
+            "o3-2025-04-16-codeinterpr": {
                 "provider": "openai",
                 "base_model": "o3-2025-04-16",
                 "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}]
             },
-            "o3-pro-2024-06-10-search": {
+            "o3-pro-2025-06-10-search": {
                 "provider": "openai",
                 "base_model": "o3-pro-2025-06-10",
                 "tools": [{"type": "web_search"}]
             },
-            "o3-pro-2024-06-10-codeinterpr": {
+            "o3-pro-2025-06-10-codeinterpr": {
                 "provider": "openai",
                 "base_model": "o3-pro-2025-06-10",
                 "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}]

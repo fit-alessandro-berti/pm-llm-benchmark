@@ -7,21 +7,21 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | gemini-2.5-pro-thinkhigh          | **42.4** | :x:                | :white_check_mark: | 6.4                  | 8.3                  | 5.2                  | :mage_woman: **5.6** | **6.2**              | 6.0                  | **4.6**              | 4.7                  |
 | gemini-2.5-pro-thinklow           | **42.2** | :x:                | :white_check_mark: | 5.7                  | **8.4**              | 5.3                  | **5.5**              | **6.1**              | :mage_woman: **6.5** | **4.7**              | :mage_woman: **5.4** |
 | gemini-2.5-flash-thinkhigh        | **41.0** | :x:                | :white_check_mark: | 6.1                  | 8.3                  | 4.8                  | **5.4**              | **6.2**              | 5.5                  | **4.7**              | 5.1                  |
-| o3-pro-2024-06-10-search          | **40.1** | :x:                | :white_check_mark: | :mage_woman: **6.9** | **8.4**              | 4.2                  | 4.5                  | :mage_woman: **6.3** | 5.3                  | **4.7**              | 5.0                  |
+| o3-pro-2025-06-10-search          | **40.1** | :x:                | :white_check_mark: | :mage_woman: **6.9** | **8.4**              | 4.2                  | 4.5                  | :mage_woman: **6.3** | 5.3                  | **4.7**              | 5.0                  |
 | grok-4-0709                       | **40.1** | :x:                | :x:                | 6.0                  | :mage_woman: **8.7** | 5.4                  | 4.3                  | 5.6                  | 5.4                  | **4.6**              | 3.1                  |
 | o3-pro-2025-06-10                 | **39.9** | :x:                | :white_check_mark: | 6.2                  | 7.7                  | 5.3                  | 5.2                  | 5.3                  | 5.9                  | 4.3                  | 5.0                  |
 | o3-pro-2025-06-10-HIGH            | **39.0** | :x:                | :white_check_mark: | 5.8                  | 7.8                  | 4.6                  | 4.6                  | :mage_woman: **6.3** | 5.6                  | 4.4                  | 4.8                  |
 | o3-2025-04-16                     | **38.5** | :x:                | :white_check_mark: | 6.0                  | 7.5                  | 3.9                  | 4.8                  | **6.2**              | 5.7                  | **4.5**              | 4.7                  |
 | Grok-3-beta-thinking-20250221     | **38.5** | :x:                | :white_check_mark: | :mage_woman: **6.9** | 6.9                  | :mage_woman: **6.3** | 3.8                  | 4.8                  | 5.9                  | 3.9                  | 0.0                  |
-| o3-pro-2024-06-10-codeinterpr     | **38.4** | :x:                | :white_check_mark: | 5.8                  | 7.8                  | 4.3                  | 4.3                  | 5.8                  | 6.0                  | 4.3                  | 4.3                  |
-| o3-2024-04-16-search              | **38.3** | :x:                | :white_check_mark: | 6.3                  | 6.6                  | 4.7                  | 4.4                  | 5.8                  | 5.8                  | :mage_woman: **4.8** | 4.3                  |
+| o3-pro-2025-06-10-codeinterpr     | **38.4** | :x:                | :white_check_mark: | 5.8                  | 7.8                  | 4.3                  | 4.3                  | 5.8                  | 6.0                  | 4.3                  | 4.3                  |
+| o3-2025-04-16-search              | **38.3** | :x:                | :white_check_mark: | 6.3                  | 6.6                  | 4.7                  | 4.4                  | 5.8                  | 5.8                  | :mage_woman: **4.8** | 4.3                  |
 | phi4-reasoningplus                | **37.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 6.9                  | 5.2                  | 4.8                  | 5.4                  | 5.8                  | 3.9                  | 0.0                  |
 | grok-3-mini-high                  | **37.7** | :x:                | :white_check_mark: | 6.5                  | 6.6                  | 5.2                  | 4.9                  | 4.9                  | 5.7                  | 4.0                  | 0.0                  |
 | gemini-2.5-flash-nothink          | **37.2** | :x:                | :x:                | 5.8                  | 7.1                  | 3.4                  | 5.1                  | 5.5                  | 5.7                  | **4.6**              | 4.8                  |
 | phi4-reasoning                    | **37.0** | :white_check_mark: | :white_check_mark: | 6.2                  | 6.5                  | 4.7                  | 4.3                  | **6.1**              | 5.5                  | 3.8                  | 0.0                  |
 | qwen-qwq-32b-nostepbystep         | **36.7** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.4                  | 5.9                  | 4.5                  | 4.8                  | 5.6                  | 3.7                  | 0.0                  |
 | o4-mini-2025-04-16-HIGH           | **36.5** | :x:                | :white_check_mark: | 4.9                  | 7.3                  | 4.8                  | 4.2                  | 5.6                  | 5.3                  | 4.4                  | 4.5                  |
-| o3-2024-04-16-codeinterpr         | **36.5** | :x:                | :white_check_mark: | 6.2                  | 6.3                  | 3.9                  | 4.0                  | **6.0**              | 5.3                  | **4.7**              | 4.1                  |
+| o3-2025-04-16-codeinterpr         | **36.5** | :x:                | :white_check_mark: | 6.2                  | 6.3                  | 3.9                  | 4.0                  | **6.0**              | 5.3                  | **4.7**              | 4.1                  |
 | gemini-2.5-flash-lite-thinkhigh   | **36.4** | :x:                | :white_check_mark: | 5.5                  | 7.1                  | 4.3                  | 4.3                  | 5.6                  | 5.2                  | 4.3                  | 4.0                  |
 | qwen-qwq-32b-stepbystep           | **35.6** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.7                  | 4.3                  | 4.6                  | 5.0                  | 5.5                  | 3.9                  | 0.0                  |
 | nemotron-ultra-253b-v1-thinkenab  | **35.1** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.1                  | 5.5                  | 4.5                  | 4.3                  | 5.4                  | 3.6                  | 0.0                  |
@@ -324,7 +324,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### o3-pro-2024-06-10-search   => 40.1 points
+### o3-pro-2025-06-10-search   => 40.1 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -702,7 +702,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### o3-pro-2024-06-10-codeinterpr   => 38.4 points
+### o3-pro-2025-06-10-codeinterpr   => 38.4 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -766,7 +766,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### o3-2024-04-16-search   => 38.3 points
+### o3-2025-04-16-search   => 38.3 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
@@ -1190,7 +1190,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 
 
-### o3-2024-04-16-codeinterpr   => 36.5 points
+### o3-2025-04-16-codeinterpr   => 36.5 points
 
 | Question                           |   Score |
 |:-----------------------------------|--------:|
