@@ -1,0 +1,157 @@
+Below is a structured write-up covering the three points you asked for.
+
+1) Anomalies in the POWL model  
+--------------------------------  
+a. Loop between Evaluate (E) and Approve (P)  
+   - The operator LOOP(E, P) allows you to do EPEP… any number of times, or even skip P on the first iteration.  
+   - In a “textbook” claim process you would Evaluate once, Approve once (or Reject), and then move on—never circle back indefinitely.  
+
+b. XOR on Notify (N) vs. skip  
+   - The model says after the EP loop you do either N or a silent skip.  
+   - That means it is structurally allowed to never notify the customer—again and again!  
+
+c. Partial-order “shortcut” from Assign (A) to Close (C)  
+   - We only enforce RA and Aloopxor, but we also added AC.  
+   - That means in principle you can do ReceiveAssignClose without any Evaluate, Approve or Notify.  
+
+All three are “red flags” in a regulated insurance process.
+
+2) Hypotheses for why these anomalies crept in  
+------------------------------------------------  
+• Business rule churn  
+  - Maybe the business originally wanted the ability to re-evaluate borderline cases (hence the loop), but never finalized how many cycles were allowed.  
+  - Perhaps “notify only in certain cases” was a temporary carve-out that got modelled as a skip branch but never removed.  
+
+• Miscommunication / siloed design  
+  - Underwriters and claims operations teams drew up different flowcharts; nobody reconciled them, so the model is half one thing, half another.  
+
+• Technical shortcuts or bugs in the processmodelling tool  
+  - The modeller used a “partial order” editor and accidentally left out the strict constraints from loopC or xorC.  
+  - The silent transition (skip) was inserted as a placeholder to “fill the model” but never converted to a real Notify step.  
+
+• Inadequate QA or governance of the process model  
+  - No automated modelvalidation rules to flag “unbounded loops,” “unpaired branches,” or “premature termination.”  
+
+3) How to verify these hypotheses via SQL on the real data  
+---------------------------------------------------------------  
+Below are a few targeted queries you could run against your `claim_events` table (and `claims` for metadata) to see whether these anomalies actually occur in production.
+
+a) Claims closed without any Evaluate (E) or Approve (P)
+
+```sql
+-- Find claims that have a C event but no E or no P before it.
+WITH evts AS (
+  SELECT
+    claim_id,
+    MAX(CASE WHEN activity = 'E' THEN timestamp END) AS last_e,
+    MAX(CASE WHEN activity = 'P' THEN timestamp END) AS last_p,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS first_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  e.claim_id,
+  c.submission_date,
+  e.first_c,
+  e.last_e,
+  e.last_p
+FROM evts e
+JOIN claims c ON c.claim_id = e.claim_id
+WHERE e.first_c IS NOT NULL
+  AND (e.last_e IS NULL OR e.last_p IS NULL
+       OR e.first_c < GREATEST(COALESCE(e.last_e,'infinity'),
+                               COALESCE(e.last_p,'infinity')));
+```
+
+If this returns a nontrivial number of rows, you may actually be closing claims prematurely.
+
+b) Claims with multiple Approvals or multiple Evaluations
+
+```sql
+-- Count claims where activity E or P appears more than once
+SELECT
+  claim_id,
+  SUM(CASE WHEN activity = 'E' THEN 1 ELSE 0 END) AS cnt_eval,
+  SUM(CASE WHEN activity = 'P' THEN 1 ELSE 0 END) AS cnt_approve
+FROM claim_events
+GROUP BY claim_id
+HAVING
+  SUM(CASE WHEN activity = 'E' THEN 1 ELSE 0 END) > 1
+  OR SUM(CASE WHEN activity = 'P' THEN 1 ELSE 0 END) > 1;
+```
+
+A high count of E>1 or P>1 would confirm the unbounded loop is in use.
+
+c) Claims never notifying the customer
+
+```sql
+-- Find the proportion of claims without an N event
+WITH has_notify AS (
+  SELECT DISTINCT claim_id
+  FROM claim_events
+  WHERE activity = 'N'
+)
+SELECT
+  COUNT(*) AS total_claims,
+  COUNT(hn.claim_id) AS claims_with_notify,
+  COUNT(*) - COUNT(hn.claim_id) AS claims_without_notify
+FROM claims
+LEFT JOIN has_notify hn
+  ON claims.claim_id = hn.claim_id;
+```
+
+If “claims_without_notify” is large, that matches the skip-branch anomaly.
+
+d) Claims closed immediately after Assigner (no Evaluate/Approve)
+
+```sql
+-- Look for claims where C happens within 1 hour of A, and no E/P in between
+WITH times AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'A' THEN timestamp END) AS t_assign,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS t_close,
+    MAX(CASE WHEN activity IN ('E','P') THEN timestamp END) AS t_evalapp
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT *
+FROM times
+WHERE t_close IS NOT NULL
+  AND t_assign IS NOT NULL
+  AND (t_evalapp IS NULL OR t_evalapp > t_close)
+  AND t_close < t_assign + INTERVAL '1 hour';
+```
+
+This will flag “toofast” closures that never went through the loop.
+
+e) Drill-down by adjuster or region
+
+```sql
+-- Maybe some regions or adjusters consistently skip steps:
+SELECT
+  ce.resource AS adjuster,
+  SUM(CASE WHEN ce.activity = 'C' THEN 1 ELSE 0 END) AS total_closes,
+  SUM(CASE WHEN ce.activity = 'C' AND NOT EXISTS (
+        SELECT 1 FROM claim_events ce2
+        WHERE ce2.claim_id = ce.claim_id
+          AND ce2.activity = 'E'
+          AND ce2.timestamp < ce.timestamp
+     ) THEN 1 ELSE 0 END) AS premature_closes
+FROM claim_events ce
+WHERE ce.activity = 'C'
+GROUP BY ce.resource
+ORDER BY premature_closes DESC
+LIMIT 20;
+```
+
+If one or two adjusters or regions are responsible for most of these early closes, it points to localized training or toolconfiguration issues.
+
+—  
+Taken together, these queries will let you:
+
+1. Measure how often each anomaly actually happens.  
+2. See whether it is systemic (all regions, all adjusters) or localized.  
+3. Correlate with timestamps to infer whether a “loop” (multiple E/P) is ever legitimately used or abused.  
+
+Armed with that evidence, you can go back to the processmodelling team, show them the real impact, and tighten up the POWL model (e.g. enforce strict edges RAEPNC, remove the skip, bound the loop) or redesign your workflow engine’s constraint checks.

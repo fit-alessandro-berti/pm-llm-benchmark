@@ -92,6 +92,9 @@ if __name__ == "__main__":
                             common.Shared.CUSTOM_TEMPERATURE = ref["temperature"] if "temperature" in ref else None
                             common.Shared.MAX_REQUESTED_TOKENS = ref["max_tokens"] if "max_tokens" in ref else 32000
                             common.Shared.ADDED_TO_PROMPT = ref["added_to_prompt"] if "added_to_prompt" in ref else None
+                            common.Shared.TOOLS_PAYLOAD = ref["tools"] if "tools" in ref else None
+                            common.Shared.ADDED_TO_PAYLOAD = ref["added_to_payload"] if "added_to_payload" in ref else None
+
                             this_provider = ref["provider"]
                         else:
                             api_key = None
@@ -122,6 +125,8 @@ if __name__ == "__main__":
                     common.Shared.CUSTOM_TEMPERATURE = None
                     common.Shared.MAX_REQUESTED_TOKENS = 32000
                     common.Shared.ADDED_TO_PROMPT = None
+                    common.Shared.TOOLS_PAYLOAD = None
+                    common.Shared.ADDED_TO_PAYLOAD = None
 
                     found = True
                     break

@@ -1,148 +1,154 @@
-Anomalies observed
+Anomalies observed in the temporal profile
 
-1. Receive  Approve  
-   • Mean  25 h (90 000 s) but stdev only 1 h (3 600 s).  
-   • An unusually tight spread around a long interval hints at a rigid, possibly artificial schedule or a nightly/nextday batch job.
+1. Receive  Approve (R  P)  
+   • Avg  25 h, stdev = 1 h  dispersion far tighter than the rest of the process.  
+   • Suggests an artificial, fixed-interval job or a hard SLA timer.
 
-2. Approve  Notify  
-   • Mean 7 days (604 800 s) with stdev 2 days (172 800 s).  
-   • Very long and very erratic; could be backlog, manual mailing, or waiting for external confirmation.
+2. Approve  Notify (P  N)  
+   • Avg = 7 days, stdev = 2 days  much slower and far more erratic than any other step.  
+   • Indicates backlog, manual batching, or dependency on an external channel (postal letters, 3-rd-party payment confirmation).
 
-3. Assign  Close  
-   • Mean 2 h (7 200 s).  Closing directly after assignment implies that Evaluate and/or Approve are sometimes skipped.
+3. Assign  Close (A  C)  
+   • Avg = 2 h, yet Evaluate/Approve are supposed to occur in-between.  
+   • Implies premature closure, duplicate claims merged, or misuse of the Close code as “reject”.
 
-4. Evaluate  Notify  
-   • Mean 5 min (300 s) with stdev 1 min.  Almost instantaneous after evaluation; may be an automated notification that ignores the Approve step.
+4. Evaluate  Notify (E  N)  
+   • Avg = 5 min, stdev = 1 min  too quick for human-driven activities.  
+   • Points to auto-generated notifications or skipped approval.
 
-5. Receive  Evaluate vs. Receive  Approve  
-   • Evaluate happens one day after receive, but Approve happens only one hour later than Evaluate.  The sequencing looks compressed and could indicate that the Evaluate time stamp is written late (catchup entry).
+5. Evaluate  Close (E  C)  
+   • Avg = 1 h with a very large stdev (50 min) relative to the mean.  
+   • Some claims are closed immediately after evaluation, others linger—possible triage vs. complex claims split.
 
-Typical hypotheses
+Hypotheses for the irregularities
 
-A. Batch or scheduled jobs  
-   • Approvals may run once per day at a fixed hour.  
-   • Notifications may be issued weekly or when a queue reaches a certain size.
+H-1  (R  P) An overnight batch program changes claim status to “approved” once per day; hence almost identical delays.  
+H-2  (P  N) Notification depends on a separate customer-communication subsystem that is frequently back-logged or off-line on weekends.  
+H-3  (A  C) Certain low-value or duplicate claims are closed by an adjuster without evaluation; rule may exist but is applied inconsistently.  
+H-4  (E  N) An automatic email is sent when an evaluation form is saved—regardless of whether approval is finished.  
+H-5  Variation by adjuster, region or claim_type (e.g., auto vs. home) causes different timing patterns that inflate some averages.
 
-B. Missing or backdated events  
-   • Adjusters may record E or P after the fact, so the real elapsed time is hidden and R–P seems constant.
+SQL-based checks
 
-C. Bypassed steps for lowvalue claims  
-   • Small claims might be autoapproved and autoclosed right after assignment.
+(Intervals shown in seconds; adjust thresholds as needed.)
 
-D. Resource bottlenecks / vacations  
-   • When particular adjusters or regions have high load the PN gap grows.
+1. Identify claims with suspiciously constant R  P delay (±2 h band around 25 h).
 
-E. Different channels  
-   • Online claims could flow faster (auto messages) while phone/mail claims wait for manual work.
-
-Verification ideas (PostgreSQL)
-
-1. Claims whose Receive  Approve time lies outside the “normal” 25 h ± 2 h window
-
-WITH rp AS (
-  SELECT claim_id,
-         MIN(timestamp) FILTER (WHERE activity = 'R') AS r_time,
-         MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time
-  FROM claim_events
-  GROUP BY claim_id
-  HAVING COUNT(*) FILTER (WHERE activity IN ('R','P')) = 2
-)
-SELECT claim_id,
-       EXTRACT(EPOCH FROM (p_time - r_time)) AS secs_r_p
-FROM rp
-WHERE EXTRACT(EPOCH FROM (p_time - r_time)) NOT BETWEEN 82800 AND 97200; -- 90 000 ± 7 200
-
-2. Claims closed  2 h after assignment and missing Evaluate or Approve
-
-WITH ac AS (
-  SELECT claim_id,
-         MIN(timestamp) FILTER (WHERE activity = 'A') AS a_time,
-         MIN(timestamp) FILTER (WHERE activity = 'C') AS c_time,
-         BOOL_OR(activity = 'E') AS has_e,
-         BOOL_OR(activity = 'P') AS has_p
+```sql
+WITH times AS (
+  SELECT
+      claim_id,
+      MAX(CASE WHEN activity = 'R' THEN timestamp END) AS r_ts,
+      MAX(CASE WHEN activity = 'P' THEN timestamp END) AS p_ts
   FROM claim_events
   GROUP BY claim_id
 )
 SELECT claim_id,
-       EXTRACT(EPOCH FROM (c_time - a_time)) AS secs_a_c,
-       has_e, has_p
-FROM ac
-WHERE a_time IS NOT NULL
-  AND c_time IS NOT NULL
-  AND EXTRACT(EPOCH FROM (c_time - a_time)) < 7200;
+       EXTRACT(EPOCH FROM (p_ts - r_ts)) AS sec_r_to_p
+FROM times
+WHERE p_ts IS NOT NULL
+  AND ABS(EXTRACT(EPOCH FROM (p_ts - r_ts)) - 90000) < 7200;    -- 90 000 s ± 2 h
+```
 
-3. Long Approve  Notify gaps and their adjusters / claim types
+2. Approve  Notify taking longer than 3 days or shorter than 4 h.
 
-WITH pn AS (
-  SELECT ce.claim_id,
-         MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time,
-         MIN(timestamp) FILTER (WHERE activity = 'N') AS n_time
-  FROM claim_events ce
-  GROUP BY ce.claim_id
-  HAVING COUNT(*) FILTER (WHERE activity IN ('P','N')) = 2
-)
-SELECT p.claim_id,
-       c.claim_type,
-       a.adjuster_id,
-       EXTRACT(EPOCH FROM (n_time - p_time))/86400 AS days_p_n
-FROM pn p
-JOIN claims c USING (claim_id)
-LEFT JOIN (
-    SELECT claim_id, -- adjuster attached through the Assign event
-           MAX(resource)::INT AS adjuster_id
-    FROM claim_events
-    WHERE activity = 'A'
-    GROUP BY claim_id
-) a USING (claim_id)
-WHERE (n_time - p_time) > INTERVAL '5 days';
-
-4. Distribution of Evaluate  Notify delays by region
-
-WITH en AS (
-  SELECT ce.claim_id,
-         MIN(timestamp) FILTER (WHERE activity = 'E') AS e_time,
-         MIN(timestamp) FILTER (WHERE activity = 'N') AS n_time
-  FROM claim_events ce
-  GROUP BY ce.claim_id
-  HAVING COUNT(*) FILTER (WHERE activity IN ('E','N')) = 2
-)
-SELECT ad.region,
-       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (n_time - e_time))) AS median_secs_en,
-       AVG(EXTRACT(EPOCH FROM (n_time - e_time)))                                    AS mean_secs_en,
-       STDDEV_SAMP(EXTRACT(EPOCH FROM (n_time - e_time)))                            AS stdev_secs_en
-FROM en
-JOIN (
-    SELECT claim_id, MAX(resource)::INT AS adjuster_id
-    FROM claim_events
-    WHERE activity = 'A'
-    GROUP BY claim_id
-) aa USING (claim_id)
-JOIN adjusters ad ON ad.adjuster_id = aa.adjuster_id
-GROUP BY ad.region
-ORDER BY mean_secs_en DESC;
-
-5. Variance check for Receive  Approve over time (are approvals queued for a daily run?)
-
-WITH rp AS (
-  SELECT claim_id,
-         DATE_TRUNC('day', MIN(timestamp) FILTER (WHERE activity = 'R')) AS r_day,
-         EXTRACT(EPOCH FROM (MIN(timestamp) FILTER (WHERE activity = 'P')
-                           - MIN(timestamp) FILTER (WHERE activity = 'R'))) AS secs_r_p
+```sql
+WITH times AS (
+  SELECT
+      claim_id,
+      MAX(CASE WHEN activity = 'P' THEN timestamp END) AS p_ts,
+      MAX(CASE WHEN activity = 'N' THEN timestamp END) AS n_ts
   FROM claim_events
   GROUP BY claim_id
-  HAVING COUNT(*) FILTER (WHERE activity IN ('R','P')) = 2
 )
-SELECT r_day,
-       AVG(secs_r_p)  AS avg_secs,
-       STDDEV_POP(secs_r_p) AS stdev_secs,
-       COUNT(*)       AS claims_that_day
-FROM rp
-GROUP BY r_day
-ORDER BY r_day;
+SELECT claim_id,
+       p_ts, n_ts,
+       EXTRACT(EPOCH FROM (n_ts - p_ts))/3600 AS hours_delay
+FROM times
+WHERE n_ts IS NOT NULL
+  AND (n_ts - p_ts) NOT BETWEEN INTERVAL '4 hours' AND INTERVAL '3 days';
+```
 
-How to use the output
+3. Claims closed within 3 h of assignment and missing evaluation or approval.
 
-• If RP stdev is near zero every day, investigate an automated overnight job or late data entry.  
-• If rapid AC cases cluster on small claim amounts, consider businessrule exceptions.  
-• If long PN gaps correlate with certain regions or adjusters, look for staffing issues or manual mailing steps.  
-• Mark claims returned by the queries for auditing; compare logs or user actions to confirm whether steps were skipped or backdated.
+```sql
+WITH steps AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity = 'A' THEN timestamp END) AS a_ts,
+         MIN(CASE WHEN activity = 'C' THEN timestamp END) AS c_ts,
+         BOOL_OR(activity = 'E') AS has_eval,
+         BOOL_OR(activity = 'P') AS has_approve
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id, a_ts, c_ts,
+       EXTRACT(EPOCH FROM (c_ts - a_ts))/3600 AS hours_a_to_c
+FROM steps
+WHERE c_ts IS NOT NULL
+  AND (c_ts - a_ts) <= INTERVAL '3 hours'
+  AND (NOT has_eval OR NOT has_approve);
+```
+
+4. Evaluate  Notify happening in under 2 minutes.
+
+```sql
+WITH times AS (
+  SELECT
+      claim_id,
+      MAX(CASE WHEN activity = 'E' THEN timestamp END) AS e_ts,
+      MAX(CASE WHEN activity = 'N' THEN timestamp END) AS n_ts
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       EXTRACT(EPOCH FROM (n_ts - e_ts)) AS sec_e_to_n
+FROM times
+WHERE n_ts IS NOT NULL
+  AND (n_ts - e_ts) < INTERVAL '2 minutes';
+```
+
+5. Correlate long P  N delays with adjusters or claim_type.
+
+```sql
+WITH deltas AS (
+  SELECT ce1.claim_id,
+         c.claim_type,
+         a.adjuster_id,
+         EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))/86400 AS days_p_to_n
+  FROM claim_events p
+  JOIN claim_events n ON n.claim_id = p.claim_id
+  JOIN claims c        ON c.claim_id = p.claim_id
+  JOIN adjusters a     ON a.name = ANY (ARRAY[ p.resource, n.resource ])
+  WHERE p.activity = 'P'
+    AND n.activity = 'N'
+)
+SELECT adjuster_id,
+       claim_type,
+       COUNT(*)                       AS cnt,
+       AVG(days_p_to_n)               AS avg_days,
+       PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY days_p_to_n) AS p90_days
+FROM deltas
+GROUP BY adjuster_id, claim_type
+ORDER BY p90_days DESC;
+```
+
+6. Distribution of R  P intervals to confirm the “batch” hypothesis.
+
+```sql
+SELECT
+    date_trunc('hour', p.timestamp) AS hour_bucket,
+    COUNT(*)                        AS approvals_this_hour
+FROM claim_events r
+JOIN claim_events p ON p.claim_id = r.claim_id
+WHERE r.activity = 'R' AND p.activity = 'P'
+GROUP BY hour_bucket
+ORDER BY hour_bucket;
+```
+
+Interpreting results  
+• High concentration of approvals in the same daily hour band supports H-1.  
+• P  N delays clustered around weekends or specific adjusters support H-2/H-5.  
+• Frequent A  C < 3 h without E/P events confirms H-3.  
+• Consistently sub-2-minute E  N gaps validate H-4 (automatic e-mail).
+
+These queries should isolate the cases, actors and conditions driving each temporal irregularity and help decide whether they originate from legitimate business rules or process breakdowns.

@@ -1,0 +1,140 @@
+Below is a compact “check-list” that you can use when reviewing the model with process owners, data engineers and auditors.  
+It is organised in three layers:
+
+1. What is structurally odd in the POWL model (the anomalies)  
+2. Plausible business / technical reasons why the model ended up like this (hypotheses)  
+3. How you can confront these hypotheses with facts that are already stored in the
+   PostgreSQL database (SQL sketches you can run or adapt).
+
+
+1. Anomalies that are visible in the POWL model
+
+A1. Evaluate/Approve loop  
+• LOOP(E,P) allows an arbitrary number of repetitions and in any order:  
+  E  P  E  …  (exit) – even “Approve” before the very first “Evaluate”.
+
+A2. Optional customer notification  
+• XOR(N, ) means that “Notify Customer” (N) can be silently skipped.
+
+A3. Weak ordering before closing the claim  
+• Edge A  C plus the missing edge xor  C means “Close Claim” (C) can legally happen:  
+  – straight after “Assign Adjuster”, without any Evaluate / Approve / Notify, or  
+  – in parallel with those activities.
+
+A4. Missing resource constraints  
+• The model never checks that the same adjuster (resource) stays with the claim, or
+  that an adjuster with the correct specialisation is used.
+
+
+2. Why could these anomalies exist?  (Hypotheses)
+
+H1. Incremental rule changes  
+• Business first added re-evaluation loops for disputed claims but never tightened
+  the exit conditions, so early “Approve” is still syntactically allowed.
+
+H2. Miscommunication between departments  
+• IT interpreted “customer may already be aware” as “notification can be skipped”
+  without asking Compliance, hence the XOR.
+
+H3. Technical workaround / system limitation  
+• Some legacy front-end closes the claim automatically when the payout file is
+  generated, which can precede the official “Approve” event.
+
+H4. Modeller convenience  
+• Designer used sparse partial orders to avoid drawing many edges; the unintended
+  side-effect was to leave C insufficiently constrained.
+
+
+3. Verifying the hypotheses on the event data
+
+(Feel free to copy-paste and tweak.  
+PK/FK indexes on claim_events.claim_id and claim_events.timestamp are advisable.)
+
+-- 3.1  Claims closed BEFORE their first evaluation  --------------------------
+SELECT c.claim_id,
+       MIN(ce_eval.timestamp) AS first_evaluate,
+       ce_close.timestamp      AS close_time
+FROM   claims c
+JOIN   claim_events ce_close
+           ON ce_close.claim_id = c.claim_id
+          AND ce_close.activity = 'C'
+LEFT  JOIN claim_events ce_eval
+           ON ce_eval.claim_id = c.claim_id
+          AND ce_eval.activity = 'E'
+GROUP  BY c.claim_id, ce_close.timestamp
+HAVING ce_eval.event_id IS NULL            -- never evaluated at all
+    OR  MIN(ce_eval.timestamp) > ce_close.timestamp;  -- evaluated afterwards
+
+-- 3.2  Approvals without any evaluation beforehand ---------------------------
+SELECT claim_id
+FROM   claim_events
+GROUP  BY claim_id
+HAVING MIN(CASE WHEN activity = 'P' THEN timestamp END)
+     < MIN(CASE WHEN activity = 'E' THEN timestamp END);  -- P earlier than E
+
+-- 3.3  Multiple approvals of the same claim (EP-loop materialised) -----------
+SELECT claim_id,
+       COUNT(*) AS approvals
+FROM   claim_events
+WHERE  activity = 'P'
+GROUP  BY claim_id
+HAVING COUNT(*) > 1;
+
+-- 3.4  Evaluate  Approve  Evaluate pattern (evidence of the loop) ----------
+WITH ranked AS (
+  SELECT claim_id,
+         activity,
+         timestamp,
+         ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp) AS rn
+  FROM   claim_events
+  WHERE  activity IN ('E','P')
+)
+SELECT e1.claim_id
+FROM   ranked e1
+JOIN   ranked p
+           ON p.claim_id = e1.claim_id
+          AND p.rn       = e1.rn + 1
+          AND e1.activity = 'E'
+          AND p.activity  = 'P'
+JOIN   ranked e2
+           ON e2.claim_id = e1.claim_id
+          AND e2.rn       = e1.rn + 2
+          AND e2.activity = 'E';
+
+-- 3.5  Closed claims with NO customer notification ---------------------------
+SELECT claim_id
+FROM   claim_events
+GROUP  BY claim_id
+HAVING SUM(CASE WHEN activity = 'C' THEN 1 END) >= 1  -- closed
+   AND SUM(CASE WHEN activity = 'N' THEN 1 END)  = 0; -- never notified
+
+-- 3.6  Adjuster specialisation mismatch (resource vs. claim_type) ------------
+SELECT cl.claim_id,
+       cl.claim_type,
+       ce.resource AS adjuster_id,
+       ad.specialization
+FROM   claims cl
+JOIN   claim_events ce
+           ON ce.claim_id = cl.claim_id
+          AND ce.activity = 'A'
+JOIN   adjusters ad
+           ON ad.adjuster_id = ce.resource::INTEGER
+WHERE  (cl.claim_type LIKE '%home%' AND ad.specialization <> 'home')
+    OR (cl.claim_type LIKE '%auto%' AND ad.specialization <> 'auto');
+
+Interpretation of the result sets:
+
+• Substantial results in query 3.1 or 3.2 would corroborate H3 (premature closing)  
+• Frequent rows in 3.3 / 3.4 indicate that the Evaluate/Approve loop is actively used,
+  supporting H1 (rule change)  
+• High count from 3.5 suggests that the “skip notification” path is not only possible
+  but common, strengthening H2 or H4  
+• Mismatches from 3.6 point to missing resource constraints (A4) and potential
+  compliance breaches.
+
+Next steps:
+
+1. Share the query findings with business owners for validation.  
+2. If anomalies are confirmed, tighten the POWL model (add mandatory edges, guard
+   conditions, or remove the silent branch).  
+3. Implement database-level or application-level checks to prevent re-occurrence.

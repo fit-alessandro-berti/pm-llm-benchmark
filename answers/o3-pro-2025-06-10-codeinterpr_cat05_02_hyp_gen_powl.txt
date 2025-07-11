@@ -1,0 +1,154 @@
+------------------------------------------------------------------
+1. ANOMALIES THAT CAN BE SEEN DIRECTLY IN THE POWL MODEL
+------------------------------------------------------------------
+A. “Evaluate – Approve” loop  
+   • Operator.LOOP(children = [E, P]) means:  
+     – Execute E at least once (body).  
+     – Optionally enter the “redo” branch P, then return to the body E, and so on.  
+   • Consequences:  
+     – A claim can be Approved several times.  
+     – After an Approval the next action is another Evaluation, i.e. an “evaluate-after-approve” cycle that makes no business sense.
+
+B. XOR (Notify Customer  vs  SilentSkip)  
+   • The branch containing N can be completely skipped, so customers might never be informed about the claim result.
+
+C. Premature/Concurrent Close  
+   • Edge A  C and the absence of a mandatory xor  C edge allow C to occur  
+     – immediately after the adjuster is assigned, or  
+     – in parallel with the loop and/or the XOR branch.  
+   • Therefore a claim can be closed even if it was never Evaluated, Approved, or Notified.
+
+D. Missing ordering constraints in general  
+   – No explicit constraint “E before P” inside the loop (loop semantics only guarantees the first E).  
+   – No explicit constraint “P before N” (because N is in a separate XOR subtree).  
+
+------------------------------------------------------------------
+2. PLAUSIBLE HYPOTHESES FOR WHY THE ANOMALIES APPEAR
+------------------------------------------------------------------
+H-1  Business-rule changes that were only partially modelled  
+     • The company introduced a “re-evaluation” feature for disputed claims; the modeller used a LOOP but forgot to change the rest of the tree.
+
+H-2  Miscommunication between departments  
+     • IT believed customer notification is optional (marketing mails the letters later), while operations treats it as mandatory.
+
+H-3  Technical/tool limitations or modelling error  
+     • The modeller used a partial-order editor, dragged an edge from A to C for readability, unaware that it adds a true causal relation.
+
+H-4  Intentional fast-track / exception path left too open  
+     • Small-value claims may legally skip approval and notice; however the branch was offered to *all* claims.
+
+H-5  Data-quality workaround  
+     • Duplicate “Approve” events had been recorded; instead of cleaning the log the modeller allowed multiple approvals in the process model.
+
+------------------------------------------------------------------
+3. HOW TO TEST THESE HYPOTHESES WITH THE DATABASE
+------------------------------------------------------------------
+Below are example SQL snippets (PostgreSQL dialect).  
+Replace :start_date / :end_date or add further filters as needed.
+
+--------------------------------------------------
+3.1  Claims CLOSED without any E or P
+--------------------------------------------------
+SELECT c.claim_id
+FROM   claims c
+WHERE  EXISTS (SELECT 1 FROM claim_events e
+               WHERE e.claim_id = c.claim_id
+                 AND e.activity = 'C')
+  AND NOT EXISTS (SELECT 1 FROM claim_events e
+                  WHERE e.claim_id = c.claim_id
+                    AND e.activity = 'E')
+  AND NOT EXISTS (SELECT 1 FROM claim_events e
+                  WHERE e.claim_id = c.claim_id
+                    AND e.activity = 'P');
+
+ Confirms anomaly C.  If many rows appear, premature closing is really happening.
+
+--------------------------------------------------
+3.2  Close happened BEFORE the (last) Evaluate or Approve
+--------------------------------------------------
+WITH stamps AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity='C' THEN timestamp END) AS ts_c,
+         MIN(CASE WHEN activity='E' THEN timestamp END) AS ts_e,
+         MIN(CASE WHEN activity='P' THEN timestamp END) AS ts_p
+  FROM   claim_events
+  GROUP  BY claim_id)
+SELECT claim_id, ts_c, ts_e, ts_p
+FROM   stamps
+WHERE  ts_c IS NOT NULL                         -- claim closed
+  AND (ts_e IS NULL OR ts_c < ts_e              -- closed before first E
+       OR ts_p IS NULL OR ts_c < ts_p);         -- or before first P
+
+ Validates both the missing and the out-of-order situations.
+
+--------------------------------------------------
+3.3  Multiple approvals (loop symptom)
+--------------------------------------------------
+SELECT claim_id, COUNT(*) AS approve_cnt
+FROM   claim_events
+WHERE  activity = 'P'
+GROUP  BY claim_id
+HAVING COUNT(*) > 1;
+
+ If rows > 0, the Evaluate-Approve loop is used in reality.
+
+--------------------------------------------------
+3.4  Approval BEFORE first Evaluation
+--------------------------------------------------
+WITH ord AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity='E' THEN timestamp END) AS first_e,
+         MIN(CASE WHEN activity='P' THEN timestamp END) AS first_p
+  FROM   claim_events
+  GROUP  BY claim_id)
+SELECT claim_id, first_e, first_p
+FROM   ord
+WHERE  first_p IS NOT NULL
+  AND (first_e IS NULL OR first_p < first_e);
+
+ Shows whether the loop’s “E then P” assumption is violated in data.
+
+--------------------------------------------------
+3.5  Approved claims without customer notification
+--------------------------------------------------
+SELECT DISTINCT ce.claim_id
+FROM   claim_events ce
+WHERE  ce.activity = 'P'
+  AND NOT EXISTS (SELECT 1 FROM claim_events ce2
+                  WHERE  ce2.claim_id = ce.claim_id
+                    AND  ce2.activity = 'N');
+
+ Measures the real-world frequency of the optional XOR branch.
+
+--------------------------------------------------
+3.6  Re-evaluation AFTER approval (loop iteration)
+--------------------------------------------------
+WITH seq AS (
+  SELECT claim_id, activity, timestamp,
+         LAG(activity) OVER (PARTITION BY claim_id
+                             ORDER BY timestamp) AS prev_act
+  FROM   claim_events)
+SELECT claim_id, prev_act, activity, timestamp
+FROM   seq
+WHERE  prev_act = 'P' AND activity = 'E';
+
+ Direct evidence that the “approve-then-evaluate again” path occurs.
+
+--------------------------------------------------
+3.7  Validate that every ‘Assign Adjuster’ was done by a real adjuster
+--------------------------------------------------
+SELECT ce.claim_id, ce.resource
+FROM   claim_events ce
+LEFT   JOIN adjusters a ON a.name = ce.resource
+WHERE  ce.activity = 'A'
+  AND  a.adjuster_id IS NULL;
+
+ Detects data-quality problems that may have motivated edge A  C as a workaround (H-5).
+
+------------------------------------------------------------------
+NEXT STEPS AFTER ANALYSIS
+------------------------------------------------------------------
+• If queries reveal that anomalies rarely or never happen  model error; fix the POWL tree.  
+• If they occur often but only for specific claim types or regions  refine the model with explicit fast-track branches and proper guards.  
+• If they correlate with change dates in business rules  verify change-management procedures.  
+• Combine the SQL checks with conformance checking in pm4py to quantify deviations and support further root-cause analysis.

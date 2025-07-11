@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "grok-4-0709" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "o3-pro-2024-06-10-search" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -48,6 +48,8 @@ class Shared:
     ANTHROPIC_THINKING_TOKENS = None
     PAYLOAD_REASONING_EFFORT = "low"
     PAYLOAD_REASONING_EFFORT = None
+    TOOLS_PAYLOAD = None
+    ADDED_TO_PAYLOAD = None
     ADDED_TO_PROMPT = " /no_think"
     ADDED_TO_PROMPT = None
 
@@ -204,6 +206,38 @@ MODELS_DICT = {
             "o3-pro-2025-06-10-HIGH": {
                 "provider": "openai",
                 "base_model": "o3-pro-2025-06-10",
+                "reasoning_effort": "high"
+            },
+            "o3-2025-04-16-search": {
+                "provider": "openai",
+                "base_model": "o3-2025-04-16",
+                "tools": [{"type": "web_search"}]
+            },
+            "o3-2025-04-16-codeinterpr": {
+                "provider": "openai",
+                "base_model": "o3-2025-04-16",
+                "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}]
+            },
+            "o3-pro-2025-06-10-search": {
+                "provider": "openai",
+                "base_model": "o3-pro-2025-06-10",
+                "tools": [{"type": "web_search"}]
+            },
+            "o3-pro-2025-06-10-codeinterpr": {
+                "provider": "openai",
+                "base_model": "o3-pro-2025-06-10",
+                "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}]
+            },
+            "o4-mini-2025-04-16-search-HIGH": {
+                "provider": "openai",
+                "base_model": "o4-mini-2025-04-16",
+                "tools": [{"type": "web_search"}],
+                "reasoning_effort": "high"
+            },
+            "o4-mini-2025-04-16-codeinterpr-HIGH": {
+                "provider": "openai",
+                "base_model": "o4-mini-2025-04-16",
+                "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}],
                 "reasoning_effort": "high"
             },
             "chatgpt-4o-latest-2025-03-26": {
@@ -537,6 +571,9 @@ def query_text_simple_openai_new(question, api_url, target_file):
     if Shared.SYSTEM_PROMPT is not None:
         payload["instructions"] = Shared.SYSTEM_PROMPT
 
+    if Shared.TOOLS_PAYLOAD is not None:
+        payload["tools"] = Shared.TOOLS_PAYLOAD
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {Shared.API_KEY}"
@@ -588,6 +625,14 @@ def query_text_simple_generic(question, api_url, target_file):
         "messages": messages,
     }
 
+    if Shared.TOOLS_PAYLOAD is not None:
+        raise Exception("fail")
+
+    if Shared.ADDED_TO_PAYLOAD is not None:
+        payload.update(Shared.ADDED_TO_PAYLOAD)
+
+        #print(payload)
+
     # Check if "11434" in api_url (OLLAMA case)
     if "11434" in api_url:
         # OLLAMA with streaming enabled
@@ -634,7 +679,7 @@ def query_text_simple_generic(question, api_url, target_file):
                 #print(chunk_count)
 
                 if chunk_count % 10 == 0:
-                    print(chunk_count)
+                    #print(chunk_count)
                     #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                     pass
 
@@ -686,7 +731,7 @@ def query_text_simple_generic(question, api_url, target_file):
                                     chunk_count += 1
                                     #print(chunk_count)
                                     if chunk_count % 10 == 0:
-                                        print(chunk_count, len(response_message))
+                                        #print(chunk_count, len(response_message))
                                         #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                                         pass
                                 elif chunk_reasoning_content:
@@ -904,6 +949,11 @@ def query_image_simple_openai_new(base64_image, api_url, target_file, text):
     if Shared.PAYLOAD_REASONING_EFFORT:
         payload["reasoning"] = {"effort": Shared.PAYLOAD_REASONING_EFFORT}
 
+    if Shared.TOOLS_PAYLOAD is not None:
+        payload["tools"] = Shared.TOOLS_PAYLOAD
+
+        #print(payload["tools"])
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {Shared.API_KEY}"
@@ -939,6 +989,12 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
         "messages": messages,
         "max_tokens": Shared.MAX_REQUESTED_TOKENS,
     }
+
+    if Shared.TOOLS_PAYLOAD is not None:
+        raise Exception("fail")
+
+    if Shared.ADDED_TO_PAYLOAD is not None:
+        payload.update(Shared.ADDED_TO_PAYLOAD)
 
     headers = {
         "Content-Type": "application/json",

@@ -1,0 +1,197 @@
+
+1. ANOMALIES THAT CAN BE READ DIRECTLY FROM THE POWL MODEL
+
+A.Loop between Evaluate (E) and Approve (P)  
+   • The LOOP operator is declared as children = [E, P].  
+   • Semantics: “E” must fire, then the branch may exit or continue with “P  E  P  …”.  
+   • Consequences  
+     – A claim may be Approved several times.  
+     – An Evaluate step may occur after an Approve step, which is the reverse of the normal business rule “evaluate  approve  stop evaluating”.
+
+B.XOR {Notify (N), } that allows “skip”  
+   • Only one of N or the silent transition will be taken.  
+   • Customers might never be notified, or they might be notified after the claim is already closed (see next point).
+
+C.Partial-order edges that make “Close (C)” semantically unsafe  
+   • Edges defined: R  A  and  A  loop  and  loop  XOR, **but also A  C**.  
+   • Missing edge XOR  C.  
+   • Therefore the engine is free to execute C:  
+       – before “E/P” has finished;  
+       – before or after the XOR;  
+       – potentially immediately after A.  
+   • Result: a claim can be closed without ever being evaluated, approved, or the customer being told.
+
+D.No hard link from Approve (P) to Notify (N) or to Close (C)  
+   • Even if the optional edge A  C were removed, there is still no order constraint “P must precede C”.  
+   • Business rules such as “If a claim is approved the customer must be notified” are not enforced.
+
+
+2. WHY MIGHT THESE ANOMALIES BE PRESENT?  (HYPOTHESES)
+
+H1. Partial rollout of new business rules  
+    – A new “two-stage approval” (re-evaluate / re-approve) was started, so the modeler inserted a LOOP, but governance rules that stop the loop or guarantee a final Approve were not yet added.
+
+H2. Cross-department miscommunication  
+    – The claims department insisted on mandatory customer notification; IT interpreted that as “notification can be skipped if it is done manually somewhere else”, and therefore put it behind an XOR with .
+
+H3. Technical convenience / KPI pressure  
+    – Adjusters wanted the ability to mark a claim closed when their part is done, even if back-office tasks (final evaluation, notification) are still running.  
+    – A direct A  C edge grants that convenience but breaks overall compliance.
+
+H4. Tool limitations or user error  
+    – The modeller’s tool outputs partial orders by default; the designer forgot to draw the XOR  C edge or to mark C as the end-transition.
+
+H5. Historical artefacts  
+    – The process used to allow “approve, then sometimes re-evaluate if extra documents arrive”. When the rule was abandoned, the loop was never removed.
+
+
+3. HOW TO TEST THE HYPOTHESES WITH THE EVENT LOG
+
+Below are representative SQL queries against the three tables.  
+(Exact syntax may vary by PostgreSQL version; assume the timestamp column is indexed.)
+
+--------------------------------------------------------
+A. “Close before Evaluate” (or without any Evaluate)
+--------------------------------------------------------
+-- Claims where C happened earlier than the first E, or E never occurred
+WITH first_E AS (
+  SELECT claim_id, MIN(timestamp) AS first_eval
+  FROM claim_events
+  WHERE activity = 'E'
+  GROUP BY claim_id
+),
+close_evt AS (
+  SELECT claim_id, MIN(timestamp) AS close_time
+  FROM claim_events
+  WHERE activity = 'C'
+  GROUP BY claim_id
+)
+SELECT c.claim_id,
+       close_time,
+       first_eval
+FROM close_evt c
+LEFT JOIN first_E e  USING (claim_id)
+WHERE first_eval IS NULL            -- no evaluation at all
+   OR close_time < first_eval;      -- closed before evaluation
+
+--------------------------------------------------------
+B. “Close before Approve” (or without any Approve)
+--------------------------------------------------------
+WITH first_P AS (
+  SELECT claim_id, MIN(timestamp) AS first_appr
+  FROM claim_events
+  WHERE activity = 'P'
+  GROUP BY claim_id
+),
+close_evt AS (
+  SELECT claim_id, MIN(timestamp) AS close_time
+  FROM claim_events
+  WHERE activity = 'C'
+  GROUP BY claim_id
+)
+SELECT c.claim_id,
+       close_time,
+       first_appr
+FROM close_evt c
+LEFT JOIN first_P p USING (claim_id)
+WHERE first_appr IS NULL
+   OR close_time < first_appr;
+
+--------------------------------------------------------
+C. “Evaluation after Approval” (detect loop behaviour)
+--------------------------------------------------------
+-- Any E whose timestamp is later than a previous P for the same claim
+WITH ordered AS (
+  SELECT claim_id,
+         activity,
+         timestamp,
+         LAG(activity)  OVER (PARTITION BY claim_id ORDER BY timestamp) AS prev_act
+  FROM claim_events
+)
+SELECT claim_id, timestamp AS eval_time
+FROM ordered
+WHERE activity = 'E'
+  AND EXISTS (
+        SELECT 1
+        FROM claim_events p
+        WHERE p.claim_id = ordered.claim_id
+          AND p.activity = 'P'
+          AND p.timestamp < ordered.timestamp
+      );
+
+--------------------------------------------------------
+D. “Multiple Approvals” (loop executes P repeatedly)
+--------------------------------------------------------
+SELECT claim_id,
+       COUNT(*) AS approvals
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY claim_id
+HAVING COUNT(*) > 1;
+
+--------------------------------------------------------
+E. “Customer not Notified” but claim closed
+--------------------------------------------------------
+-- Claims with C but no N before (or after) close
+WITH close_time AS (
+  SELECT claim_id, MIN(timestamp) AS c_time
+  FROM claim_events
+  WHERE activity = 'C'
+  GROUP BY claim_id
+)
+SELECT c.claim_id, c.c_time
+FROM close_time c
+LEFT JOIN claim_events n
+  ON n.claim_id = c.claim_id
+ AND n.activity = 'N'
+WHERE n.event_id IS NULL;  -- no notify at all
+
+-- Variant: notified only AFTER closing
+SELECT c.claim_id, c.c_time, n.timestamp AS n_time
+FROM close_time c
+JOIN claim_events n
+  ON n.claim_id = c.claim_id
+ AND n.activity = 'N'
+WHERE n.timestamp > c.c_time;
+
+--------------------------------------------------------
+F. “Assign Adjuster missing” (A never happens)
+--------------------------------------------------------
+SELECT DISTINCT ce.claim_id
+FROM claim_events ce
+WHERE ce.activity = 'C'                       -- claim reached Closure
+  AND NOT EXISTS (
+       SELECT 1 FROM claim_events a
+       WHERE a.claim_id = ce.claim_id
+         AND a.activity = 'A'
+);
+
+--------------------------------------------------------
+OPTIONAL: Drill into actual financial impact
+--------------------------------------------------------
+-- Total claim_amount for prematurely closed claims
+WITH bad AS (
+  -- reuse query A or B above
+  SELECT claim_id
+  FROM ... -- (insert Close-before-Evaluate logic here)
+)
+SELECT SUM(claim_amount) AS total_exposure
+FROM claims
+WHERE claim_id IN (SELECT claim_id FROM bad);
+
+
+4. WHAT TO DO NEXT
+
+1. Run the queries on a representative period (e.g., the last 12 months).  
+2. Compare the percentage of anomalous cases to overall claim volume.  
+3. If anomalies are frequent, trace specific claim_ids back to incident tickets or audit notes to see whether they correspond to:  
+   • legitimate re-work loops;  
+   • emergency payments;  
+   • system errors / timeouts.  
+4. Hold design workshops with process owners and IT to:  
+   • decide whether the LOOP is truly needed (or should be replaced by a bounded re-work subprocess);  
+   • enforce “Notify  must precede  Close”;  
+   • remove the A  C shortcut or guard it with business rules (e.g., only for rejected claims).  
+5. Once the model is repaired, deploy conformance checking (e.g., PM4Py alignment) to ensure future event logs stay compliant.
+
+These steps turn the abstract anomalies discovered in the POWL model into evidence-based insights rooted in the data already stored in `claim_events`, strengthening both IT governance and customer-facing outcomes.
