@@ -90,7 +90,7 @@ MODELS_DICT = {
         "models": {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
             "codestral-2501", "mistral-large-2411", "mistral-small-2501", "mistral-small-2503", "mistral-small-2506",
-            "open-mixtral-8x22b", "mistral-medium-2505"
+            "open-mixtral-8x22b", "mistral-medium-2505", "devstral-medium-2507"
         }
     },
     "grok": {
@@ -166,7 +166,8 @@ MODELS_DICT = {
             "deepseek/deepseek-r1-distill-qwen-14b",
             "deepseek/deepseek-r1-distill-llama-8b", "deepseek/deepseek-r1-distill-qwen-1.5b",
             "thudm/glm-z1-32b", "inception/mercury", "baidu/ernie-4.5-300b-a47b",
-            "openrouter/cypher-alpha:free"
+            "openrouter/cypher-alpha:free", "moonshotai/kimi-k2",
+            "thudm/glm-4.1v-9b-thinking"
         }
     },
     "manual": {
@@ -408,7 +409,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm-z1", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4"]
 
     for p in patterns:
         if p in m_name:

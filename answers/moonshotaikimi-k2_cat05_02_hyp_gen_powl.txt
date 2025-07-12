@@ -1,0 +1,110 @@
+
+1.  Identified anomalies in the POWL model
+
+| # | Anomaly                                                                 | Architectural detail in the model                                     | Direct impact on the process                  |
+|---|---------------------------------------------------------------------------|------------------------------------------------------------------------|------------------------------------------------|
+|1.1| Approve-evaluate loop                                                    | `OperatorPOWL(LOOP, [E, P])` allows PEPE… without ever terminating| Infinite or cyclical approvals / evaluations   |
+|1.2| Close claim **without** evaluation or approval                           | Edge AC (no ordering xorC) and edge-concurrency sniffed in SPO     | Premature closure of un-assessed claim         |
+|1.3| Customer notification may be silently skipped                            | `OperatorPOWL(XOR, [N, skip])`                                       | Broken customer SLA (no N event ever recorded) |
+|1.4| Receipt **after** other steps                                            | No true upstream causal path (R only goes to A) so logically possible| Claims processed before official receipt       |
+|1.5| Adjuster reassignment (loop/A-A)                                         | Re-entering Assign Adjuster (A) not explicitly forbidden             | Double-assignment or re-assignment drift       |
+
+
+2.  Plausible root-cause hypotheses
+
+H1  Incremental roll-out  
+     • Rule change “evaluate AND approve every revision” was rolled out,  
+       but old route AC retained for backward-compatibility.
+
+H2  Mis-aligned system/controller teams  
+     • UI devs interpreted “Approval” as a **re-approval** step after edits,  
+       modellers captured it as a loop.  
+     • Legacy “Archive” module still allowed an “Instant close” button.
+
+H3  Technical mis-configuration  
+     • Notification branch was gated by a feature-flag that defaults to OFF  
+       (explains the XOR-with-skip).  
+     • BPM engine’s strict-ordering flag accidentally disabled.
+
+H4  Poor-model tooling defaults  
+     • SPO editor in the modelling tool automatically inserted the AC edge  
+       whenever A had an outgoing edge; modeller deleting this edge made no  
+       difference visually, so they left it.
+
+
+3.  Using the PostgreSQL event log to verify the hypotheses
+
+The table `claim_events` stores activities exactly with the labels  
+“R” (receive), “A” (assign), “E” (evaluate), “P” (approve), “N” (notify), “C” (close).  
+We can extract the relative order of events through window functions.
+
+----------------------------------------------------------
+Query-1  Premature closing
+----------------------------------------------------------
+WITH ranked AS (
+     SELECT claim_id,
+            activity,
+            ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp) AS rn
+     FROM claim_events
+),
+has_eval_or_approve AS (
+     SELECT claim_id
+     FROM claim_events
+     WHERE activity IN ('E','P')
+)
+SELECT DISTINCT c.claim_id
+FROM ranked r
+JOIN claims c USING (claim_id)
+WHERE r.activity = 'C'                                   -- close happened
+  AND NOT EXISTS (SELECT 1 FROM has_eval_or_approve h
+                  WHERE h.claim_id = r.claim_id);          -- but *no* E/P prior
+
+----------------------------------------------------------
+Query-2  Cyclic approval loop
+----------------------------------------------------------
+SELECT claim_id
+FROM claim_events
+WHERE activity IN ('P')
+GROUP BY claim_id
+HAVING COUNT(*) > 1;                                      -- >1 approval
+
+----------------------------------------------------------
+Query-3  Notification skipped
+----------------------------------------------------------
+SELECT c.claim_id,
+       c.customer_id,
+       c.claim_amount,
+       COUNT(*) FILTER (WHERE e.activity='N') AS notify_cnt
+FROM claims c
+LEFT JOIN claim_events e USING (claim_id)
+GROUP BY c.claim_id
+HAVING COUNT(*) FILTER (WHERE e.activity='N') = 0;         -- no N record
+
+----------------------------------------------------------
+Query-4  Double-assignment (A shows more than once per claim)
+----------------------------------------------------------
+SELECT claim_id,
+       COUNT(*) FILTER (WHERE e.activity='A') AS assign_cnt,
+       MAX(e.resource) FILTER (WHERE e.activity='A') AS last_adjuster
+FROM claim_events e
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE e.activity='A') > 1;
+
+----------------------------------------------------------
+Query-5  Event prior to record receipt
+----------------------------------------------------------
+SELECT claim_id,
+       MIN(timestamp)              AS first_event,
+       MIN(CASE WHEN activity='R' THEN timestamp END) AS receipt
+FROM claim_events
+GROUP BY claim_id
+HAVING MIN(timestamp) < MIN(CASE WHEN activity='R' THEN timestamp END);
+
+----------------------------------------------------------
+How to use these queries
+1. Run all 5 queries against current production data.  
+2. Correlate counts with the date when the POWL model was deployed (timestamp  
+   provides exact ranges).  
+3. If only (3) delivers hits **and only since a specific date**, H3 (feature-flag) is likely.  
+4. If (1) or (5) show equally likely across the entire history, likely H2 (mis-config).  
+5. If (2) peaks after explicit rule-changes elsewhere, H1 (incomplete roll-out) fits.

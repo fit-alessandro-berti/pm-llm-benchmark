@@ -1,0 +1,156 @@
+## Identified Temporal Anomalies
+
+### A. Suspiciously Low Variance
+- **RP interval**: ~25 hours mean with only 1 hour standard deviation suggests rigid, possibly forced timing
+- **EN interval**: 5 minutes mean with 1 minute standard deviation indicates unnaturally consistent execution
+
+### B. Unusually Extended Delays
+- **PN interval**: 7 days mean with 2 days standard deviation reveals severe notification latency
+- **RE interval**: While 24 hours is reasonable, 8-hour standard deviation shows high volatility
+
+### C. Impossible Transitions
+- **AC direct path**: 2-hour direct closure after assignment without expected intermediate steps (Evaluate/Approve) suggests process circumvention
+
+### D. Missing Relationships
+- Absence of AE, AP, PE, and NP metrics in the profile indicates these transition paths may contain data quality issues
+
+## Hypotheses for Anomalous Patterns
+
+### H1: Systematic Process Bypass
+When claims are marked "Closed" immediately after "Assign", adjusters might be:
+- Rejecting claims without evaluation using batch operations
+- Handling simple claims through pre-approved criteria
+- Using external tools to skip system steps
+
+### H2: Notification Service Degradation
+The 7-day approval-to-notify delay suggests:
+- Email service outages or deliverability issues
+- Human bottlenecks in communication verification
+- Integration failures between approval system and customer notification
+
+### H3: Synthetic Data Generation
+The 63% coefficient of variation in RP timing implies:
+- Test data with fabricated timestamps
+- Batch-processed claims with artificial gaps
+- Migration artifacts from legacy systems
+
+### H4: Evaluation Workflow Glitches
+The 3-second standard in EN timing indicates:
+- Automated notification triggers firing immediately
+- Missing asynchronous delays in multi-step notifications
+- Timestamp rounding errors in system logs
+
+## Verification SQL Queries
+
+### Query 1: Identify Direct AC Violations
+```sql
+SELECT 
+    ce1.claim_id,
+    ce1.timestamp as assign_time,
+    ce2.timestamp as close_time,
+    EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) as duration_seconds,
+    cl.claim_type,
+    ce1.resource as adjuster
+FROM claim_events ce1
+JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+JOIN claims cl ON ce1.claim_id = cl.claim_id
+WHERE ce1.activity = 'A' 
+    AND ce2.activity = 'C' 
+    AND ce2.timestamp > ce1.timestamp
+    AND NOT EXISTS (
+        SELECT 1 FROM claim_events ce3 
+        WHERE ce3.claim_id = ce1.claim_id 
+            AND ce3.activity IN ('E','P')
+            AND ce3.timestamp BETWEEN ce1.timestamp AND ce2.timestamp
+    )
+    AND EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) < 7200
+ORDER BY duration_seconds ASC;
+```
+
+### Query 2: Approval-Notification Lag Investigation
+```sql
+WITH approval_notify_intervals AS (
+    SELECT 
+        ce1.claim_id,
+        ce1.timestamp as approve_time,
+        MIN(ce2.timestamp) as first_notify_time,
+        EXTRACT(EPOCH FROM (MIN(ce2.timestamp) - ce1.timestamp)) as lag_seconds
+    FROM claim_events ce1
+    JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    WHERE ce1.activity = 'P' AND ce2.activity = 'N' AND ce2.timestamp > ce1.timestamp
+    GROUP BY ce1.claim_id, ce1.timestamp
+)
+SELECT 
+    ani.lag_seconds,
+    c.claim_type,
+    a.region as adjuster_region,
+    adj.specialization,
+    COUNT(*) as frequency
+FROM approval_notify_intervals ani
+JOIN claims c ON ani.claim_id = c.claim_id
+JOIN claim_events first_assign ON c.claim_id = first_assign.claim_id 
+    AND first_assign.activity = 'A'
+    AND first_assign.timestamp = (
+        SELECT MIN(timestamp) 
+        FROM claim_events 
+        WHERE claim_id = c.claim_id 
+        AND activity = 'A'
+    )
+JOIN adjusters adj ON SPLIT_PART(first_assign.resource, '_', 2)::int = adj.adjuster_id
+WHERE ani.lag_seconds > 345600  -- 4 days threshold
+    OR ani.lag_seconds < 300     -- 5 minutes threshold
+GROUP BY ani.lag_seconds, c.claim_type, a.region, adj.specialization
+ORDER BY frequency DESC;
+```
+
+### Query 3: RP Rigidity Checker
+```sql
+WITH receive_approve_times AS (
+    SELECT 
+        ce1.claim_id,
+        ce1.timestamp as receive_time,
+        ce2.timestamp as approve_time,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) as hours_elapsed,
+        NTILE(10) OVER (ORDER BY EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp))) as decile
+    FROM claim_events ce1
+    JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    WHERE ce1.activity = 'R' AND ce2.activity = 'P' AND ce2.timestamp > ce1.timestamp
+)
+SELECT 
+    CASE 
+        WHEN FLOOR(hours_elapsed/3600) * 3600 = hours_elapsed THEN 'Exact Hour'
+        WHEN hours_elapsed % 3600 < 60 THEN 'Near Hour'
+        ELSE 'Irregular'
+    END as timing_pattern,
+    claim_type,
+    COUNT(*) as count,
+    AVG(hours_elapsed)/3600 as avg_hours
+FROM receive_approve_times
+JOIN claims USING (claim_id)
+GROUP BY timing_pattern, claim_type
+HAVING COUNT(*) > 5
+ORDER BY count DESC;
+```
+
+### Query 4: Resource-Specific Anomalies
+```sql
+SELECT 
+    DISTINCT resource,
+    activity,
+    COUNT(*) OVER (PARTITION BY resource, activity) as resource_activity_freq,
+    LAG(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) as prev_activity,
+    LAG(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp) as prev_timestamp,
+    EXTRACT(EPOCH FROM (timestamp - LAG(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp))) as inter_activity_seconds,
+    CASE 
+        WHEN activity = 'P' AND LAG(activity) OVER (...) = 'R' 
+            THEN EXTRACT(EPOCH FROM (timestamp - LAG(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp))) - 90000
+        WHEN activity = 'N' AND LAG(activity) OVER (...) = 'E' 
+            THEN EXTRACT(EPOCH FROM (timestamp - LAG(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp))) - 300
+    END as deviation_from_expected
+FROM claim_events
+WHERE (activity = 'P' AND LAG(activity) OVER (...) = 'R') 
+   OR (activity = 'E' AND LAG(activity) OVER (...) = 'R')
+   OR (activity = 'N' AND LAG(activity) OVER (...) = 'E')
+HAVING ABS(deviation_from_expected) > 120
+ORDER BY resource, activity;
+```
