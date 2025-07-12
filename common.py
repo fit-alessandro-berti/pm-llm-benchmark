@@ -165,7 +165,7 @@ MODELS_DICT = {
             "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick",
             "deepseek/deepseek-r1-distill-qwen-14b",
             "deepseek/deepseek-r1-distill-llama-8b", "deepseek/deepseek-r1-distill-qwen-1.5b",
-            "thudm/glm-z1-32b", "inception/mercury", "baidu/ernie-4.5-300b-a47b",
+            "inception/mercury", "baidu/ernie-4.5-300b-a47b",
             "openrouter/cypher-alpha:free", "moonshotai/kimi-k2",
             "thudm/glm-4.1v-9b-thinking"
         }
