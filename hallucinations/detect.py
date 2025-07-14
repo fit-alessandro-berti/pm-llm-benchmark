@@ -214,7 +214,8 @@ def main(input_dir, output_dir, max_threads):
             inp_path = os.path.join(input_dir, fname)
             out_path = os.path.join(output_dir, fname)
             if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-                print(f"[SKIP] {inp_path} already processed.")
+                #print(f"[SKIP] {inp_path} already processed.")
+                pass
             else:
                 to_process.append((inp_path, out_path))
 
