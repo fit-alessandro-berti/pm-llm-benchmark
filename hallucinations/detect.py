@@ -56,7 +56,7 @@ At the end provide the **overall total** across all sub‑categories.
   4a Syntax error          | invalid JSON / code etc.
   4b Model‑semantics breach| violates modelling notation rules
   4c Visual/descr. mismatch| describes element not present in image/diagram
-```
+```  
 
 ## Severity scale
 * **low**  Minor inconsistency; does not alter the main usefulness.
@@ -204,29 +204,45 @@ def process_file(input_path, output_path, semaphore):
 
 def main(input_dir, output_dir, max_threads):
     os.makedirs(output_dir, exist_ok=True)
-    semaphore = threading.Semaphore(max_threads)
-    threads = []
 
-    for fname in os.listdir(input_dir):
-        if not fname.lower().endswith('.txt'):
-            continue
-        inp_path = os.path.join(input_dir, fname)
-        out_path = os.path.join(output_dir, fname)
+    while True:
+        # Gather files that need processing
+        to_process = []
+        for fname in os.listdir(input_dir):
+            if not fname.lower().endswith('.txt'):
+                continue
+            inp_path = os.path.join(input_dir, fname)
+            out_path = os.path.join(output_dir, fname)
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                print(f"[SKIP] {inp_path} already processed.")
+            else:
+                to_process.append((inp_path, out_path))
 
-        if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-            print(f"[SKIP] {inp_path} already processed.")
-            continue
+        # Session flag: True if attempting to create any files
+        session = bool(to_process)
+        print(f"[SESSION] Attempting to process files: {session}")
 
-        thread = threading.Thread(
-            target=process_file,
-            args=(inp_path, out_path, semaphore),
-            daemon=True
-        )
-        thread.start()
-        threads.append(thread)
+        # If nothing to do, exit loop
+        if not session:
+            break
 
-    for t in threads:
-        t.join()
+        # Process queued files
+        semaphore = threading.Semaphore(max_threads)
+        threads = []
+        for inp_path, out_path in to_process:
+            thread = threading.Thread(
+                target=process_file,
+                args=(inp_path, out_path, semaphore),
+                daemon=True
+            )
+            thread.start()
+            threads.append(thread)
+
+        # Wait for all threads in this session to finish
+        for t in threads:
+            t.join()
+
+    print("[INFO] All files processed.")
 
 
 if __name__ == '__main__':
