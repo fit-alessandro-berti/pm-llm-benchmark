@@ -20,6 +20,14 @@ CATEGORY_KEYS = [
     "4c_visual_descr_mismatch"
 ]
 
+# Group the keys by their top‑level category (1, 2, 3, 4)
+CATEGORY_GROUPS = {
+    "1": [k for k in CATEGORY_KEYS if k.startswith("1")],
+    "2": [k for k in CATEGORY_KEYS if k.startswith("2")],
+    "3": [k for k in CATEGORY_KEYS if k.startswith("3")],
+    "4": [k for k in CATEGORY_KEYS if k.startswith("4")],
+}
+
 
 def aggregate_reports(output_dir):
     summary = {}
@@ -54,7 +62,7 @@ def write_reports(summary,
     sorted_models = sorted(summary.items(),
                            key=lambda x: x[1]['total_hallucinations'])
 
-    # Prepare headers
+    # Prepare headers for the overall reports
     headers = ['Model', 'Total'] + CATEGORY_KEYS
 
     # === Write Markdown report (absolute counts) ===
@@ -82,54 +90,28 @@ def write_reports(summary,
             writer.writerow(row)
     print(f"CSV report written to {csv_path}")
 
-    # === Compute per-category percentile (fraction lower) ===
-    # Gather all values per category column
-    col_values = {cat: [] for cat in CATEGORY_KEYS}
-    for _, data in sorted_models:
-        for cat in CATEGORY_KEYS:
-            col_values[cat].append(data['by_category'].get(cat, 0))
+    # === Write separate CSVs for each top‑level category group ===
+    base, _ = os.path.splitext(report_name_csv)
+    for group, keys in CATEGORY_GROUPS.items():
+        # Now put the group total right after the model
+        grp_headers = ['Model', f'Category_{group}_Total'] + keys
+        csv_grp_path = f"{base}_category{group}.csv"
 
-    # Compute normalized percentiles for each category
-    normalized = {}
-    n_models = len(sorted_models)
-    for model, data in sorted_models:
-        vals = {}
-        for cat in CATEGORY_KEYS:
-            count = data['by_category'].get(cat, 0)
-            # fraction of models with lower count
-            vals[cat] = sum(1 for v in col_values[cat] if v < count) / n_models
-        # sum of normalized category scores as total
-        vals['normalized_total'] = sum(vals[cat] for cat in CATEGORY_KEYS)
-        normalized[model] = vals
+        # Sort by this group's total
+        sorted_by_group = sorted(
+            summary.items(),
+            key=lambda x: sum(x[1]['by_category'].get(k, 0) for k in keys)
+        )
 
-    # Sort models by normalized total ascending
-    sorted_norm = sorted(normalized.items(),
-                         key=lambda x: x[1]['normalized_total'])
-
-    # === Write Markdown report (normalized scores) ===
-    md_norm_path = report_name_md.replace('.md', '_normalized.md')
-    with open(md_norm_path, 'w', encoding='utf-8') as md:
-        md.write('# Hallucination Summary Report (Normalized Scores)\n\n')
-        md.write('| ' + ' | '.join(headers) + ' |\n')
-        md.write('| ' + ' | '.join(['---'] * len(headers)) + ' |\n')
-        for model, vals in sorted_norm:
-            row = [model, f"{vals['normalized_total']:.4f}"]
-            for cat in CATEGORY_KEYS:
-                row.append(f"{vals[cat]:.4f}")
-            md.write('| ' + ' | '.join(row) + ' |\n')
-    print(f"Normalized Markdown report written to {md_norm_path}")
-
-    # === Write CSV report (normalized scores) ===
-    csv_norm_path = report_name_csv.replace('.csv', '_normalized.csv')
-    with open(csv_norm_path, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(headers)
-        for model, vals in sorted_norm:
-            row = [model, vals['normalized_total']]
-            for cat in CATEGORY_KEYS:
-                row.append(vals[cat])
-            writer.writerow(row)
-    print(f"Normalized CSV report written to {csv_norm_path}")
+        with open(csv_grp_path, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(grp_headers)
+            for model, data in sorted_by_group:
+                counts = [data['by_category'].get(k, 0) for k in keys]
+                total_grp = sum(counts)
+                # Write: Model, Total_for_this_group, sub-category counts...
+                writer.writerow([model, total_grp, *counts])
+        print(f"Category {group} CSV report written to {csv_grp_path}")
 
 
 def main():
