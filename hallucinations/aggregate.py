@@ -46,14 +46,18 @@ def aggregate_reports(output_dir):
     return summary
 
 
-def write_reports(summary, output_dir, report_name_md='hallucination_report.md', report_name_csv='hallucination_report.csv'):
-    # Sort models by total hallucinations ascending
-    sorted_models = sorted(summary.items(), key=lambda x: x[1]['total_hallucinations'])
+def write_reports(summary,
+                  output_dir,
+                  report_name_md='hallucination_report.md',
+                  report_name_csv='hallucination_report.csv'):
+    # Sort models by raw total hallucinations ascending
+    sorted_models = sorted(summary.items(),
+                           key=lambda x: x[1]['total_hallucinations'])
 
     # Prepare headers
     headers = ['Model', 'Total'] + CATEGORY_KEYS
 
-    # Write Markdown report
+    # === Write Markdown report (absolute counts) ===
     md_path = report_name_md
     with open(md_path, 'w', encoding='utf-8') as md:
         md.write('# Hallucination Summary Report\n\n')
@@ -66,7 +70,7 @@ def write_reports(summary, output_dir, report_name_md='hallucination_report.md',
             md.write('| ' + ' | '.join(row) + ' |\n')
     print(f"Markdown report written to {md_path}")
 
-    # Write CSV report
+    # === Write CSV report (absolute counts) ===
     csv_path = report_name_csv
     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
@@ -78,26 +82,84 @@ def write_reports(summary, output_dir, report_name_md='hallucination_report.md',
             writer.writerow(row)
     print(f"CSV report written to {csv_path}")
 
+    # === Compute per-category percentile (fraction lower) ===
+    # Gather all values per category column
+    col_values = {cat: [] for cat in CATEGORY_KEYS}
+    for _, data in sorted_models:
+        for cat in CATEGORY_KEYS:
+            col_values[cat].append(data['by_category'].get(cat, 0))
+
+    # Compute normalized percentiles for each category
+    normalized = {}
+    n_models = len(sorted_models)
+    for model, data in sorted_models:
+        vals = {}
+        for cat in CATEGORY_KEYS:
+            count = data['by_category'].get(cat, 0)
+            # fraction of models with lower count
+            vals[cat] = sum(1 for v in col_values[cat] if v < count) / n_models
+        # sum of normalized category scores as total
+        vals['normalized_total'] = sum(vals[cat] for cat in CATEGORY_KEYS)
+        normalized[model] = vals
+
+    # Sort models by normalized total ascending
+    sorted_norm = sorted(normalized.items(),
+                         key=lambda x: x[1]['normalized_total'])
+
+    # === Write Markdown report (normalized scores) ===
+    md_norm_path = report_name_md.replace('.md', '_normalized.md')
+    with open(md_norm_path, 'w', encoding='utf-8') as md:
+        md.write('# Hallucination Summary Report (Normalized Scores)\n\n')
+        md.write('| ' + ' | '.join(headers) + ' |\n')
+        md.write('| ' + ' | '.join(['---'] * len(headers)) + ' |\n')
+        for model, vals in sorted_norm:
+            row = [model, f"{vals['normalized_total']:.4f}"]
+            for cat in CATEGORY_KEYS:
+                row.append(f"{vals[cat]:.4f}")
+            md.write('| ' + ' | '.join(row) + ' |\n')
+    print(f"Normalized Markdown report written to {md_norm_path}")
+
+    # === Write CSV report (normalized scores) ===
+    csv_norm_path = report_name_csv.replace('.csv', '_normalized.csv')
+    with open(csv_norm_path, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(headers)
+        for model, vals in sorted_norm:
+            row = [model, vals['normalized_total']]
+            for cat in CATEGORY_KEYS:
+                row.append(vals[cat])
+            writer.writerow(row)
+    print(f"Normalized CSV report written to {csv_norm_path}")
+
 
 def main():
     parser = argparse.ArgumentParser(
         description="Aggregate hallucination counts per model and write reports"
     )
     parser.add_argument(
-        '--output_dir', type=str, default='output',
+        '--output_dir',
+        type=str,
+        default='output',
         help='Directory containing JSON report files and where to save reports'
     )
     parser.add_argument(
-        '--report_name_md', type=str, default='hallucination_report.md',
+        '--report_name_md',
+        type=str,
+        default='hallucination_report.md',
         help='Filename for the generated markdown report'
     )
     parser.add_argument(
-        '--report_name_csv', type=str, default='hallucination_report.csv',
+        '--report_name_csv',
+        type=str,
+        default='hallucination_report.csv',
         help='Filename for the generated CSV report'
     )
     args = parser.parse_args()
     summary = aggregate_reports(args.output_dir)
-    write_reports(summary, args.output_dir, args.report_name_md, args.report_name_csv)
+    write_reports(summary,
+                  args.output_dir,
+                  args.report_name_md,
+                  args.report_name_csv)
 
 
 if __name__ == '__main__':
