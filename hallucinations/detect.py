@@ -56,7 +56,7 @@ At the end provide the **overall total** across all sub‑categories.
   4a Syntax error          | invalid JSON / code etc.
   4b Model‑semantics breach| violates modelling notation rules
   4c Visual/descr. mismatch| describes element not present in image/diagram
-```  
+```
 
 ## Severity scale
 * **low**  Minor inconsistency; does not alter the main usefulness.
@@ -203,7 +203,22 @@ def process_file(input_path, output_path, semaphore):
 
 
 def main(input_dir, output_dir, max_threads):
+    # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
+
+    # ----- Cleanup orphaned outputs -----
+    for fname in os.listdir(output_dir):
+        if not fname.lower().endswith('.txt'):
+            continue
+        inp_path = os.path.join(input_dir, fname)
+        out_path = os.path.join(output_dir, fname)
+        if not os.path.exists(inp_path):
+            try:
+                os.remove(out_path)
+                print(f"[CLEANUP] Removed orphaned output {out_path}")
+            except OSError as e:
+                print(f"[ERROR] Could not remove {out_path}: {e}")
+    # -------------------------------------
 
     while True:
         # Gather files that need processing
@@ -214,20 +229,16 @@ def main(input_dir, output_dir, max_threads):
             inp_path = os.path.join(input_dir, fname)
             out_path = os.path.join(output_dir, fname)
             if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-                #print(f"[SKIP] {inp_path} already processed.")
                 pass
             else:
                 to_process.append((inp_path, out_path))
 
-        # Session flag: True if attempting to create any files
         session = bool(to_process)
         print(f"[SESSION] Attempting to process files: {session}")
 
-        # If nothing to do, exit loop
         if not session:
             break
 
-        # Process queued files
         semaphore = threading.Semaphore(max_threads)
         threads = []
         for inp_path, out_path in to_process:
@@ -239,12 +250,10 @@ def main(input_dir, output_dir, max_threads):
             thread.start()
             threads.append(thread)
 
-        # Wait for all threads in this session to finish
         for t in threads:
             t.join()
 
     print("[INFO] All files processed.")
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
