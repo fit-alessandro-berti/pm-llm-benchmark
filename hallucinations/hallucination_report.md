@@ -2,13 +2,18 @@
 
 | Model | Total | 1a_instruction_override | 1b_context_omission | 1c_prompt_contradiction | 2a_concept_fabrication | 2b_spurious_numeric | 2c_false_citation | 3a_unsupported_leap | 3b_self_contradiction | 3c_circular_reasoning | 4a_syntax_error | 4b_model_semantics_breach | 4c_visual_descr_mismatch |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| qwen-qwq-32b-nostepbystep-morehypgen | 54 | 3 | 7 | 1 | 0 | 7 | 0 | 26 | 1 | 0 | 2 | 6 | 1 |
 | Grok-3-beta-thinking-20250221 | 58 | 6 | 16 | 0 | 0 | 5 | 0 | 26 | 2 | 0 | 1 | 2 | 0 |
+| qwen-qwq-32b-nostepbystep-lesshypgen | 65 | 4 | 13 | 1 | 0 | 13 | 1 | 20 | 4 | 0 | 3 | 2 | 3 |
+| qwen-qwq-32b-nostepbystep-moremoral | 68 | 9 | 14 | 0 | 1 | 16 | 0 | 20 | 3 | 0 | 0 | 4 | 0 |
 | gemini-2.5-pro-thinklow | 70 | 1 | 18 | 1 | 2 | 8 | 0 | 31 | 4 | 0 | 0 | 2 | 1 |
+| qwen-qwq-32b-nostepbystep-lessvalidbacktr | 71 | 3 | 11 | 2 | 1 | 10 | 0 | 35 | 1 | 0 | 1 | 5 | 0 |
 | qwen-qwq-32b-stepbystep | 73 | 1 | 17 | 2 | 1 | 22 | 0 | 26 | 1 | 0 | 1 | 2 | 0 |
 | gemini-2.5-flash-thinkhigh | 74 | 1 | 23 | 1 | 2 | 5 | 0 | 31 | 4 | 1 | 0 | 4 | 1 |
 | phi4-reasoning | 74 | 5 | 13 | 2 | 0 | 5 | 0 | 31 | 2 | 0 | 1 | 13 | 1 |
 | grok-3-mini-high | 80 | 2 | 8 | 3 | 2 | 16 | 0 | 32 | 4 | 0 | 5 | 2 | 3 |
 | phi4-reasoningplus | 80 | 5 | 20 | 1 | 0 | 4 | 0 | 37 | 0 | 0 | 1 | 4 | 4 |
+| qwen-qwq-32b-nostepbystep-lessmoral | 80 | 2 | 13 | 1 | 3 | 14 | 0 | 30 | 5 | 0 | 1 | 9 | 0 |
 | nvidiallama-3.1-nemotron-ultra-253b-v1-thinkenab | 89 | 7 | 21 | 1 | 0 | 17 | 0 | 29 | 6 | 0 | 0 | 3 | 4 |
 | qwen-qwq-32b-nostepbystep | 90 | 2 | 13 | 0 | 0 | 26 | 0 | 29 | 6 | 0 | 4 | 2 | 4 |
 | gemini-2.5-pro-thinkhigh | 93 | 1 | 22 | 0 | 2 | 6 | 0 | 44 | 1 | 0 | 1 | 7 | 5 |
