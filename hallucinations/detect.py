@@ -144,7 +144,7 @@ def validate_json_response(response_str):
     return True
 
 
-def process_file(input_path, output_path, semaphore):
+def process_file(input_path, output_path, semaphore, model):
     """
     Read the input file, send its contents to the OpenAI API, and write the response.
     Only saves if the JSON validation succeeds.
@@ -173,7 +173,7 @@ def process_file(input_path, output_path, semaphore):
             'Content-Type': 'application/json'
         }
         payload = {
-            'model': 'gpt-4.1-mini',
+            'model': model,
             'messages': [{'role': 'user', 'content': prompt}]
         }
 
@@ -220,6 +220,7 @@ def main(input_dir, output_dir, max_threads):
                 print(f"[ERROR] Could not remove {out_path}: {e}")
     # -------------------------------------
 
+    model = "gpt-4.1-mini"
     while True:
         # Gather files that need processing
         to_process = []
@@ -244,7 +245,7 @@ def main(input_dir, output_dir, max_threads):
         for inp_path, out_path in to_process:
             thread = threading.Thread(
                 target=process_file,
-                args=(inp_path, out_path, semaphore),
+                args=(inp_path, out_path, semaphore, model),
                 daemon=True
             )
             thread.start()
@@ -252,6 +253,8 @@ def main(input_dir, output_dir, max_threads):
 
         for t in threads:
             t.join()
+
+        model = "gpt-4.1"
 
     print("[INFO] All files processed.")
 
