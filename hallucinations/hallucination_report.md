@@ -2,6 +2,7 @@
 
 | Model | Total | 1a_instruction_override | 1b_context_omission | 1c_prompt_contradiction | 2a_concept_fabrication | 2b_spurious_numeric | 2c_false_citation | 3a_unsupported_leap | 3b_self_contradiction | 3c_circular_reasoning | 4a_syntax_error | 4b_model_semantics_breach | 4c_visual_descr_mismatch |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| qwenqwen3-coder | 14 | 1 | 1 | 0 | 1 | 3 | 0 | 5 | 1 | 0 | 0 | 1 | 0 |
 | Grok-3-beta-thinking-20250221 | 58 | 6 | 16 | 0 | 0 | 5 | 0 | 26 | 2 | 0 | 1 | 2 | 0 |
 | gemini-2.5-pro-thinklow | 70 | 1 | 18 | 1 | 2 | 8 | 0 | 31 | 4 | 0 | 0 | 2 | 1 |
 | qwen-qwq-32b-stepbystep | 73 | 1 | 17 | 2 | 1 | 22 | 0 | 26 | 1 | 0 | 1 | 2 | 0 |
@@ -19,6 +20,7 @@
 | QwenQwen3-32B | 101 | 4 | 16 | 2 | 3 | 17 | 0 | 41 | 11 | 0 | 3 | 2 | 0 |
 | deepseek-aiDeepSeek-R1 | 102 | 3 | 22 | 3 | 1 | 10 | 0 | 47 | 2 | 1 | 2 | 3 | 4 |
 | exaone-deep7.8b-fp16 | 106 | 2 | 18 | 2 | 3 | 23 | 0 | 34 | 4 | 0 | 4 | 11 | 4 |
+| qwenqwen3-235b-a22b-07-25 | 106 | 7 | 14 | 2 | 2 | 12 | 0 | 50 | 8 | 1 | 3 | 2 | 0 |
 | exaone-deep32b-fp16 | 107 | 11 | 23 | 2 | 2 | 15 | 0 | 40 | 2 | 0 | 5 | 5 | 0 |
 | deepseek-aiDeepSeek-R1-Distill-Qwen-32B | 108 | 5 | 40 | 2 | 1 | 14 | 0 | 39 | 1 | 0 | 1 | 3 | 1 |
 | o3-pro-2025-06-10 | 108 | 4 | 17 | 0 | 2 | 11 | 0 | 48 | 5 | 0 | 5 | 8 | 5 |
