@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "o3-pro-2024-06-10-search" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "qwen/qwen3-coder" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -167,7 +167,7 @@ MODELS_DICT = {
             "deepseek/deepseek-r1-distill-llama-8b", "deepseek/deepseek-r1-distill-qwen-1.5b",
             "inception/mercury", "baidu/ernie-4.5-300b-a47b",
             "openrouter/cypher-alpha:free", "moonshotai/kimi-k2",
-            "thudm/glm-4.1v-9b-thinking"
+            "thudm/glm-4.1v-9b-thinking", "qwen/qwen3-235b-a22b-07-25", "qwen/qwen3-coder",
         }
     },
     "manual": {
@@ -413,7 +413,8 @@ def is_large_reasoning_model(m_name):
 
     for p in patterns:
         if p in m_name:
-            return True
+            if not "qwen3" in m_name or ("qwen3" in m_name and not ("07-25" in m_name or "coder" in m_name)):
+                return True
 
     return False
 
@@ -422,7 +423,8 @@ def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
     for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral"]:
         if p in model_name and not "deepseek-v3" in model_name:
-            return True
+            if not "qwen3" in model_name or ("qwen3" in model_name and not ("07-25" in model_name or "coder" in model_name)):
+                return True
     return False
 
 

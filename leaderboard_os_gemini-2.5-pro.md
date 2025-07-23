@@ -4,27 +4,28 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 
 | Model                            | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | OPT                  | :nerd_face: VI       |
 |:---------------------------------|:---------|:-------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| phi4-reasoningplus               | **37.7** | :white_check_mark: | :white_check_mark: | 5.8                  | **6.9**              | 5.2                  | :mage_woman: **4.8** | 5.4                  | :mage_woman: **5.8** | **3.9**              | 0.0                  |
-| phi4-reasoning                   | **37.0** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.2** | 6.5                  | 4.7                  | 4.3                  | :mage_woman: **6.1** | **5.5**              | **3.8**              | 0.0                  |
-| qwen-qwq-32b-nostepbystep        | **36.7** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.4                  | :mage_woman: **5.9** | **4.5**              | 4.8                  | **5.6**              | **3.7**              | 0.0                  |
-| qwen-qwq-32b-stepbystep          | **35.6** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.7                  | 4.3                  | **4.6**              | 5.0                  | **5.5**              | **3.9**              | 0.0                  |
-| nemotron-ultra-253b-v1-thinkenab | **35.1** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.1                  | 5.5                  | **4.5**              | 4.3                  | 5.4                  | 3.6                  | 0.0                  |
+| qwen3-235b-a22b-07-25            | **38.1** | :white_check_mark: | :x:                | **6.0**              | 6.7                  | 4.7                  | :mage_woman: **5.2** | **5.8**              | 5.4                  | :mage_woman: **4.5** | 0.0                  |
+| phi4-reasoningplus               | **37.7** | :white_check_mark: | :white_check_mark: | 5.8                  | **6.9**              | 5.2                  | 4.8                  | 5.4                  | :mage_woman: **5.8** | 3.9                  | 0.0                  |
+| phi4-reasoning                   | **37.0** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.2** | 6.5                  | 4.7                  | 4.3                  | :mage_woman: **6.1** | **5.5**              | 3.8                  | 0.0                  |
+| qwen-qwq-32b-nostepbystep        | **36.7** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.4                  | :mage_woman: **5.9** | 4.5                  | 4.8                  | **5.6**              | 3.7                  | 0.0                  |
+| qwen-qwq-32b-stepbystep          | **35.6** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.7                  | 4.3                  | 4.6                  | 5.0                  | **5.5**              | 3.9                  | 0.0                  |
+| nemotron-ultra-253b-v1-thinkenab | **35.1** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.1                  | 5.5                  | 4.5                  | 4.3                  | 5.4                  | 3.6                  | 0.0                  |
 | DeepSeek-R1                      | **34.8** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.6                  | 5.0                  | 4.1                  | 4.9                  | 5.2                  | 3.6                  | 0.0                  |
-| nemotron-super-49b-v1-thinkenab  | **34.3** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.6                  | 5.0                  | **4.7**              | 4.5                  | 5.0                  | 2.9                  | 0.0                  |
+| nemotron-super-49b-v1-thinkenab  | **34.3** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.6                  | 5.0                  | 4.7                  | 4.5                  | 5.0                  | 2.9                  | 0.0                  |
 | DeepSeek-R1-0528                 | **34.3** | :white_check_mark: | :white_check_mark: | 5.4                  | 6.2                  | 4.1                  | 4.4                  | 5.0                  | **5.7**              | 3.5                  | 0.0                  |
-| Qwen3-235B-A22B                  | **34.2** | :white_check_mark: | :white_check_mark: | 5.7                  | 5.8                  | 4.2                  | **4.6**              | 4.4                  | **5.6**              | **3.9**              | 0.0                  |
-| magistral-medium-2506            | **34.0** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.2** | 6.2                  | 3.5                  | 3.9                  | 4.6                  | **5.5**              | :mage_woman: **4.0** | 0.0                  |
+| Qwen3-235B-A22B                  | **34.2** | :white_check_mark: | :white_check_mark: | 5.7                  | 5.8                  | 4.2                  | 4.6                  | 4.4                  | **5.6**              | 3.9                  | 0.0                  |
+| magistral-medium-2506            | **34.0** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.2** | 6.2                  | 3.5                  | 3.9                  | 4.6                  | **5.5**              | 4.0                  | 0.0                  |
 | Qwen3-32B                        | **33.4** | :white_check_mark: | :white_check_mark: | 5.5                  | 6.0                  | 4.0                  | 4.1                  | 5.0                  | 5.2                  | 3.6                  | 0.0                  |
-| r1-1776                          | **32.5** | :white_check_mark: | :white_check_mark: | 4.6                  | :mage_woman: **7.2** | 2.4                  | :mage_woman: **4.8** | 4.9                  | 4.7                  | :mage_woman: **4.0** | 0.0                  |
+| r1-1776                          | **32.5** | :white_check_mark: | :white_check_mark: | 4.6                  | :mage_woman: **7.2** | 2.4                  | 4.8                  | 4.9                  | 4.7                  | 4.0                  | 0.0                  |
 | exaone-deep32b-fp16              | **32.4** | :white_check_mark: | :white_check_mark: | 5.5                  | 6.2                  | 3.7                  | 4.4                  | 4.2                  | 4.9                  | 3.6                  | 0.0                  |
-| Qwen3-30B-A3B                    | **32.1** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.2                  | 2.8                  | 4.3                  | 4.5                  | 5.4                  | **3.7**              | 0.0                  |
+| Qwen3-30B-A3B                    | **32.1** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.2                  | 2.8                  | 4.3                  | 4.5                  | 5.4                  | 3.7                  | 0.0                  |
 | Qwen3-14B                        | **32.0** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.2** | 5.6                  | 3.5                  | 3.8                  | 4.4                  | 5.0                  | 3.5                  | 0.0                  |
 | DeepSeek-R1-Distill-Qwen-32B     | **31.5** | :white_check_mark: | :white_check_mark: | 5.1                  | **6.9**              | 3.7                  | 3.8                  | 4.5                  | 4.9                  | 2.6                  | 0.0                  |
-| exaone-deep7.8b-fp16             | **31.2** | :white_check_mark: | :white_check_mark: | 5.0                  | 6.5                  | 2.9                  | 3.8                  | 4.5                  | 4.9                  | **3.7**              | 0.0                  |
-| deepseek-r1-zero                 | **30.9** | :white_check_mark: | :white_check_mark: | 5.2                  | 4.9                  | 3.7                  | 4.2                  | 5.1                  | 4.2                  | **3.7**              | 0.0                  |
+| exaone-deep7.8b-fp16             | **31.2** | :white_check_mark: | :white_check_mark: | 5.0                  | 6.5                  | 2.9                  | 3.8                  | 4.5                  | 4.9                  | 3.7                  | 0.0                  |
+| deepseek-r1-zero                 | **30.9** | :white_check_mark: | :white_check_mark: | 5.2                  | 4.9                  | 3.7                  | 4.2                  | 5.1                  | 4.2                  | 3.7                  | 0.0                  |
 | thudmglm-z1-32b                  | **30.9** | :white_check_mark: | :white_check_mark: | 5.2                  | 5.9                  | 2.8                  | 3.8                  | 4.8                  | 4.8                  | 3.5                  | 0.0                  |
 | Qwen-3-235B-A22B-nothink         | **30.4** | :white_check_mark: | :x:                | 5.0                  | 5.5                  | 2.9                  | 3.6                  | 4.8                  | 5.0                  | 3.6                  | 0.0                  |
-| Qwen-3-32B-nothink               | **30.0** | :white_check_mark: | :x:                | 4.6                  | 5.3                  | 3.0                  | 3.7                  | 4.5                  | 5.0                  | **3.9**              | 0.0                  |
+| Qwen-3-32B-nothink               | **30.0** | :white_check_mark: | :x:                | 4.6                  | 5.3                  | 3.0                  | 3.7                  | 4.5                  | 5.0                  | 3.9                  | 0.0                  |
 | QwQ-32B-Preview                  | **29.8** | :white_check_mark: | :white_check_mark: | 4.9                  | 6.3                  | 3.3                  | 3.5                  | 4.9                  | 3.9                  | 2.8                  | 0.0                  |
 | nemotron-70b-instruct            | **29.7** | :white_check_mark: | :x:                | 4.4                  | 5.4                  | 3.5                  | 4.2                  | 4.4                  | 4.8                  | 3.0                  | 0.0                  |
 | DeepSeek-R1-Distill-Llama-70B    | **29.6** | :white_check_mark: | :white_check_mark: | 4.9                  | 6.2                  | 3.0                  | 4.4                  | 4.2                  | 4.6                  | 2.4                  | 0.0                  |
@@ -34,7 +35,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | DeepSeek-V3-0324                 | **28.8** | :white_check_mark: | :x:                | 4.5                  | 5.2                  | 3.8                  | 3.8                  | 4.4                  | 4.0                  | 3.2                  | 0.0                  |
 | deepseek-r1-distill-qwen-14b     | **28.7** | :white_check_mark: | :white_check_mark: | 4.6                  | **6.9**              | 3.9                  | 3.2                  | 3.9                  | 4.1                  | 2.0                  | 0.0                  |
 | mistral-small-2506               | **28.6** | :white_check_mark: | :x:                | 4.4                  | 5.2                  | 3.8                  | 3.5                  | 4.5                  | 3.9                  | 3.2                  | 3.5                  |
-| Qwen-3-30B-A3B-nothink           | **28.6** | :white_check_mark: | :x:                | 3.5                  | 5.4                  | 2.9                  | 3.9                  | 4.9                  | 4.3                  | **3.8**              | 0.0                  |
+| Qwen-3-30B-A3B-nothink           | **28.6** | :white_check_mark: | :x:                | 3.5                  | 5.4                  | 2.9                  | 3.9                  | 4.9                  | 4.3                  | 3.8                  | 0.0                  |
 | Qwen-3-14B-nothink               | **28.5** | :white_check_mark: | :x:                | 4.6                  | 5.4                  | 2.2                  | 4.2                  | 4.2                  | 4.4                  | 3.4                  | 0.0                  |
 | Llama-3.3-70B-Instruct           | **28.3** | :white_check_mark: | :x:                | 4.6                  | 5.4                  | 2.7                  | 4.3                  | 4.2                  | 4.3                  | 2.8                  | 0.0                  |
 | qwen2.5-72b-instruct             | **28.2** | :white_check_mark: | :x:                | 4.5                  | 5.7                  | 2.9                  | 4.1                  | 3.7                  | 4.7                  | 2.9                  | 0.0                  |
@@ -43,7 +44,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | devstral-medium-2507             | **28.0** | :white_check_mark: | :x:                | 4.7                  | 4.8                  | 3.7                  | 3.9                  | 4.8                  | 4.0                  | 2.1                  | 0.0                  |
 | pixtral-large-2411               | **27.9** | :white_check_mark: | :x:                | 5.0                  | 5.0                  | 3.1                  | 3.8                  | 4.2                  | 4.0                  | 2.7                  | :mage_woman: **4.5** |
 | openroutercypher-alpha           | **27.7** | :white_check_mark: | :x:                | 4.0                  | 5.1                  | 2.7                  | 3.9                  | 4.5                  | 4.1                  | 3.4                  | 0.0                  |
-| gemma327b-it-q8_0                | **27.6** | :white_check_mark: | :x:                | 4.1                  | 4.4                  | 2.5                  | 3.4                  | 4.7                  | 4.7                  | **3.8**              | 2.1                  |
+| gemma327b-it-q8_0                | **27.6** | :white_check_mark: | :x:                | 4.1                  | 4.4                  | 2.5                  | 3.4                  | 4.7                  | 4.7                  | 3.8                  | 2.1                  |
 | qwen34b                          | **27.2** | :white_check_mark: | :white_check_mark: | 4.8                  | 5.5                  | 1.7                  | 3.7                  | 4.7                  | 3.7                  | 3.2                  | 0.0                  |
 | llama-4-maverick                 | **27.1** | :white_check_mark: | :x:                | 4.3                  | 5.3                  | 2.9                  | 3.5                  | 4.8                  | 3.6                  | 2.7                  | 3.7                  |
 | mistral-medium-2505              | **27.0** | :white_check_mark: | :x:                | 4.5                  | 4.8                  | 2.5                  | 3.9                  | 4.5                  | 3.9                  | 2.9                  | **4.3**              |
@@ -62,7 +63,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | inceptionmercury                 | **24.7** | :white_check_mark: | :x:                | 3.9                  | 4.3                  | 2.5                  | 3.2                  | 4.4                  | 3.8                  | 2.5                  | 0.0                  |
 | qwen2.5-14b-instruct-1m          | **24.0** | :white_check_mark: | :x:                | 3.6                  | 4.5                  | 1.7                  | 3.5                  | 4.3                  | 3.7                  | 2.7                  | 0.0                  |
 | codestral-2501                   | **23.9** | :white_check_mark: | :x:                | 4.0                  | 4.5                  | 2.2                  | 3.4                  | 4.0                  | 3.6                  | 2.2                  | 0.0                  |
-| phi4-mini-reasoning              | **23.8** | :white_check_mark: | :white_check_mark: | 3.7                  | 4.3                  | 2.0                  | 3.0                  | 3.7                  | 3.4                  | **3.7**              | 0.0                  |
+| phi4-mini-reasoning              | **23.8** | :white_check_mark: | :white_check_mark: | 3.7                  | 4.3                  | 2.0                  | 3.0                  | 3.7                  | 3.4                  | 3.7                  | 0.0                  |
 | falcon310b-instruct-q8_0         | **23.5** | :white_check_mark: | :x:                | 3.5                  | 4.7                  | 1.9                  | 3.1                  | 4.1                  | 3.8                  | 2.4                  | 0.0                  |
 | falcon37b-instruct-q8_0          | **22.8** | :white_check_mark: | :x:                | 3.0                  | 4.0                  | 2.6                  | 3.0                  | 4.2                  | 3.1                  | 2.9                  | 0.0                  |
 | pixtral-12b-2409                 | **22.6** | :white_check_mark: | :x:                | 2.8                  | 4.3                  | 2.5                  | 3.1                  | 4.0                  | 3.6                  | 2.2                  | 4.0                  |
@@ -82,6 +83,64 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | qwen30.6b                        | **13.9** | :white_check_mark: | :white_check_mark: | 1.3                  | 2.7                  | 1.6                  | 1.3                  | 2.8                  | 2.5                  | 1.6                  | 0.0                  |
 | gemma31b-it-q8_0                 | **12.6** | :white_check_mark: | :x:                | 1.1                  | 1.9                  | 1.0                  | 1.4                  | 3.2                  | 2.0                  | 1.9                  | 0.0                  |
 | deepseek-r1-distill-qwen-1.5b    | **11.1** | :white_check_mark: | :white_check_mark: | 1.5                  | 1.9                  | 1.0                  | 1.2                  | 2.8                  | 1.7                  | 0.9                  | 0.0                  |
+
+### qwenqwen3-235b-a22b-07-25   => 38.1 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |    8.8  |
+| cat01_02_activity_context          |    7.25 |
+| cat01_03_high_level_events         |    7.6  |
+| cat01_04_sensor_recordings         |    8.4  |
+| cat01_05_merge_two_logs            |    7.9  |
+| cat01_06_system_logs               |    5    |
+| cat01_07_interv_to_pseudo_bpmn     |    9.4  |
+| cat01_08_tables_to_log             |    5.5  |
+| cat02_01_conformance_textual       |    9    |
+| cat02_02_conf_desiderata           |    6.5  |
+| cat02_03_anomaly_event_log         |    9    |
+| cat02_04_powl_anomaly_detection    |   10    |
+| cat02_05_two_powls_anomalies       |    6.5  |
+| cat02_06_root_cause_1              |    6    |
+| cat02_07_root_cause_2              |    6    |
+| cat02_08_underfitting_process_tree |    7.75 |
+| cat02_09_fix_process_tree          |    6    |
+| cat03_01_process_tree_generation   |    8.4  |
+| cat03_02_powl_generation           |   10    |
+| cat03_03_log_skeleton_generation   |    2.5  |
+| cat03_04_declare_generation        |    1.5  |
+| cat03_05_temp_profile_generation   |    4.5  |
+| cat03_06_petri_net_generation      |    8.4  |
+| cat03_07_process_tree_discovery    |    7    |
+| cat03_08_powl_discovery            |    4.5  |
+| cat04_01_pseudo_bpmn_description   |    9.6  |
+| cat04_02_pseudo_bpmn_open_question |    9    |
+| cat04_03_declare_open_question     |    5.8  |
+| cat04_04_declare_description       |    4.5  |
+| cat04_05_sql_filt_num_events       |    9.6  |
+| cat04_06_sql_filt_three_df         |    7.25 |
+| cat04_07_sql_filt_top_k_vars       |    6    |
+| cat05_01_hyp_generation_log        |    7.25 |
+| cat05_02_hyp_gen_powl              |   10    |
+| cat05_03_hyp_gen_declare           |    7.5  |
+| cat05_04_hyp_gen_temp_profile      |    6.5  |
+| cat05_05_question_gen_nlp          |    9.6  |
+| cat05_06_question_pseudo_bpmn      |    9.6  |
+| cat05_07_question_interview        |    7.6  |
+| cat06_01_bias_text                 |    9.6  |
+| cat06_02_bias_event_log            |    9.6  |
+| cat06_03_bias_powl                 |   10    |
+| cat06_04_bias_two_logs             |    7.75 |
+| cat06_05_bias_two_logs_2           |    7    |
+| cat06_06_bias_mitigation_declare   |    2.5  |
+| cat06_07_fair_unfair_powl          |    7.25 |
+| cat08_01_queue_mining              |    8.8  |
+| cat08_02_instance_spanning         |    7.95 |
+| cat08_03_transport_opt             |    8.8  |
+| cat08_04_resource_assign           |    9.6  |
+| cat08_05_task_schedul              |    9.4  |
+
+
 
 ### phi4-reasoningplus   => 37.7 points
 
