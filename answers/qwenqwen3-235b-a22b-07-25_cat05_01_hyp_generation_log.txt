@@ -1,0 +1,343 @@
+Based on the provided schema, reference data, and expected process flow, I will analyze the event logs for **anomalies**, **deviations from the expected sequence**, and **potential root causes**. I will then propose targeted **SQL queries** to investigate these issues systematically.
+
+---
+
+###  **Step 1: Identify Anomalies in the Event Log**
+
+####  Expected Process Flow:
+1. Register Order  
+2. Perform Credit Check  
+3. Validate Stock  
+4. Confirm Shipment  
+5. Ship Goods  
+6. Issue Invoice  
+7. Receive Payment  
+
+We expect this order for each `case_id`, with possible variations for edge cases (e.g., exceptions), but **chronological and logical consistency** is required.
+
+---
+
+###  **Anomalies Observed**
+
+####  **Case 1002: Out-of-Sequence Execution**
+- **`Confirm Shipment`** (event 9) occurs at `08:25` — immediately after `Register Order`
+- **`Ship Goods`** (event 10) at `08:40`
+- Only **after** shipping does the system perform:
+  - `Perform Credit Check` (event 11 at `09:10`)
+  - `Validate Stock` (event 12 at `09:15`)
+
+ **Violation**: Critical validations (credit, stock) occur **after** shipment — a serious policy breach.
+
+>  This suggests either:
+> - A **priority override** that bypassed controls,
+> - A **system configuration error** for "priority" orders,
+> - Or **manual intervention** skipping steps.
+
+---
+
+####  **Case 1003: `Ship Goods` Before `Confirm Shipment`**
+- `Ship Goods` (event 17) at `09:10`
+- `Confirm Shipment` (event 19) at `09:45` — **35 minutes later**
+
+ **Violation**: Goods shipped **before** confirmation.  
+Even if logically close, this reverses control steps.
+
+>  Could indicate:
+> - A **miscommunication** between warehouse and logistics,
+> - **Warehouse acting independently**,
+> - Or **system timestamp inaccuracies**?
+
+---
+
+####  **Case 1004: Severe Violations**
+- `Receive Payment` (event 22) at `09:05` — **5 minutes after order registration**
+- `Issue Invoice` (event 23) at `09:20` — **after payment received**
+- `Confirm Shipment` (event 24) with `shipment_scheduled=N`
+- `Ship Goods` still occurs
+
+ **Critical Issues**:
+1. **Payment received before invoice issued** — breaks accounting logic.
+2. **Shipment confirmed as not scheduled**, yet goods are shipped.
+3. Missing: `Perform Credit Check`, `Validate Stock` — **entirely absent**
+
+>  This suggests:
+> - **Duplicate or test data**?
+> - **Fraudulent or manual override behavior**?
+> - **System bug** where payment is auto-triggered?
+
+---
+
+###  **Hypotheses for Anomalies**
+
+| Hypothesis | Supporting Evidence |
+|----------|---------------------|
+| **1. Priority orders bypass validation steps** | Case 1002 (priority) skips credit/stock checks until after shipping |
+| **2. Warehouse ships before logistics confirmation** | Case 1003: `Ship Goods` before `Confirm Shipment` |
+| **3. Invoice and payment sequence reversed** | Case 1004: Payment before invoice |
+| **4. Missing critical activities** | Case 1004: No credit check or stock validation |
+| **5. Manual overrides or system bugs in order processing** | Multiple sequence violations across cases |
+| **6. Test or synthetic data mistakenly included** | Case 1004 looks like a test case (e.g., instant payment) |
+
+---
+
+###  **Proposed SQL Queries to Investigate**
+
+These queries are designed to **detect**, **quantify**, and **diagnose** the anomalies.
+
+---
+
+####  **1. Find All Cases Where `Receive Payment` Occurs Before `Issue Invoice`**
+
+```sql
+WITH payment_invoice_timing AS (
+  SELECT
+    oel1.case_id,
+    oel1.activity AS payment_activity,
+    oel1.timestamp AS payment_time,
+    oel2.activity AS invoice_activity,
+    oel2.timestamp AS invoice_time
+  FROM order_event_log oel1
+  JOIN order_event_log oel2
+    ON oel1.case_id = oel2.case_id
+    AND oel1.activity = 'Receive Payment'
+    AND oel2.activity = 'Issue Invoice'
+)
+SELECT *
+FROM payment_invoice_timing
+WHERE payment_time < invoice_time;
+```
+
+>  **Purpose**: Confirm if Case 1004 is an isolated incident or part of a pattern.
+
+---
+
+####  **2. Find Cases Where `Ship Goods` Occurs Before `Confirm Shipment`**
+
+```sql
+WITH ship_confirmation_timing AS (
+  SELECT
+    oel1.case_id,
+    oel1.timestamp AS ship_time,
+    oel2.timestamp AS confirm_time
+  FROM order_event_log oel1
+  JOIN order_event_log oel2
+    ON oel1.case_id = oel2.case_id
+    AND oel1.activity = 'Ship Goods'
+    AND oel2.activity = 'Confirm Shipment'
+)
+SELECT *
+FROM ship_confirmation_timing
+WHERE ship_time < confirm_time;
+```
+
+>  **Purpose**: Check if warehouse is routinely shipping before confirmation.
+
+---
+
+####  **3. Identify Cases Missing Critical Activities**
+
+```sql
+WITH expected_activities AS (
+  SELECT activity
+  FROM (VALUES ('Perform Credit Check'), ('Validate Stock')) AS t(activity)
+),
+case_activities AS (
+  SELECT DISTINCT case_id, activity
+  FROM order_event_log
+  WHERE activity IN ('Perform Credit Check', 'Validate Stock')
+),
+missing_activities AS (
+  SELECT ca.case_id, ea.activity
+  FROM (SELECT DISTINCT case_id FROM order_event_log) ca
+  CROSS JOIN expected_activities ea
+  LEFT JOIN case_activities cap
+    ON ca.case_id = cap.case_id AND ea.activity = cap.activity
+  WHERE cap.activity IS NULL
+)
+SELECT 
+  ma.case_id,
+  STRING_AGG(ma.activity, ', ') AS missing_activities,
+  o.order_value,
+  o.order_type
+FROM missing_activities ma
+JOIN orders o ON ma.case_id = o.case_id
+GROUP BY ma.case_id, o.order_value, o.order_type;
+```
+
+>  **Purpose**: Find all orders that skipped credit check or stock validation (e.g., Case 1004).
+
+---
+
+####  **4. Check for Out-of-Sequence Events Using Expected Flow**
+
+```sql
+WITH ordered_activities AS (
+  SELECT
+    case_id,
+    activity,
+    timestamp,
+    ROW_NUMBER() OVER (
+      PARTITION BY case_id ORDER BY timestamp
+    ) AS event_seq
+  FROM order_event_log
+),
+expected_order AS (
+  SELECT 'Register Order' AS activity, 1 AS expected_rank
+  UNION SELECT 'Perform Credit Check', 2
+  UNION SELECT 'Validate Stock', 3
+  UNION SELECT 'Confirm Shipment', 4
+  UNION SELECT 'Ship Goods', 5
+  UNION SELECT 'Issue Invoice', 6
+  UNION SELECT 'Receive Payment', 7
+),
+ranked_events AS (
+  SELECT
+    oa.case_id,
+    oa.activity,
+    oa.timestamp,
+    eo.expected_rank,
+    oa.event_seq,
+    (oa.event_seq - eo.expected_rank) AS seq_deviation
+  FROM ordered_activities oa
+  JOIN expected_order eo ON oa.activity = eo.activity
+)
+SELECT
+  case_id,
+  STRING_AGG(
+    activity || '(seq=' || event_seq || ', exp=' || expected_rank || ')',
+    '  ' ORDER BY timestamp
+  ) AS actual_flow_with_ranks
+FROM ranked_events
+WHERE seq_deviation != 0  -- Only cases with deviations
+GROUP BY case_id
+ORDER BY case_id;
+```
+
+>  **Purpose**: Highlight cases where process steps occurred in the wrong order.
+
+---
+
+####  **5. Analyze by Order Type: Are Priority Orders More Likely to Deviate?**
+
+```sql
+WITH deviation_cases AS (
+  SELECT DISTINCT case_id
+  FROM (
+    -- Subquery to find any sequence deviation
+    WITH ordered_activities AS (
+      SELECT
+        case_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS event_seq
+      FROM order_event_log
+    ),
+    expected_order AS (
+      SELECT 'Register Order' AS activity, 1 AS expected_rank
+      UNION SELECT 'Perform Credit Check', 2
+      UNION SELECT 'Validate Stock', 3
+      UNION SELECT 'Confirm Shipment', 4
+      UNION SELECT 'Ship Goods', 5
+      UNION SELECT 'Issue Invoice', 6
+      UNION SELECT 'Receive Payment', 7
+    ),
+    ranked_events AS (
+      SELECT
+        oa.case_id,
+        eo.expected_rank,
+        oa.event_seq
+      FROM ordered_activities oa
+      JOIN expected_order eo ON oa.activity = eo.activity
+    )
+    SELECT case_id
+    FROM ranked_events
+    GROUP BY case_id
+    HAVING SUM(ABS(event_seq - expected_rank)) > 0
+  ) deviated
+)
+SELECT
+  o.order_type,
+  COUNT(*) AS deviated_case_count
+FROM deviation_cases dc
+JOIN orders o ON dc.case_id = o.case_id
+GROUP BY o.order_type;
+```
+
+>  **Purpose**: Test hypothesis that "priority" orders are fast-tracked improperly.
+
+---
+
+####  **6. Identify Resources Involved in Anomalous Sequences**
+
+```sql
+WITH bad_sequences AS (
+  SELECT DISTINCT oel.case_id
+  FROM order_event_log oel
+  WHERE oel.case_id IN (
+    SELECT case_id FROM (
+      WITH ordered_activities AS (
+        SELECT case_id, activity, timestamp,
+               ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS seq
+        FROM order_event_log
+      ),
+      expected_order AS (
+        SELECT unnest(ARRAY['Register Order','Perform Credit Check','Validate Stock',
+                            'Confirm Shipment','Ship Goods','Issue Invoice',
+                            'Receive Payment']) AS activity, 
+               generate_series(1,7) AS rank
+      ),
+      ranked AS (
+        SELECT oa.case_id, eo.rank AS expected, oa.seq AS actual
+        FROM ordered_activities oa
+        JOIN expected_order eo ON oa.activity = eo.activity
+      )
+      SELECT case_id
+      FROM ranked
+      WHERE ABS(expected - actual) > 1  -- Significant deviation
+      GROUP BY case_id
+    ) t
+  )
+)
+SELECT
+  r.department,
+  r.role,
+  r.resource_id,
+  COUNT(*) AS involvement_count
+FROM order_event_log oel
+JOIN bad_sequences bs ON oel.case_id = bs.case_id
+JOIN resources r ON oel.resource = r.resource_id
+GROUP BY r.department, r.role, r.resource_id
+ORDER BY involvement_count DESC;
+```
+
+>  **Purpose**: Identify if certain roles/departments are disproportionately involved in deviations.
+
+---
+
+###  **Summary of Insights & Next Steps**
+
+| Finding | Risk Level | Recommended Action |
+|-------|------------|--------------------|
+| **Payment before invoice** |  High | Audit financial controls; check integration logic |
+| **Shipping before confirmation** |  Medium | Review warehouse-logistics handoff process |
+| **Missing credit/stock checks** |  High | Enforce mandatory validations; disable overrides |
+| **Priority orders deviating more** |  Possible | Review "priority" handling logic |
+| **Certain resources in many anomalies** |  Investigate | Training or access review |
+
+---
+
+###  Final Note
+
+The event log reveals **systemic process violations**, not just isolated incidents. These could stem from:
+- Poorly configured automation,
+- Manual override privileges,
+- Inadequate role-based controls,
+- Or integration gaps between systems.
+
+**Next steps should include**:
+1. Running the above SQL queries on full dataset,
+2. Validating if test data is polluting production logs,
+3. Implementing **process conformance checks** in real-time,
+4. Adding **audit triggers** for out-of-sequence events.
+
+Let me know if you'd like visualizations (e.g., process maps, deviation heatmaps) or alerts setup.
