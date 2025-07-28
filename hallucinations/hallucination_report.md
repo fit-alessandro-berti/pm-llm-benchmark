@@ -2,7 +2,7 @@
 
 | Model | Total | 1a_instruction_override | 1b_context_omission | 1c_prompt_contradiction | 2a_concept_fabrication | 2b_spurious_numeric | 2c_false_citation | 3a_unsupported_leap | 3b_self_contradiction | 3c_circular_reasoning | 4a_syntax_error | 4b_model_semantics_breach | 4c_visual_descr_mismatch |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| qwen-qwq-32b-nostepbystep-morehypgen | 54 | 3 | 7 | 1 | 0 | 7 | 0 | 26 | 1 | 0 | 2 | 6 | 1 |
+| Qwen3-235B-A22B-Thinking-2507 | 39 | 1 | 2 | 3 | 2 | 14 | 0 | 14 | 2 | 0 | 0 | 0 | 0 |
 | Grok-3-beta-thinking-20250221 | 58 | 6 | 16 | 0 | 0 | 5 | 0 | 26 | 2 | 0 | 1 | 2 | 0 |
 | qwen-qwq-32b-nostepbystep-lesshypgen | 65 | 4 | 13 | 1 | 0 | 13 | 1 | 20 | 4 | 0 | 3 | 2 | 3 |
 | qwen-qwq-32b-nostepbystep-moremoral | 68 | 9 | 14 | 0 | 1 | 16 | 0 | 20 | 3 | 0 | 0 | 4 | 0 |

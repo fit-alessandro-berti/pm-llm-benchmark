@@ -1,0 +1,620 @@
+<think>
+We are given an event log table `order_event_log` and two reference tables `orders` and `resources`.
+The normal process flow is:
+1. Register Order (Sales)
+2. Perform Credit Check (Finance)
+3. Validate Stock (Warehouse)
+4. Confirm Shipment (Logistics)
+5. Ship Goods (Logistics)
+6. Issue Invoice (Finance)
+7. Receive Payment (Finance)
+
+We have example data for 4 cases (1001, 1002, 1003, 1004). We need to identify anomalies and undesirable behaviors.
+
+Steps to identify anomalies:
+1. Check for missing activities: In a normal flow, we expect all 7 activities. If any activity is missing, that's an anomaly.
+2. Check for out-of-order activities: The activities should occur in the sequence above. If an activity occurs before a prerequisite, that's an anomaly.
+3. Check for duplicate activities: Some activities might be repeated when they shouldn't be (though sometimes repetition might be valid, but in this strict flow, duplicates might indicate an anomaly).
+4. Check for activities performed by the wrong resource (role/department): We have the `resources` table that maps resource_id to role and department. We can check if the resource performing an activity is from the expected department.
+
+Let's analyze the example cases:
+
+Case 1001:
+All 7 activities in the correct order. No anomaly.
+
+Case 1002:
+- Register Order (Sales) at 08:20
+- Then Confirm Shipment (Logistics) at 08:25 -> This is too early! Normally, we need Credit Check and Stock Validation first.
+- Then Ship Goods at 08:40 -> This is even before Credit Check and Stock Validation?
+- Then Credit Check at 09:10 and Stock Validation at 09:15 -> These are happening after shipment? That's a problem.
+
+Anomaly:
+- The sequence is broken: Confirm Shipment and Ship Goods occur before Credit Check and Validate Stock.
+
+Case 1003:
+- Register Order (08:45)
+- Credit Check (09:00)
+- Then Ship Goods (09:10) -> This is before Validate Stock and Confirm Shipment?
+- Then Issue Invoice (09:30)
+- Then Confirm Shipment (09:45) -> This is after Ship Goods? That doesn't make sense.
+
+Anomaly:
+- Ship Goods occurs before Validate Stock and Confirm Shipment.
+- Confirm Shipment occurs after Ship Goods.
+
+Case 1004:
+- Register Order (09:00)
+- Receive Payment (09:05) -> This is way too early! Normally, payment is received after shipment and invoice.
+- Then Issue Invoice (09:20) -> Invoice is issued after payment? That's backwards.
+- Then Confirm Shipment (09:25) -> But shipment hasn't been validated? And then Ship Goods (09:50)
+
+Anomaly:
+- Receive Payment before Issue Invoice and even before shipment activities.
+- Issue Invoice after Receive Payment.
+
+Hypotheses for anomalies:
+
+Case 1002:
+- Hypothesis 1: The order was shipped prematurely because the credit check and stock validation were skipped due to a system error or manual override.
+- Hypothesis 2: The sales team might have rushed the shipment to meet a deadline, bypassing necessary checks.
+
+Case 1003:
+- Hypothesis 1: The warehouse clerk might have shipped the goods without confirming stock and shipment, possibly due to a miscommunication or error.
+- Hypothesis 2: The system might have allowed the shipment activity to be recorded without the preceding steps, indicating a flaw in the process enforcement.
+
+Case 1004:
+- Hypothesis 1: The payment was received before the order was processed because it was a prepayment, but the system recorded it as part of the order process. However, the normal flow does not include prepayment as an early step.
+- Hypothesis 2: There might be a data entry error where the payment event was timestamped incorrectly.
+
+Additionally, we note:
+- In Case 1004, the payment is received before the invoice is issued. This is a violation of the normal flow (which expects invoice before payment).
+
+Proposed SQL queries to investigate:
+
+1. Find cases with missing activities (i.e., cases that do not have all 7 expected activities).
+
+We can count the distinct activities per case and compare to 7.
+
+```sql
+SELECT case_id, COUNT(DISTINCT activity) AS activity_count
+FROM order_event_log
+GROUP BY case_id
+HAVING COUNT(DISTINCT activity) < 7;
+```
+
+But note: it's possible that the same activity might be repeated (so we use DISTINCT) but we want exactly the 7 activities. However, if an activity is missing, the count will be less than 7.
+
+However, the above might not catch if an activity is missing but duplicates of others exist. We can do:
+
+```sql
+WITH expected_activities AS (
+SELECT unnest(ARRAY['Register Order', 'Perform Credit Check', 'Validate Stock', 'Confirm Shipment', 'Ship Goods', 'Issue Invoice', 'Receive Payment']) AS activity
+),
+case_activities AS (
+SELECT case_id, activity
+FROM order_event_log
+GROUP BY case_id, activity
+)
+SELECT ca.case_id,
+COUNT(*) FILTER (WHERE ea.activity IS NOT NULL) AS present_activities,
+COUNT(*) FILTER (WHERE ea.activity IS NULL) AS missing_activities
+FROM expected_activities ea
+FULL OUTER JOIN case_activities ca ON ea.activity = ca.activity
+GROUP BY ca.case_id
+HAVING COUNT(*) FILTER (WHERE ea.activity IS NULL) > 0;
+```
+
+Alternatively, a simpler way:
+
+```sql
+SELECT case_id
+FROM (
+SELECT case_id,
+BOOL_OR(activity = 'Register Order') AS has_register,
+BOOL_OR(activity = 'Perform Credit Check') AS has_credit,
+BOOL_OR(activity = 'Validate Stock') AS has_stock,
+BOOL_OR(activity = 'Confirm Shipment') AS has_confirm,
+BOOL_OR(activity = 'Ship Goods') AS has_ship,
+BOOL_OR(activity = 'Issue Invoice') AS has_invoice,
+BOOL_OR(activity = 'Receive Payment') AS has_payment
+FROM order_event_log
+GROUP BY case_id
+) AS t
+WHERE NOT (has_register AND has_credit AND has_stock AND has_confirm AND has_ship AND has_invoice AND has_payment);
+```
+
+2. Find cases with out-of-order activities.
+
+We can assign a sequence number to each activity in the expected order and then check if the timestamps are increasing in that sequence.
+
+Steps:
+- For each case, order the events by timestamp.
+- Assign a row number for the actual sequence.
+- Also, map each activity to an expected step (1 to 7).
+- Then, for each event, check if the expected step is increasing? But note: the actual sequence might skip steps, so we want to check that the expected step numbers are non-decreasing? Actually, we want them to be strictly increasing and in order.
+
+However, a better way: for each case, we can get the sequence of activities and then check if it matches the expected sequence.
+
+We can do:
+
+```sql
+WITH expected_order AS (
+SELECT 'Register Order' AS activity, 1 AS step
+UNION ALL SELECT 'Perform Credit Check', 2
+UNION ALL SELECT 'Validate Stock', 3
+UNION ALL SELECT 'Confirm Shipment', 4
+UNION ALL SELECT 'Ship Goods', 5
+UNION ALL SELECT 'Issue Invoice', 6
+UNION ALL SELECT 'Receive Payment', 7
+),
+case_sequence AS (
+SELECT
+oel.case_id,
+oel.activity,
+oel.timestamp,
+eo.step,
+ROW_NUMBER() OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) AS actual_seq
+FROM order_event_log oel
+LEFT JOIN expected_order eo ON oel.activity = eo.activity
+)
+-- Now, for each case, we want to see if the step numbers are increasing without skipping?
+-- But note: we might have activities that are not in the expected list? (we assume they are all in the list for now)
+-- We can check: for each case, the step of the current event should be greater than the step of the previous event?
+-- However, sometimes a step might be repeated? (but in our normal flow, no repetition) so we expect strictly increasing step numbers.
+
+-- We can compare the step with the previous step in the actual sequence.
+SELECT
+cs1.case_id,
+cs1.activity AS current_activity,
+cs1.timestamp,
+cs1.step,
+cs2.activity AS previous_activity,
+cs2.step AS previous_step
+FROM case_sequence cs1
+LEFT JOIN case_sequence cs2
+ON cs1.case_id = cs2.case_id AND cs1.actual_seq = cs2.actual_seq + 1
+WHERE cs2.step IS NOT NULL AND cs1.step <= cs2.step;
+```
+
+This will show events where the current step is not greater than the previous step (i.e., out of order).
+
+Alternatively, we can find cases where the step numbers are not in increasing order:
+
+```sql
+WITH expected_order AS (...), -- same as above
+case_sequence AS (
+... -- same as above
+),
+step_violations AS (
+SELECT
+case_id,
+activity,
+timestamp,
+step,
+LAG(step) OVER (PARTITION BY case_id ORDER BY actual_seq) AS prev_step
+FROM case_sequence
+)
+SELECT case_id, activity, timestamp, step, prev_step
+FROM step_violations
+WHERE prev_step IS NOT NULL AND step <= prev_step;
+```
+
+3. Check for activities performed by the wrong resource.
+
+We have the `resources` table that maps resource_id to role and department.
+
+We can create a mapping of activity to expected department:
+
+Register Order -> Sales
+Perform Credit Check -> Finance
+Validate Stock -> Logistics (but note: the activity is done by Warehouse, and in the resources table, WarehouseClerk is in Logistics department? Actually, the resources table shows WarehouseClerk under Logistics. However, the normal flow says "Validate Stock (Warehouse)" but the department for WarehouseClerk is Logistics. So we'll map by department as per the resources table.)
+
+But note: the problem states the department for WarehouseClerk is Logistics. So:
+
+Register Order: Sales
+Perform Credit Check: Finance
+Validate Stock: Logistics
+Confirm Shipment: Logistics
+Ship Goods: Logistics
+Issue Invoice: Finance
+Receive Payment: Finance
+
+We can create a reference table for expected department per activity.
+
+Since we don't have a table for that, we can do it in the query.
+
+```sql
+WITH activity_department AS (
+SELECT 'Register Order' AS activity, 'Sales' AS expected_department
+UNION ALL SELECT 'Perform Credit Check', 'Finance'
+UNION ALL SELECT 'Validate Stock', 'Logistics'
+UNION ALL SELECT 'Confirm Shipment', 'Logistics'
+UNION ALL SELECT 'Ship Goods', 'Logistics'
+UNION ALL SELECT 'Issue Invoice', 'Finance'
+UNION ALL SELECT 'Receive Payment', 'Finance'
+)
+SELECT oel.case_id, oel.event_id, oel.activity, oel.resource, r.department, ad.expected_department
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+JOIN activity_department ad ON oel.activity = ad.activity
+WHERE r.department <> ad.expected_department;
+```
+
+This will show events where the resource's department does not match the expected department.
+
+4. Additionally, we might want to check for duplicate activities (if an activity appears more than once in a case, which might be an anomaly in this strict flow).
+
+```sql
+SELECT case_id, activity, COUNT(*) AS count
+FROM order_event_log
+GROUP BY case_id, activity
+HAVING COUNT(*) > 1;
+```
+
+5. For Case 1004, we saw payment received before invoice. We can specifically check for cases where 'Receive Payment' occurs before 'Issue Invoice'.
+
+```sql
+SELECT
+pay.case_id
+FROM order_event_log pay
+JOIN order_event_log inv ON pay.case_id = inv.case_id
+WHERE pay.activity = 'Receive Payment'
+AND inv.activity = 'Issue Invoice'
+AND pay.timestamp < inv.timestamp;
+```
+
+6. Similarly, we can check for shipment before credit check or stock validation.
+
+Example: Ship Goods before Perform Credit Check
+
+```sql
+SELECT
+ship.case_id
+FROM order_event_log ship
+JOIN order_event_log credit ON ship.case_id = credit.case_id
+WHERE ship.activity = 'Ship Goods'
+AND credit.activity = 'Perform Credit Check'
+AND ship.timestamp < credit.timestamp;
+```
+
+And similarly for Validate Stock.
+
+7. Also, we can check for shipment without prior stock validation? But note: Validate Stock might be missing, so we can combine with the missing activity check.
+
+However, the prompt says: "Propose relevant SQL queries ... to investigate these hypotheses further"
+
+We'll propose a set of queries that cover the main anomalies.
+
+Let's list the proposed queries:
+
+Query 1: Find cases with missing activities (any of the 7 expected activities is missing).
+Query 2: Find cases with out-of-sequence activities (where the step number is not increasing).
+Query 3: Find cases where an activity is performed by a resource from the wrong department.
+Query 4: Find cases with duplicate activities (more than one occurrence of the same activity in a case).
+Query 5: Specifically, find cases where payment was received before the invoice was issued.
+Query 6: Find cases where goods were shipped before credit check.
+Query 7: Find cases where goods were shipped before stock validation.
+
+Note: Some of these might overlap.
+
+Given the above, we can write the queries as:
+
+Query 1 (missing activities):
+```sql
+SELECT case_id
+FROM (
+SELECT case_id,
+MAX(CASE WHEN activity = 'Register Order' THEN 1 ELSE 0 END) AS has_register,
+MAX(CASE WHEN activity = 'Perform Credit Check' THEN 1 ELSE 0 END) AS has_credit,
+MAX(CASE WHEN activity = 'Validate Stock' THEN 1 ELSE 0 END) AS has_stock,
+MAX(CASE WHEN activity = 'Confirm Shipment' THEN 1 ELSE 0 END) AS has_confirm,
+MAX(CASE WHEN activity = 'Ship Goods' THEN 1 ELSE 0 END) AS has_ship,
+MAX(CASE WHEN activity = 'Issue Invoice' THEN 1 ELSE 0 END) AS has_invoice,
+MAX(CASE WHEN activity = 'Receive Payment' THEN 1 ELSE 0 END) AS has_payment
+FROM order_event_log
+GROUP BY case_id
+) AS t
+WHERE has_register = 0 OR has_credit = 0 OR has_stock = 0 OR has_confirm = 0 OR has_ship = 0 OR has_invoice = 0 OR has_payment = 0;
+```
+
+Query 2 (out-of-sequence activities):
+We'll use the step_violations approach.
+
+```sql
+WITH expected_order AS (
+SELECT 'Register Order' AS activity, 1 AS step
+UNION ALL SELECT 'Perform Credit Check', 2
+UNION ALL SELECT 'Validate Stock', 3
+UNION ALL SELECT 'Confirm Shipment', 4
+UNION ALL SELECT 'Ship Goods', 5
+UNION ALL SELECT 'Issue Invoice', 6
+UNION ALL SELECT 'Receive Payment', 7
+),
+case_sequence AS (
+SELECT
+oel.case_id,
+oel.activity,
+oel.timestamp,
+eo.step,
+ROW_NUMBER() OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) AS actual_seq
+FROM order_event_log oel
+LEFT JOIN expected_order eo ON oel.activity = eo.activity
+),
+step_violations AS (
+SELECT
+case_id,
+activity,
+timestamp,
+step,
+LAG(step) OVER (PARTITION BY case_id ORDER BY actual_seq) AS prev_step
+FROM case_sequence
+)
+SELECT case_id, activity, timestamp, step, prev_step
+FROM step_violations
+WHERE prev_step IS NOT NULL AND (step <= prev_step OR step IS NULL OR prev_step IS NULL);
+-- Note: step might be NULL if activity is not in expected_order, which is also an anomaly.
+```
+
+Query 3 (wrong department):
+```sql
+WITH activity_department AS (
+SELECT 'Register Order' AS activity, 'Sales' AS expected_department
+UNION ALL SELECT 'Perform Credit Check', 'Finance'
+UNION ALL SELECT 'Validate Stock', 'Logistics'
+UNION ALL SELECT 'Confirm Shipment', 'Logistics'
+UNION ALL SELECT 'Ship Goods', 'Logistics'
+UNION ALL SELECT 'Issue Invoice', 'Finance'
+UNION ALL SELECT 'Receive Payment', 'Finance'
+)
+SELECT oel.case_id, oel.event_id, oel.activity, oel.resource, r.department, ad.expected_department
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+JOIN activity_department ad ON oel.activity = ad.activity
+WHERE r.department <> ad.expected_department;
+```
+
+Query 4 (duplicate activities):
+```sql
+SELECT case_id, activity, COUNT(*) AS occurrence_count
+FROM order_event_log
+GROUP BY case_id, activity
+HAVING COUNT(*) > 1;
+```
+
+Query 5 (payment before invoice):
+```sql
+SELECT
+pay.case_id
+FROM order_event_log pay
+JOIN order_event_log inv ON pay.case_id = inv.case_id
+WHERE pay.activity = 'Receive Payment'
+AND inv.activity = 'Issue Invoice'
+AND pay.timestamp < inv.timestamp;
+```
+
+Query 6 (shipment before credit check):
+```sql
+SELECT
+ship.case_id
+FROM order_event_log ship
+JOIN order_event_log credit ON ship.case_id = credit.case_id
+WHERE ship.activity = 'Ship Goods'
+AND credit.activity = 'Perform Credit Check'
+AND ship.timestamp < credit.timestamp;
+```
+
+Query 7 (shipment before stock validation):
+```sql
+SELECT
+ship.case_id
+FROM order_event_log ship
+JOIN order_event_log stock ON ship.case_id = stock.case_id
+WHERE ship.activity = 'Ship Goods'
+AND stock.activity = 'Validate Stock'
+AND ship.timestamp < stock.timestamp;
+```
+
+Note: In Query 2, we might also want to consider missing steps (i.e., if an activity is missing, then the step numbers might jump). However, the query as written will show non-increasing steps, which includes both out-of-order and missing steps (because if a step is missing, the next step might have a higher step number but the actual sequence might be non-monotonic? Actually, the step numbers are assigned by the expected order, so if step 3 is missing, then step 4 might come right after step 2, and 4>2 so it would not be caught by the condition `step <= prev_step`. Therefore, Query 2 as written might not catch missing steps. But Query 1 is for missing steps.
+
+However, note: the condition in Query 2 is for when the step number of the current event is not greater than the previous event. This will catch:
+- Events that are out of order (e.g., step 4 then step 3) -> step=3 <= prev_step=4 -> caught.
+- But if a step is missing, then we might have step 2 then step 4: 4>2 -> not caught.
+
+So Query 2 is specifically for out-of-order (non-monotonic increasing) events, not for missing events.
+
+Therefore, we have two separate issues: missing events (Query 1) and out-of-order events (Query 2).
+
+We can also extend Query 2 to catch when the step number jumps by more than 1? But that might be acceptable in some processes (if a step is skipped but the process allows it). However, in our strict flow, skipping a step is an anomaly and is covered by Query 1.
+
+So we'll keep them separate.
+
+Let's write the queries as proposed.
+
+The target model should output these queries and the reasoning (as per the prompt: "Identify anomalies ... Hypothesize ... Propose relevant SQL queries").
+</think>
+
+### Analysis of Anomalies in the Event Log
+
+Based on the provided event log data and normal process flow, I've identified several critical anomalies across cases. These indicate potential process violations, system errors, or policy breaches that require investigation.
+
+---
+
+### **Key Anomalies Identified**
+
+#### **1. Premature Shipment Execution (Cases 1002, 1003, 1004)**
+- **Observation**: 
+  - Case 1002: `Ship Goods` occurred **before** `Perform Credit Check` and `Validate Stock` (shipment at 08:40 vs. credit check at 09:10)
+  - Case 1003: `Ship Goods` occurred **before** `Validate Stock` and `Confirm Shipment` (shipment at 09:10 vs. stock validation at 09:15)
+  - Case 1004: `Ship Goods` occurred **without** `Validate Stock` (no stock validation recorded)
+- **Hypothesis**: 
+  - Warehouse staff bypassing validation steps due to pressure to meet shipping deadlines
+  - System error allowing shipment activities to be recorded without prerequisite checks
+  - Possible collusion between warehouse and logistics teams to "backdate" validation
+
+#### **2. Payment Received Before Invoice Issuance (Case 1004)**
+- **Observation**: 
+  - `Receive Payment` occurred at 09:05 **before** `Issue Invoice` at 09:20
+- **Hypothesis**: 
+  - Prepayment recorded as part of order processing (violating standard finance workflow)
+  - Data entry error where payment timestamp was incorrectly recorded
+  - Fraudulent activity where payment was recorded prematurely to inflate metrics
+
+#### **3. Invoice Issued After Payment (Case 1004)**
+- **Observation**: 
+  - `Issue Invoice` occurred **after** `Receive Payment` (09:20 vs. 09:05)
+- **Hypothesis**: 
+  - Finance team violating standard procedure (invoices must precede payment)
+  - System integration failure between payment processing and invoicing modules
+  - Manual override due to "rush order" policy exceptions
+
+#### **4. Shipment Confirmation After Goods Shipped (Case 1003)**
+- **Observation**: 
+  - `Confirm Shipment` occurred at 09:45 **after** `Ship Goods` at 09:10
+- **Hypothesis**: 
+  - Logistics team confirming shipments retroactively to mask premature shipping
+  - Mobile system latency causing timestamp discrepancies
+  - Deliberate process circumvention to hide violations
+
+#### **5. Missing Critical Validation Steps (Case 1004)**
+- **Observation**: 
+  - No `Validate Stock` or `Perform Credit Check` recorded
+- **Hypothesis**: 
+  - System bug skipping validation steps for high-value orders (order_value = $3000)
+  - Unauthorized process shortcuts enabled for "priority" customers
+  - Data corruption in event logging
+
+---
+
+### **Proposed SQL Queries for Investigation**
+
+#### **1. Identify Cases with Premature Shipment (Shipment Before Credit/Stock Check)**
+```sql
+SELECT 
+  ship.case_id,
+  ship.timestamp AS shipment_time,
+  credit.timestamp AS credit_check_time,
+  stock.timestamp AS stock_validation_time
+FROM order_event_log ship
+LEFT JOIN order_event_log credit 
+  ON ship.case_id = credit.case_id 
+  AND credit.activity = 'Perform Credit Check'
+LEFT JOIN order_event_log stock 
+  ON ship.case_id = stock.case_id 
+  AND stock.activity = 'Validate Stock'
+WHERE 
+  ship.activity = 'Ship Goods'
+  AND (ship.timestamp < credit.timestamp OR ship.timestamp < stock.timestamp)
+  AND (credit.timestamp IS NOT NULL OR stock.timestamp IS NOT NULL);
+```
+**Purpose**: Finds cases where goods were shipped before credit check or stock validation completed. Reveals process bypasses.
+
+#### **2. Find Payment Recorded Before Invoice Issuance**
+```sql
+SELECT 
+  pay.case_id,
+  pay.timestamp AS payment_time,
+  inv.timestamp AS invoice_time,
+  o.order_value
+FROM order_event_log pay
+JOIN order_event_log inv 
+  ON pay.case_id = inv.case_id
+JOIN orders o 
+  ON pay.case_id = o.case_id
+WHERE 
+  pay.activity = 'Receive Payment'
+  AND inv.activity = 'Issue Invoice'
+  AND pay.timestamp < inv.timestamp;
+```
+**Purpose**: Flags finance process violations. Correlates with `order_value` to check if high-value orders have more violations.
+
+#### **3. Detect Missing Critical Validation Steps**
+```sql
+SELECT 
+  o.case_id,
+  o.order_value,
+  o.order_type,
+  MAX(CASE WHEN e.activity = 'Perform Credit Check' THEN 1 ELSE 0 END) AS has_credit_check,
+  MAX(CASE WHEN e.activity = 'Validate Stock' THEN 1 ELSE 0 END) AS has_stock_validation
+FROM orders o
+LEFT JOIN order_event_log e 
+  ON o.case_id = e.case_id
+GROUP BY o.case_id, o.order_value, o.order_type
+HAVING 
+  has_credit_check = 0 
+  OR has_stock_validation = 0;
+```
+**Purpose**: Identifies orders missing mandatory validations. Filters by `order_type` to see if "priority" orders have more gaps.
+
+#### **4. Check for Shipment Confirmation After Goods Shipped**
+```sql
+SELECT 
+  ship.case_id,
+  ship.timestamp AS ship_time,
+  confirm.timestamp AS confirm_time,
+  r.role AS shipper_role,
+  r2.role AS confirm_role
+FROM order_event_log ship
+JOIN order_event_log confirm 
+  ON ship.case_id = confirm.case_id
+  AND confirm.activity = 'Confirm Shipment'
+JOIN resources r 
+  ON ship.resource = r.resource_id
+JOIN resources r2 
+  ON confirm.resource = r2.resource_id
+WHERE 
+  ship.activity = 'Ship Goods'
+  AND ship.timestamp > confirm.timestamp;
+```
+**Purpose**: Exposes retroactive shipment confirmations. Role comparison shows if same team handles both steps (violating segregation of duties).
+
+#### **5. Analyze Resource Department Violations**
+```sql
+WITH expected_roles AS (
+  SELECT 'Register Order' AS activity, 'Sales' AS expected_dept
+  UNION ALL SELECT 'Perform Credit Check', 'Finance'
+  UNION ALL SELECT 'Validate Stock', 'Logistics'
+  UNION ALL SELECT 'Confirm Shipment', 'Logistics'
+  UNION ALL SELECT 'Ship Goods', 'Logistics'
+  UNION ALL SELECT 'Issue Invoice', 'Finance'
+  UNION ALL SELECT 'Receive Payment', 'Finance'
+)
+SELECT 
+  e.case_id,
+  e.activity,
+  e.resource,
+  r.department AS actual_dept,
+  er.expected_dept
+FROM order_event_log e
+JOIN resources r 
+  ON e.resource = r.resource_id
+JOIN expected_roles er 
+  ON e.activity = er.activity
+WHERE r.department <> er.expected_dept;
+```
+**Purpose**: Reveals unauthorized role executions (e.g., Sales team issuing invoices). Highlights training gaps or policy violations.
+
+#### **6. Investigate Order Value vs. Process Compliance**
+```sql
+SELECT 
+  o.order_value,
+  COUNT(*) FILTER (WHERE e.activity = 'Perform Credit Check') AS credit_checks,
+  COUNT(*) FILTER (WHERE e.activity = 'Validate Stock') AS stock_validations,
+  COUNT(*) AS total_orders
+FROM orders o
+LEFT JOIN order_event_log e 
+  ON o.case_id = e.case_id
+GROUP BY o.order_value
+ORDER BY o.order_value DESC;
+```
+**Purpose**: Determines if high-value orders have fewer validations (suggesting risky shortcuts for big sales).
+
+---
+
+### **Recommended Next Steps**
+1. **Audit Warehouse/Logistics Workflows**: Focus on Cases 1002-1004 where shipments preceded validations
+2. **Review Finance System Logs**: Investigate timestamp discrepancies in Case 1004 payment processing
+3. **Check Role Permissions**: Verify if Warehouse staff have unauthorized access to shipment confirmation
+4. **Analyze Order Value Patterns**: Determine if sales pressure drives process violations for high-value orders
+5. **Validate System Timestamps**: Confirm mobile device sync issues causing out-of-sequence events
+
+These queries target the root causes behind observed anomalies—bypassed validations, role violations, and timestamp inconsistencies—without assuming specific failure modes. The results would reveal whether issues stem from human error, system flaws, or intentional policy violations.
