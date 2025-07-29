@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "Qwen3-235B-A22B-Thinking-2507" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "z-ai/glm-4.5" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -168,6 +168,7 @@ MODELS_DICT = {
             "inception/mercury", "baidu/ernie-4.5-300b-a47b",
             "openrouter/cypher-alpha:free", "moonshotai/kimi-k2",
             "thudm/glm-4.1v-9b-thinking", "qwen/qwen3-235b-a22b-07-25", "qwen/qwen3-coder",
+            "z-ai/glm-4.5", "z-ai/glm-4.5-air"
         }
     },
     "manual": {

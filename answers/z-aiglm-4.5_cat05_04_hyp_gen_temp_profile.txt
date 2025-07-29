@@ -1,0 +1,141 @@
+### Identified Anomalies in the Temporal Profile Model
+
+1. **R to P (Receive to Approve)**  
+   - Average: 25 hours (90,000 seconds)  
+   - Standard Deviation: 1 hour (3,600 seconds)  
+   - **Anomaly**: Suspiciously low standard deviation relative to the mean, indicating rigid, non-organic timing that may bypass intermediate steps like evaluation.
+
+2. **P to N (Approve to Notify)**  
+   - Average: 7 days (604,800 seconds)  
+   - Standard Deviation: 2 days (172,800 seconds)  
+   - **Anomaly**: Excessively long average delay with high variability, suggesting inconsistent notification processes or resource bottlenecks.
+
+3. **A to C (Assign to Close)**  
+   - Average: 2 hours (7,200 seconds)  
+   - Standard Deviation: 1 hour (3,600 seconds)  
+   - **Anomaly**: Rapid closure after assignment, potentially skipping evaluation/approval steps or indicating premature claim resolution.
+
+4. **E to N (Evaluate to Notify)**  
+   - Average: 5 minutes (300 seconds)  
+   - Standard Deviation: 1 minute (60 seconds)  
+   - **Anomaly**: Unusually short transition, implying skipped approval steps or automated notifications without validation.
+
+---
+
+### Hypotheses for Anomalies
+
+1. **R to P (Rigid Approval Timing)**  
+   - **Hypothesis**: Automated approval systems enforce fixed timers after claim receipt, overriding manual evaluation.  
+   - **Reason**: Low standard deviation suggests system-driven approvals decoupled from actual processing.
+
+2. **P to N (Notification Delays)**  
+   - **Hypothesis**: Manual notification handling causes backlogs due to resource constraints or prioritization rules.  
+   - **Reason**: High variability indicates dependence on human factors (e.g., adjuster workload, regional staffing).
+
+3. **A to C (Premature Closure)**  
+   - **Hypothesis**: Claims are auto-closed after assignment for low-risk categories (e.g., duplicate/invalid claims), bypassing validation.  
+   - **Reason**: Short average aligns with automated triage systems flagging non-viable claims.
+
+4. **E to N (Skipped Approval)**  
+   - **Hypothesis**: Evaluation and notification are merged in a single step for certain claim types, circumventing formal approval.  
+   - **Reason**: Minimal timing suggests batch automation or process shortcuts for efficiency.
+
+---
+
+### Verification SQL Queries
+
+#### 1. Identify Claims with Unusual R-to-P Timing  
+```sql
+WITH claim_timings AS (
+  SELECT 
+    ce.claim_id,
+    MIN(CASE WHEN activity = 'R' THEN timestamp END) AS receive_ts,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS approve_ts
+  FROM claim_events ce
+  GROUP BY ce.claim_id
+)
+SELECT 
+  ct.claim_id,
+  ct.receive_ts,
+  ct.approve_ts,
+  EXTRACT(EPOCH FROM (ct.approve_ts - ct.receive_ts)) AS rp_seconds
+FROM claim_timings ct
+WHERE EXTRACT(EPOCH FROM (ct.approve_ts - ct.receive_ts)) NOT BETWEEN 82800 AND 97200; -- Outside 90k ± 2*STDEV
+```
+
+#### 2. Correlate P-to-N Delays with Adjusters/Regions  
+```sql
+SELECT 
+  adj.name AS adjuster,
+  adj.region,
+  AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) AS avg_pn_seconds,
+  STDDEV(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) AS pn_stdev
+FROM claim_events p
+JOIN claim_events n ON p.claim_id = n.claim_id 
+  AND p.activity = 'P' 
+  AND n.activity = 'N'
+JOIN adjusters adj ON p.resource = adj.name
+GROUP BY adj.name, adj.region
+HAVING AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) > 604800; -- Threshold: 7 days
+```
+
+#### 3. Detect Premature Closures After Assignment  
+```sql
+WITH claim_sequence AS (
+  SELECT 
+    claim_id,
+    activity,
+    timestamp,
+    LEAD(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_activity,
+    LEAD(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_ts
+  FROM claim_events
+)
+SELECT 
+  claim_id,
+  timestamp AS assign_ts,
+  next_ts AS close_ts,
+  EXTRACT(EPOCH FROM (next_ts - timestamp)) AS ac_seconds
+FROM claim_sequence
+WHERE activity = 'A' 
+  AND next_activity = 'C'
+  AND EXTRACT(EPOCH FROM (next_ts - timestamp)) < 3600; -- Closure < 1 hour post-assignment
+```
+
+#### 4. Verify E-to-N Transitions Without Approval  
+```sql
+SELECT 
+  ce.claim_id,
+  MIN(CASE WHEN activity = 'E' THEN timestamp END) AS evaluate_ts,
+  MIN(CASE WHEN activity = 'N' THEN timestamp END) AS notify_ts,
+  MIN(CASE WHEN activity = 'P' THEN timestamp END) AS approve_ts
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING 
+  MIN(CASE WHEN activity = 'N' THEN timestamp END) IS NOT NULL
+  AND MIN(CASE WHEN activity = 'E' THEN timestamp END) IS NOT NULL
+  AND (
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) IS NULL 
+    OR MIN(CASE WHEN activity = 'P' THEN timestamp END) > MIN(CASE WHEN activity = 'N' THEN timestamp END)
+  )
+  AND EXTRACT(EPOCH FROM (MIN(CASE WHEN activity = 'N' THEN timestamp END) - MIN(CASE WHEN activity = 'E' THEN timestamp END))) < 180; -- E-to-N < 3 mins
+```
+
+#### 5. Analyze Anomaly Frequency by Claim Type  
+```sql
+WITH anomalies AS (
+  SELECT 
+    ce.claim_id,
+    COUNT(CASE WHEN activity = 'A' AND LEAD(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) = 'C' THEN 1 END) AS premature_closure,
+    COUNT(CASE WHEN activity = 'E' AND LEAD(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) = 'N' THEN 1 END) AS skipped_approval
+  FROM claim_events ce
+  GROUP BY ce.claim_id
+)
+SELECT 
+  c.claim_type,
+  COUNT(a.claim_id) AS anomaly_count,
+  COUNT(a.claim_id) * 100.0 / COUNT(*) AS anomaly_pct
+FROM claims c
+LEFT JOIN anomalies a ON c.claim_id = a.claim_id
+GROUP BY c.claim_type
+ORDER BY anomaly_pct DESC;
+```
