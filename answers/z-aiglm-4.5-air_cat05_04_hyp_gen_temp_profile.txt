@@ -1,0 +1,181 @@
+### Anomalies Identified in Temporal Profile Model
+
+1. **('R', 'P'): (90000, 3600)**  
+   - **Anomaly**: Extremely low standard deviation (1 hour) despite a 25-hour average. This suggests rigid, artificially constrained timing.  
+   - **Suspicion**: Approval may be automated/batch-processed on fixed schedules, masking natural process variability.
+
+2. **('P', 'N'): (604800, 172800)**  
+   - **Anomaly**: Long average delay (7 days) with high variability (2 days).  
+   - **Suspicion**: Notification is manually handled with inconsistent resource allocation, causing backlogs or delays.
+
+3. **('A', 'C'): (7200, 3600)**  
+   - **Anomaly**: Rapid closure (2 hours post-assignment) without intermediate steps.  
+   - **Suspicion**: Premature closure of claims, possibly due to automated rules for low-value claims or system errors.
+
+4. **('E', 'N'): (300, 60)**  
+   - **Anomaly**: Near-immediate notification (5 minutes post-evaluation).  
+   - **Suspicion**: Approval step (`P`) is skipped, or evaluation/notify are merged in error.
+
+---
+
+### Hypotheses for Anomalies
+
+1. **Rigid Approval Timing ('R', 'P')**  
+   - *Hypothesis*: Approval is triggered by a scheduled batch job (e.g., nightly), forcing consistent 25-hour intervals regardless of claim complexity.  
+   - *Business Impact*: Delays emergency claims needing urgent approval.
+
+2. **Notification Backlog ('P', 'N')**  
+   - *Hypothesis*: Notifications rely on manual email/SMS, causing bottlenecks when adjusters are overloaded.  
+   - *Business Impact*: Customer dissatisfaction due to delayed confirmations.
+
+3. **Premature Closure ('A', 'C')**  
+   - *Hypothesis*: Auto-closure rules trigger for claims below a threshold (e.g., <$500), bypassing evaluation.  
+   - *Business Impact*: Improper handling of complex cases requiring expert review.
+
+4. **Skipped Approval ('E', 'N')**  
+   - *Hypothesis*: System error where evaluation auto-notifies without approval, or approval is marked redundant.  
+   - *Business Impact*: Unauthorized settlements without proper verification.
+
+---
+
+### Verification SQL Queries
+
+#### 1. Validate Rigid Approval Timing (`('R', 'P')`)
+```sql
+SELECT 
+    c.claim_id,
+    EXTRACT(EPOCH FROM (MIN(p.timestamp) - MIN(r.timestamp))) AS r_to_p_seconds,
+    EXTRACT(EPOCH FROM (MAX(p.timestamp) - MIN(r.timestamp))) AS max_delay,
+    EXTRACT(EPOCH FROM (MIN(p.timestamp) - MIN(r.timestamp))) - 90000 AS deviation_from_avg
+FROM 
+    claim_events r
+JOIN 
+    claim_events p ON r.claim_id = p.claim_id
+JOIN 
+    claims c ON r.claim_id = c.claim_id
+WHERE 
+    r.activity = 'R' AND p.activity = 'P'
+GROUP BY 
+    c.claim_id
+HAVING 
+    EXTRACT(EPOCH FROM (MIN(p.timestamp) - MIN(r.timestamp))) BETWEEN 86400 AND 108000 -- 24-30 hours
+ORDER BY 
+    deviation_from_avg;
+```
+**Purpose**: Identify claims with approval times tightly clustered around 25 hours. Deviations >1 hour may indicate batch job interference.
+
+---
+
+#### 2. Investigate Notification Backlog (`('P', 'N')`)
+```sql
+SELECT 
+    c.claim_id,
+    EXTRACT(EPOCH FROM (MIN(n.timestamp) - MIN(p.timestamp))) / 86400 AS p_to_n_days,
+    a.region,
+    c.claim_type
+FROM 
+    claim_events p
+JOIN 
+    claim_events n ON p.claim_id = n.claim_id
+JOIN 
+    claims c ON p.claim_id = c.claim_id
+JOIN 
+    adjusters a ON p.resource = a.adjuster_id
+WHERE 
+    p.activity = 'P' AND n.activity = 'N'
+    AND EXTRACT(EPOCH FROM (MIN(n.timestamp) - MIN(p.timestamp))) > 604800 -- >7 days
+ORDER BY 
+    p_to_n_days DESC;
+```
+**Purpose**: Flag claims with delayed notifications, grouped by region/claim type to identify systemic bottlenecks.
+
+---
+
+#### 3. Detect Premature Closure (`('A', 'C')`)
+```sql
+SELECT 
+    c.claim_id,
+    c.claim_amount,
+    c.claim_type,
+    a.region
+FROM 
+    claim_events a_ev
+JOIN 
+    claims c ON a_ev.claim_id = c.claim_id
+JOIN 
+    adjusters a ON a_ev.resource = a.adjuster_id
+WHERE 
+    a_ev.activity = 'A'
+    AND NOT EXISTS (
+        SELECT 1 FROM claim_events e 
+        WHERE e.claim_id = a_ev.claim_id AND e.activity = 'E'
+    )
+    AND EXISTS (
+        SELECT 1 FROM claim_events cl 
+        WHERE cl.claim_id = a_ev.claim_id AND cl.activity = 'C'
+        AND cl.timestamp > a_ev.timestamp
+    );
+```
+**Purpose**: Find claims closed immediately after assignment (missing evaluation). Check if these are low-value claims.
+
+---
+
+#### 4. Confirm Skipped Approval (`('E', 'N')`)
+```sql
+SELECT 
+    c.claim_id,
+    EXTRACT(EPOCH FROM (MIN(n.timestamp) - MIN(e.timestamp))) AS e_to_n_seconds,
+    EXISTS (
+        SELECT 1 FROM claim_events p 
+        WHERE p.claim_id = c.claim_id AND p.activity = 'P'
+        AND p.timestamp BETWEEN MIN(e.timestamp) AND MIN(n.timestamp)
+    ) AS has_approval
+FROM 
+    claim_events e
+JOIN 
+    claim_events n ON e.claim_id = n.claim_id
+JOIN 
+    claims c ON e.claim_id = c.claim_id
+WHERE 
+    e.activity = 'E' AND n.activity = 'N'
+    AND EXTRACT(EPOCH FROM (MIN(n.timestamp) - MIN(e.timestamp))) < 300 -- <5 minutes
+GROUP BY 
+    c.claim_id;
+```
+**Purpose**: Identify claims where evaluation-to-notify is <5 minutes and verify if approval exists in between. Expected: `has_approval = FALSE` confirms skipped approval.
+
+---
+
+### Additional Diagnostic Correlation
+To tie anomalies to root causes:
+```sql
+-- Check if premature closure claims are predominantly low-value
+SELECT 
+    claim_type,
+    AVG(claim_amount) AS avg_amount,
+    COUNT(*) AS count
+FROM 
+    claims
+WHERE 
+    claim_id IN (/* Query from Premature Closure (#3) */)
+GROUP BY 
+    claim_type;
+
+-- Check if notification backlog correlates with specific adjusters
+SELECT 
+    a.name,
+    COUNT(*) AS delayed_notifies
+FROM 
+    claim_events p
+JOIN 
+    claim_events n ON p.claim_id = n.claim_id
+JOIN 
+    adjusters a ON p.resource = a.adjuster_id
+WHERE 
+    p.activity = 'P' AND n.activity = 'N'
+    AND EXTRACT(EPOCH FROM (MIN(n.timestamp) - MIN(p.timestamp))) > 604800
+GROUP BY 
+    a.name
+ORDER BY 
+    delayed_notifies DESC;
+```

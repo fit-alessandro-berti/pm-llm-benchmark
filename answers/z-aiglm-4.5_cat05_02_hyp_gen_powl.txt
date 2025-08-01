@@ -1,0 +1,170 @@
+### 1. Anomalies in the POWL Model
+The POWL model contains three key anomalies:
+
+#### a. **Infinite Evaluation-Approval Loop**
+- **Anomaly**: The `loop` structure `(E  P  ...)` allows infinite repetitions of "Evaluate Claim" followed by "Approve Claim".  
+- **Impact**: Claims could be evaluated/approved indefinitely without progressing to closure, causing process delays or resource exhaustion.
+
+#### b. **Optional Customer Notification**
+- **Anomaly**: The `xor` operator allows skipping "Notify Customer" (`N`) via a silent transition.  
+- **Impact**: Customers may never receive claim status updates, violating regulatory requirements or service standards.
+
+#### c. **Premature Claim Closure**
+- **Anomaly**: The edge `A  C` enables "Close Claim" immediately after "Assign Adjuster", bypassing evaluation/approval/notification.  
+- **Impact**: Claims could be closed without proper validation, leading to financial losses or compliance issues.
+
+---
+
+### 2. Hypotheses for Anomalies
+#### a. **Infinite Loop Hypotheses**
+1. **Business Rule Changes**:  
+   - Intended to handle complex claims requiring re-evaluation (e.g., new evidence).  
+   - **Flaw**: Lack of exit conditions (e.g., max loops or manual override).  
+2. **Technical Debt**:  
+   - Loop added hastily to address rework cases without proper constraints.  
+3. **Miscommunication**:  
+   - Legal team mandated re-evaluation, but IT implemented it as an unbounded loop.
+
+#### b. **Skipped Notification Hypotheses**
+1. **Edge Case Handling**:  
+   - Skip intended for unreachable customers (e.g., invalid contact info).  
+   - **Flaw**: No fallback process (e.g., retry or escalation).  
+2. **System Integration Error**:  
+   - Notification service failures silently trigger the skip path.  
+3. **Policy Misinterpretation**:  
+   - Business analysts assumed "notification optional" for low-risk claims.
+
+#### c. **Premature Closure Hypotheses**
+1. **Incomplete Implementation**:  
+   - Closure rules updated to allow early termination for fraud/rejections, but evaluation/approval steps weren’t made conditional.  
+2. **Workflow Engine Bug**:  
+   - Edge `A  C` added erroneously during model deployment.  
+3. **Control Gap**:  
+   - Process modeler lacked constraints to enforce sequence (e.g., "must have E before C").
+
+---
+
+### 3. Database Queries to Verify Hypotheses
+Use these queries to detect anomalies in `claim_events`:
+
+#### a. **Infinite Evaluation-Approval Loop**
+**Query**: Find claims with excessive evaluation/approval cycles.  
+```sql
+SELECT 
+  ce.claim_id,
+  COUNT(*) AS eval_approve_cycles
+FROM claim_events ce
+WHERE ce.activity IN ('E', 'P')
+GROUP BY ce.claim_id
+HAVING COUNT(*) > 2  -- Threshold: >1 loop (E+P=2 events)
+ORDER BY eval_approve_cycles DESC;
+```
+**Verification**:  
+- Claims with high `eval_approve_cycles` confirm unbounded loops.  
+- **Hypothesis Support**: If counts correlate with claim complexity (e.g., high `claim_amount`), it validates the "business rule change" hypothesis.
+
+---
+
+#### b. **Skipped Customer Notification**
+**Query**: Identify claims closed without notification.  
+```sql
+WITH closed_claims AS (
+  SELECT 
+    claim_id, 
+    MIN(timestamp) AS close_time
+  FROM claim_events
+  WHERE activity = 'C'
+  GROUP BY claim_id
+)
+SELECT 
+  cc.claim_id,
+  MAX(ce.timestamp) AS last_event_before_close
+FROM closed_claims cc
+JOIN claim_events ce ON cc.claim_id = ce.claim_id
+WHERE ce.timestamp < cc.close_time
+  AND ce.activity NOT IN ('N', 'C')  -- Exclude notification/closure
+GROUP BY cc.claim_id, cc.close_time
+HAVING NOT EXISTS (
+  SELECT 1 FROM claim_events ce2 
+  WHERE ce2.claim_id = cc.claim_id 
+    AND ce2.activity = 'N'
+    AND ce2.timestamp < cc.close_time
+);
+```
+**Verification**:  
+- Claims returned lack `N` before `C`.  
+- **Hypothesis Support**: If these claims have invalid `customer_id` (e.g., in `claims` table), it supports the "edge case handling" hypothesis.
+
+---
+
+#### c. **Premature Claim Closure**
+**Query**: Find claims closed before evaluation/approval.  
+```sql
+WITH events AS (
+  SELECT 
+    claim_id,
+    activity,
+    timestamp,
+    LAG(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS prev_activity
+  FROM claim_events
+)
+SELECT claim_id, timestamp AS closure_time
+FROM events
+WHERE activity = 'C'
+  AND prev_activity = 'A'  -- Directly after assignment
+  AND NOT EXISTS (
+    SELECT 1 FROM claim_events ce2 
+    WHERE ce2.claim_id = events.claim_id 
+      AND ce2.activity IN ('E', 'P')
+      AND ce2.timestamp < events.timestamp
+  );
+```
+**Verification**:  
+- Claims where `C` follows `A` without `E`/`P` in between.  
+- **Hypothesis Support**: If these claims were rejected (e.g., via `additional_info`), it validates the "policy update" hypothesis.
+
+---
+
+### Additional Verification Strategies
+1. **Temporal Analysis**:  
+   - Compare timestamps of `A`, `E`, `P`, `N`, and `C` to detect sequence violations.  
+   - Example:  
+     ```sql
+     SELECT claim_id
+     FROM claim_events
+     WHERE activity = 'E'
+       AND timestamp > (
+         SELECT timestamp FROM claim_events ce2 
+         WHERE ce2.claim_id = claim_events.claim_id 
+           AND ce2.activity = 'C'
+       );
+     ```
+
+2. **Resource Analysis**:  
+   - Check if `resource` in `claim_events` for skipped notifications is a system (e.g., `"auto_system"`), supporting the "integration error" hypothesis.  
+   - Example:  
+     ```sql
+     SELECT resource, COUNT(*) AS skipped_notifications
+     FROM claim_events
+     WHERE activity = 'C'
+       AND claim_id NOT IN (SELECT claim_id FROM claim_events WHERE activity = 'N')
+     GROUP BY resource;
+     ```
+
+3. **Contextual Filtering**:  
+   - Join `claims` to check if premature closures correlate with `claim_type` (e.g., `"auto_insurance"` might have different rules).  
+   - Example:  
+     ```sql
+     SELECT c.claim_type, COUNT(*) AS premature_closures
+     FROM claims c
+     JOIN claim_events ce ON c.claim_id = ce.claim_id
+     WHERE ce.activity = 'C'
+       AND NOT EXISTS (
+         SELECT 1 FROM claim_events ce2 
+         WHERE ce2.claim_id = c.claim_id 
+           AND ce2.activity IN ('E', 'P')
+       )
+     GROUP BY c.claim_type;
+     ```
+
+By combining these queries, you can quantify anomalies, correlate them with business/technical contexts, and validate root-cause hypotheses.

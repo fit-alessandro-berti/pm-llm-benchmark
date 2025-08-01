@@ -1,0 +1,247 @@
+Anomalies observed
+1) R  P: Mean ~25 hours with very low stdev (1 hour). Unusually tight distribution suggests clocked/overnight batch approvals or timestamp rounding/defaults.
+2) P  N: Mean 7 days with high stdev (2 days). Large and variable lag implies backlog, manual outreach delays, or dependency on customer response.
+3) A  C: Mean 2 hours, implying frequent closure shortly after assignment, potentially bypassing E/P or representing auto-closures.
+4) E  N: Mean 5 minutes with low stdev. Near-instant notifications suggest automation; may conflict with expected approval-before-notify sequence.
+
+Hypotheses
+- R  P tight timing:
+  - Batch job runs at a fixed schedule.
+  - Approval timestamp reflects scheduled time rather than actual decision.
+  - Data import rounding to the nearest hour.
+- P  N long/variable:
+  - Manual notification or external channel queue causing backlog.
+  - Wait for customer documents before notifying.
+  - Resource/region-based staffing gaps; weekends/holidays.
+- A  C rapid closure:
+  - Auto-close for duplicate/invalid claims after triage.
+  - Workflow skipping due to business rules (e.g., small claims auto-denied).
+  - Mis-ordered events or missing E/P events.
+- E  N immediate:
+  - Automated notifications triggered at evaluation completion.
+  - Missing approval event for certain claim types/thresholds.
+  - Parallel paths where N follows E for “no-approval-required” cases.
+
+Verification via SQL
+Notes:
+- Replace intervals and thresholds as needed.
+- Use DISTINCT ON to get first/last events per claim/activity.
+- Add filters by claim_type, region, resource for segmentation.
+
+Helper CTEs to get key event timestamps per claim
+WITH first_events AS (
+  SELECT
+    ce.claim_id,
+    MIN(CASE WHEN activity = 'R' THEN timestamp END) AS t_r,
+    MIN(CASE WHEN activity = 'A' THEN timestamp END) AS t_a,
+    MIN(CASE WHEN activity = 'E' THEN timestamp END) AS t_e,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS t_p,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS t_n,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS t_c
+  FROM claim_events ce
+  GROUP BY ce.claim_id
+)
+-- Use the CTE below in subsequent queries:
+SELECT * FROM first_events LIMIT 1;
+
+1) Check R  P unusually tight distribution and schedule alignment
+-- Distribution summary and stdev
+SELECT
+  COUNT(*) AS cnt,
+  AVG(EXTRACT(EPOCH FROM (t_p - t_r))) AS avg_sec,
+  STDDEV_POP(EXTRACT(EPOCH FROM (t_p - t_r))) AS stdev_sec
+FROM first_events
+WHERE t_r IS NOT NULL AND t_p IS NOT NULL;
+
+-- Are approvals clustered at fixed clock times? (e.g., on the hour)
+SELECT
+  DATE_TRUNC('hour', t_p) AS hour_bucket,
+  COUNT(*) AS approvals
+FROM first_events
+WHERE t_p IS NOT NULL
+GROUP BY 1
+ORDER BY approvals DESC
+LIMIT 24;
+
+-- Difference to nearest hour to detect rounding
+SELECT
+  ROUND(EXTRACT(MINUTE FROM t_p)) AS minute_mark,
+  COUNT(*) AS cnt
+FROM first_events
+WHERE t_p IS NOT NULL
+GROUP BY 1
+ORDER BY cnt DESC;
+
+-- By claim_type/region to see segmentation
+SELECT c.claim_type, a.region,
+  AVG(EXTRACT(EPOCH FROM (f.t_p - f.t_r))) AS avg_sec,
+  STDDEV_POP(EXTRACT(EPOCH FROM (f.t_p - f.t_r))) AS stdev_sec,
+  COUNT(*) AS n
+FROM first_events f
+JOIN claims c ON c.claim_id = f.claim_id
+LEFT JOIN (
+  SELECT claim_id, MAX(resource) AS any_resource
+  FROM claim_events
+  GROUP BY claim_id
+) r ON r.claim_id = f.claim_id
+LEFT JOIN adjusters a ON a.name = r.any_resource
+WHERE f.t_r IS NOT NULL AND f.t_p IS NOT NULL
+GROUP BY c.claim_type, a.region
+ORDER BY n DESC;
+
+2) Detect P  N long and variable
+-- Claims with PN gap > 3 days
+SELECT f.claim_id,
+  f.t_p, f.t_n,
+  EXTRACT(EPOCH FROM (f.t_n - f.t_p))/3600 AS hours_delay
+FROM first_events f
+WHERE f.t_p IS NOT NULL AND f.t_n IS NOT NULL
+  AND f.t_n > f.t_p
+  AND f.t_n - f.t_p > INTERVAL '3 days'
+ORDER BY hours_delay DESC
+LIMIT 100;
+
+-- Distribution by day-of-week, to test weekend effects
+SELECT
+  TO_CHAR(f.t_p, 'Dy') AS approve_dow,
+  AVG(EXTRACT(EPOCH FROM (f.t_n - f.t_p))/3600) AS avg_hours,
+  STDDEV_POP(EXTRACT(EPOCH FROM (f.t_n - f.t_p))/3600) AS stdev_hours,
+  COUNT(*) AS n
+FROM first_events f
+WHERE f.t_p IS NOT NULL AND f.t_n IS NOT NULL AND f.t_n > f.t_p
+GROUP BY 1
+ORDER BY n DESC;
+
+-- By adjuster region or resource
+SELECT a.region,
+  AVG(EXTRACT(EPOCH FROM (f.t_n - f.t_p))/3600) AS avg_hours,
+  STDDEV_POP(EXTRACT(EPOCH FROM (f.t_n - f.t_p))/3600) AS stdev_hours,
+  COUNT(*) AS n
+FROM first_events f
+JOIN claim_events ce ON ce.claim_id = f.claim_id AND ce.activity = 'P'
+LEFT JOIN adjusters a ON a.name = ce.resource
+WHERE f.t_p IS NOT NULL AND f.t_n IS NOT NULL AND f.t_n > f.t_p
+GROUP BY a.region
+ORDER BY n DESC;
+
+3) Identify A  C rapid closures and missing E/P
+-- Claims closed within 2 hours of assignment
+SELECT f.claim_id, f.t_a, f.t_c,
+  EXTRACT(EPOCH FROM (f.t_c - f.t_a))/3600 AS hours_a_to_c,
+  (f.t_e IS NOT NULL) AS has_evaluate,
+  (f.t_p IS NOT NULL) AS has_approve
+FROM first_events f
+WHERE f.t_a IS NOT NULL AND f.t_c IS NOT NULL
+  AND f.t_c >= f.t_a
+  AND f.t_c - f.t_a <= INTERVAL '2 hours'
+ORDER BY hours_a_to_c ASC
+LIMIT 200;
+
+-- Rate of missing E or P among fast closures
+SELECT
+  SUM(CASE WHEN f.t_e IS NULL THEN 1 ELSE 0 END)::float / COUNT(*) AS pct_missing_e,
+  SUM(CASE WHEN f.t_p IS NULL THEN 1 ELSE 0 END)::float / COUNT(*) AS pct_missing_p
+FROM first_events f
+WHERE f.t_a IS NOT NULL AND f.t_c IS NOT NULL
+  AND f.t_c - f.t_a <= INTERVAL '2 hours';
+
+-- Segment by claim_type
+SELECT c.claim_type,
+  COUNT(*) AS n,
+  SUM(CASE WHEN f.t_e IS NULL THEN 1 ELSE 0 END) AS missing_e,
+  SUM(CASE WHEN f.t_p IS NULL THEN 1 ELSE 0 END) AS missing_p
+FROM first_events f
+JOIN claims c ON c.claim_id = f.claim_id
+WHERE f.t_a IS NOT NULL AND f.t_c IS NOT NULL
+  AND f.t_c - f.t_a <= INTERVAL '2 hours'
+GROUP BY c.claim_type
+ORDER BY n DESC;
+
+4) Evaluate E  N immediate transitions and approval ordering
+-- EN gap <= 5 minutes
+SELECT f.claim_id, f.t_e, f.t_n,
+  EXTRACT(EPOCH FROM (f.t_n - f.t_e)) AS sec_e_to_n,
+  f.t_p
+FROM first_events f
+WHERE f.t_e IS NOT NULL AND f.t_n IS NOT NULL
+  AND f.t_n >= f.t_e
+  AND f.t_n - f.t_e <= INTERVAL '5 minutes'
+ORDER BY sec_e_to_n ASC
+LIMIT 200;
+
+-- Among fast EN, check if approval exists before notify
+SELECT
+  COUNT(*) AS n_fast_en,
+  SUM(CASE WHEN f.t_p IS NOT NULL AND f.t_p <= f.t_n THEN 1 ELSE 0 END) AS with_prior_approval,
+  SUM(CASE WHEN f.t_p IS NULL OR f.t_p > f.t_n THEN 1 ELSE 0 END) AS without_prior_approval
+FROM first_events f
+WHERE f.t_e IS NOT NULL AND f.t_n IS NOT NULL
+  AND f.t_n - f.t_e <= INTERVAL '5 minutes';
+
+-- Segment fast EN by claim_type and amount threshold
+SELECT c.claim_type,
+  SUM(CASE WHEN c.claim_amount <= 1000 THEN 1 ELSE 0 END) AS small_claims,
+  SUM(CASE WHEN c.claim_amount > 1000 THEN 1 ELSE 0 END) AS large_claims,
+  COUNT(*) AS n
+FROM first_events f
+JOIN claims c ON c.claim_id = f.claim_id
+WHERE f.t_e IS NOT NULL AND f.t_n IS NOT NULL
+  AND f.t_n - f.t_e <= INTERVAL '5 minutes'
+GROUP BY c.claim_type
+ORDER BY n DESC;
+
+5) General anomaly detection using z-scores for selected pairs
+-- Example: RP z-score > 3 or < -3
+WITH diffs AS (
+  SELECT
+    f.claim_id,
+    EXTRACT(EPOCH FROM (f.t_p - f.t_r)) AS sec_rp
+  FROM first_events f
+  WHERE f.t_r IS NOT NULL AND f.t_p IS NOT NULL AND f.t_p >= f.t_r
+), stats AS (
+  SELECT AVG(sec_rp) AS mu, STDDEV_POP(sec_rp) AS sigma FROM diffs
+)
+SELECT d.claim_id, d.sec_rp, (d.sec_rp - s.mu)/NULLIF(s.sigma,0) AS z
+FROM diffs d CROSS JOIN stats s
+WHERE s.sigma IS NOT NULL AND ABS((d.sec_rp - s.mu)/s.sigma) >= 3
+ORDER BY ABS((d.sec_rp - s.mu)/s.sigma) DESC
+LIMIT 200;
+
+6) Flow conformance checks
+-- Count claims missing E or P entirely before C
+SELECT
+  SUM(CASE WHEN f.t_e IS NULL THEN 1 ELSE 0 END) AS claims_missing_e,
+  SUM(CASE WHEN f.t_p IS NULL THEN 1 ELSE 0 END) AS claims_missing_p
+FROM first_events f
+WHERE f.t_c IS NOT NULL;
+
+-- Cases where N occurs before P
+SELECT f.claim_id, f.t_n, f.t_p
+FROM first_events f
+WHERE f.t_n IS NOT NULL AND f.t_p IS NOT NULL AND f.t_n < f.t_p
+LIMIT 200;
+
+7) Resource and region correlation for anomalies
+-- PN > 5 days by adjuster region
+SELECT a.region,
+  COUNT(*) AS n_delayed
+FROM first_events f
+JOIN claim_events ce ON ce.claim_id = f.claim_id AND ce.activity = 'P'
+LEFT JOIN adjusters a ON a.name = ce.resource
+WHERE f.t_p IS NOT NULL AND f.t_n IS NOT NULL
+  AND f.t_n - f.t_p > INTERVAL '5 days'
+GROUP BY a.region
+ORDER BY n_delayed DESC;
+
+-- AC <= 2 hours by adjuster specialization
+SELECT a.specialization,
+  COUNT(*) AS n_fast_closures
+FROM first_events f
+JOIN claim_events ce ON ce.claim_id = f.claim_id AND ce.activity = 'A'
+LEFT JOIN adjusters a ON a.name = ce.resource
+WHERE f.t_a IS NOT NULL AND f.t_c IS NOT NULL
+  AND f.t_c - f.t_a <= INTERVAL '2 hours'
+GROUP BY a.specialization
+ORDER BY n_fast_closures DESC;
+
+These queries will help pinpoint anomalous cases, reveal whether anomalies cluster by claim type, amount, region, adjuster/resource, or time-of-week, and test whether steps are being skipped or batched.

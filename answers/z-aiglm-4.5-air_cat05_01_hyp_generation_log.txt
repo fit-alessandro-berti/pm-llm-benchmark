@@ -1,0 +1,183 @@
+### Anomalies and Undesirable Behaviors Identified
+
+#### 1. **Process Sequence Violations**
+   - **Order 1002**: 
+     - `Confirm Shipment` (event_id=9) occurs **before** `Perform Credit Check` (event_id=11) and `Validate Stock` (event_id=12).  
+     - **Issue**: Critical financial/logistics prerequisites skipped before shipping.  
+     - **Hypothesis**: System error or manual override to expedite processing (e.g., priority order).
+
+   - **Order 1003**: 
+     - `Ship Goods` (event_id=17) occurs **before** `Confirm Shipment` (event_id=19).  
+     - **Issue**: Lack of formal shipment confirmation before dispatch.  
+     - **Hypothesis**: Warehouse acted prematurely due to stock pressure or communication breakdown.
+
+#### 2. **Missing Critical Activities**
+   - **Order 1003**: 
+     - Missing `Validate Stock` activity entirely.  
+     - **Hypothesis**: System glitch in warehouse module or intentional bypass (e.g., pre-validated stock).
+
+   - **Order 1004**: 
+     - Missing `Perform Credit Check` and `Validate Stock`.  
+     - **Issue**: High-risk transactions (e.g., $3000 order) processed without risk checks.  
+     - **Hypothesis**: Policy exception for high-value orders or system misconfiguration.
+
+#### 3. **Premature Payment Processing**
+   - **Order 1004**: 
+     - `Receive Payment` (event_id=22) occurs **before** `Issue Invoice` (event_id=23) and `Ship Goods` (event_id=25).  
+     - **Issue**: Payment accepted without invoice or goods shipped.  
+     - **Hypothesis**: Manual payment entry error or cash transaction bypassing workflow.
+
+#### 4. **Resource Role Misalignment**
+   - **Order 1004**: 
+     - `Confirm Shipment` performed by `LogisticsMgr_1` (correct role), but `shipment_scheduled=N` in `additional_info`.  
+     - **Issue**: Unconfirmed shipment status.  
+     - **Hypothesis**: Manager override for urgent shipment without scheduling.
+
+---
+
+### Proposed SQL Queries for Investigation
+
+#### 1. **Detect Critical Activities Missing After Order Registration**
+```sql
+SELECT 
+    o.case_id,
+    o.order_value,
+    COUNT(DISTINCT CASE 
+        WHEN el.activity IN ('Perform Credit Check', 'Validate Stock') THEN 1 
+        ELSE NULL 
+    END) AS critical_activities_done
+FROM 
+    orders o
+JOIN 
+    order_event_log el ON o.case_id = el.case_id
+WHERE 
+    el.activity = 'Register Order'
+GROUP BY 
+    o.case_id, o.order_value
+HAVING 
+    critical_activities_done < 2
+ORDER BY 
+    o.order_value DESC;
+```
+**Purpose**: Identify orders missing credit checks or stock validation, prioritized by high value.
+
+---
+
+#### 2. **Find Activities Out-of-Sequence Relative to Ship Goods**
+```sql
+SELECT 
+    el.case_id,
+    el.activity AS subsequent_activity,
+    el.timestamp AS subsequent_timestamp,
+    prev.timestamp AS ship_goods_timestamp,
+    EXTRACT(EPOCH FROM (el.timestamp - prev.timestamp))/3600 AS hours_after_shipping
+FROM 
+    order_event_log el
+JOIN 
+    order_event_log prev ON el.case_id = prev.case_id
+WHERE 
+    prev.activity = 'Ship Goods'
+    AND el.activity IN ('Perform Credit Check', 'Validate Stock', 'Issue Invoice')
+    AND el.timestamp > prev.timestamp
+ORDER BY 
+    hours_after_shipping DESC;
+```
+**Purpose**: Quantify delays in post-shipping tasks (e.g., credit checks after hours).
+
+---
+
+#### 3. **Uncover Premature Payments**
+```sql
+SELECT 
+    o.case_id,
+    o.order_type,
+    el.timestamp AS payment_timestamp,
+    COALESCE(
+        (SELECT timestamp FROM order_event_log 
+         WHERE case_id = o.case_id AND activity = 'Ship Goods' 
+         ORDER BY timestamp LIMIT 1),
+        'NOT SHIPPED'
+    ) AS ship_timestamp,
+    COALESCE(
+        (SELECT timestamp FROM order_event_log 
+         WHERE case_id = o.case_id AND activity = 'Issue Invoice' 
+         ORDER BY timestamp LIMIT 1),
+        'NOT INVOICED'
+    ) AS invoice_timestamp
+FROM 
+    orders o
+JOIN 
+    order_event_log el ON o.case_id = el.case_id
+WHERE 
+    el.activity = 'Receive Payment'
+    AND (
+        (SELECT COUNT(*) FROM order_event_log 
+         WHERE case_id = o.case_id AND activity = 'Ship Goods') = 0
+        OR 
+        (SELECT COUNT(*) FROM order_event_log 
+         WHERE case_id = o.case_id AND activity = 'Issue Invoice') = 0
+    );
+```
+**Purpose**: Flag payments received before shipment or invoicing.
+
+---
+
+#### 4. **Audit Resource Role Compliance**
+```sql
+SELECT 
+    el.case_id,
+    el.resource,
+    r.role,
+    r.department,
+    el.activity,
+    el.additional_info
+FROM 
+    order_event_log el
+JOIN 
+    resources r ON el.resource = r.resource_id
+WHERE 
+    el.activity IN ('Perform Credit Check', 'Validate Stock', 'Confirm Shipment')
+    AND r.department NOT IN (
+        CASE 
+            WHEN el.activity = 'Perform Credit Check' THEN 'Finance'
+            WHEN el.activity IN ('Validate Stock', 'Confirm Shipment') THEN 'Logistics'
+        END
+    )
+ORDER BY 
+    el.case_id, el.timestamp;
+```
+**Purpose**: Identify activities performed by resources outside their department (e.g., credit check by Logistics).
+
+---
+
+#### 5. **Analyze Anomalies in `additional_info`**
+```sql
+SELECT 
+    o.case_id,
+    o.order_value,
+    el.activity,
+    el.additional_info,
+    el.timestamp,
+    r.department AS resource_department
+FROM 
+    order_event_log el
+JOIN 
+    orders o ON el.case_id = o.case_id
+JOIN 
+    resources r ON el.resource = r.resource_id
+WHERE 
+    el.additional_info LIKE '%late_confirmation%'
+    OR el.additional_info LIKE '%shipment_scheduled=N%'
+    OR el.additional_info LIKE '%attempted_early=Y%'
+ORDER BY 
+    el.timestamp;
+```
+**Purpose**: Correlate anomalies (e.g., late confirmations) with resource departments and order value.
+
+---
+
+### Hypothesis Validation Insights
+- **High-Value Orders**: Query 1 may reveal if orders >$2000 bypass credit checks due to revenue pressure.
+- **Departmental Bottlenecks**: Query 4 could show if Finance resources are overloaded, causing delayed credit checks.
+- **System vs. Manual Errors**: Query 5’s `additional_info` flags (e.g., `shipment_scheduled=N`) indicate manual overrides.
+- **Cash vs. Invoicing**: Premature payments (Query 3) may dominate call-center orders (per `channel=call_center` in data).
