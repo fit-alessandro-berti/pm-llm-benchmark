@@ -7,6 +7,7 @@
 | Grok-3-beta-thinking-20250221 | 58 | 6 | 16 | 0 | 0 | 5 | 0 | 26 | 2 | 0 | 1 | 2 | 0 |
 | qwen-qwq-32b-nostepbystep-lesshypgen | 65 | 4 | 13 | 1 | 0 | 13 | 1 | 20 | 4 | 0 | 3 | 2 | 3 |
 | qwen-qwq-32b-nostepbystep-moremoral | 68 | 9 | 14 | 0 | 1 | 16 | 0 | 20 | 3 | 0 | 0 | 4 | 0 |
+| Qwen3-30B-A3B-2507-Thinking | 68 | 2 | 6 | 2 | 5 | 13 | 2 | 28 | 5 | 0 | 3 | 1 | 1 |
 | gemini-2.5-pro-thinklow | 70 | 1 | 18 | 1 | 2 | 8 | 0 | 31 | 4 | 0 | 0 | 2 | 1 |
 | qwen-qwq-32b-nostepbystep-lessvalidbacktr | 71 | 3 | 11 | 2 | 1 | 10 | 0 | 35 | 1 | 0 | 1 | 5 | 0 |
 | qwen-qwq-32b-stepbystep | 73 | 1 | 17 | 2 | 1 | 22 | 0 | 26 | 1 | 0 | 1 | 2 | 0 |
