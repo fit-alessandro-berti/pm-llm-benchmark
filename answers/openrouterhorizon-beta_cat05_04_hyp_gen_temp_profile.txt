@@ -1,0 +1,313 @@
+Anomalies observed
+1) R  P (Receive to Approve): Average  25 hours with very low STDEV (1 hour). Unusually tight variance for a human-influenced process; suggests clocked or automated approvals, or timestamp rounding/scheduled batch jobs.
+
+2) P  N (Approve to Notify): Very long average (7 days) with high STDEV (2 days). Indicates inconsistent notification—possibly backlog, manual batching, channel-dependent delays, or missing/late event logging.
+
+3) A  C (Assign to Close): Short average (2 hours). Implies premature closure without evidence of Evaluate/Approve steps, or special fast-track/auto-denial paths, or mis-ordered/duplicate events.
+
+4) E  N (Evaluate to Notify): Extremely short (5 minutes). Suggests auto-notification on evaluation, bypassing approval or logging gaps where P is missing/late. Alternatively, different meanings of “Notify” (e.g., evaluation result notice vs final approval notice).
+
+5) R  P low STDEV vs R  E high STDEV: Inconsistency—evaluation is variable (human work) while approval is nearly deterministic. Could be approval driven by SLA timers, nightly batches, or approval timestamp copied from a scheduled system action.
+
+Hypotheses
+- Automated, scheduled approvals: A batch job runs roughly 24–26 hours after receipt, yielding low variance on R  P.
+- Notification backlog or channel variance: Notifications queued by region/channel (email vs physical mail), resource availability, or external system integration delays lead to high variance and long P  N.
+- Fast-track closures: Small claims, duplicates, or invalid submissions closed shortly after assignment. Alternatively, closure logged before earlier steps due to out-of-order event ingestion.
+- Missing or late events: P events may be missing or logged late; N may fire off evaluation outcome rather than approval.
+- Resource or region bottlenecks: Specific adjusters/regions exhibit longer P  N or unusual A  C behavior.
+- Timezone or clock skew: Cross-system timestamp issues create artificial lags or compressions.
+- Policy segmentation: Certain claim types (e.g., very low amounts) auto-approve/auto-notify; others routed manually.
+
+Verification queries (PostgreSQL)
+
+A) Helper CTEs to get first/last timestamps per activity per claim
+-- First occurrence of each activity per claim
+WITH evt AS (
+  SELECT
+    claim_id,
+    activity,
+    MIN(timestamp) AS ts
+  FROM claim_events
+  GROUP BY claim_id, activity
+)
+SELECT * FROM evt;
+
+B) Distribution and outliers for R  P (tight variance)
+-- Compute R->P deltas (seconds) and basic stats
+WITH rp AS (
+  SELECT
+    eR.claim_id,
+    EXTRACT(EPOCH FROM (eP.ts - eR.ts)) AS sec_rp
+  FROM (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity = 'R' GROUP BY claim_id) eR
+  JOIN (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity = 'P' GROUP BY claim_id) eP
+    ON eR.claim_id = eP.claim_id
+  WHERE eP.ts > eR.ts
+)
+SELECT
+  COUNT(*) AS n,
+  AVG(sec_rp) AS avg_sec,
+  STDDEV_POP(sec_rp) AS stdev_sec,
+  PERCENTILE_CONT(ARRAY[0.05,0.5,0.95]) WITHIN GROUP (ORDER BY sec_rp) AS pct_05_50_95
+FROM rp;
+
+-- List claims very close to the mean to confirm tight band (e.g., within ±1 hour of 25h)
+WITH rp AS (
+  SELECT
+    eR.claim_id,
+    EXTRACT(EPOCH FROM (eP.ts - eR.ts)) AS sec_rp
+  FROM (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity = 'R' GROUP BY claim_id) eR
+  JOIN (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity = 'P' GROUP BY claim_id) eP
+    ON eR.claim_id = eP.claim_id
+  WHERE eP.ts > eR.ts
+)
+SELECT claim_id, sec_rp
+FROM rp
+WHERE sec_rp BETWEEN (25*3600 - 3600) AND (25*3600 + 3600)
+ORDER BY sec_rp;
+
+-- Correlate tight R->P with claim_type and region
+WITH rp AS (
+  SELECT
+    c.claim_id,
+    c.claim_type,
+    a.region,
+    EXTRACT(EPOCH FROM (eP.ts - eR.ts)) AS sec_rp
+  FROM claims c
+  JOIN (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity = 'R' GROUP BY claim_id) eR ON c.claim_id = eR.claim_id
+  JOIN (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity = 'P' GROUP BY claim_id) eP ON c.claim_id = eP.claim_id
+  LEFT JOIN (
+    SELECT ce.claim_id, MAX(ad.region) AS region
+    FROM claim_events ce
+    JOIN adjusters ad ON ce.resource::INT = ad.adjuster_id
+    WHERE ce.activity IN ('A','E','P') AND ce.resource ~ '^[0-9]+$'
+    GROUP BY ce.claim_id
+  ) a ON c.claim_id = a.claim_id
+  WHERE eP.ts > eR.ts
+)
+SELECT claim_type, region, COUNT(*) n,
+       AVG(sec_rp) avg_sec, STDDEV_POP(sec_rp) stdev_sec
+FROM rp
+GROUP BY claim_type, region
+ORDER BY n DESC;
+
+C) P  N delays and outliers
+WITH pn AS (
+  SELECT
+    eP.claim_id,
+    EXTRACT(EPOCH FROM (eN.ts - eP.ts)) AS sec_pn
+  FROM (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity = 'P' GROUP BY claim_id) eP
+  JOIN (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity = 'N' GROUP BY claim_id) eN
+    ON eP.claim_id = eN.claim_id
+  WHERE eN.ts > eP.ts
+)
+SELECT
+  COUNT(*) n,
+  AVG(sec_pn) avg_sec,
+  STDDEV_POP(sec_pn) stdev_sec,
+  PERCENTILE_CONT(ARRAY[0.05,0.5,0.95]) WITHIN GROUP (ORDER BY sec_pn) AS pct_05_50_95
+FROM pn;
+
+-- Identify extreme long notifications (e.g., > 5 days) and very fast (< 1 hour)
+WITH pn AS (
+  SELECT
+    eP.claim_id,
+    EXTRACT(EPOCH FROM (eN.ts - eP.ts)) AS sec_pn
+  FROM (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity = 'P' GROUP BY claim_id) eP
+  JOIN (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity = 'N' GROUP BY claim_id) eN
+    ON eP.claim_id = eN.claim_id
+  WHERE eN.ts > eP.ts
+)
+SELECT
+  CASE WHEN sec_pn < 3600 THEN 'lt_1h'
+       WHEN sec_pn > 5*24*3600 THEN 'gt_5d'
+       ELSE 'other' END AS bucket,
+  COUNT(*) n
+FROM pn
+GROUP BY bucket;
+
+-- Correlate long P->N with claim_type, region, resource performing N
+WITH pn AS (
+  SELECT
+    eP.claim_id,
+    EXTRACT(EPOCH FROM (eN.ts - eP.ts)) AS sec_pn,
+    n.resource AS notify_resource
+  FROM (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity = 'P' GROUP BY claim_id) eP
+  JOIN LATERAL (
+    SELECT claim_id, timestamp, resource
+    FROM claim_events
+    WHERE activity = 'N' AND claim_id = eP.claim_id
+    ORDER BY timestamp
+    LIMIT 1
+  ) n ON TRUE
+  WHERE n.timestamp > eP.ts
+)
+SELECT c.claim_type, r.region, pn.notify_resource,
+       COUNT(*) n, AVG(sec_pn) avg_sec, STDDEV_POP(sec_pn) stdev_sec
+FROM pn
+JOIN claims c ON c.claim_id = pn.claim_id
+LEFT JOIN (
+  SELECT ce.claim_id, MAX(ad.region) AS region
+  FROM claim_events ce
+  JOIN adjusters ad ON ce.resource::INT = ad.adjuster_id
+  WHERE ce.resource ~ '^[0-9]+$'
+  GROUP BY ce.claim_id
+) r ON r.claim_id = pn.claim_id
+GROUP BY c.claim_type, r.region, pn.notify_resource
+ORDER BY n DESC;
+
+D) A  C fast closures; check missing E or P
+-- Claims closed within 2 hours of assignment and missing E or P before C
+WITH a AS (
+  SELECT claim_id, MIN(timestamp) ts_a FROM claim_events WHERE activity = 'A' GROUP BY claim_id
+), c AS (
+  SELECT claim_id, MIN(timestamp) ts_c FROM claim_events WHERE activity = 'C' GROUP BY claim_id
+)
+SELECT
+  cl.claim_id,
+  EXTRACT(EPOCH FROM (c.ts_c - a.ts_a)) AS sec_ac,
+  -- Flags for presence of E/P before C
+  EXISTS (
+    SELECT 1 FROM claim_events ce
+    WHERE ce.claim_id = cl.claim_id AND ce.activity = 'E' AND ce.timestamp < c.ts_c
+  ) AS has_e_before_c,
+  EXISTS (
+    SELECT 1 FROM claim_events ce
+    WHERE ce.claim_id = cl.claim_id AND ce.activity = 'P' AND ce.timestamp < c.ts_c
+  ) AS has_p_before_c
+FROM claims cl
+JOIN a ON cl.claim_id = a.claim_id
+JOIN c ON cl.claim_id = c.claim_id
+WHERE c.ts_c >= a.ts_a
+  AND (c.ts_c - a.ts_a) <= INTERVAL '2 hours'
+ORDER BY sec_ac;
+
+-- Correlate fast closures with claim_type, region
+WITH fast AS (
+  SELECT
+    a.claim_id,
+    EXTRACT(EPOCH FROM (c.ts_c - a.ts_a)) AS sec_ac
+  FROM (SELECT claim_id, MIN(timestamp) ts_a FROM claim_events WHERE activity = 'A' GROUP BY claim_id) a
+  JOIN (SELECT claim_id, MIN(timestamp) ts_c FROM claim_events WHERE activity = 'C' GROUP BY claim_id) c
+    ON a.claim_id = c.claim_id
+  WHERE c.ts_c >= a.ts_a AND (c.ts_c - a.ts_a) <= INTERVAL '2 hours'
+)
+SELECT c.claim_type, r.region, COUNT(*) n
+FROM fast f
+JOIN claims c ON c.claim_id = f.claim_id
+LEFT JOIN (
+  SELECT ce.claim_id, MAX(ad.region) AS region
+  FROM claim_events ce
+  JOIN adjusters ad ON ce.resource::INT = ad.adjuster_id
+  WHERE ce.resource ~ '^[0-9]+$'
+  GROUP BY ce.claim_id
+) r ON r.claim_id = f.claim_id
+GROUP BY c.claim_type, r.region
+ORDER BY n DESC;
+
+E) E  N very short; check if P is missing or occurs after N
+-- E->N deltas and whether P exists before N
+WITH e AS (
+  SELECT claim_id, MIN(timestamp) ts_e FROM claim_events WHERE activity = 'E' GROUP BY claim_id
+), n AS (
+  SELECT claim_id, MIN(timestamp) ts_n FROM claim_events WHERE activity = 'N' GROUP BY claim_id
+)
+SELECT
+  e.claim_id,
+  EXTRACT(EPOCH FROM (n.ts_n - e.ts_e)) AS sec_en,
+  EXISTS (
+    SELECT 1 FROM claim_events ce
+    WHERE ce.claim_id = e.claim_id AND ce.activity = 'P' AND ce.timestamp <= n.ts_n
+  ) AS has_p_before_n,
+  EXISTS (
+    SELECT 1 FROM claim_events ce
+    WHERE ce.claim_id = e.claim_id AND ce.activity = 'P' AND ce.timestamp > n.ts_n
+  ) AS has_p_after_n
+FROM e
+JOIN n ON e.claim_id = n.claim_id
+WHERE n.ts_n > e.ts_e
+ORDER BY sec_en
+LIMIT 200;
+
+F) Path conformance checks (intended sequence RAEPNC)
+-- Identify claims with out-of-order events or missing key steps before C
+WITH ordered AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity='R' THEN timestamp END) AS ts_r,
+    MIN(CASE WHEN activity='A' THEN timestamp END) AS ts_a,
+    MIN(CASE WHEN activity='E' THEN timestamp END) AS ts_e,
+    MIN(CASE WHEN activity='P' THEN timestamp END) AS ts_p,
+    MIN(CASE WHEN activity='N' THEN timestamp END) AS ts_n,
+    MIN(CASE WHEN activity='C' THEN timestamp END) AS ts_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  claim_id,
+  (ts_a >= ts_r) AS ok_r_a,
+  (ts_e IS NULL OR ts_e >= ts_a) AS ok_a_e,
+  (ts_p IS NULL OR ts_p >= ts_e) AS ok_e_p,
+  (ts_n IS NULL OR ts_n >= ts_p) AS ok_p_n,
+  (ts_c IS NULL OR ts_c >= ts_n) AS ok_n_c
+FROM ordered
+WHERE NOT ((ts_a >= ts_r)
+       AND (ts_e IS NULL OR ts_e >= ts_a)
+       AND (ts_p IS NULL OR ts_p >= ts_e)
+       AND (ts_n IS NULL OR ts_n >= ts_p)
+       AND (ts_c IS NULL OR ts_c >= ts_n));
+
+G) Timezone/clock skew checks
+-- Detect negative or near-zero intervals that suggest clock issues
+WITH pairs AS (
+  SELECT ce.claim_id, ce.activity, ce.timestamp,
+         LEAD(ce.activity) OVER (PARTITION BY ce.claim_id ORDER BY ce.timestamp) AS next_act,
+         LEAD(ce.timestamp) OVER (PARTITION BY ce.claim_id ORDER BY ce.timestamp) AS next_ts
+  FROM claim_events ce
+)
+SELECT claim_id, activity, timestamp, next_act, next_ts,
+       EXTRACT(EPOCH FROM (next_ts - timestamp)) AS delta_sec
+FROM pairs
+WHERE next_ts IS NOT NULL AND (next_ts < timestamp OR next_ts - timestamp < INTERVAL '1 second')
+ORDER BY claim_id, timestamp;
+
+H) Batch-effect signature for approvals
+-- Approvals clustered at certain hours (e.g., nightly/24h cadence)
+SELECT
+  DATE_TRUNC('hour', timestamp) AS hour_bucket,
+  COUNT(*) AS approvals
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY hour_bucket
+ORDER BY hour_bucket;
+
+I) Segment-specific SLA patterns
+-- Compare R->P and P->N by claim_type
+WITH rp AS (
+  SELECT eR.claim_id, EXTRACT(EPOCH FROM (eP.ts - eR.ts)) AS sec_rp
+  FROM (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity='R' GROUP BY claim_id) eR
+  JOIN (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity='P' GROUP BY claim_id) eP USING (claim_id)
+  WHERE eP.ts > eR.ts
+),
+pn AS (
+  SELECT eP.claim_id, EXTRACT(EPOCH FROM (eN.ts - eP.ts)) AS sec_pn
+  FROM (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity='P' GROUP BY claim_id) eP
+  JOIN (SELECT claim_id, MIN(timestamp) ts FROM claim_events WHERE activity='N' GROUP BY claim_id) eN USING (claim_id)
+  WHERE eN.ts > eP.ts
+)
+SELECT c.claim_type,
+       COUNT(DISTINCT rp.claim_id) n_rp,
+       AVG(rp.sec_rp) avg_rp, STDDEV_POP(rp.sec_rp) stdev_rp,
+       COUNT(DISTINCT pn.claim_id) n_pn,
+       AVG(pn.sec_pn) avg_pn, STDDEV_POP(pn.sec_pn) stdev_pn
+FROM claims c
+LEFT JOIN rp ON rp.claim_id = c.claim_id
+LEFT JOIN pn ON pn.claim_id = c.claim_id
+GROUP BY c.claim_type
+ORDER BY c.claim_type;
+
+How to use results
+- If RP shows tight bands and approvals cluster by hour/day, confirm automated scheduling.
+- If PN delays correlate with specific regions/resources, investigate notification queues/integrations.
+- If many AC fast closures lack E/P before C, review closure policies and event integrity.
+- If EN is fast and P occurs after N or is missing, clarify what “Notify” represents and enforce sequencing.
+- If clock issues appear, audit timestamp sources and apply normalization or event ordering rules.
