@@ -77,6 +77,30 @@ for entry in leaderboard_data:
         is_os = entry['OS'] == ':white_check_mark:'
         model_is_os[real_name] = is_os
 
+# Handle model_date.json (publication dates)
+model_date = {}
+if os.path.exists('model_date.json'):
+    with open('model_date.json', 'r') as f:
+        model_date = json.load(f)
+    print(f"\nLoaded existing model_date.json with {len(model_date)} entries")
+
+# Add new models with empty dates
+for real_name in model_scores.keys():
+    if real_name not in model_date:
+        model_date[real_name] = ""
+
+# Handle model_info.json (model information like parameters)
+model_info = {}
+if os.path.exists('model_info.json'):
+    with open('model_info.json', 'r') as f:
+        model_info = json.load(f)
+    print(f"Loaded existing model_info.json with {len(model_info)} entries")
+
+# Add new models with empty lists
+for real_name in model_scores.keys():
+    if real_name not in model_info:
+        model_info[real_name] = []
+
 # Write JSON files
 with open('model_scores.json', 'w') as f:
     json.dump(model_scores, f, indent=2)
@@ -90,9 +114,31 @@ with open('model_is_os.json', 'w') as f:
     json.dump(model_is_os, f, indent=2)
     print(f"Created model_is_os.json with {len(model_is_os)} entries")
 
+with open('model_date.json', 'w') as f:
+    json.dump(model_date, f, indent=2, sort_keys=True)
+    print(f"Created/Updated model_date.json with {len(model_date)} entries")
+
+with open('model_info.json', 'w') as f:
+    json.dump(model_info, f, indent=2, sort_keys=True)
+    print(f"Created/Updated model_info.json with {len(model_info)} entries")
+
 # Print unmatched models for debugging
 unmatched = [entry['Model'] for entry in leaderboard_data if entry['Model'] not in beautified_to_real]
 if unmatched:
     print(f"\nUnmatched models ({len(unmatched)}):")
     for model in unmatched:
+        print(f"  - {model}")
+
+# Print which models need manual updates
+new_models_date = [model for model in model_date.keys() if model_date[model] == ""]
+new_models_info = [model for model in model_info.keys() if model_info[model] == []]
+
+if new_models_date:
+    print(f"\nModels needing publication dates ({len(new_models_date)} models):")
+    for model in sorted(new_models_date):
+        print(f"  - {model}")
+
+if new_models_info:
+    print(f"\nModels needing info ({len(new_models_info)} models):")
+    for model in sorted(new_models_info):
         print(f"  - {model}")
