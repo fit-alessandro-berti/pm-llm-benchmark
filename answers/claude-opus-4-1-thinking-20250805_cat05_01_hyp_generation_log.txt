@@ -1,0 +1,270 @@
+## Analysis of Event Log Anomalies
+
+After examining the provided event log data, I've identified several concerning anomalies and process violations that warrant investigation:
+
+### Identified Anomalies
+
+**Case 1002 - Premature Shipping:**
+- Shipment was confirmed and goods were shipped BEFORE credit check and stock validation
+- Credit check performed after goods already shipped (defeating its purpose)
+- High risk of shipping to uncreditworthy customers
+
+**Case 1003 - Missing Controls:**
+- Stock validation step completely skipped
+- Goods shipped before shipment confirmation
+- Confirmation came after shipping (retroactive confirmation)
+- Risk of shipping unavailable inventory
+
+**Case 1004 - Payment Before Service:**
+- Payment received before any verification steps
+- Invoice issued AFTER payment received (reversed order)
+- No credit check or stock validation performed
+- Extremely unusual pattern suggesting potential fraud or system error
+
+### Hypotheses for These Anomalies
+
+1. **System Integration Issues**: Different systems may not be properly synchronized
+2. **Manual Override/Bypass**: Staff circumventing controls for "priority" customers
+3. **Training Deficiencies**: New staff not following proper procedures
+4. **Time Pressure**: Rush orders leading to shortcuts
+5. **Fraud Risk**: Unusual payment patterns could indicate money laundering or fraudulent activities
+6. **System Gaming**: Staff manipulating process to meet KPIs
+
+### SQL Queries for Investigation
+
+```sql
+-- 1. Identify all cases with out-of-sequence activities
+WITH expected_sequence AS (
+    SELECT 
+        case_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as actual_seq,
+        CASE activity
+            WHEN 'Register Order' THEN 1
+            WHEN 'Perform Credit Check' THEN 2
+            WHEN 'Validate Stock' THEN 3
+            WHEN 'Confirm Shipment' THEN 4
+            WHEN 'Ship Goods' THEN 5
+            WHEN 'Issue Invoice' THEN 6
+            WHEN 'Receive Payment' THEN 7
+        END as expected_seq
+    FROM order_event_log
+)
+SELECT 
+    case_id,
+    STRING_AGG(activity || ' (Expected: ' || expected_seq || ', Actual: ' || actual_seq || ')', ' -> ' 
+               ORDER BY timestamp) as process_flow,
+    COUNT(*) as total_activities
+FROM expected_sequence
+GROUP BY case_id
+HAVING MAX(expected_seq) < MAX(actual_seq) 
+    OR MIN(expected_seq) > MIN(actual_seq);
+
+-- 2. Find cases where shipping occurs before critical checks
+SELECT 
+    oel.case_id,
+    o.order_value,
+    o.order_type,
+    MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) as ship_time,
+    MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) as credit_check_time,
+    MAX(CASE WHEN activity = 'Validate Stock' THEN timestamp END) as stock_check_time
+FROM order_event_log oel
+JOIN orders o ON oel.case_id = o.case_id
+GROUP BY oel.case_id, o.order_value, o.order_type
+HAVING 
+    MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) < 
+        COALESCE(MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END), '2099-12-31'::timestamp)
+    OR
+    MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) < 
+        COALESCE(MAX(CASE WHEN activity = 'Validate Stock' THEN timestamp END), '2099-12-31'::timestamp);
+
+-- 3. Identify missing mandatory activities by case
+WITH mandatory_activities AS (
+    SELECT unnest(ARRAY['Register Order', 'Perform Credit Check', 'Validate Stock', 
+                        'Confirm Shipment', 'Ship Goods', 'Issue Invoice', 'Receive Payment']) as activity
+),
+case_activities AS (
+    SELECT DISTINCT case_id, activity
+    FROM order_event_log
+)
+SELECT 
+    c.case_id,
+    o.order_value,
+    STRING_AGG(ma.activity, ', ' ORDER BY ma.activity) as missing_activities,
+    COUNT(*) as missing_count
+FROM (SELECT DISTINCT case_id FROM order_event_log) c
+CROSS JOIN mandatory_activities ma
+LEFT JOIN case_activities ca ON c.case_id = ca.case_id AND ma.activity = ca.activity
+JOIN orders o ON c.case_id = o.case_id
+WHERE ca.activity IS NULL
+GROUP BY c.case_id, o.order_value
+ORDER BY missing_count DESC, o.order_value DESC;
+
+-- 4. Detect payment before invoice anomalies
+SELECT 
+    oel1.case_id,
+    o.order_value,
+    oel1.timestamp as payment_time,
+    oel2.timestamp as invoice_time,
+    oel1.resource as payment_receiver,
+    EXTRACT(EPOCH FROM (oel2.timestamp - oel1.timestamp))/60 as minutes_between
+FROM order_event_log oel1
+JOIN order_event_log oel2 ON oel1.case_id = oel2.case_id
+JOIN orders o ON oel1.case_id = o.case_id
+WHERE oel1.activity = 'Receive Payment'
+    AND oel2.activity = 'Issue Invoice'
+    AND oel1.timestamp < oel2.timestamp;
+
+-- 5. Analyze resource behavior patterns for potential fraud or training issues
+SELECT 
+    r.resource_id,
+    r.role,
+    r.department,
+    COUNT(DISTINCT oel.case_id) as cases_handled,
+    COUNT(DISTINCT CASE 
+        WHEN oel.activity NOT IN (
+            SELECT activity 
+            FROM order_event_log oel2 
+            JOIN resources r2 ON oel2.resource = r2.resource_id 
+            WHERE r2.role = r.role 
+            GROUP BY activity 
+            HAVING COUNT(*) > 1
+        ) THEN oel.case_id 
+    END) as unusual_activity_cases,
+    AVG(EXTRACT(EPOCH FROM (
+        SELECT MIN(oel2.timestamp) 
+        FROM order_event_log oel2 
+        WHERE oel2.case_id = oel.case_id AND oel2.timestamp > oel.timestamp
+    ) - oel.timestamp)/60) as avg_time_to_next_activity_minutes
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+GROUP BY r.resource_id, r.role, r.department
+HAVING COUNT(DISTINCT oel.case_id) > 0;
+
+-- 6. Time-based anomaly detection - activities happening too quickly
+WITH activity_pairs AS (
+    SELECT 
+        oel1.case_id,
+        oel1.activity as activity1,
+        oel2.activity as activity2,
+        oel1.timestamp as time1,
+        oel2.timestamp as time2,
+        EXTRACT(EPOCH FROM (oel2.timestamp - oel1.timestamp))/60 as minutes_between
+    FROM order_event_log oel1
+    JOIN order_event_log oel2 
+        ON oel1.case_id = oel2.case_id 
+        AND oel2.timestamp > oel1.timestamp
+        AND NOT EXISTS (
+            SELECT 1 FROM order_event_log oel3
+            WHERE oel3.case_id = oel1.case_id
+                AND oel3.timestamp > oel1.timestamp
+                AND oel3.timestamp < oel2.timestamp
+        )
+)
+SELECT 
+    case_id,
+    activity1 || ' -> ' || activity2 as transition,
+    minutes_between,
+    CASE 
+        WHEN minutes_between < 5 THEN 'SUSPICIOUS: Too fast'
+        WHEN minutes_between < 15 THEN 'WARNING: Unusually quick'
+        ELSE 'Normal'
+    END as flag
+FROM activity_pairs
+WHERE minutes_between < 15
+ORDER BY minutes_between;
+
+-- 7. Cross-department handoff analysis to detect segregation of duties violations
+WITH dept_transitions AS (
+    SELECT 
+        oel1.case_id,
+        r1.department as from_dept,
+        r2.department as to_dept,
+        oel1.activity as from_activity,
+        oel2.activity as to_activity,
+        oel1.timestamp,
+        COUNT(*) OVER (PARTITION BY oel1.case_id, r1.department) as same_dept_count
+    FROM order_event_log oel1
+    JOIN order_event_log oel2 
+        ON oel1.case_id = oel2.case_id 
+        AND oel2.timestamp > oel1.timestamp
+    JOIN resources r1 ON oel1.resource = r1.resource_id
+    JOIN resources r2 ON oel2.resource = r2.resource_id
+    WHERE NOT EXISTS (
+        SELECT 1 FROM order_event_log oel3
+        WHERE oel3.case_id = oel1.case_id
+            AND oel3.timestamp > oel1.timestamp
+            AND oel3.timestamp < oel2.timestamp
+    )
+)
+SELECT 
+    case_id,
+    from_dept,
+    COUNT(DISTINCT to_dept) as unique_handoffs,
+    same_dept_count,
+    CASE 
+        WHEN same_dept_count > 3 THEN 'WARNING: Multiple activities in same department'
+        ELSE 'Normal'
+    END as sod_flag
+FROM dept_transitions
+GROUP BY case_id, from_dept, same_dept_count
+HAVING same_dept_count > 3;
+
+-- 8. Comprehensive anomaly scoring for each case
+WITH case_anomalies AS (
+    SELECT 
+        case_id,
+        -- Check for out of order activities
+        SUM(CASE 
+            WHEN activity = 'Ship Goods' AND EXISTS (
+                SELECT 1 FROM order_event_log oel2 
+                WHERE oel2.case_id = oel.case_id 
+                    AND oel2.activity IN ('Perform Credit Check', 'Validate Stock')
+                    AND oel2.timestamp > oel.timestamp
+            ) THEN 3 ELSE 0 END) as shipping_before_checks,
+        -- Check for missing activities
+        7 - COUNT(DISTINCT activity) as missing_activities,
+        -- Check for payment before invoice
+        SUM(CASE 
+            WHEN activity = 'Receive Payment' AND EXISTS (
+                SELECT 1 FROM order_event_log oel2 
+                WHERE oel2.case_id = oel.case_id 
+                    AND oel2.activity = 'Issue Invoice'
+                    AND oel2.timestamp > oel.timestamp
+            ) THEN 2 ELSE 0 END) as payment_before_invoice,
+        -- Check for rapid succession
+        COUNT(CASE 
+            WHEN EXISTS (
+                SELECT 1 FROM order_event_log oel2 
+                WHERE oel2.case_id = oel.case_id 
+                    AND oel2.timestamp > oel.timestamp
+                    AND EXTRACT(EPOCH FROM (oel2.timestamp - oel.timestamp))/60 < 5
+            ) THEN 1 END) as rapid_activities
+    FROM order_event_log oel
+    GROUP BY case_id
+)
+SELECT 
+    ca.*,
+    o.order_value,
+    o.order_type,
+    (shipping_before_checks * 3 + missing_activities * 2 + payment_before_invoice * 2 + rapid_activities) as risk_score,
+    CASE 
+        WHEN (shipping_before_checks * 3 + missing_activities * 2 + payment_before_invoice * 2 + rapid_activities) >= 5 THEN 'HIGH RISK'
+        WHEN (shipping_before_checks * 3 + missing_activities * 2 + payment_before_invoice * 2 + rapid_activities) >= 3 THEN 'MEDIUM RISK'
+        WHEN (shipping_before_checks * 3 + missing_activities * 2 + payment_before_invoice * 2 + rapid_activities) > 0 THEN 'LOW RISK'
+        ELSE 'NORMAL'
+    END as risk_level
+FROM case_anomalies ca
+JOIN orders o ON ca.case_id = o.case_id
+ORDER BY risk_score DESC;
+```
+
+These queries will help identify:
+- Process violations and their severity
+- Resource-specific patterns that might indicate training needs or malicious behavior
+- Systemic issues with timing and sequencing
+- Cases requiring immediate audit attention
+- Patterns that could indicate fraud or system manipulation
+
+The investigation should prioritize high-risk cases (especially case 1004 with payment before service) and implement immediate controls to prevent future occurrences.

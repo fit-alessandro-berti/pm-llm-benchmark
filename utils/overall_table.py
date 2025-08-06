@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import json
 from collections import Counter
 from utils.table_per_model import execute_script
 from common import EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, is_open_source, is_large_reasoning_model, force_custom_evaluation_lrm, is_excluded_from_table
@@ -70,7 +71,7 @@ def manage_file_name(file_name, rec_depth=0):
 
 def execute(evaluation_folder, target_file, include_closed_source=True, require_vision=False,
             require_reasoning=False, require_reasoning_custom=False, require_not_reasoning=False,
-            leaderboard_title="Overall Leaderboard", reg_expr=None):
+            leaderboard_title="Overall Leaderboard", reg_expr=None, json_file=None):
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
     models = {x: y for x, y in models.items() if y >= 44 and not is_excluded_from_table(x)}
@@ -178,6 +179,11 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
                      "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C8": m[11], "C7": m[10]}
         overall_table.append(entry)
 
+    if json_file is not None:
+        F = open(json_file, "w")
+        json.dump(overall_table, F)
+        F.close()
+
     overall_table = pd.DataFrame(overall_table)
     overall_table.columns = ["Model", "Score", "OS", "LRM", "PCo", "CC", "PMo", "PQ", "HG", "FA", "OPT", ":nerd_face: VI"]
     overall_table = overall_table.to_markdown(index=False)
@@ -214,7 +220,7 @@ def write_evaluation(base_path, extra=True):
     evaluation_folder = os.path.join(base_path, base_evaluation_path)
 
     execute(evaluation_folder, os.path.join(base_path, "leaderboard_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True, require_vision=False,
-            leaderboard_title="Overall Leaderboard")
+            leaderboard_title="Overall Leaderboard", json_file=os.path.join(base_path, "hallucinations/leaderboard_stats.md"))
 
     if extra and e_m_name.startswith("gemini-2.5-pro"):
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_cot_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,

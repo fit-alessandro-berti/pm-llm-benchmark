@@ -1,0 +1,288 @@
+## Analysis of Order Processing Event Log Anomalies
+
+After examining the provided event log data, I've identified several significant anomalies and undesirable behaviors that deviate from the expected process flow. Let me analyze each case and propose SQL queries to investigate these issues further.
+
+### Identified Anomalies
+
+#### Case 1001: Normal Flow (Baseline)
+This case follows the expected sequence perfectly, serving as our baseline for comparison.
+
+#### Case 1002: Multiple Process Violations
+- **Premature Shipment**: Activities occur out of sequence (Confirm Shipment  Ship Goods  Credit Check)
+- **Risk**: Goods shipped before credit verification and stock validation
+
+#### Case 1003: Missing Critical Step
+- **No Stock Validation**: Process skips the "Validate Stock" activity entirely
+- **Out-of-order Confirmation**: Shipment confirmation occurs after goods are shipped
+
+#### Case 1004: Severe Process Breakdown
+- **Payment Before Invoice**: Payment received immediately after order registration
+- **Missing Activities**: No Credit Check or Stock Validation performed
+- **Unusual Timing**: All activities compressed into 50 minutes
+
+### Hypotheses for Anomalies
+
+1. **System Integration Issues**: Asynchronous systems may be logging events out of order
+2. **Manual Override Practices**: Staff bypassing standard procedures for priority customers
+3. **Training Deficiencies**: New employees unfamiliar with proper procedures
+4. **Technical Failures**: System components failing to trigger required checks
+5. **Fraud Risk**: Intentional bypassing of controls for certain transactions
+
+### SQL Queries for Investigation
+
+#### 1. Identify All Cases with Out-of-Order Activities
+```sql
+WITH expected_order AS (
+    SELECT 
+        activity,
+        CASE activity
+            WHEN 'Register Order' THEN 1
+            WHEN 'Perform Credit Check' THEN 2
+            WHEN 'Validate Stock' THEN 3
+            WHEN 'Confirm Shipment' THEN 4
+            WHEN 'Ship Goods' THEN 5
+            WHEN 'Issue Invoice' THEN 6
+            WHEN 'Receive Payment' THEN 7
+        END as expected_sequence
+    FROM (VALUES 
+        ('Register Order'),
+        ('Perform Credit Check'),
+        ('Validate Stock'),
+        ('Confirm Shipment'),
+        ('Ship Goods'),
+        ('Issue Invoice'),
+        ('Receive Payment')
+    ) AS v(activity)
+),
+actual_sequences AS (
+    SELECT 
+        e.case_id,
+        e.activity,
+        e.timestamp,
+        eo.expected_sequence,
+        LAG(eo.expected_sequence) OVER (PARTITION BY e.case_id ORDER BY e.timestamp) as prev_expected_seq
+    FROM order_event_log e
+    LEFT JOIN expected_order eo ON e.activity = eo.activity
+)
+SELECT 
+    case_id,
+    COUNT(*) as out_of_order_count,
+    STRING_AGG(activity, ' -> ' ORDER BY timestamp) as actual_flow
+FROM actual_sequences
+WHERE expected_sequence < prev_expected_seq
+GROUP BY case_id
+ORDER BY out_of_order_count DESC;
+```
+
+#### 2. Find Cases Missing Critical Activities
+```sql
+WITH required_activities AS (
+    SELECT * FROM (VALUES 
+        ('Perform Credit Check'),
+        ('Validate Stock')
+    ) AS v(activity)
+),
+case_activities AS (
+    SELECT 
+        case_id,
+        STRING_AGG(DISTINCT activity, ', ' ORDER BY activity) as activities_performed
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT 
+    ca.case_id,
+    o.order_value,
+    o.customer_id,
+    o.order_type,
+    ra.activity as missing_activity
+FROM case_activities ca
+CROSS JOIN required_activities ra
+LEFT JOIN order_event_log e ON ca.case_id = e.case_id AND e.activity = ra.activity
+JOIN orders o ON ca.case_id = o.case_id
+WHERE e.event_id IS NULL
+ORDER BY o.order_value DESC;
+```
+
+#### 3. Analyze Timing Anomalies - Cases Processed Too Quickly
+```sql
+WITH case_duration AS (
+    SELECT 
+        case_id,
+        MIN(timestamp) as start_time,
+        MAX(timestamp) as end_time,
+        EXTRACT(EPOCH FROM (MAX(timestamp) - MIN(timestamp)))/60 as duration_minutes,
+        COUNT(DISTINCT activity) as activity_count
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT 
+    cd.case_id,
+    cd.duration_minutes,
+    cd.activity_count,
+    o.order_value,
+    o.order_type,
+    cd.duration_minutes / NULLIF(cd.activity_count, 0) as avg_minutes_per_activity
+FROM case_duration cd
+JOIN orders o ON cd.case_id = o.case_id
+WHERE cd.duration_minutes < 60  -- Cases completed in under an hour
+   OR cd.duration_minutes / NULLIF(cd.activity_count, 0) < 10  -- Less than 10 min per activity
+ORDER BY cd.duration_minutes ASC;
+```
+
+#### 4. Identify Payment Before Invoice Anomalies
+```sql
+WITH payment_invoice_timing AS (
+    SELECT 
+        p.case_id,
+        p.timestamp as payment_time,
+        i.timestamp as invoice_time,
+        p.resource as payment_resource,
+        i.resource as invoice_resource,
+        EXTRACT(EPOCH FROM (p.timestamp - i.timestamp))/60 as payment_before_invoice_minutes
+    FROM order_event_log p
+    JOIN order_event_log i ON p.case_id = i.case_id
+    WHERE p.activity = 'Receive Payment'
+      AND i.activity = 'Issue Invoice'
+)
+SELECT 
+    pit.*,
+    o.order_value,
+    o.customer_id,
+    o.order_type
+FROM payment_invoice_timing pit
+JOIN orders o ON pit.case_id = o.case_id
+WHERE pit.payment_time < pit.invoice_time
+ORDER BY pit.payment_before_invoice_minutes DESC;
+```
+
+#### 5. Resource Behavior Analysis - Identify Unusual Patterns
+```sql
+WITH resource_violations AS (
+    SELECT 
+        e.resource,
+        r.role,
+        r.department,
+        COUNT(DISTINCT e.case_id) as cases_handled,
+        SUM(CASE 
+            WHEN e.activity = 'Ship Goods' 
+             AND NOT EXISTS (
+                SELECT 1 FROM order_event_log e2 
+                WHERE e2.case_id = e.case_id 
+                  AND e2.activity IN ('Validate Stock', 'Confirm Shipment')
+                  AND e2.timestamp < e.timestamp
+             ) THEN 1 
+            ELSE 0 
+        END) as premature_shipments,
+        SUM(CASE 
+            WHEN e.activity = 'Confirm Shipment' 
+             AND EXISTS (
+                SELECT 1 FROM order_event_log e3 
+                WHERE e3.case_id = e.case_id 
+                  AND e3.activity = 'Ship Goods'
+                  AND e3.timestamp < e.timestamp
+             ) THEN 1 
+            ELSE 0 
+        END) as late_confirmations
+    FROM order_event_log e
+    JOIN resources r ON e.resource = r.resource_id
+    GROUP BY e.resource, r.role, r.department
+)
+SELECT *
+FROM resource_violations
+WHERE premature_shipments > 0 OR late_confirmations > 0
+ORDER BY premature_shipments DESC, late_confirmations DESC;
+```
+
+#### 6. High-Risk Transaction Pattern Detection
+```sql
+WITH risk_indicators AS (
+    SELECT 
+        e.case_id,
+        o.order_value,
+        o.customer_id,
+        MAX(CASE WHEN e.activity = 'Perform Credit Check' THEN 1 ELSE 0 END) as has_credit_check,
+        MAX(CASE WHEN e.activity = 'Validate Stock' THEN 1 ELSE 0 END) as has_stock_validation,
+        MIN(CASE 
+            WHEN e.activity = 'Receive Payment' AND e.additional_info LIKE '%amount=%' 
+            THEN CAST(SUBSTRING(e.additional_info FROM 'amount=([0-9.]+)') AS DECIMAL)
+            ELSE NULL 
+        END) as payment_amount,
+        EXTRACT(EPOCH FROM (MAX(e.timestamp) - MIN(e.timestamp)))/3600 as process_duration_hours
+    FROM order_event_log e
+    JOIN orders o ON e.case_id = o.case_id
+    GROUP BY e.case_id, o.order_value, o.customer_id
+)
+SELECT 
+    case_id,
+    order_value,
+    customer_id,
+    CASE 
+        WHEN has_credit_check = 0 AND order_value > 1500 THEN 'HIGH'
+        WHEN has_stock_validation = 0 THEN 'MEDIUM'
+        WHEN process_duration_hours < 1 AND order_value > 2000 THEN 'MEDIUM'
+        ELSE 'LOW'
+    END as risk_level,
+    CASE 
+        WHEN has_credit_check = 0 THEN 'Missing Credit Check, '
+        ELSE ''
+    END ||
+    CASE 
+        WHEN has_stock_validation = 0 THEN 'Missing Stock Validation, '
+        ELSE ''
+    END ||
+    CASE 
+        WHEN process_duration_hours < 1 THEN 'Rushed Processing'
+        ELSE ''
+    END as risk_factors
+FROM risk_indicators
+WHERE has_credit_check = 0 
+   OR has_stock_validation = 0 
+   OR (process_duration_hours < 1 AND order_value > 2000)
+ORDER BY order_value DESC;
+```
+
+#### 7. Department Handoff Analysis
+```sql
+WITH activity_handoffs AS (
+    SELECT 
+        e1.case_id,
+        e1.activity as from_activity,
+        e2.activity as to_activity,
+        r1.department as from_department,
+        r2.department as to_department,
+        e1.timestamp as from_time,
+        e2.timestamp as to_time,
+        EXTRACT(EPOCH FROM (e2.timestamp - e1.timestamp))/60 as handoff_minutes
+    FROM order_event_log e1
+    JOIN order_event_log e2 ON e1.case_id = e2.case_id 
+        AND e2.timestamp = (
+            SELECT MIN(timestamp) 
+            FROM order_event_log e3 
+            WHERE e3.case_id = e1.case_id 
+              AND e3.timestamp > e1.timestamp
+        )
+    JOIN resources r1 ON e1.resource = r1.resource_id
+    JOIN resources r2 ON e2.resource = r2.resource_id
+)
+SELECT 
+    from_department || ' -> ' || to_department as department_flow,
+    from_activity || ' -> ' || to_activity as activity_flow,
+    COUNT(*) as occurrence_count,
+    AVG(handoff_minutes) as avg_handoff_time,
+    MIN(handoff_minutes) as min_handoff_time,
+    MAX(handoff_minutes) as max_handoff_time
+FROM activity_handoffs
+GROUP BY department_flow, activity_flow
+ORDER BY occurrence_count DESC;
+```
+
+### Key Findings Summary
+
+These queries will help identify:
+1. **Compliance violations** where critical checks are skipped
+2. **Timing anomalies** suggesting automated or fraudulent behavior  
+3. **Resource-specific patterns** indicating training needs or intentional bypasses
+4. **High-risk transactions** requiring immediate attention
+5. **Process bottlenecks** and inefficient handoffs between departments
+
+The analysis reveals systemic issues requiring immediate intervention, particularly around credit checks and stock validation being bypassed for certain high-value orders.
