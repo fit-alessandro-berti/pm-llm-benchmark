@@ -93,7 +93,7 @@ def calculate_correlation(x, y, name_x, name_y):
 
 def main():
     # Load all data
-    print("Loading data...")
+    print("Loading data and generating correlation analysis...")
     hallucination_df = parse_hallucination_report()
     model_info = load_json_data('model_info.json')
     model_is_os = load_json_data('model_is_os.json')
@@ -101,36 +101,49 @@ def main():
     model_scores = load_json_data('model_scores.json')
     model_dates = load_json_data('model_date.json')
     
-    # Print variable explanations
-    print("\n" + "="*80)
-    print("VARIABLE EXPLANATIONS")
-    print("="*80)
-    print("\nHALLUCINATION CATEGORIES:")
-    print("-"*40)
-    print("Category 1 - Input Misalignment:")
-    print("  1a_instruction_override: Model ignores explicit instructions")
-    print("  1b_context_omission: Model omits provided context")
-    print("  1c_prompt_contradiction: Model contradicts the prompt")
-    print("\nCategory 2 - Factual Errors:")
-    print("  2a_concept_fabrication: Model invents concepts/facts")
-    print("  2b_spurious_numeric: Model generates incorrect numbers")
-    print("  2c_false_citation: Model creates false references")
-    print("\nCategory 3 - Logical Errors:")
-    print("  3a_unsupported_leap: Model makes unsupported logical jumps")
-    print("  3b_self_contradiction: Model contradicts itself")
-    print("  3c_circular_reasoning: Model uses circular logic")
-    print("\nCategory 4 - Technical Errors:")
-    print("  4a_syntax_error: Model produces syntactically incorrect output")
-    print("  4b_model_semantics_breach: Model violates semantic rules")
-    print("  4c_visual_descr_mismatch: Model misinterprets visual descriptions")
+    # Open output file
+    output_file = open('CORRELATION.md', 'w')
     
-    print("\nMODEL FEATURES:")
-    print("-"*40)
-    print("  model_size: Total model parameters in billions (B)")
-    print("  is_opensource: Binary (1=open source, 0=proprietary)")
-    print("  is_reasoning: Binary (1=reasoning model, 0=standard model)")
-    print("  benchmark_score: Performance score from PM-LLM benchmark")
-    print("  days_since_2024: Days since Jan 1, 2024 (model age indicator)")
+    # Helper function to write to file
+    def write(text=""):
+        output_file.write(text + "\n")
+    
+    # Write variable explanations
+    write("# Correlation Analysis Report")
+    write("")
+    write("=" * 80)
+    write("## VARIABLE EXPLANATIONS")
+    write("=" * 80)
+    write("")
+    write("### HALLUCINATION CATEGORIES:")
+    write("-" * 40)
+    write("**Category 1 - Input Misalignment:**")
+    write("- 1a_instruction_override: Model ignores explicit instructions")
+    write("- 1b_context_omission: Model omits provided context")
+    write("- 1c_prompt_contradiction: Model contradicts the prompt")
+    write("")
+    write("**Category 2 - Factual Errors:**")
+    write("- 2a_concept_fabrication: Model invents concepts/facts")
+    write("- 2b_spurious_numeric: Model generates incorrect numbers")
+    write("- 2c_false_citation: Model creates false references")
+    write("")
+    write("**Category 3 - Logical Errors:**")
+    write("- 3a_unsupported_leap: Model makes unsupported logical jumps")
+    write("- 3b_self_contradiction: Model contradicts itself")
+    write("- 3c_circular_reasoning: Model uses circular logic")
+    write("")
+    write("**Category 4 - Technical Errors:**")
+    write("- 4a_syntax_error: Model produces syntactically incorrect output")
+    write("- 4b_model_semantics_breach: Model violates semantic rules")
+    write("- 4c_visual_descr_mismatch: Model misinterprets visual descriptions")
+    write("")
+    write("### MODEL FEATURES:")
+    write("-" * 40)
+    write("- **model_size**: Total model parameters in billions (B)")
+    write("- **is_opensource**: Binary (1=open source, 0=proprietary)")
+    write("- **is_reasoning**: Binary (1=reasoning model, 0=standard model)")
+    write("- **benchmark_score**: Performance score from PM-LLM benchmark")
+    write("- **days_since_2024**: Days since Jan 1, 2024 (model age indicator)")
     
     # Calculate model sizes
     model_sizes = calculate_model_size(model_info)
@@ -212,15 +225,17 @@ def main():
         ('days_since_2024', 'Days Since 2024-01-01')
     ]
     
-    # Print header
-    print("\n" + "="*80)
-    print("CORRELATION ANALYSIS: Hallucinations vs Model Features")
-    print("="*80)
+    # Write header
+    write("")
+    write("=" * 80)
+    write("## CORRELATION ANALYSIS: Hallucinations vs Model Features")
+    write("=" * 80)
     
     # First, analyze category sums specifically
-    print("\n" + "="*80)
-    print("CATEGORY-LEVEL CORRELATIONS (Summed Categories)")
-    print("="*80)
+    write("")
+    write("=" * 80)
+    write("## CATEGORY-LEVEL CORRELATIONS (Summed Categories)")
+    write("=" * 80)
     
     category_cols = [
         'category1_input_misalignment',
@@ -230,9 +245,10 @@ def main():
     ]
     
     for cat_col in category_cols:
-        print(f"\n{'-'*60}")
-        print(f"Correlations with: {cat_col}")
-        print(f"{'-'*60}")
+        write("")
+        write("-" * 60)
+        write(f"### Correlations with: {cat_col}")
+        write("-" * 60)
         
         correlations = []
         
@@ -255,7 +271,7 @@ def main():
         # Sort by absolute correlation
         correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
         
-        # Print results
+        # Write results
         for c in correlations:
             significance = ""
             if c['p_value'] < 0.001:
@@ -265,21 +281,24 @@ def main():
             elif c['p_value'] < 0.05:
                 significance = "*"
             
-            print(f"\n{c['feature']}:")
-            print(f"  Correlation: {c['correlation']:.3f} {significance}")
-            print(f"  Linear fit: y = {c['slope']:.3f}x + {c['intercept']:.1f}")
-            print(f"  P-value: {c['p_value']:.4f}")
-            print(f"  N samples: {c['n_samples']}")
+            write("")
+            write(f"**{c['feature']}:**")
+            write(f"- Correlation: {c['correlation']:.3f} {significance}")
+            write(f"- Linear fit: y = {c['slope']:.3f}x + {c['intercept']:.1f}")
+            write(f"- P-value: {c['p_value']:.4f}")
+            write(f"- N samples: {c['n_samples']}")
     
-    print("\n" + "="*80)
-    print("INDIVIDUAL HALLUCINATION TYPE CORRELATIONS")
-    print("="*80)
+    write("")
+    write("=" * 80)
+    write("## INDIVIDUAL HALLUCINATION TYPE CORRELATIONS")
+    write("=" * 80)
     
     # For each hallucination type
     for hall_col in hallucination_cols:
-        print(f"\n{'-'*60}")
-        print(f"Correlations with: {hall_col}")
-        print(f"{'-'*60}")
+        write("")
+        write("-" * 60)
+        write(f"### Correlations with: {hall_col}")
+        write("-" * 60)
         
         correlations = []
         
@@ -302,7 +321,7 @@ def main():
         # Sort by absolute correlation
         correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
         
-        # Print results
+        # Write results
         for c in correlations:
             significance = ""
             if c['p_value'] < 0.001:
@@ -312,19 +331,22 @@ def main():
             elif c['p_value'] < 0.05:
                 significance = "*"
             
-            print(f"\n{c['feature']}:")
-            print(f"  Correlation: {c['correlation']:.3f} {significance}")
-            print(f"  Linear fit: y = {c['slope']:.3f}x + {c['intercept']:.1f}")
-            print(f"  P-value: {c['p_value']:.4f}")
-            print(f"  N samples: {c['n_samples']}")
+            write("")
+            write(f"**{c['feature']}:**")
+            write(f"- Correlation: {c['correlation']:.3f} {significance}")
+            write(f"- Linear fit: y = {c['slope']:.3f}x + {c['intercept']:.1f}")
+            write(f"- P-value: {c['p_value']:.4f}")
+            write(f"- N samples: {c['n_samples']}")
     
     # Summary statistics
-    print("\n" + "="*80)
-    print("SUMMARY STATISTICS")
-    print("="*80)
+    write("")
+    write("=" * 80)
+    write("## SUMMARY STATISTICS")
+    write("=" * 80)
     
-    print("\nStrongest Correlations (|r| > 0.3):")
-    print("-"*40)
+    write("")
+    write("### Strongest Correlations (|r| > 0.3):")
+    write("-" * 40)
     
     strong_correlations = []
     for hall_col in hallucination_cols:
@@ -344,21 +366,27 @@ def main():
     strong_correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
     
     for sc in strong_correlations[:40]:  # Top 40 strongest
-        print(f"{sc['hallucination']} vs {sc['feature']}:")
-        print(f"  r = {sc['correlation']:.3f}, {sc['equation']}")
+        write(f"**{sc['hallucination']} vs {sc['feature']}:**")
+        write(f"  r = {sc['correlation']:.3f}, {sc['equation']}")
+        write("")
     
-    print("\n" + "="*80)
-    print("Legend:")
-    print("* p < 0.05, ** p < 0.01, *** p < 0.001")
-    print("="*80)
+    write("")
+    write("=" * 80)
+    write("## Legend:")
+    write("- \\* p < 0.05")
+    write("- \\*\\* p < 0.01")
+    write("- \\*\\*\\* p < 0.001")
+    write("=" * 80)
     
     # Inter-category correlations
-    print("\n" + "="*80)
-    print("INTER-CATEGORY CORRELATIONS")
-    print("="*80)
-    print("\nHow different hallucination categories correlate with each other:")
-    print("(Shows if models prone to one type also tend to have others)")
-    print("-"*60)
+    write("")
+    write("=" * 80)
+    write("## INTER-CATEGORY CORRELATIONS")
+    write("=" * 80)
+    write("")
+    write("How different hallucination categories correlate with each other:")
+    write("(Shows if models prone to one type also tend to have others)")
+    write("-" * 60)
     
     # Define all hallucination columns for inter-correlation
     inter_corr_cols = [
@@ -406,9 +434,10 @@ def main():
     # Sort by absolute correlation
     inter_correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
     
-    # Print category-level correlations first
-    print("\n### CATEGORY-LEVEL CORRELATIONS ###")
-    print("-"*40)
+    # Write category-level correlations first
+    write("")
+    write("### CATEGORY-LEVEL CORRELATIONS")
+    write("-" * 40)
     category_pairs = [
         ('Category 1: Input Misalignment', 'Category 2: Factual Errors'),
         ('Category 1: Input Misalignment', 'Category 3: Logical Errors'),
@@ -429,15 +458,17 @@ def main():
                 elif ic['p_value'] < 0.05:
                     significance = "*"
                 
-                print(f"\n{cat1}")
-                print(f"  vs {cat2}:")
-                print(f"  Correlation: {ic['correlation']:.3f} {significance}")
-                print(f"  Linear fit: {ic['equation']}")
+                write("")
+                write(f"**{cat1}**")
+                write(f"  vs **{cat2}:**")
+                write(f"- Correlation: {ic['correlation']:.3f} {significance}")
+                write(f"- Linear fit: {ic['equation']}")
                 break
     
-    # Print strongest inter-hallucination correlations
-    print("\n### TOP 20 STRONGEST INTER-HALLUCINATION CORRELATIONS ###")
-    print("-"*40)
+    # Write strongest inter-hallucination correlations
+    write("")
+    write("### TOP 20 STRONGEST INTER-HALLUCINATION CORRELATIONS")
+    write("-" * 40)
     
     count = 0
     for ic in inter_correlations:
@@ -454,16 +485,18 @@ def main():
             elif ic['p_value'] < 0.05:
                 significance = "*"
             
-            print(f"\n{ic['pair']}:")
-            print(f"  r = {ic['correlation']:.3f} {significance}, {ic['equation']}")
+            write("")
+            write(f"**{ic['pair']}:**")
+            write(f"  r = {ic['correlation']:.3f} {significance}, {ic['equation']}")
             
             count += 1
             if count >= 20:
                 break
     
-    # Print interesting negative correlations if any
-    print("\n### NOTABLE NEGATIVE CORRELATIONS (Trade-offs) ###")
-    print("-"*40)
+    # Write interesting negative correlations if any
+    write("")
+    write("### NOTABLE NEGATIVE CORRELATIONS (Trade-offs)")
+    write("-" * 40)
     negative_found = False
     for ic in inter_correlations:
         if 'Total Hallucinations' in ic['col1'] or 'Total Hallucinations' in ic['col2']:
@@ -478,17 +511,24 @@ def main():
             elif ic['p_value'] < 0.05:
                 significance = "*"
             
-            print(f"\n{ic['pair']}:")
-            print(f"  r = {ic['correlation']:.3f} {significance}, {ic['equation']}")
-            print(f"  (Models good at one tend to be worse at the other)")
+            write("")
+            write(f"**{ic['pair']}:**")
+            write(f"  r = {ic['correlation']:.3f} {significance}, {ic['equation']}")
+            write(f"  (Models good at one tend to be worse at the other)")
             negative_found = True
     
     if not negative_found:
-        print("\nNo significant negative correlations found between hallucination types.")
+        write("")
+        write("No significant negative correlations found between hallucination types.")
     
-    print("\n" + "="*80)
-    print("END OF ANALYSIS")
-    print("="*80)
+    write("")
+    write("=" * 80)
+    write("## END OF ANALYSIS")
+    write("=" * 80)
+    
+    # Close the file
+    output_file.close()
+    print("Correlation analysis complete. Results saved to CORRELATION.md")
 
 if __name__ == "__main__":
     main()
