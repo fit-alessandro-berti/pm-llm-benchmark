@@ -343,7 +343,7 @@ def main():
     
     strong_correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
     
-    for sc in strong_correlations[:10]:  # Top 10 strongest
+    for sc in strong_correlations[:40]:  # Top 40 strongest
         print(f"{sc['hallucination']} vs {sc['feature']}:")
         print(f"  r = {sc['correlation']:.3f}, {sc['equation']}")
     
