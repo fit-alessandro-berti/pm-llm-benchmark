@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "gpt-oss-120b" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "gpt-oss-20b" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
