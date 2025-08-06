@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+import json
+import re
+from datetime import datetime
+import numpy as np
+from scipy import stats
+import pandas as pd
+
+def parse_hallucination_report(filepath='hallucination_report.md'):
+    """Parse the markdown table from hallucination report"""
+    data = []
+    with open(filepath, 'r') as f:
+        lines = f.readlines()
+    
+    # Find the table (skip header lines)
+    in_table = False
+    for line in lines:
+        if '| Model |' in line:
+            in_table = True
+            continue
+        if '| --- |' in line:
+            continue
+        if in_table and line.strip().startswith('|'):
+            parts = [p.strip() for p in line.split('|')[1:-1]]
+            if len(parts) >= 2 and parts[0] and parts[1].isdigit():
+                model_name = parts[0]
+                scores = [int(p) if p.isdigit() else 0 for p in parts[1:]]
+                data.append({
+                    'model': model_name,
+                    'total_hallucinations': scores[0],
+                    '1a_instruction_override': scores[1] if len(scores) > 1 else 0,
+                    '1b_context_omission': scores[2] if len(scores) > 2 else 0,
+                    '1c_prompt_contradiction': scores[3] if len(scores) > 3 else 0,
+                    '2a_concept_fabrication': scores[4] if len(scores) > 4 else 0,
+                    '2b_spurious_numeric': scores[5] if len(scores) > 5 else 0,
+                    '2c_false_citation': scores[6] if len(scores) > 6 else 0,
+                    '3a_unsupported_leap': scores[7] if len(scores) > 7 else 0,
+                    '3b_self_contradiction': scores[8] if len(scores) > 8 else 0,
+                    '3c_circular_reasoning': scores[9] if len(scores) > 9 else 0,
+                    '4a_syntax_error': scores[10] if len(scores) > 10 else 0,
+                    '4b_model_semantics_breach': scores[11] if len(scores) > 11 else 0,
+                    '4c_visual_descr_mismatch': scores[12] if len(scores) > 12 else 0
+                })
+    
+    return pd.DataFrame(data)
+
+def load_json_data(filepath):
+    """Load JSON file"""
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
+def calculate_model_size(model_info):
+    """Calculate total model size from model_info.json"""
+    model_sizes = {}
+    for model, sizes in model_info.items():
+        if sizes and isinstance(sizes, list):
+            model_sizes[model] = sum(sizes)
+        elif sizes:
+            model_sizes[model] = sizes
+        else:
+            model_sizes[model] = None
+    return model_sizes
+
+def date_to_days_since_epoch(date_str):
+    """Convert date string to days since a reference date"""
+    if not date_str or date_str == 'null':
+        return None
+    try:
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        reference = datetime(2024, 1, 1)
+        return (date_obj - reference).days
+    except:
+        return None
+
+def calculate_correlation(x, y, name_x, name_y):
+    """Calculate correlation between two variables, handling NaN values"""
+    # Remove pairs where either value is None/NaN
+    valid_pairs = [(xi, yi) for xi, yi in zip(x, y) if xi is not None and yi is not None and not np.isnan(xi) and not np.isnan(yi)]
+    
+    if len(valid_pairs) < 3:
+        return None, None, None, None, 0
+    
+    x_valid = [p[0] for p in valid_pairs]
+    y_valid = [p[1] for p in valid_pairs]
+    
+    # Calculate Pearson correlation
+    corr, p_value = stats.pearsonr(x_valid, y_valid)
+    
+    # Calculate linear regression (y = ax + b)
+    slope, intercept, r_value, p_val, std_err = stats.linregress(x_valid, y_valid)
+    
+    return corr, p_value, slope, intercept, len(valid_pairs)
+
+def main():
+    # Load all data
+    print("Loading data...")
+    hallucination_df = parse_hallucination_report()
+    model_info = load_json_data('model_info.json')
+    model_is_os = load_json_data('model_is_os.json')
+    model_is_reasoning = load_json_data('model_is_reasoning.json')
+    model_scores = load_json_data('model_scores.json')
+    model_dates = load_json_data('model_date.json')
+    
+    # Calculate model sizes
+    model_sizes = calculate_model_size(model_info)
+    
+    # Create combined dataframe
+    combined_data = []
+    for _, row in hallucination_df.iterrows():
+        model = row['model']
+        combined_data.append({
+            'model': model,
+            'total_hallucinations': row['total_hallucinations'],
+            '1a_instruction_override': row['1a_instruction_override'],
+            '1b_context_omission': row['1b_context_omission'],
+            '1c_prompt_contradiction': row['1c_prompt_contradiction'],
+            '2a_concept_fabrication': row['2a_concept_fabrication'],
+            '2b_spurious_numeric': row['2b_spurious_numeric'],
+            '2c_false_citation': row['2c_false_citation'],
+            '3a_unsupported_leap': row['3a_unsupported_leap'],
+            '3b_self_contradiction': row['3b_self_contradiction'],
+            '3c_circular_reasoning': row['3c_circular_reasoning'],
+            '4a_syntax_error': row['4a_syntax_error'],
+            '4b_model_semantics_breach': row['4b_model_semantics_breach'],
+            '4c_visual_descr_mismatch': row['4c_visual_descr_mismatch'],
+            'model_size': model_sizes.get(model),
+            'is_opensource': 1 if model_is_os.get(model) else 0 if model in model_is_os else None,
+            'is_reasoning': 1 if model_is_reasoning.get(model) else 0 if model in model_is_reasoning else None,
+            'benchmark_score': model_scores.get(model),
+            'days_since_2024': date_to_days_since_epoch(model_dates.get(model))
+        })
+    
+    combined_df = pd.DataFrame(combined_data)
+    
+    # Define hallucination columns
+    hallucination_cols = [
+        'total_hallucinations',
+        '1a_instruction_override',
+        '1b_context_omission', 
+        '1c_prompt_contradiction',
+        '2a_concept_fabrication',
+        '2b_spurious_numeric',
+        '2c_false_citation',
+        '3a_unsupported_leap',
+        '3b_self_contradiction',
+        '3c_circular_reasoning',
+        '4a_syntax_error',
+        '4b_model_semantics_breach',
+        '4c_visual_descr_mismatch'
+    ]
+    
+    # Define feature columns
+    feature_cols = [
+        ('model_size', 'Model Size (B)'),
+        ('is_opensource', 'Is Open Source'),
+        ('is_reasoning', 'Is Reasoning Model'),
+        ('benchmark_score', 'Benchmark Score'),
+        ('days_since_2024', 'Days Since 2024-01-01')
+    ]
+    
+    # Print header
+    print("\n" + "="*80)
+    print("CORRELATION ANALYSIS: Hallucinations vs Model Features")
+    print("="*80)
+    
+    # For each hallucination type
+    for hall_col in hallucination_cols:
+        print(f"\n{'-'*60}")
+        print(f"Correlations with: {hall_col}")
+        print(f"{'-'*60}")
+        
+        correlations = []
+        
+        for feat_col, feat_name in feature_cols:
+            y = combined_df[hall_col].values
+            x = combined_df[feat_col].values
+            
+            corr, p_val, slope, intercept, n_valid = calculate_correlation(x, y, feat_name, hall_col)
+            
+            if corr is not None:
+                correlations.append({
+                    'feature': feat_name,
+                    'correlation': corr,
+                    'p_value': p_val,
+                    'slope': slope,
+                    'intercept': intercept,
+                    'n_samples': n_valid
+                })
+        
+        # Sort by absolute correlation
+        correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
+        
+        # Print results
+        for c in correlations:
+            significance = ""
+            if c['p_value'] < 0.001:
+                significance = "***"
+            elif c['p_value'] < 0.01:
+                significance = "**"
+            elif c['p_value'] < 0.05:
+                significance = "*"
+            
+            print(f"\n{c['feature']}:")
+            print(f"  Correlation: {c['correlation']:.3f} {significance}")
+            print(f"  Linear fit: y = {c['slope']:.3f}x + {c['intercept']:.1f}")
+            print(f"  P-value: {c['p_value']:.4f}")
+            print(f"  N samples: {c['n_samples']}")
+    
+    # Summary statistics
+    print("\n" + "="*80)
+    print("SUMMARY STATISTICS")
+    print("="*80)
+    
+    print("\nStrongest Correlations (|r| > 0.3):")
+    print("-"*40)
+    
+    strong_correlations = []
+    for hall_col in hallucination_cols:
+        for feat_col, feat_name in feature_cols:
+            y = combined_df[hall_col].values
+            x = combined_df[feat_col].values
+            corr, p_val, slope, intercept, n_valid = calculate_correlation(x, y, feat_name, hall_col)
+            
+            if corr is not None and abs(corr) > 0.3 and p_val < 0.05:
+                strong_correlations.append({
+                    'hallucination': hall_col,
+                    'feature': feat_name,
+                    'correlation': corr,
+                    'equation': f"y = {slope:.3f}x + {intercept:.1f}"
+                })
+    
+    strong_correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
+    
+    for sc in strong_correlations[:10]:  # Top 10 strongest
+        print(f"{sc['hallucination']} vs {sc['feature']}:")
+        print(f"  r = {sc['correlation']:.3f}, {sc['equation']}")
+    
+    print("\n" + "="*80)
+    print("Legend:")
+    print("* p < 0.05, ** p < 0.01, *** p < 0.001")
+    print("="*80)
+
+if __name__ == "__main__":
+    main()
