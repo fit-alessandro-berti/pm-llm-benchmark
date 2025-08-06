@@ -25,27 +25,30 @@ print(f"Found {len(leaderboard_data)} models in leaderboard")
 # Create mapping from beautified to real names using approximate string matching
 beautified_to_real = {}
 
+
 def normalize_string(s):
     """Normalize string for comparison"""
     return s.lower().replace('-', '').replace('_', '').replace(' ', '').replace('.', '')
+
 
 def get_similarity(s1, s2):
     """Get similarity score between two strings"""
     return SequenceMatcher(None, normalize_string(s1), normalize_string(s2)).ratio()
 
+
 for entry in leaderboard_data:
     beautified = entry['Model']
-    
+
     best_match = None
     best_score = 0
-    
+
     for real in real_model_names:
         score = get_similarity(beautified, real)
-        
+
         if score > best_score:
             best_score = score
             best_match = real
-    
+
     # Use a threshold to ensure reasonable matches
     if best_score > 0.6:
         beautified_to_real[beautified] = best_match
@@ -64,15 +67,15 @@ for entry in leaderboard_data:
     beautified = entry['Model']
     if beautified in beautified_to_real:
         real_name = beautified_to_real[beautified]
-        
+
         # Extract score (remove ** markdown formatting)
         score = float(entry['Score'].replace('**', ''))
         model_scores[real_name] = score
-        
+
         # Check if reasoning model (LRM column)
         is_reasoning = entry['LRM'] == ':white_check_mark:'
         model_is_reasoning[real_name] = is_reasoning
-        
+
         # Check if open source (OS column)
         is_os = entry['OS'] == ':white_check_mark:'
         model_is_os[real_name] = is_os
@@ -84,11 +87,6 @@ if os.path.exists('model_date.json'):
         model_date = json.load(f)
     print(f"\nLoaded existing model_date.json with {len(model_date)} entries")
 
-# Add new models with empty dates
-for real_name in model_scores.keys():
-    if real_name not in model_date:
-        model_date[real_name] = ""
-
 # Handle model_info.json (model information like parameters)
 model_info = {}
 if os.path.exists('model_info.json'):
@@ -96,10 +94,27 @@ if os.path.exists('model_info.json'):
         model_info = json.load(f)
     print(f"Loaded existing model_info.json with {len(model_info)} entries")
 
-# Add new models with empty lists
-for real_name in model_scores.keys():
+# IMPORTANT FIX: Add ALL models from output directory, not just matched ones
+# This ensures every model in the output directory gets an entry
+for real_name in real_model_names:
+    if real_name not in model_date:
+        model_date[real_name] = ""
+        print(f"Added new model to model_date: {real_name}")
+
     if real_name not in model_info:
         model_info[real_name] = []
+        print(f"Added new model to model_info: {real_name}")
+
+# Also ensure models from leaderboard that were matched are included
+# (This handles cases where a model appears in leaderboard but not in output dir)
+for real_name in model_scores.keys():
+    if real_name not in model_date:
+        model_date[real_name] = ""
+        print(f"Added matched model to model_date: {real_name}")
+
+    if real_name not in model_info:
+        model_info[real_name] = []
+        print(f"Added matched model to model_info: {real_name}")
 
 # Write JSON files
 with open('model_scores.json', 'w') as f:
@@ -116,17 +131,24 @@ with open('model_is_os.json', 'w') as f:
 
 with open('model_date.json', 'w') as f:
     json.dump(model_date, f, indent=2, sort_keys=True)
-    print(f"Created/Updated model_date.json with {len(model_date)} entries")
+    print(f"Updated model_date.json with {len(model_date)} entries")
 
 with open('model_info.json', 'w') as f:
     json.dump(model_info, f, indent=2, sort_keys=True)
-    print(f"Created/Updated model_info.json with {len(model_info)} entries")
+    print(f"Updated model_info.json with {len(model_info)} entries")
 
 # Print unmatched models for debugging
-unmatched = [entry['Model'] for entry in leaderboard_data if entry['Model'] not in beautified_to_real]
-if unmatched:
-    print(f"\nUnmatched models ({len(unmatched)}):")
-    for model in unmatched:
+unmatched_leaderboard = [entry['Model'] for entry in leaderboard_data if entry['Model'] not in beautified_to_real]
+if unmatched_leaderboard:
+    print(f"\nUnmatched leaderboard models ({len(unmatched_leaderboard)}):")
+    for model in unmatched_leaderboard:
+        print(f"  - {model}")
+
+# Print models in output that weren't matched to leaderboard
+unmatched_output = real_model_names - set(model_scores.keys())
+if unmatched_output:
+    print(f"\nModels in output not matched to leaderboard ({len(unmatched_output)}):")
+    for model in sorted(unmatched_output):
         print(f"  - {model}")
 
 # Print which models need manual updates
