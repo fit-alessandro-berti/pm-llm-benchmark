@@ -65,10 +65,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.177 *
+- Correlation: -0.184 *
 - Linear fit: y = -0.004x + 43.8
-- P-value: 0.0379
-- N samples: 138
+- P-value: 0.0288
+- N samples: 142
 
 **Is Open Source:**
 - Correlation: 0.168 *
@@ -93,10 +93,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.148 
-- Linear fit: y = -0.002x + 24.0
-- P-value: 0.0830
-- N samples: 138
+- Correlation: -0.141 
+- Linear fit: y = -0.002x + 24.4
+- P-value: 0.0935
+- N samples: 142
 
 **Is Reasoning Model:**
 - Correlation: -0.112 
@@ -133,10 +133,10 @@
 - N samples: 145
 
 **Model Size (B):**
-- Correlation: -0.138 
-- Linear fit: y = -0.004x + 78.3
-- P-value: 0.1075
-- N samples: 138
+- Correlation: -0.142 
+- Linear fit: y = -0.005x + 79.1
+- P-value: 0.0920
+- N samples: 142
 
 **Is Open Source:**
 - Correlation: 0.119 
@@ -161,10 +161,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.126 
-- Linear fit: y = -0.002x + 17.8
-- P-value: 0.1424
-- N samples: 138
+- Correlation: -0.128 
+- Linear fit: y = -0.002x + 18.1
+- P-value: 0.1277
+- N samples: 142
 
 **Is Open Source:**
 - Correlation: 0.101 
@@ -205,10 +205,10 @@
 - N samples: 145
 
 **Model Size (B):**
-- Correlation: -0.188 *
-- Linear fit: y = -0.013x + 172.1
-- P-value: 0.0271
-- N samples: 138
+- Correlation: -0.189 *
+- Linear fit: y = -0.014x + 173.9
+- P-value: 0.0239
+- N samples: 142
 
 **Is Open Source:**
 - Correlation: 0.180 *
@@ -239,10 +239,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.177 *
+- Correlation: -0.184 *
 - Linear fit: y = -0.004x + 43.8
-- P-value: 0.0379
-- N samples: 138
+- P-value: 0.0288
+- N samples: 142
 
 **Is Open Source:**
 - Correlation: 0.168 *
@@ -267,10 +267,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.148 
-- Linear fit: y = -0.002x + 24.0
-- P-value: 0.0830
-- N samples: 138
+- Correlation: -0.141 
+- Linear fit: y = -0.002x + 24.4
+- P-value: 0.0935
+- N samples: 142
 
 **Is Reasoning Model:**
 - Correlation: -0.112 
@@ -307,10 +307,10 @@
 - N samples: 145
 
 **Model Size (B):**
-- Correlation: -0.138 
-- Linear fit: y = -0.004x + 78.3
-- P-value: 0.1075
-- N samples: 138
+- Correlation: -0.142 
+- Linear fit: y = -0.005x + 79.1
+- P-value: 0.0920
+- N samples: 142
 
 **Is Open Source:**
 - Correlation: 0.119 
@@ -335,10 +335,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.126 
-- Linear fit: y = -0.002x + 17.8
-- P-value: 0.1424
-- N samples: 138
+- Correlation: -0.128 
+- Linear fit: y = -0.002x + 18.1
+- P-value: 0.1277
+- N samples: 142
 
 **Is Open Source:**
 - Correlation: 0.101 
@@ -381,10 +381,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.130 
+- Correlation: -0.135 
 - Linear fit: y = -0.001x + 6.5
-- P-value: 0.1273
-- N samples: 138
+- P-value: 0.1089
+- N samples: 142
 
 ------------------------------------------------------------
 ### Correlations with: 1b_context_omission
@@ -409,10 +409,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.156 
+- Correlation: -0.162 
 - Linear fit: y = -0.003x + 33.8
-- P-value: 0.0677
-- N samples: 138
+- P-value: 0.0543
+- N samples: 142
 
 **Is Open Source:**
 - Correlation: 0.097 
@@ -443,10 +443,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.151 
+- Correlation: -0.156 
 - Linear fit: y = -0.000x + 3.5
-- P-value: 0.0776
-- N samples: 138
+- P-value: 0.0643
+- N samples: 142
 
 **Days Since 2024-01-01:**
 - Correlation: 0.006 
@@ -483,10 +483,10 @@
 - N samples: 145
 
 **Model Size (B):**
-- Correlation: -0.042 
-- Linear fit: y = -0.000x + 5.4
-- P-value: 0.6277
-- N samples: 138
+- Correlation: -0.034 
+- Linear fit: y = -0.000x + 5.7
+- P-value: 0.6856
+- N samples: 142
 
 ------------------------------------------------------------
 ### Correlations with: 2b_spurious_numeric
@@ -505,10 +505,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.173 *
-- Linear fit: y = -0.002x + 17.9
-- P-value: 0.0419
-- N samples: 138
+- Correlation: -0.172 *
+- Linear fit: y = -0.002x + 18.0
+- P-value: 0.0407
+- N samples: 142
 
 **Is Reasoning Model:**
 - Correlation: -0.113 
@@ -533,10 +533,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.067 
+- Correlation: -0.073 
 - Linear fit: y = -0.000x + 0.8
-- P-value: 0.4327
-- N samples: 138
+- P-value: 0.3861
+- N samples: 142
 
 **Is Open Source:**
 - Correlation: -0.055 
@@ -579,10 +579,10 @@
 - N samples: 145
 
 **Model Size (B):**
-- Correlation: -0.135 
-- Linear fit: y = -0.004x + 70.2
-- P-value: 0.1154
-- N samples: 138
+- Correlation: -0.140 
+- Linear fit: y = -0.004x + 70.9
+- P-value: 0.0975
+- N samples: 142
 
 **Is Open Source:**
 - Correlation: 0.128 
@@ -607,10 +607,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.113 
-- Linear fit: y = -0.001x + 7.9
-- P-value: 0.1872
-- N samples: 138
+- Correlation: -0.108 
+- Linear fit: y = -0.001x + 8.1
+- P-value: 0.1991
+- N samples: 142
 
 **Days Since 2024-01-01:**
 - Correlation: 0.035 
@@ -634,12 +634,6 @@
 - P-value: 0.0091
 - N samples: 145
 
-**Model Size (B):**
-- Correlation: 0.094 
-- Linear fit: y = 0.000x + 0.1
-- P-value: 0.2719
-- N samples: 138
-
 **Is Open Source:**
 - Correlation: 0.061 
 - Linear fit: y = 0.069x + 0.1
@@ -651,6 +645,12 @@
 - Linear fit: y = 0.005x + 0.0
 - P-value: 0.4820
 - N samples: 141
+
+**Model Size (B):**
+- Correlation: 0.055 
+- Linear fit: y = 0.000x + 0.2
+- P-value: 0.5187
+- N samples: 142
 
 **Is Reasoning Model:**
 - Correlation: -0.014 
@@ -675,10 +675,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.151 
-- Linear fit: y = -0.001x + 4.1
-- P-value: 0.0777
-- N samples: 138
+- Correlation: -0.145 
+- Linear fit: y = -0.001x + 4.2
+- P-value: 0.0840
+- N samples: 142
 
 **Is Reasoning Model:**
 - Correlation: 0.109 
@@ -709,10 +709,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: -0.189 *
-- Linear fit: y = -0.001x + 10.4
-- P-value: 0.0261
-- N samples: 138
+- Correlation: -0.195 *
+- Linear fit: y = -0.001x + 10.6
+- P-value: 0.0199
+- N samples: 142
 
 **Is Open Source:**
 - Correlation: 0.144 
@@ -737,10 +737,10 @@
 - N samples: 141
 
 **Model Size (B):**
-- Correlation: 0.232 **
-- Linear fit: y = 0.001x + 3.3
-- P-value: 0.0062
-- N samples: 138
+- Correlation: 0.225 **
+- Linear fit: y = 0.001x + 3.2
+- P-value: 0.0070
+- N samples: 142
 
 **Is Reasoning Model:**
 - Correlation: -0.189 *
