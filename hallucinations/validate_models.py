@@ -12,7 +12,7 @@ def validate_model_info(json_file='model_info.json'):
         if not sizes:
             models_without_info.append(model_name)
         else:
-            total_size = sum(sizes) if isinstance(sizes, list) else sizes
+            total_size = sizes[0] if isinstance(sizes, list) else sizes
             models_with_info.append((model_name, total_size))
     
     print("Models without size information:")
