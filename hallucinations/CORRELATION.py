@@ -101,6 +101,37 @@ def main():
     model_scores = load_json_data('model_scores.json')
     model_dates = load_json_data('model_date.json')
     
+    # Print variable explanations
+    print("\n" + "="*80)
+    print("VARIABLE EXPLANATIONS")
+    print("="*80)
+    print("\nHALLUCINATION CATEGORIES:")
+    print("-"*40)
+    print("Category 1 - Input Misalignment:")
+    print("  1a_instruction_override: Model ignores explicit instructions")
+    print("  1b_context_omission: Model omits provided context")
+    print("  1c_prompt_contradiction: Model contradicts the prompt")
+    print("\nCategory 2 - Factual Errors:")
+    print("  2a_concept_fabrication: Model invents concepts/facts")
+    print("  2b_spurious_numeric: Model generates incorrect numbers")
+    print("  2c_false_citation: Model creates false references")
+    print("\nCategory 3 - Logical Errors:")
+    print("  3a_unsupported_leap: Model makes unsupported logical jumps")
+    print("  3b_self_contradiction: Model contradicts itself")
+    print("  3c_circular_reasoning: Model uses circular logic")
+    print("\nCategory 4 - Technical Errors:")
+    print("  4a_syntax_error: Model produces syntactically incorrect output")
+    print("  4b_model_semantics_breach: Model violates semantic rules")
+    print("  4c_visual_descr_mismatch: Model misinterprets visual descriptions")
+    
+    print("\nMODEL FEATURES:")
+    print("-"*40)
+    print("  model_size: Total model parameters in billions (B)")
+    print("  is_opensource: Binary (1=open source, 0=proprietary)")
+    print("  is_reasoning: Binary (1=reasoning model, 0=standard model)")
+    print("  benchmark_score: Performance score from PM-LLM benchmark")
+    print("  days_since_2024: Days since Jan 1, 2024 (model age indicator)")
+    
     # Calculate model sizes
     model_sizes = calculate_model_size(model_info)
     
@@ -108,6 +139,21 @@ def main():
     combined_data = []
     for _, row in hallucination_df.iterrows():
         model = row['model']
+        
+        # Calculate category sums
+        category1_sum = (row['1a_instruction_override'] + 
+                        row['1b_context_omission'] + 
+                        row['1c_prompt_contradiction'])
+        category2_sum = (row['2a_concept_fabrication'] + 
+                        row['2b_spurious_numeric'] + 
+                        row['2c_false_citation'])
+        category3_sum = (row['3a_unsupported_leap'] + 
+                        row['3b_self_contradiction'] + 
+                        row['3c_circular_reasoning'])
+        category4_sum = (row['4a_syntax_error'] + 
+                        row['4b_model_semantics_breach'] + 
+                        row['4c_visual_descr_mismatch'])
+        
         combined_data.append({
             'model': model,
             'total_hallucinations': row['total_hallucinations'],
@@ -123,6 +169,10 @@ def main():
             '4a_syntax_error': row['4a_syntax_error'],
             '4b_model_semantics_breach': row['4b_model_semantics_breach'],
             '4c_visual_descr_mismatch': row['4c_visual_descr_mismatch'],
+            'category1_input_misalignment': category1_sum,
+            'category2_factual_errors': category2_sum,
+            'category3_logical_errors': category3_sum,
+            'category4_technical_errors': category4_sum,
             'model_size': model_sizes.get(model),
             'is_opensource': 1 if model_is_os.get(model) else 0 if model in model_is_os else None,
             'is_reasoning': 1 if model_is_reasoning.get(model) else 0 if model in model_is_reasoning else None,
@@ -135,6 +185,10 @@ def main():
     # Define hallucination columns
     hallucination_cols = [
         'total_hallucinations',
+        'category1_input_misalignment',
+        'category2_factual_errors',
+        'category3_logical_errors',
+        'category4_technical_errors',
         '1a_instruction_override',
         '1b_context_omission', 
         '1c_prompt_contradiction',
@@ -161,6 +215,64 @@ def main():
     # Print header
     print("\n" + "="*80)
     print("CORRELATION ANALYSIS: Hallucinations vs Model Features")
+    print("="*80)
+    
+    # First, analyze category sums specifically
+    print("\n" + "="*80)
+    print("CATEGORY-LEVEL CORRELATIONS (Summed Categories)")
+    print("="*80)
+    
+    category_cols = [
+        'category1_input_misalignment',
+        'category2_factual_errors',
+        'category3_logical_errors',
+        'category4_technical_errors'
+    ]
+    
+    for cat_col in category_cols:
+        print(f"\n{'-'*60}")
+        print(f"Correlations with: {cat_col}")
+        print(f"{'-'*60}")
+        
+        correlations = []
+        
+        for feat_col, feat_name in feature_cols:
+            y = combined_df[cat_col].values
+            x = combined_df[feat_col].values
+            
+            corr, p_val, slope, intercept, n_valid = calculate_correlation(x, y, feat_name, cat_col)
+            
+            if corr is not None:
+                correlations.append({
+                    'feature': feat_name,
+                    'correlation': corr,
+                    'p_value': p_val,
+                    'slope': slope,
+                    'intercept': intercept,
+                    'n_samples': n_valid
+                })
+        
+        # Sort by absolute correlation
+        correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
+        
+        # Print results
+        for c in correlations:
+            significance = ""
+            if c['p_value'] < 0.001:
+                significance = "***"
+            elif c['p_value'] < 0.01:
+                significance = "**"
+            elif c['p_value'] < 0.05:
+                significance = "*"
+            
+            print(f"\n{c['feature']}:")
+            print(f"  Correlation: {c['correlation']:.3f} {significance}")
+            print(f"  Linear fit: y = {c['slope']:.3f}x + {c['intercept']:.1f}")
+            print(f"  P-value: {c['p_value']:.4f}")
+            print(f"  N samples: {c['n_samples']}")
+    
+    print("\n" + "="*80)
+    print("INDIVIDUAL HALLUCINATION TYPE CORRELATIONS")
     print("="*80)
     
     # For each hallucination type
