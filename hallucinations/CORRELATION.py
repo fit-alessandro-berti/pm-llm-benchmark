@@ -351,6 +351,144 @@ def main():
     print("Legend:")
     print("* p < 0.05, ** p < 0.01, *** p < 0.001")
     print("="*80)
+    
+    # Inter-category correlations
+    print("\n" + "="*80)
+    print("INTER-CATEGORY CORRELATIONS")
+    print("="*80)
+    print("\nHow different hallucination categories correlate with each other:")
+    print("(Shows if models prone to one type also tend to have others)")
+    print("-"*60)
+    
+    # Define all hallucination columns for inter-correlation
+    inter_corr_cols = [
+        ('total_hallucinations', 'Total Hallucinations'),
+        ('category1_input_misalignment', 'Category 1: Input Misalignment'),
+        ('category2_factual_errors', 'Category 2: Factual Errors'),
+        ('category3_logical_errors', 'Category 3: Logical Errors'),
+        ('category4_technical_errors', 'Category 4: Technical Errors'),
+        ('1a_instruction_override', '1a: Instruction Override'),
+        ('1b_context_omission', '1b: Context Omission'),
+        ('1c_prompt_contradiction', '1c: Prompt Contradiction'),
+        ('2a_concept_fabrication', '2a: Concept Fabrication'),
+        ('2b_spurious_numeric', '2b: Spurious Numeric'),
+        ('2c_false_citation', '2c: False Citation'),
+        ('3a_unsupported_leap', '3a: Unsupported Leap'),
+        ('3b_self_contradiction', '3b: Self Contradiction'),
+        ('3c_circular_reasoning', '3c: Circular Reasoning'),
+        ('4a_syntax_error', '4a: Syntax Error'),
+        ('4b_model_semantics_breach', '4b: Model Semantics Breach'),
+        ('4c_visual_descr_mismatch', '4c: Visual Descr Mismatch')
+    ]
+    
+    # Calculate all inter-correlations
+    inter_correlations = []
+    for i, (col1, name1) in enumerate(inter_corr_cols):
+        for j, (col2, name2) in enumerate(inter_corr_cols):
+            if i >= j:  # Skip diagonal and duplicate pairs
+                continue
+            
+            x = combined_df[col1].values
+            y = combined_df[col2].values
+            
+            corr, p_val, slope, intercept, n_valid = calculate_correlation(x, y, name1, name2)
+            
+            if corr is not None:
+                inter_correlations.append({
+                    'pair': f"{name1} vs {name2}",
+                    'col1': name1,
+                    'col2': name2,
+                    'correlation': corr,
+                    'p_value': p_val,
+                    'equation': f"y = {slope:.3f}x + {intercept:.1f}"
+                })
+    
+    # Sort by absolute correlation
+    inter_correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
+    
+    # Print category-level correlations first
+    print("\n### CATEGORY-LEVEL CORRELATIONS ###")
+    print("-"*40)
+    category_pairs = [
+        ('Category 1: Input Misalignment', 'Category 2: Factual Errors'),
+        ('Category 1: Input Misalignment', 'Category 3: Logical Errors'),
+        ('Category 1: Input Misalignment', 'Category 4: Technical Errors'),
+        ('Category 2: Factual Errors', 'Category 3: Logical Errors'),
+        ('Category 2: Factual Errors', 'Category 4: Technical Errors'),
+        ('Category 3: Logical Errors', 'Category 4: Technical Errors'),
+    ]
+    
+    for cat1, cat2 in category_pairs:
+        for ic in inter_correlations:
+            if (ic['col1'] == cat1 and ic['col2'] == cat2) or (ic['col1'] == cat2 and ic['col2'] == cat1):
+                significance = ""
+                if ic['p_value'] < 0.001:
+                    significance = "***"
+                elif ic['p_value'] < 0.01:
+                    significance = "**"
+                elif ic['p_value'] < 0.05:
+                    significance = "*"
+                
+                print(f"\n{cat1}")
+                print(f"  vs {cat2}:")
+                print(f"  Correlation: {ic['correlation']:.3f} {significance}")
+                print(f"  Linear fit: {ic['equation']}")
+                break
+    
+    # Print strongest inter-hallucination correlations
+    print("\n### TOP 20 STRONGEST INTER-HALLUCINATION CORRELATIONS ###")
+    print("-"*40)
+    
+    count = 0
+    for ic in inter_correlations:
+        # Skip if it involves total_hallucinations (too obvious)
+        if 'Total Hallucinations' in ic['col1'] or 'Total Hallucinations' in ic['col2']:
+            continue
+        
+        if abs(ic['correlation']) > 0.3 and ic['p_value'] < 0.05:
+            significance = ""
+            if ic['p_value'] < 0.001:
+                significance = "***"
+            elif ic['p_value'] < 0.01:
+                significance = "**"
+            elif ic['p_value'] < 0.05:
+                significance = "*"
+            
+            print(f"\n{ic['pair']}:")
+            print(f"  r = {ic['correlation']:.3f} {significance}, {ic['equation']}")
+            
+            count += 1
+            if count >= 20:
+                break
+    
+    # Print interesting negative correlations if any
+    print("\n### NOTABLE NEGATIVE CORRELATIONS (Trade-offs) ###")
+    print("-"*40)
+    negative_found = False
+    for ic in inter_correlations:
+        if 'Total Hallucinations' in ic['col1'] or 'Total Hallucinations' in ic['col2']:
+            continue
+        
+        if ic['correlation'] < -0.2 and ic['p_value'] < 0.05:
+            significance = ""
+            if ic['p_value'] < 0.001:
+                significance = "***"
+            elif ic['p_value'] < 0.01:
+                significance = "**"
+            elif ic['p_value'] < 0.05:
+                significance = "*"
+            
+            print(f"\n{ic['pair']}:")
+            print(f"  r = {ic['correlation']:.3f} {significance}, {ic['equation']}")
+            print(f"  (Models good at one tend to be worse at the other)")
+            negative_found = True
+    
+    if not negative_found:
+        print("\nNo significant negative correlations found between hallucination types.")
+    
+    print("\n" + "="*80)
+    print("END OF ANALYSIS")
+    print("="*80)
 
 if __name__ == "__main__":
     main()
