@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "openrouter/horizon-beta" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "gpt-oss-120b" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -81,7 +81,8 @@ MODELS_DICT = {
         "models": {
             "claude-3-7-sonnet-20250219",
             "claude-4-opus-20250514",
-            "claude-4-sonnet-20250514"
+            "claude-4-sonnet-20250514",
+            "claude-opus-4-1-20250805",
         }
     },
     "mistral": {
@@ -291,6 +292,12 @@ MODELS_DICT = {
                 "thinking_tokens": 16000,
                 "max_tokens": 16000
             },
+            "claude-opus-4-1-thinking-20250805": {
+                "provider": "claude",
+                "base_model": "claude-opus-4-1-20250805",
+                "thinking_tokens": 16000,
+                "max_tokens": 16000
+            },
             "qwen-qwq-32b-nostepbystep": {
                 "provider": "groq",
                 "base_model": "qwen-qwq-32b",
@@ -411,7 +418,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss"]
 
     for p in patterns:
         if p in m_name:
@@ -423,7 +430,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss"]:
         if p in model_name and not "deepseek-v3" in model_name:
             if not "qwen3" in model_name or ("qwen3" in model_name and not ("nstruct" in model_name or "coder" in model_name)):
                 return True
