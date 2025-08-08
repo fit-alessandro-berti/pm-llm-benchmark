@@ -1,0 +1,199 @@
+Alright — let’s walk through the logs carefully, compare them to the **"normal process flow"** you described, identify where the deviations are, hypothesize their potential causes, and then propose **SQL queries** that would help you investigate further in the database.
+
+---
+
+## **1. Identify Anomalies in Event Order and Execution**
+
+**Expected sequence:**
+1. Register Order   
+2. Perform Credit Check   
+3. Validate Stock   
+4. Confirm Shipment   
+5. Ship Goods   
+6. Issue Invoice   
+7. Receive Payment
+
+---
+
+### **Case-by-case analysis:**
+
+#### **Case 1001**  Normal Process
+- Events occur in correct order, no missing steps.
+- All activities are completed sequentially according to expected process.
+
+---
+
+#### **Case 1002**  Major anomaly: Logistics actions before credit check & stock validation
+- Confirm Shipment (**step 4**) and Ship Goods (**step 5**) happen **before** Perform Credit Check (**step 2**) and Validate Stock (**step 3**).  
+- This means the goods were shipped before stock and credit validations were completed. **High operational risk.**
+- Potential cause:  
+  - Manual override in logistics  
+  - Urgent priority orders skipping formal checks  
+  - System design flaw not enforcing order of activities
+
+---
+
+#### **Case 1003**  Shipment before confirmation, late confirmation
+- Ship Goods occurs immediately after credit check, **before stock validation and shipment confirmation**.
+- Confirm Shipment happens **after** goods have already shipped (late_confirmation=Y in additional_info).
+- Potential cause:  
+  - Paperwork delays  
+  - Post-shipment administrative updates  
+  - Retroactive confirmation caused by logistics system lag
+
+---
+
+#### **Case 1004**  Payment before invoicing & before shipment
+- Receive Payment (**step 7**) happens right after order registration — before issue invoice and shipment steps.
+- Possible cause:  
+  - Prepaid orders  
+  - Corporate accounts with standing deposit  
+  - Manual payment mistakenly recorded too early
+
+---
+
+### **Summary of Anomalies**
+| Case ID | Anomaly | Potential Source |
+|---------|---------|------------------|
+| 1002 | Shipment before credit check & stock validation | Priority order rush, policy override, or system flaw |
+| 1003 | Goods shipped before confirmation | Delay in confirmation process, admin error |
+| 1004 | Payment before invoicing/shipment | Prepayment, incorrect data entry |
+
+---
+
+## **2. Hypotheses and Possible Root Causes**
+
+### Hypothesis 1 — **Policy Overrides for Urgency**
+- Priority orders may be allowed to skip certain steps or have them done in parallel.
+- Could be a specific policy for high-value clients or urgent orders.
+- Need to check for correlation between `order_type` and policy deviations.
+
+### Hypothesis 2 — **System Design Flaws**
+- Workflow system might not strictly enforce sequence constraints between activities.
+- This could be allowing out-of-order execution.
+
+### Hypothesis 3 — **Human Error or Administrative Lag**
+- Data entry delays or batch updates could make some events appear out-of-order.
+- Particularly likely when confirmation happens after physical shipment.
+
+### Hypothesis 4 — **Payment Policies**
+- Some customers might prepay.
+- Payment received before invoice might be a contract arrangement.
+
+---
+
+## **3. Investigation Queries**
+
+Below are **SQL examples** to explore the anomalies and test the hypotheses:
+
+---
+
+### **Query A – Detect Out-of-Sequence Steps**
+Find orders where **Ship Goods** happens before **Perform Credit Check** or **Validate Stock**.
+
+```sql
+SELECT oel.case_id,
+       MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS ship_time,
+       MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) AS credit_time,
+       MIN(CASE WHEN activity = 'Validate Stock' THEN timestamp END) AS stock_time
+FROM order_event_log oel
+GROUP BY oel.case_id
+HAVING MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) <
+       MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END)
+   OR  MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) <
+       MIN(CASE WHEN activity = 'Validate Stock' THEN timestamp END);
+```
+
+---
+
+### **Query B – Find Late Shipment Confirmations (after shipping)**
+
+```sql
+SELECT case_id,
+       MIN(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) AS confirm_time,
+       MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS ship_time
+FROM order_event_log
+GROUP BY case_id
+HAVING MIN(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) >
+       MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END);
+```
+
+---
+
+### **Query C – Identify Payments before Invoice**
+  
+```sql
+SELECT case_id,
+       MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS payment_time,
+       MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS invoice_time
+FROM order_event_log
+GROUP BY case_id
+HAVING MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) <
+       MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END);
+```
+
+---
+
+### **Query D – Check if Order Type or Value Correlates with Rule Breaking**
+  
+```sql
+SELECT o.order_type,
+       COUNT(DISTINCT oel.case_id) AS total_orders,
+       SUM(CASE WHEN sg.ship_time < cc.credit_time OR sg.ship_time < vs.stock_time THEN 1 ELSE 0 END) AS violations
+FROM orders o
+JOIN (
+    SELECT case_id,
+           MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS ship_time,
+           MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) AS credit_time,
+           MIN(CASE WHEN activity = 'Validate Stock' THEN timestamp END) AS stock_time
+    FROM order_event_log
+    GROUP BY case_id
+) sg ON o.case_id = sg.case_id
+LEFT JOIN (
+    SELECT case_id,
+           MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) AS credit_time
+    FROM order_event_log
+    GROUP BY case_id
+) cc ON o.case_id = cc.case_id
+LEFT JOIN (
+    SELECT case_id,
+           MIN(CASE WHEN activity = 'Validate Stock' THEN timestamp END) AS stock_time
+    FROM order_event_log
+    GROUP BY case_id
+) vs ON o.case_id = vs.case_id
+GROUP BY o.order_type;
+```
+
+---
+
+### **Query E – Investigate Resources Involved in Deviations**
+  
+```sql
+SELECT r.role, r.department, 
+       COUNT(DISTINCT oel.case_id) AS deviation_cases
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+JOIN (
+    SELECT case_id
+    FROM order_event_log
+    GROUP BY case_id
+    HAVING MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) <
+           MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END)
+) anomaly_cases ON oel.case_id = anomaly_cases.case_id
+GROUP BY r.role, r.department
+ORDER BY deviation_cases DESC;
+```
+
+---
+
+## **4. Next Steps**
+- Use **Query D** to see if priority orders are more prone to rule violations.
+- Use **Query E** to see if certain departments or individuals are more involved in sequence anomalies.
+- Correlate anomaly orders with financial impact by joining with `orders` on `order_value`.
+- Use interval checks to measure **time lags** between key steps.
+
+---
+
+If you want, I can **extend this** into a **"process conformance checker" SQL view** that automatically flags all deviations from the normal sequence for any order in the future — so analysts don't have to manually run multiple queries.  
+
+Do you want me to build that automated anomaly-detection SQL view next?
