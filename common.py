@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "gpt-5-2025-08-07" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "gpt-5-nano-2025-08-07" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -207,6 +207,11 @@ MODELS_DICT = {
             "o4-mini-2025-04-16-HIGH": {
                 "provider": "openai",
                 "base_model": "o4-mini-2025-04-16",
+                "reasoning_effort": "high"
+            },
+            "gpt-5-2025-08-07-HIGH": {
+                "provider": "openai",
+                "base_model": "gpt-5-2025-08-07",
                 "reasoning_effort": "high"
             },
             "o3-pro-2025-06-10-HIGH": {
