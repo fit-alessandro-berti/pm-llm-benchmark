@@ -1,0 +1,377 @@
+Here’s what stands out in the sample log versus the assumed normal flow (Register  Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Issue Invoice  Receive Payment), why it might be happening, and SQL you can use to quantify and investigate across the full database.
+
+Key anomalies observed in the examples
+- Case 1001: Looks conformant; all steps present and in order.
+- Case 1002:
+  - Confirm Shipment and Ship Goods occur before Credit Check and Validate Stock.
+  - Validate Stock occurs after Ship Goods.
+  - additional_info shows attempted_early=Y.
+  - Credit score is 650 (potentially low), but order was shipped anyway.
+- Case 1003:
+  - Ship Goods occurs before Confirm Shipment and without any Validate Stock logged.
+  - Confirm Shipment occurs after Issue Invoice and Ship Goods (late confirmation).
+- Case 1004:
+  - Receive Payment occurs before Issue Invoice.
+  - Confirm Shipment has shipment_scheduled=N, but goods were shipped later anyway.
+  - No Credit Check and no Validate Stock recorded.
+
+Hypotheses for why these happen
+- System control gaps:
+  - The workflow engine may allow out-of-order execution or manual overrides without hard stops (e.g., shipping before credit check).
+  - Parallel subprocesses logging events asynchronously without gating.
+- Data quality/integration issues:
+  - Late/async event ingestion or cross-system time skew making events appear out of order.
+  - Backfilled events (e.g., confirmation recorded after shipment) or missing events never logged.
+- Policy/process variants not modeled:
+  - Prepaid orders or priority orders using a different flow (e.g., payment before invoice) but not flagged as such in data.
+  - “Auto-approve” credit for certain customers/orders.
+- Human factors:
+  - KPI pressure to ship quickly leading to early shipping.
+  - Training gaps on required preconditions (stock validation, shipment confirmation).
+  - Overrides used without documenting reason in additional_info.
+
+Investigative SQL (PostgreSQL)
+Note: The column name timestamp is quoted as "timestamp".
+
+1) Conformance check for the whole population (presence and ordering of key milestones)
+This flags missing or out-of-order milestones relative to the assumed flow.
+
+WITH times AS (
+  SELECT
+    case_id,
+    MIN("timestamp") FILTER (WHERE activity = 'Register Order') AS t_register,
+    MIN("timestamp") FILTER (WHERE activity = 'Perform Credit Check') AS t_credit,
+    MIN("timestamp") FILTER (WHERE activity = 'Validate Stock') AS t_stock,
+    MIN("timestamp") FILTER (WHERE activity = 'Confirm Shipment') AS t_confirm,
+    MIN("timestamp") FILTER (WHERE activity = 'Ship Goods') AS t_ship,
+    MIN("timestamp") FILTER (WHERE activity = 'Issue Invoice') AS t_invoice,
+    MIN("timestamp") FILTER (WHERE activity = 'Receive Payment') AS t_payment
+  FROM order_event_log
+  GROUP BY case_id
+),
+violations AS (
+  SELECT case_id, 'Register -> Credit Check' AS rule, t_register AS t_from, t_credit AS t_to
+  FROM times
+  WHERE t_register IS NULL OR t_credit IS NULL OR t_register > t_credit
+  UNION ALL
+  SELECT case_id, 'Credit Check -> Validate Stock', t_credit, t_stock
+  FROM times
+  WHERE t_credit IS NULL OR t_stock IS NULL OR t_credit > t_stock
+  UNION ALL
+  SELECT case_id, 'Validate Stock -> Confirm Shipment', t_stock, t_confirm
+  FROM times
+  WHERE t_stock IS NULL OR t_confirm IS NULL OR t_stock > t_confirm
+  UNION ALL
+  SELECT case_id, 'Confirm Shipment -> Ship Goods', t_confirm, t_ship
+  FROM times
+  WHERE t_confirm IS NULL OR t_ship IS NULL OR t_confirm > t_ship
+  UNION ALL
+  SELECT case_id, 'Ship Goods -> Issue Invoice', t_ship, t_invoice
+  FROM times
+  WHERE t_ship IS NULL OR t_invoice IS NULL OR t_ship > t_invoice
+  UNION ALL
+  SELECT case_id, 'Issue Invoice -> Receive Payment', t_invoice, t_payment
+  FROM times
+  WHERE t_invoice IS NULL OR t_payment IS NULL OR t_invoice > t_payment
+)
+SELECT * FROM violations
+ORDER BY case_id, rule;
+
+2) Shipments occurring before prerequisites (or with prerequisites missing)
+WITH times AS (
+  SELECT
+    case_id,
+    MIN("timestamp") FILTER (WHERE activity = 'Perform Credit Check') AS t_credit,
+    MIN("timestamp") FILTER (WHERE activity = 'Validate Stock') AS t_stock,
+    MIN("timestamp") FILTER (WHERE activity = 'Confirm Shipment') AS t_confirm,
+    MIN("timestamp") FILTER (WHERE activity = 'Ship Goods') AS t_ship
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT
+  case_id, t_credit, t_stock, t_confirm, t_ship,
+  (t_credit IS NULL OR t_ship < t_credit) AS shipped_before_credit_check,
+  (t_stock IS NULL OR t_ship < t_stock) AS shipped_before_stock_validation,
+  (t_confirm IS NULL OR t_ship < t_confirm) AS shipped_before_confirmation
+FROM times
+WHERE t_ship IS NOT NULL
+  AND (
+    t_credit IS NULL OR t_ship < t_credit
+    OR t_stock IS NULL OR t_ship < t_stock
+    OR t_confirm IS NULL OR t_ship < t_confirm
+  )
+ORDER BY t_ship;
+
+3) Missing mandatory steps before shipping
+SELECT
+  t.case_id,
+  t.t_ship,
+  (t.t_credit IS NULL) AS missing_credit_check,
+  (t.t_stock IS NULL)  AS missing_stock_validation,
+  (t.t_confirm IS NULL) AS missing_shipment_confirmation
+FROM (
+  SELECT
+    case_id,
+    MIN("timestamp") FILTER (WHERE activity = 'Perform Credit Check') AS t_credit,
+    MIN("timestamp") FILTER (WHERE activity = 'Validate Stock') AS t_stock,
+    MIN("timestamp") FILTER (WHERE activity = 'Confirm Shipment') AS t_confirm,
+    MIN("timestamp") FILTER (WHERE activity = 'Ship Goods') AS t_ship
+  FROM order_event_log
+  GROUP BY case_id
+) t
+WHERE t.t_ship IS NOT NULL
+  AND (t.t_credit IS NULL OR t.t_stock IS NULL OR t.t_confirm IS NULL)
+ORDER BY t.t_ship;
+
+4) Payment before invoice (and other finance ordering checks)
+WITH times AS (
+  SELECT
+    case_id,
+    MIN("timestamp") FILTER (WHERE activity = 'Issue Invoice') AS t_invoice,
+    MIN("timestamp") FILTER (WHERE activity = 'Receive Payment') AS t_payment,
+    MIN("timestamp") FILTER (WHERE activity = 'Ship Goods') AS t_ship
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT
+  case_id, t_invoice, t_payment, t_ship,
+  (t_payment IS NOT NULL AND (t_invoice IS NULL OR t_payment < t_invoice)) AS payment_before_invoice,
+  (t_payment IS NOT NULL AND (t_ship IS NULL OR t_payment < t_ship)) AS payment_before_shipping
+FROM times
+WHERE (t_payment IS NOT NULL AND (t_invoice IS NULL OR t_payment < t_invoice))
+   OR (t_payment IS NOT NULL AND (t_ship IS NULL OR t_payment < t_ship))
+ORDER BY case_id;
+
+5) “Confirm Shipment says N” but shipping still occurred
+SELECT
+  l.case_id,
+  MIN(CASE WHEN activity = 'Confirm Shipment' AND additional_info ~ 'shipment_scheduled=N' THEN "timestamp" END) AS t_confirm_N,
+  MIN(CASE WHEN activity = 'Ship Goods' THEN "timestamp" END) AS t_ship
+FROM order_event_log l
+GROUP BY l.case_id
+HAVING MIN(CASE WHEN activity = 'Confirm Shipment' AND additional_info ~ 'shipment_scheduled=N' THEN "timestamp" END) IS NOT NULL
+   AND MIN(CASE WHEN activity = 'Ship Goods' THEN "timestamp" END) IS NOT NULL
+ORDER BY l.case_id;
+
+6) Early shipping, low credit scores, and high-value exposure
+WITH credit AS (
+  SELECT
+    case_id,
+    MIN("timestamp") AS t_credit,
+    COALESCE( NULLIF( (regexp_match(additional_info, 'credit_score=([0-9]+)'))[1], '' ), '0')::int AS credit_score
+  FROM order_event_log
+  WHERE activity = 'Perform Credit Check'
+  GROUP BY case_id, additional_info
+),
+credit_agg AS (
+  SELECT case_id,
+         MIN(t_credit) AS t_credit,
+         MAX(credit_score) AS credit_score
+  FROM credit
+  GROUP BY case_id
+),
+ship AS (
+  SELECT case_id, MIN("timestamp") AS t_ship
+  FROM order_event_log
+  WHERE activity = 'Ship Goods'
+  GROUP BY case_id
+)
+SELECT
+  o.case_id, o.order_type, o.order_value,
+  ca.credit_score, ca.t_credit, s.t_ship,
+  (s.t_ship < ca.t_credit OR ca.t_credit IS NULL) AS shipped_before_credit,
+  (ca.credit_score < 700) AS low_credit
+FROM orders o
+LEFT JOIN credit_agg ca USING (case_id)
+LEFT JOIN ship s USING (case_id)
+WHERE s.t_ship IS NOT NULL
+  AND (
+    ca.t_credit IS NULL
+    OR s.t_ship < ca.t_credit
+    OR ca.credit_score < 700
+  )
+ORDER BY o.order_value DESC NULLS LAST;
+
+7) Stock validation missing or after shipment
+WITH stock AS (
+  SELECT case_id, MIN("timestamp") AS t_stock
+  FROM order_event_log
+  WHERE activity = 'Validate Stock'
+  GROUP BY case_id
+),
+ship AS (
+  SELECT case_id, MIN("timestamp") AS t_ship
+  FROM order_event_log
+  WHERE activity = 'Ship Goods'
+  GROUP BY case_id
+)
+SELECT
+  s.case_id, s.t_ship, st.t_stock,
+  (st.t_stock IS NULL) AS missing_stock_validation,
+  (st.t_stock IS NOT NULL AND st.t_stock > s.t_ship) AS stock_validated_after_ship
+FROM ship s
+LEFT JOIN stock st USING (case_id)
+WHERE st.t_stock IS NULL OR st.t_stock > s.t_ship
+ORDER BY s.t_ship;
+
+8) Resource-role/department compliance check
+SELECT
+  l.case_id, l.activity, l.resource,
+  r.role, r.department,
+  CASE
+    WHEN l.activity IN ('Register Order') THEN 'Sales'
+    WHEN l.activity IN ('Perform Credit Check', 'Issue Invoice', 'Receive Payment') THEN 'Finance'
+    WHEN l.activity IN ('Validate Stock', 'Confirm Shipment', 'Ship Goods') THEN 'Logistics'
+    ELSE NULL
+  END AS expected_department
+FROM order_event_log l
+JOIN resources r ON r.resource_id = l.resource
+WHERE
+  CASE
+    WHEN l.activity IN ('Register Order') THEN 'Sales'
+    WHEN l.activity IN ('Perform Credit Check', 'Issue Invoice', 'Receive Payment') THEN 'Finance'
+    WHEN l.activity IN ('Validate Stock', 'Confirm Shipment', 'Ship Goods') THEN 'Logistics'
+    ELSE NULL
+  END IS NOT NULL
+  AND r.department <>
+      CASE
+        WHEN l.activity IN ('Register Order') THEN 'Sales'
+        WHEN l.activity IN ('Perform Credit Check', 'Issue Invoice', 'Receive Payment') THEN 'Finance'
+        WHEN l.activity IN ('Validate Stock', 'Confirm Shipment', 'Ship Goods') THEN 'Logistics'
+        ELSE r.department
+      END
+ORDER BY l.case_id, l."timestamp";
+
+9) Nonconforming step-to-step transitions (local sequence violations)
+WITH edges AS (
+  SELECT 'Register Order' AS a1, 'Perform Credit Check' AS a2 UNION ALL
+  SELECT 'Perform Credit Check', 'Validate Stock' UNION ALL
+  SELECT 'Validate Stock', 'Confirm Shipment' UNION ALL
+  SELECT 'Confirm Shipment', 'Ship Goods' UNION ALL
+  SELECT 'Ship Goods', 'Issue Invoice' UNION ALL
+  SELECT 'Issue Invoice', 'Receive Payment'
+),
+seq AS (
+  SELECT
+    case_id,
+    LAG(activity) OVER (PARTITION BY case_id ORDER BY "timestamp", event_id) AS prev_activity,
+    activity AS curr_activity,
+    "timestamp",
+    resource
+  FROM order_event_log
+)
+SELECT
+  s.case_id, s.prev_activity, s.curr_activity, s."timestamp", s.resource
+FROM seq s
+WHERE s.prev_activity IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM edges e WHERE e.a1 = s.prev_activity AND e.a2 = s.curr_activity
+  )
+ORDER BY s.case_id, s."timestamp";
+
+10) Rework/duplicates of the same activity per case
+SELECT case_id, activity, COUNT(*) AS cnt
+FROM order_event_log
+GROUP BY case_id, activity
+HAVING COUNT(*) > 1
+ORDER BY case_id, activity;
+
+11) Early-shipment flag in additional_info and outcomes
+SELECT
+  l.case_id,
+  MIN(CASE WHEN activity = 'Confirm Shipment' AND additional_info ~ 'attempted_early=Y' THEN "timestamp" END) AS t_attempted_early,
+  MIN(CASE WHEN activity = 'Ship Goods' THEN "timestamp" END) AS t_ship
+FROM order_event_log l
+GROUP BY l.case_id
+HAVING MIN(CASE WHEN activity = 'Confirm Shipment' AND additional_info ~ 'attempted_early=Y' THEN "timestamp" END) IS NOT NULL
+ORDER BY l.case_id;
+
+12) Which resources appear most often in nonconforming transitions
+WITH edges AS (
+  SELECT 'Register Order' AS a1, 'Perform Credit Check' AS a2 UNION ALL
+  SELECT 'Perform Credit Check', 'Validate Stock' UNION ALL
+  SELECT 'Validate Stock', 'Confirm Shipment' UNION ALL
+  SELECT 'Confirm Shipment', 'Ship Goods' UNION ALL
+  SELECT 'Ship Goods', 'Issue Invoice' UNION ALL
+  SELECT 'Issue Invoice', 'Receive Payment'
+),
+seq AS (
+  SELECT
+    case_id,
+    LAG(activity) OVER (PARTITION BY case_id ORDER BY "timestamp", event_id) AS prev_activity,
+    activity AS curr_activity,
+    resource
+  FROM order_event_log
+)
+SELECT
+  resource,
+  COUNT(*) AS nonconforming_transitions
+FROM seq s
+WHERE s.prev_activity IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.a1 = s.prev_activity AND e.a2 = s.curr_activity)
+GROUP BY resource
+ORDER BY nonconforming_transitions DESC;
+
+13) Variant analysis by order_type and order_value
+WITH v AS (
+  SELECT
+    l.case_id,
+    STRING_AGG(activity, ' -> ' ORDER BY "timestamp", event_id) AS variant
+  FROM order_event_log l
+  GROUP BY l.case_id
+)
+SELECT
+  o.order_type,
+  CASE WHEN o.order_value >= 2000 THEN 'high' ELSE 'normal' END AS value_band,
+  v.variant,
+  COUNT(*) AS cases
+FROM v
+JOIN orders o USING (case_id)
+GROUP BY o.order_type, value_band, v.variant
+ORDER BY cases DESC;
+
+14) Throughput and lead-time checks (e.g., Register to Ship, Invoice to Payment)
+WITH times AS (
+  SELECT
+    case_id,
+    MIN("timestamp") FILTER (WHERE activity = 'Register Order') AS t_register,
+    MIN("timestamp") FILTER (WHERE activity = 'Ship Goods') AS t_ship,
+    MIN("timestamp") FILTER (WHERE activity = 'Issue Invoice') AS t_invoice,
+    MIN("timestamp") FILTER (WHERE activity = 'Receive Payment') AS t_payment
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT
+  o.order_type,
+  COUNT(*) FILTER (WHERE t_register IS NOT NULL AND t_ship IS NOT NULL) AS shipped_cases,
+  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (t_ship - t_register))/3600.0)
+    AS p50_hours_reg_to_ship,
+  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (t_ship - t_register))/3600.0)
+    AS p90_hours_reg_to_ship,
+  COUNT(*) FILTER (WHERE t_invoice IS NOT NULL AND t_payment IS NOT NULL) AS billed_cases,
+  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (t_payment - t_invoice))/3600.0)
+    AS p50_hours_invoice_to_payment
+FROM times
+JOIN orders o USING (case_id)
+GROUP BY o.order_type;
+
+15) Data completeness: cases with events but no orders row
+SELECT l.case_id
+FROM order_event_log l
+LEFT JOIN orders o USING (case_id)
+WHERE o.case_id IS NULL
+GROUP BY l.case_id
+ORDER BY l.case_id;
+
+What to do with the findings
+- If out-of-order execution is common:
+  - Add system-enforced gates (cannot ship until credit check and stock validation are present and confirmed).
+  - Require explicit override reasons and approvals; log them in additional_info.
+- If you see “prepaid” behavior (payment before invoice):
+  - Define and implement a separate “prepaid” variant with correct activity semantics (e.g., Proforma Invoice  Receive Payment  Issue Invoice).
+- If late or missing events are integration artifacts:
+  - Introduce event-time vs ingestion-time fields and reconciliation jobs; add monitoring for missing mandatory events after key milestones.
+- If a few resources or roles dominate violations:
+  - Targeted training or permission adjustments; examine incentives/KPIs.
+
+If you share your real data volume and any SLAs or business rules (e.g., acceptable credit thresholds), I can tailor the thresholds and queries further (e.g., strict credit_score cutoffs, value-at-risk prioritization, or per-department dashboards).

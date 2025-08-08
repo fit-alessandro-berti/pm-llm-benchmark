@@ -1,0 +1,288 @@
+Summary of detected anomalies (from the temporal_profile)
+
+- R -> P (Receive  Approve)
+  - Average  90,000 s (~25 hrs) with very small STDEV = 3,600 s (1 hr).
+  - Suspicious because approvals are consistently ~25 hours after receive with very low variation — suggests a rigid/batched/automated scheduling rather than natural business variability.
+
+- P -> N (Approve  Notify)
+  - Average = 604,800 s (7 days) with STDEV = 172,800 s (2 days).
+  - Suspicious because notification is often delayed for many days, but with high variance — indicates inconsistent handling (sometimes immediate, sometimes long backlog).
+
+- A -> C (Assign  Close)
+  - Average = 7,200 s (2 hrs) with STDEV = 3,600 s (1 hr).
+  - Suspicious because claims are being closed very quickly after assignment; combined with low presence of Evaluate or Approve this may indicate premature closure or skipped steps.
+
+- E -> N (Evaluate  Notify)
+  - Average = 300 s (5 minutes) with STDEV = 60 s (1 minute).
+  - Suspicious because notification follows evaluation almost immediately — may indicate automated notifications or skipping of checks.
+
+- E -> C and other pairs
+  - E -> C average 1 hr but large STDEV (50 min) — mixed behavior; fine but worth correlating to the above.
+
+Hypotheses (possible root causes)
+
+- R -> P rigid timing
+  - Scheduled/batch approval job: automated process that approves claims in a nightly/daily batch about 24–26 hours after submission.
+  - System default / backfill: approval timestamps may be populated in bulk after a delay (e.g., ETL job), producing near-identical offsets.
+  - Missing/normalized timestamps: r_ts or p_ts not recorded correctly for a subset, producing artificially consistent durations.
+
+- P -> N long & variable delays
+  - Manual notification backlog: notifications are manual and depend on a queue/backlog of staff.
+  - Priority routing or escalations: some claims skip notification, others are batched leading to bimodal/tail behavior.
+  - Different responsible units/resources for notification; some teams slow or out of region.
+
+- A -> C quick closures
+  - Auto-closure policy for trivial claims: simple claims are assigned then immediately closed without evaluation/approval.
+  - Mislabeling of activity: activity "C" might be logged by a system process at assign time for administrative actions (not true closure).
+  - Missing events: evaluate/approve events might be missing or stored under different activity codes.
+
+- E -> N very short
+  - Immediate automated notification after evaluation (system-driven).
+  - Evaluation logged after notification (timestamp ordering issues or clock skews).
+  - Small-interaction tasks where notification is expected immediately (e.g., small payouts).
+
+Verification queries and approaches (PostgreSQL)
+
+Notes:
+- Replace ZETA with whatever z-score threshold you want (common: 3).
+- Model reference values (in seconds) from the temporal_profile:
+  - R->A: avg=3600, sd=600
+  - R->E: avg=86400, sd=28800
+  - R->P: avg=90000, sd=3600
+  - A->C: avg=7200, sd=3600
+  - E->N: avg=300, sd=60
+  - E->C: avg=3600, sd=3000
+  - P->N: avg=604800, sd=172800
+  - N->C: avg=1800, sd=300
+
+1) Build a per-claim timeline (useful base for all checks)
+- This pivots events per claim into columns (timestamps and resources).
+SQL:
+WITH evt AS (
+  SELECT
+    ce.claim_id,
+    max(case when activity = 'R' then timestamp end)      AS r_ts,
+    max(case when activity = 'A' then timestamp end)      AS a_ts,
+    max(case when activity = 'A' then resource end)       AS a_resource,
+    max(case when activity = 'E' then timestamp end)      AS e_ts,
+    max(case when activity = 'E' then resource end)       AS e_resource,
+    max(case when activity = 'P' then timestamp end)      AS p_ts,
+    max(case when activity = 'P' then resource end)       AS p_resource,
+    max(case when activity = 'N' then timestamp end)      AS n_ts,
+    max(case when activity = 'N' then resource end)       AS n_resource,
+    max(case when activity = 'C' then timestamp end)      AS c_ts,
+    max(case when activity = 'C' then resource end)       AS c_resource
+  FROM claim_events ce
+  GROUP BY ce.claim_id
+)
+SELECT e.*, c.claim_type, c.customer_id
+FROM evt e
+LEFT JOIN claims c ON e.claim_id = c.claim_id;
+
+Use this CTE (evt) in the following queries.
+
+2) Recompute real averages and STDEV from data to confirm the model
+- For each pair, compute avg and stddev (seconds).
+SQL (example for R->P and P->N, adapt for others):
+WITH evt AS ( ... same as above ... )
+SELECT
+  avg(extract(epoch from (p_ts - r_ts)))     AS avg_rp_seconds,
+  stddev_samp(extract(epoch from (p_ts - r_ts))) AS sd_rp_seconds,
+  avg(extract(epoch from (n_ts - p_ts)))     AS avg_pn_seconds,
+  stddev_samp(extract(epoch from (n_ts - p_ts))) AS sd_pn_seconds,
+  count(*) FILTER (WHERE r_ts IS NOT NULL AND p_ts IS NOT NULL) AS cnt_rp,
+  count(*) FILTER (WHERE p_ts IS NOT NULL AND n_ts IS NOT NULL) AS cnt_pn
+FROM evt
+WHERE TRUE;
+
+Interpretation: compare computed avg/sd to the model values to see if the model matches reality or if the model is based on a subset.
+
+3) Check for unusually rigid R->P durations (many claims with same duration)
+- Are there many identical durations (indicates batching or defaults)?
+SQL:
+WITH evt AS ( ... )
+SELECT
+  dur_seconds,
+  count(*) AS cnt
+FROM (
+  SELECT claim_id, extract(epoch from (p_ts - r_ts)) AS dur_seconds
+  FROM evt
+  WHERE r_ts IS NOT NULL AND p_ts IS NOT NULL
+) x
+GROUP BY dur_seconds
+ORDER BY cnt DESC
+LIMIT 50;
+
+If you see very large counts on one or a few exact dur_seconds values, that points to scheduled/batched operations or default offsets.
+
+4) Flag claims whose pairwise durations deviate (z-score) beyond ZETA
+- Example: R->P anomalies according to model
+SQL (ZETA = 3):
+WITH evt AS ( ... )
+SELECT
+  claim_id,
+  extract(epoch from (p_ts - r_ts)) AS r_p_seconds,
+  ((extract(epoch from (p_ts - r_ts)) - 90000.0) / 3600.0) AS r_p_z
+FROM evt
+WHERE r_ts IS NOT NULL AND p_ts IS NOT NULL
+  AND abs((extract(epoch from (p_ts - r_ts)) - 90000.0) / 3600.0) > 3
+ORDER BY r_p_z DESC
+LIMIT 200;
+
+- Generalized template for any pair (replace constants):
+((duration_seconds - MODEL_AVG) / MODEL_SD) AS z
+
+5) Find claims closed almost immediately after assignment (possible premature closure)
+SQL:
+WITH evt AS ( ... )
+SELECT e.claim_id, c.claim_type, e.a_resource, e.a_ts, e.c_ts,
+  extract(epoch from (e.c_ts - e.a_ts)) AS a_c_seconds,
+  CASE WHEN e.e_ts IS NULL THEN true ELSE false END AS missing_evaluation,
+  CASE WHEN e.p_ts IS NULL THEN true ELSE false END AS missing_approval
+FROM evt e
+JOIN claims c ON e.claim_id = c.claim_id
+WHERE e.a_ts IS NOT NULL AND e.c_ts IS NOT NULL
+  AND extract(epoch from (e.c_ts - e.a_ts)) < 3600   -- threshold: < 1 hour; adjust as needed
+ORDER BY a_c_seconds ASC
+LIMIT 500;
+
+Follow-ups:
+- Count how many of these have missing E or P (possible skip).
+SQL:
+WITH evt AS ( ... )
+SELECT
+  count(*) FILTER (WHERE e_ts IS NULL AND p_ts IS NULL) AS cnt_missing_both,
+  count(*) FILTER (WHERE e_ts IS NULL AND p_ts IS NOT NULL) AS cnt_missing_e_only,
+  count(*) FILTER (WHERE e_ts IS NOT NULL AND p_ts IS NULL) AS cnt_missing_p_only,
+  count(*) AS total_fast_ac
+FROM (
+  SELECT claim_id, a_ts, c_ts, e_ts, p_ts FROM evt
+  WHERE a_ts IS NOT NULL AND c_ts IS NOT NULL
+    AND extract(epoch from (c_ts - a_ts)) < 3600
+) t;
+
+6) Find claims where EvaluateNotify is extremely fast (likely automated notifications)
+SQL:
+WITH evt AS ( ... )
+SELECT claim_id, a_resource, e_resource, n_resource, e_ts, n_ts,
+  extract(epoch from (n_ts - e_ts)) AS e_n_seconds
+FROM evt
+WHERE e_ts IS NOT NULL AND n_ts IS NOT NULL
+  AND extract(epoch from (n_ts - e_ts)) < 300   -- <5 minutes
+ORDER BY e_n_seconds ASC
+LIMIT 500;
+
+Also: group by n_resource/e_resource to see which resources are responsible:
+WITH evt AS ( ... )
+SELECT n_resource, count(*) AS cnt_fast_notify, avg(extract(epoch from (n_ts - e_ts))) AS avg_e_n
+FROM evt
+WHERE e_ts IS NOT NULL AND n_ts IS NOT NULL
+  AND extract(epoch from (n_ts - e_ts)) < 300
+GROUP BY n_resource
+ORDER BY cnt_fast_notify DESC;
+
+If n_resource is a system account (e.g., 'system' or blank), that indicates automation.
+
+7) Find claims where Approve  Notify takes excessively long (e.g., > 7 days)
+SQL:
+WITH evt AS ( ... )
+SELECT e.claim_id, c.claim_type, e.a_resource, e.p_ts, e.n_ts,
+  extract(epoch from (n_ts - p_ts)) AS p_n_seconds
+FROM evt e
+JOIN claims c ON e.claim_id = c.claim_id
+WHERE e.p_ts IS NOT NULL AND e.n_ts IS NOT NULL
+  AND extract(epoch from (n_ts - p_ts)) > 604800  -- >7 days
+ORDER BY p_n_seconds DESC
+LIMIT 500;
+
+Correlate these with claim_type and region (requires linking assigned adjuster):
+- If assign_resource stores adjuster_id (text), join to adjusters:
+WITH evt AS ( ... )
+SELECT c.claim_type, adj.region, adj.specialization, count(*) AS cnt_long_pn,
+  avg(extract(epoch from (n_ts - p_ts))) AS avg_delay_seconds
+FROM evt e
+JOIN claims c ON e.claim_id = c.claim_id
+LEFT JOIN adjusters adj ON adj.adjuster_id::text = e.a_resource
+WHERE e.p_ts IS NOT NULL AND e.n_ts IS NOT NULL
+  AND extract(epoch from (n_ts - p_ts)) > 604800
+GROUP BY c.claim_type, adj.region, adj.specialization
+ORDER BY cnt_long_pn DESC
+LIMIT 200;
+
+This will show whether specific regions, claim types, or adjuster specializations experience the long notification delays.
+
+8) Check for missing intermediate steps (skipped Evaluate/Approve)
+- Claims with Assign and Close but missing E or P:
+WITH evt AS ( ... )
+SELECT e.claim_id, c.claim_type, e.a_ts, e.e_ts, e.p_ts, e.c_ts
+FROM evt e
+JOIN claims c ON e.claim_id = c.claim_id
+WHERE e.a_ts IS NOT NULL AND e.c_ts IS NOT NULL
+  AND (e.e_ts IS NULL OR e.p_ts IS NULL)
+ORDER BY e.c_ts DESC
+LIMIT 500;
+
+9) Time-of-day / weekday patterns — detect batching
+- Approve event hours:
+SELECT extract(dow from p_ts) AS weekday, extract(hour from p_ts) AS hour, count(*) AS cnt
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY weekday, hour
+ORDER BY cnt DESC
+LIMIT 200;
+
+- Relative regularity: check whether p_ts - r_ts clusters tightly around ~25 hours
+SQL (histogram buckets):
+WITH evt AS ( ... )
+SELECT width_bucket(extract(epoch from (p_ts - r_ts))::int, 0, 172800, 24) AS bucket,
+  min(extract(epoch from (p_ts - r_ts))) AS min_s,
+  max(extract(epoch from (p_ts - r_ts))) AS max_s,
+  count(*) AS cnt
+FROM evt
+WHERE p_ts IS NOT NULL AND r_ts IS NOT NULL
+GROUP BY bucket
+ORDER BY bucket;
+
+10) Investigate clock skew or timestamp anomalies
+- Look for out-of-order timestamps or negative durations:
+WITH evt AS ( ... )
+SELECT claim_id,
+  extract(epoch from (a_ts - r_ts)) AS r_a,
+  extract(epoch from (e_ts - a_ts)) AS a_e,
+  extract(epoch from (p_ts - e_ts)) AS e_p,
+  extract(epoch from (n_ts - p_ts)) AS p_n,
+  extract(epoch from (c_ts - n_ts)) AS n_c
+FROM evt
+WHERE (r_ts IS NOT NULL AND a_ts IS NOT NULL AND a_ts < r_ts)
+   OR (a_ts IS NOT NULL AND e_ts IS NOT NULL AND e_ts < a_ts)
+   OR (e_ts IS NOT NULL AND p_ts IS NOT NULL AND p_ts < e_ts)
+   OR (p_ts IS NOT NULL AND n_ts IS NOT NULL AND n_ts < p_ts)
+   OR (n_ts IS NOT NULL AND c_ts IS NOT NULL AND c_ts < n_ts)
+LIMIT 200;
+
+If many negative durations exist, system clocks or event ordering might be incorrect.
+
+11) Drill into specific claims for manual inspection
+- For a flagged claim_id (e.g., 1234), show the event log:
+SELECT *
+FROM claim_events
+WHERE claim_id = 1234
+ORDER BY timestamp;
+
+This shows full event sequence and resource values for manual review.
+
+Suggested analysis workflow
+1. Run (2) to verify model averages/SD against data.
+2. Use (3) and (9) to detect batching / fixed-duration patterns.
+3. Flag individual claims with (4), (5), (6), (7), (8) according to the anomaly you're investigating.
+4. Correlate flagged claims with claims.claim_type and adjusters.region (queries above) to find segments/owners responsible.
+5. Inspect raw event logs for a sample of flagged claims (query 11) to validate whether events were skipped, timestamps were backfilled, or resources indicate automation.
+
+Tuning suggestions
+- Choose ZETA sensibly: 3 is common for strong anomalies; 2 for broader detection.
+- Adjust time thresholds (e.g., "fast closure" cutoff or "long P->N") according to business SLAs.
+- If resource values are not adjuster IDs, check how resources are represented (user names, system ids) and adapt joins to adjusters accordingly.
+
+If you want, I can:
+- Produce a single analysis script that computes the model vs. observed statistics and outputs top anomalous claims for each anomaly type, or
+- Help adapt these queries to the exact resource formatting in your claim_events table (e.g., if resource stores numeric adjuster_id vs. username).
