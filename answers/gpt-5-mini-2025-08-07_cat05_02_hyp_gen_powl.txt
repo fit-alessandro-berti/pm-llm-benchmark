@@ -1,0 +1,198 @@
+Summary of findings
+- Anomalies visible in the POWL model
+  1. A loop between Evaluate (E) and Approve (P) that permits repeated E/P cycles (potentially unbounded).
+  2. An XOR between Notify (N) and a silent skip, allowing customer notification to be omitted.
+  3. Partial ordering edges that allow Close (C) to be reached directly from Assign (A), i.e., C may occur before E or P — permitting premature closes or out-of-sequence execution.
+
+Possible causes / hypotheses
+- Partially implemented business rule changes: e.g., a new re-evaluation policy added (loop), or an opt-out notification rule added but not fully enforced.
+- Miscommunication between teams: modeler misunderstood whether Notify is mandatory or optional.
+- Technical/workflow-engine issues or bugs: modeler allowed a direct A -> C edge to cope with exceptional fast-tracks, or the engine doesn’t enforce ordering constraints strictly.
+- Modeling-tool / constraint omissions: the tool or modeler did not express required ordering constraints (e.g., “C must come after P”) or cardinality constraints (“P must occur exactly once”).
+- Operational bypasses: users or systems manually triggered C without going through required steps (manual overrides, API calls, scripts).
+
+How to verify (queries you can run on the underlying DB)
+Below are concrete PostgreSQL queries (using your schema) to detect actual occurrence of these anomalies in event data. Adjust activity labels if they differ in your data (R, A, E, P, N, C).
+
+Notes:
+- claim_events.activity contains the event label.
+- timestamp is the event timestamp (use TIMESTAMP arithmetic if you want windows).
+- Some queries use FILTER and BOOL_OR which are PostgreSQL constructs.
+
+1) Claims that were closed but never evaluated (C present, no E)
+Purpose: find claims where a close occurred but there is no Evaluate event.
+SQL:
+SELECT c.claim_id, MIN(ce.timestamp) AS first_event_time
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id
+GROUP BY c.claim_id
+HAVING BOOL_OR(ce.activity = 'C') AND NOT BOOL_OR(ce.activity = 'E');
+
+2) Claims that were closed but never approved (C present, no P)
+Purpose: detect closes without approval.
+SQL:
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING BOOL_OR(activity = 'C') AND NOT BOOL_OR(activity = 'P');
+
+3) Claims where Close happened before the first Evaluate (C earlier than E)
+Purpose: detect chronological ordering violations where claim was closed before evaluation.
+SQL:
+SELECT claim_id,
+       MIN(timestamp) FILTER (WHERE activity = 'C') AS first_c,
+       MIN(timestamp) FILTER (WHERE activity = 'E') AS first_e
+FROM claim_events
+GROUP BY claim_id
+HAVING MIN(timestamp) FILTER (WHERE activity = 'C') IS NOT NULL
+   AND (MIN(timestamp) FILTER (WHERE activity = 'E') IS NULL
+        OR MIN(timestamp) FILTER (WHERE activity = 'C') < MIN(timestamp) FILTER (WHERE activity = 'E'));
+
+4) Claims where Close happened before the first Approval (C earlier than P)
+Purpose: detect closes that predate approval.
+SQL:
+SELECT claim_id,
+       MIN(timestamp) FILTER (WHERE activity = 'C') AS first_c,
+       MIN(timestamp) FILTER (WHERE activity = 'P') AS first_p
+FROM claim_events
+GROUP BY claim_id
+HAVING MIN(timestamp) FILTER (WHERE activity = 'C') IS NOT NULL
+   AND (MIN(timestamp) FILTER (WHERE activity = 'P') IS NULL
+        OR MIN(timestamp) FILTER (WHERE activity = 'C') < MIN(timestamp) FILTER (WHERE activity = 'P'));
+
+5) Claims with multiple approvals (P occurs more than once)
+Purpose: detect repeated approvals (looping or duplicate approvals).
+SQL:
+SELECT claim_id, COUNT(*) AS approvals
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY claim_id
+HAVING COUNT(*) > 1
+ORDER BY approvals DESC;
+
+6) Claims with multiple evaluations (E occurs more than once)
+Purpose: identify potential E-P loop or repeated evaluation cycles.
+SQL:
+SELECT claim_id, COUNT(*) AS evaluations
+FROM claim_events
+WHERE activity = 'E'
+GROUP BY claim_id
+HAVING COUNT(*) > 1
+ORDER BY evaluations DESC;
+
+7) Claims where an Evaluate (E) occurred after an Approval (P)
+Purpose: detects the odd pattern "P then later E" (approval before evaluation).
+SQL:
+SELECT DISTINCT e.claim_id
+FROM claim_events e
+WHERE e.activity = 'E'
+  AND EXISTS (
+    SELECT 1 FROM claim_events p
+    WHERE p.claim_id = e.claim_id
+      AND p.activity = 'P'
+      AND p.timestamp < e.timestamp
+  );
+
+8) Claims where Notify (N) is missing (notification frequently skipped)
+Purpose: assess how often notification is omitted, and among closed claims specifically.
+SQL — missing N among all claims:
+SELECT COUNT(DISTINCT c.claim_id) AS claims_missing_N
+FROM claims c
+WHERE NOT EXISTS (
+  SELECT 1 FROM claim_events e WHERE e.claim_id = c.claim_id AND e.activity = 'N'
+);
+
+SQL — fraction of closed claims missing N:
+WITH closed AS (
+  SELECT DISTINCT claim_id FROM claim_events WHERE activity = 'C'
+),
+notified AS (
+  SELECT DISTINCT claim_id FROM claim_events WHERE activity = 'N'
+)
+SELECT
+  (SELECT COUNT(*) FROM closed) AS closed_count,
+  (SELECT COUNT(*) FROM closed WHERE claim_id NOT IN (SELECT claim_id FROM notified)) AS closed_missing_notification,
+  ROUND(100.0 * (SELECT COUNT(*) FROM closed WHERE claim_id NOT IN (SELECT claim_id FROM notified)) / NULLIF((SELECT COUNT(*) FROM closed),0),2) AS pct_closed_missing_notification;
+
+9) Claims where Awarded Close very shortly after Assign (potential premature close)
+Purpose: detect cases where C occurs quickly after A (e.g., within 1 hour), possibly bypassing evaluation/approval.
+Adjust interval as appropriate (1 hour shown).
+SQL:
+SELECT a.claim_id,
+       MIN(a.ts) AS assign_time,
+       MIN(c.ts) AS close_time,
+       MIN(c.ts) - MIN(a.ts) AS delta
+FROM (
+  SELECT claim_id, timestamp AS ts FROM claim_events WHERE activity = 'A'
+) a
+JOIN (
+  SELECT claim_id, timestamp AS ts FROM claim_events WHERE activity = 'C'
+) c ON a.claim_id = c.claim_id
+GROUP BY a.claim_id
+HAVING MIN(c.ts) - MIN(a.ts) < INTERVAL '1 hour';
+
+10) Claims where there was no Assign (A) but there was Evaluate (E) or Approve (P)
+Purpose: detect missing assign step prior to later processing.
+SQL:
+SELECT claim_id
+FROM (
+  SELECT claim_id,
+         BOOL_OR(activity = 'A') AS has_A,
+         BOOL_OR(activity = 'E') AS has_E,
+         BOOL_OR(activity = 'P') AS has_P
+  FROM claim_events GROUP BY claim_id
+) t
+WHERE NOT has_A AND (has_E OR has_P);
+
+11) Resource / adjuster anomalies: events labeled as Assign with unknown adjuster resource
+Purpose: find A events where resource does not match an adjuster in adjusters table (assumes resource stores adjuster name or id; adapt join as necessary).
+SQL (if resource = adjusters.name):
+SELECT DISTINCT e.resource, e.claim_id
+FROM claim_events e
+LEFT JOIN adjusters a ON e.resource = a.name
+WHERE e.activity = 'A' AND a.adjuster_id IS NULL;
+
+12) Overview metrics: counts and percentages of key anomalies
+Purpose: provide executive summary metrics to prioritize investigations.
+SQL (single-query summary):
+WITH total_claims AS (
+  SELECT COUNT(DISTINCT claim_id) AS n FROM claim_events
+),
+closed_claims AS (
+  SELECT COUNT(DISTINCT claim_id) AS n FROM claim_events WHERE activity = 'C'
+),
+closed_without_E AS (
+  SELECT COUNT(DISTINCT claim_id) AS n FROM claim_events GROUP BY claim_id HAVING BOOL_OR(activity='C') AND NOT BOOL_OR(activity='E')
+),
+multi_P AS (
+  SELECT COUNT(DISTINCT claim_id) AS n FROM (SELECT claim_id FROM claim_events WHERE activity='P' GROUP BY claim_id HAVING COUNT(*)>1) t
+)
+SELECT
+  (SELECT n FROM total_claims) AS total_claims,
+  (SELECT n FROM closed_claims) AS closed_claims,
+  (SELECT COUNT(*) FROM (SELECT claim_id FROM claim_events GROUP BY claim_id HAVING BOOL_OR(activity='C') AND NOT BOOL_OR(activity='E')) t) AS closed_without_e_count,
+  (SELECT COUNT(*) FROM (SELECT claim_id FROM claim_events WHERE activity='P' GROUP BY claim_id HAVING COUNT(*)>1) t) AS multi_approval_count;
+
+How to interpret results & next steps
+- If many rows found for closed without E/P or C earlier than E/P: indicates real operational or model enforcement gap. Investigate specific claims (ids), timestamps, resources and workflows that executed them. Check workflow engine logs and user actions (manual overrides).
+- If many multiple P or multiple E occurrences: check whether the loop behavior is intended (e.g., formal re-evaluations) and whether approvals should be idempotent or carry state (e.g., incremental approvals). If unintentional, change model to restrict count to 1 or enforce transitions.
+- If notifications (N) are often skipped: confirm business rule (is N optional?). If not, add mandatory XOR constraint or change XOR to require N as a default. Also check notification subsystem logs (mail/SMS).
+- If assigns point to unknown adjusters: fix integration with adjusters master data, or normalize resource values.
+
+Operational verification steps beyond SQL
+- Pull a sample of anomalous claim_ids and manually inspect complete event traces (all events ordered by timestamp) to understand real sequence and context.
+- Cross-check with workflow engine configuration / model repository to see whether the POWL model in the engine matches the intended model.
+- Interview process owners to determine intended semantics of the loop and XOR; decide if N is optional and why A->C fast-track exists.
+- Add logging/guardrails: e.g., make C a guarded transition requiring a completed P event (or a documented exception code), enforce cardinalities (P exactly once), add SLA checks and alerts.
+
+Suggested remediation in the model (high-level)
+- Remove or constrain the A -> C direct edge unless an explicit "fast-track" exception exists; if it does, make that an explicit conditional path with an exception activity/flag.
+- Change the loop (E,P) to either:
+  - a fixed re-evaluation count (if needed), or
+  - require a guard condition to re-enter evaluate (e.g., "reopen_for_more_info") rather than allowing unconditional looping.
+- Make Notify (N) mandatory in the normal happy path (change XOR to a guarded choice where skip requires an explicit reason).
+- Enforce ordering constraints in the POWL/engine so C cannot occur before P (unless a documented exception path is executed and recorded).
+
+If you want, I can:
+- Produce the exact SQL you should run grouped by time window (last 30/90/365 days).
+- Produce a list of example claim_ids (with full event traces) for further manual inspection (if you can provide a small dataset or run the queries and paste results).

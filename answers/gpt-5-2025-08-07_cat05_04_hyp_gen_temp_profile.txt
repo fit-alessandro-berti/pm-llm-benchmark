@@ -1,0 +1,382 @@
+Anomalies seen in the temporal profile
+- R  P: Mean  25h with very low stdev (1h). Suspiciously tight timing suggests a scheduled/batch approval or an SLA timer rather than case-by-case decisions.
+- P  N: Mean  7 days with very high stdev (2 days). Indicates backlog, manual follow-ups, or notifications blocked by external dependencies; timing is irregular.
+- A  C: Mean  2h. Closing soon after assignment suggests premature closures (withdrawn/duplicate claims) or policy that allows immediate auto-closure; may skip E/P.
+- E  N: Mean  5 minutes. Too fast to reflect real checks, or an automatic email triggered immediately after evaluation. Could also indicate N occurring before/without P.
+- N  C: Mean  30 minutes with very low stdev (5 min). Likely a timer-based auto-close shortly after notifying.
+- E  C: Mean  1h with high variance (50 min). Highly variable post-evaluation wrap-up; may be normal, but worth confirming whether subtypes/regions differ.
+
+Plausible hypotheses behind these patterns
+- Scheduled jobs/timers:
+  - R  P narrow variance around 24–26h due to nightly approval batch or SLA clock.
+  - N  C narrow variance implies an auto-close after a fixed wait.
+- Manual/queue bottlenecks:
+  - P  N long and noisy delays caused by work queues, staffing, weekends/holidays, or channel-specific notification steps.
+- Skipped or out-of-order steps:
+  - E  N very fast and/or N before P if notifications are triggered on evaluation completion or if approval is implied/recorded later.
+- Premature closures:
+  - A  C within 2h without E/P indicative of withdrawals, duplicates, or failed KYC/fraud checks leading to fast closure.
+- Data quality/time handling:
+  - Timestamps imported from external systems, timezone misalignment, or batch backfills that compress or expand intervals.
+- Heterogeneity by adjuster/region/type:
+  - Certain regions/specializations may run different workflows (e.g., auto claims auto-notify post-evaluation).
+  - Specific adjusters/resources may exhibit delayed notification behavior.
+
+SQL verification queries
+Notes:
+- Queries compute earliest occurrence of each activity per claim. Replace thresholds as needed.
+- To correlate with adjusters, we infer the assigned adjuster from the earliest Assign (A) event’s resource. If resource holds an ID, we join via adjuster_id; if it holds a name, we join via name.
+
+1) Base timing extraction per claim (earliest timestamps for each activity)
+Use this as a reference pattern; subsequent queries include needed pieces inline.
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS ts_R,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS ts_A,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS ts_E,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_P,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS ts_N,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS ts_C
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT * FROM first_events LIMIT 10;
+```
+
+2) R  P: Outliers, heaping, and schedule signatures
+a) Z-score outliers relative to model (avg 90000s, stdev 3600s)
+```sql
+WITH first_events AS (
+  SELECT claim_id,
+         MIN(timestamp) FILTER (WHERE activity = 'R') AS ts_R,
+         MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_P
+  FROM claim_events
+  GROUP BY claim_id
+),
+deltas AS (
+  SELECT claim_id,
+         EXTRACT(EPOCH FROM (ts_P - ts_R)) AS sec
+  FROM first_events
+  WHERE ts_R IS NOT NULL AND ts_P IS NOT NULL AND ts_P >= ts_R
+)
+SELECT claim_id, sec,
+       (sec - 90000.0)/3600.0 AS z
+FROM deltas
+WHERE ABS((sec - 90000.0)/3600.0) > 3
+ORDER BY z DESC;
+```
+b) Check for heaping near 25h
+```sql
+WITH first_events AS (
+  SELECT claim_id,
+         MIN(timestamp) FILTER (WHERE activity = 'R') AS ts_R,
+         MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_P
+  FROM claim_events
+  GROUP BY claim_id
+),
+deltas AS (
+  SELECT EXTRACT(EPOCH FROM (ts_P - ts_R)) AS sec
+  FROM first_events
+  WHERE ts_R IS NOT NULL AND ts_P IS NOT NULL AND ts_P >= ts_R
+)
+SELECT
+  COUNT(*) FILTER (WHERE ABS(sec - 90000) <= 3600) AS near_25h,
+  COUNT(*) AS total,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE ABS(sec - 90000) <= 3600) / COUNT(*), 2) AS pct_near_25h
+FROM deltas;
+```
+c) Does approval happen at fixed minutes/hrs (batch signature)?
+```sql
+WITH first_events AS (
+  SELECT
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_P
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  EXTRACT(MINUTE FROM ts_P)::int AS minute_of_hour,
+  COUNT(*) AS cnt
+FROM first_events
+WHERE ts_P IS NOT NULL
+GROUP BY 1
+ORDER BY cnt DESC, minute_of_hour;
+```
+
+3) P  N: Excessively long or very short notification delays; correlate by adjuster, claim_type, region
+```sql
+WITH first_events AS (
+  SELECT c.claim_id, c.claim_type, c.claim_amount, c.customer_id,
+         MIN(e.timestamp) FILTER (WHERE e.activity = 'P') AS ts_P,
+         MIN(e.timestamp) FILTER (WHERE e.activity = 'N') AS ts_N
+  FROM claims c
+  JOIN claim_events e ON e.claim_id = c.claim_id
+  GROUP BY c.claim_id, c.claim_type, c.claim_amount, c.customer_id
+),
+assign_first AS (
+  SELECT DISTINCT ON (claim_id)
+         claim_id, timestamp AS ts_A, resource AS assigned_resource
+  FROM claim_events
+  WHERE activity = 'A'
+  ORDER BY claim_id, timestamp
+),
+enriched AS (
+  SELECT f.*,
+         af.assigned_resource,
+         aj.adjuster_id, aj.name AS adjuster_name, aj.specialization, aj.region,
+         EXTRACT(EPOCH FROM (ts_N - ts_P)) AS sec
+  FROM first_events f
+  LEFT JOIN assign_first af ON af.claim_id = f.claim_id
+  LEFT JOIN adjusters aj
+    ON (af.assigned_resource ~ '^[0-9]+$' AND aj.adjuster_id = af.assigned_resource::int)
+    OR (aj.name = af.assigned_resource)
+  WHERE ts_P IS NOT NULL AND ts_N IS NOT NULL AND ts_N >= ts_P
+)
+SELECT *
+FROM enriched
+WHERE sec > 5*24*3600 OR sec < 3600
+ORDER BY sec DESC NULLS LAST;
+```
+Aggregate by segments to find where delays concentrate:
+```sql
+WITH first_events AS (
+  SELECT c.claim_id, c.claim_type,
+         MIN(e.timestamp) FILTER (WHERE e.activity = 'P') AS ts_P,
+         MIN(e.timestamp) FILTER (WHERE e.activity = 'N') AS ts_N
+  FROM claims c
+  JOIN claim_events e ON e.claim_id = c.claim_id
+  GROUP BY c.claim_id, c.claim_type
+),
+assign_first AS (
+  SELECT DISTINCT ON (claim_id)
+         claim_id, resource AS assigned_resource
+  FROM claim_events
+  WHERE activity = 'A'
+  ORDER BY claim_id, timestamp
+),
+enriched AS (
+  SELECT f.claim_id, f.claim_type,
+         af.assigned_resource,
+         aj.specialization, aj.region,
+         EXTRACT(EPOCH FROM (ts_N - ts_P)) AS sec
+  FROM first_events f
+  LEFT JOIN assign_first af ON af.claim_id = f.claim_id
+  LEFT JOIN adjusters aj
+    ON (af.assigned_resource ~ '^[0-9]+$' AND aj.adjuster_id = af.assigned_resource::int)
+    OR (aj.name = af.assigned_resource)
+  WHERE ts_P IS NOT NULL AND ts_N IS NOT NULL AND ts_N >= ts_P
+)
+SELECT
+  COALESCE(aj.specialization, 'unknown') AS specialization,
+  COALESCE(aj.region, 'unknown') AS region,
+  claim_type,
+  COUNT(*) AS n,
+  ROUND(AVG(sec)/86400.0, 2) AS avg_days,
+  ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sec)/86400.0, 2) AS p50_days,
+  ROUND(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY sec)/86400.0, 2) AS p90_days
+FROM enriched e
+LEFT JOIN adjusters aj ON aj.specialization = e.specialization AND aj.region = e.region
+GROUP BY specialization, region, claim_type
+ORDER BY avg_days DESC, n DESC;
+```
+
+4) A  C: Fast closures (< 2h) without E or P in between
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS ts_A,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS ts_C
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT f.claim_id, f.ts_A, f.ts_C,
+       EXTRACT(EPOCH FROM (f.ts_C - f.ts_A)) AS sec_A_to_C
+FROM first_events f
+WHERE f.ts_A IS NOT NULL AND f.ts_C IS NOT NULL
+  AND f.ts_C >= f.ts_A
+  AND EXTRACT(EPOCH FROM (f.ts_C - f.ts_A)) <= 7200
+  AND NOT EXISTS (
+    SELECT 1 FROM claim_events e
+    WHERE e.claim_id = f.claim_id
+      AND e.timestamp > f.ts_A
+      AND e.timestamp < f.ts_C
+      AND e.activity IN ('E', 'P')
+  )
+ORDER BY sec_A_to_C ASC;
+```
+Optional: see whether these have “withdrawn/duplicate” hints in additional_info on Close
+```sql
+WITH fast_closures AS (
+  SELECT f.claim_id, f.ts_A, f.ts_C
+  FROM (
+    SELECT
+      claim_id,
+      MIN(timestamp) FILTER (WHERE activity = 'A') AS ts_A,
+      MIN(timestamp) FILTER (WHERE activity = 'C') AS ts_C
+    FROM claim_events
+    GROUP BY claim_id
+  ) f
+  WHERE f.ts_A IS NOT NULL AND f.ts_C IS NOT NULL
+    AND f.ts_C >= f.ts_A
+    AND EXTRACT(EPOCH FROM (f.ts_C - f.ts_A)) <= 7200
+    AND NOT EXISTS (
+      SELECT 1 FROM claim_events e
+      WHERE e.claim_id = f.claim_id
+        AND e.timestamp > f.ts_A
+        AND e.timestamp < f.ts_C
+        AND e.activity IN ('E', 'P')
+    )
+)
+SELECT fc.claim_id, ce.activity, ce.timestamp, ce.resource, ce.additional_info
+FROM fast_closures fc
+JOIN claim_events ce ON ce.claim_id = fc.claim_id
+WHERE ce.activity IN ('A','E','P','N','C')
+ORDER BY fc.claim_id, ce.timestamp;
+```
+
+5) E  N: Very fast notifications and/or N before P
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS ts_E,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_P,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS ts_N
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id, ts_E, ts_P, ts_N,
+       EXTRACT(EPOCH FROM (ts_N - ts_E)) AS sec_E_to_N
+FROM first_events
+WHERE ts_E IS NOT NULL AND ts_N IS NOT NULL
+  AND (
+    EXTRACT(EPOCH FROM (ts_N - ts_E)) <= 300  -- <= 5 minutes
+    OR ts_P IS NULL
+    OR (ts_P IS NOT NULL AND ts_N < ts_P)     -- notify before approve
+  )
+ORDER BY sec_E_to_N ASC NULLS FIRST;
+```
+If you want the resource performing Notify (to check “system” user):
+```sql
+WITH n_first AS (
+  SELECT DISTINCT ON (claim_id)
+         claim_id, timestamp AS ts_N, resource AS n_resource
+  FROM claim_events
+  WHERE activity = 'N'
+  ORDER BY claim_id, timestamp
+),
+e_first AS (
+  SELECT DISTINCT ON (claim_id)
+         claim_id, timestamp AS ts_E
+  FROM claim_events
+  WHERE activity = 'E'
+  ORDER BY claim_id, timestamp
+)
+SELECT n.claim_id, n.n_resource,
+       EXTRACT(EPOCH FROM (n.ts_N - e.ts_E)) AS sec_E_to_N
+FROM n_first n
+JOIN e_first e ON e.claim_id = n.claim_id
+WHERE n.ts_N >= e.ts_E
+  AND EXTRACT(EPOCH FROM (n.ts_N - e.ts_E)) <= 300
+GROUP BY n.claim_id, n.n_resource, n.ts_N, e.ts_E
+ORDER BY sec_E_to_N ASC;
+```
+
+6) N  C: Tight auto-close pattern
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS ts_N,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS ts_C
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  ROUND(EXTRACT(EPOCH FROM (ts_C - ts_N)) / 60.0)::int AS minutes_after_notify,
+  COUNT(*) AS cnt
+FROM first_events
+WHERE ts_N IS NOT NULL AND ts_C IS NOT NULL AND ts_C >= ts_N
+GROUP BY 1
+ORDER BY cnt DESC, minutes_after_notify;
+```
+
+7) Ordering violations of intended sequence R  A  E  P  N  C
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS ts_R,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS ts_A,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS ts_E,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_P,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS ts_N,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS ts_C
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id, ts_R, ts_A, ts_E, ts_P, ts_N, ts_C
+FROM first_events
+WHERE NOT (
+  ts_R IS NOT NULL AND ts_A IS NOT NULL AND ts_E IS NOT NULL AND ts_P IS NOT NULL AND ts_N IS NOT NULL AND ts_C IS NOT NULL
+  AND ts_R <= ts_A AND ts_A <= ts_E AND ts_E <= ts_P AND ts_P <= ts_N AND ts_N <= ts_C
+);
+```
+
+8) Segment the R  P interval by day/time to detect batch approval windows
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS ts_R,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_P
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  EXTRACT(DOW FROM ts_P)::int AS dow_approve,
+  EXTRACT(HOUR FROM ts_P)::int AS hour_approve,
+  COUNT(*) AS cnt,
+  ROUND(AVG(EXTRACT(EPOCH FROM (ts_P - ts_R)))/3600.0, 2) AS avg_hours_R_to_P
+FROM first_events
+WHERE ts_R IS NOT NULL AND ts_P IS NOT NULL AND ts_P >= ts_R
+GROUP BY 1,2
+ORDER BY cnt DESC, dow_approve, hour_approve;
+```
+
+9) Check whether claim size/type drives long P  N delays
+```sql
+WITH first_events AS (
+  SELECT c.claim_id, c.claim_type, c.claim_amount,
+         MIN(e.timestamp) FILTER (WHERE e.activity = 'P') AS ts_P,
+         MIN(e.timestamp) FILTER (WHERE e.activity = 'N') AS ts_N
+  FROM claims c
+  JOIN claim_events e ON e.claim_id = c.claim_id
+  GROUP BY c.claim_id, c.claim_type, c.claim_amount
+),
+deltas AS (
+  SELECT claim_id, claim_type, claim_amount,
+         EXTRACT(EPOCH FROM (ts_N - ts_P)) AS sec
+  FROM first_events
+  WHERE ts_P IS NOT NULL AND ts_N IS NOT NULL AND ts_N >= ts_P
+)
+SELECT
+  claim_type,
+  WIDTH_BUCKET(claim_amount, 0, 100000, 5) AS amount_bucket,  -- adjust range/buckets as needed
+  COUNT(*) AS n,
+  ROUND(AVG(sec)/86400.0, 2) AS avg_days
+FROM deltas
+GROUP BY claim_type, amount_bucket
+ORDER BY claim_type, amount_bucket;
+```
+
+What to look for in results
+- R  P: A high proportion “near 25h” or approvals concentrated at specific minutes/hours indicates scheduled automation. If so, review scheduler/SLA settings.
+- P  N: Long tails clustered by region/specialization/claim_type imply staffing or process differences; check queue policies or external notification integrations.
+- A  C: Many fast closures without E/P suggest legitimate early exits (withdrawn/duplicate) or policy gaps; verify closure reasons and whether this path is allowed.
+- E  N: Very fast times with “system” as notifier indicate automated messaging; if N precedes P in many cases, revisit rule that should gate notification on approval.
+- N  C: Tight clusters at 30 minutes point to an auto-close timer; ensure it’s intended and exceptions are handled.
+
+These queries help confirm whether anomalies are systemic (schedules/automation), operational (queues/resources), or data-quality related (ordering, missing steps).

@@ -1,0 +1,185 @@
+Anomalies in the DECLARE model
+- C is mandatory while E cannot coexist with C. The combination of “existence(C)” and “noncoexistence(E,C)” makes evaluation impossible in any completed case. This undermines the intended flow where evaluation should occur before closing.
+- The rule “responded_existence(E -> A)” is effectively dead/unreachable. Because E is forbidden with C (and C is required), E cannot appear, so the EA constraint is always vacuously satisfied. It also does not ensure the desired order (assignment before evaluation).
+- The model allows a direct R  C path. There is no requirement that A, E, P, or N occur at all, enabling closure without assignment, evaluation, approval, or notification.
+- Redundancy: “precedence(C,R)” is subsumed by “init(R)”. If every case must start with R, then any C already has R before it; the extra precedence adds no real restriction.
+- Over-restrictive coverage: “existence(C)” with perfect support/confidence implicitly excludes open/in-progress claims. If the log contains ongoing cases, this rule is likely incorrect for the broader process.
+- Missing key ordering constraints: no guarantee that A occurs before E, E before P, or P before N and C. Rework and out-of-order actions are not prevented.
+
+Plausible hypotheses for why these anomalies exist
+- Misinterpretation of business rules (e.g., intending “E before C” but mistakenly encoding a noncoexistence between E and C).
+- Incremental policy changes (e.g., introducing fast-track closures) not reflected coherently across all constraints.
+- Model learned from a filtered log of only completed cases, leading to an “existence(C)” rule that does not generalize, and poor support for E if evaluation events were under-recorded.
+- Event coding or ingestion issues (evaluation recorded under another code, missing in parts of the log).
+- Pressure to shorten cycle time, encouraging paths that skip evaluation, approval, or notification.
+- Incorrect directionality in templates (using responded_existence EA instead of precedence AE or response AE).
+
+SQL-based investigation strategies
+
+1) Closed claims without evaluation
+SQL:
+SELECT ce.claim_id
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'C') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'E') = 0;
+
+2) Evaluation and closing coexisting in the same claim (violates noncoexistence E–C)
+SQL:
+SELECT ce.claim_id
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'C') > 0;
+
+3) Evaluation without any assignment (violates EA if E occurs)
+SQL:
+SELECT ce.claim_id
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'A') = 0;
+
+4) Evaluation occurring before assignment (tests whether A precedes E in practice)
+SQL:
+WITH t AS (
+  SELECT claim_id,
+         MIN(timestamp) FILTER (WHERE activity = 'A') AS first_a,
+         MIN(timestamp) FILTER (WHERE activity = 'E') AS first_e
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id
+FROM t
+WHERE first_e IS NOT NULL
+  AND (first_a IS NULL OR first_e < first_a);
+
+5) First event not R (violates init R)
+SQL:
+WITH ranked AS (
+  SELECT claim_id,
+         activity,
+         ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp, event_id) AS rn
+  FROM claim_events
+)
+SELECT claim_id, activity AS first_activity
+FROM ranked
+WHERE rn = 1 AND activity <> 'R';
+
+6) C not preceded by R (violates precedence CR)
+SQL:
+WITH t AS (
+  SELECT claim_id,
+         MIN(timestamp) FILTER (WHERE activity = 'R') AS first_r,
+         MIN(timestamp) FILTER (WHERE activity = 'C') AS first_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id
+FROM t
+WHERE first_c IS NOT NULL AND (first_r IS NULL OR first_r > first_c);
+
+7) Claims missing a close event (tests existence C against the master list of claims)
+SQL:
+SELECT c.claim_id
+FROM claims c
+LEFT JOIN claim_events ce
+  ON c.claim_id = ce.claim_id AND ce.activity = 'C'
+GROUP BY c.claim_id
+HAVING COUNT(ce.event_id) = 0;
+
+8) Close without approval
+SQL:
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'C') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'P') = 0;
+
+9) Close without notification
+SQL:
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'C') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'N') = 0;
+
+10) Minimal path RC with no A/E/P/N (allowed by the model but likely undesired)
+SQL:
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'R') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'C') > 0
+   AND COUNT(*) FILTER (WHERE activity IN ('A','E','P','N')) = 0;
+
+11) Any event after the first close (post-closure activity)
+SQL:
+WITH fc AS (
+  SELECT claim_id, MIN(timestamp) AS first_close_ts
+  FROM claim_events
+  WHERE activity = 'C'
+  GROUP BY claim_id
+)
+SELECT ce.claim_id, ce.activity, ce.timestamp
+FROM claim_events ce
+JOIN fc ON fc.claim_id = ce.claim_id
+WHERE ce.timestamp > fc.first_close_ts;
+
+12) Evaluations done by unknown (non-adjuster) resources
+SQL:
+SELECT ce.claim_id, ce.event_id, ce.resource
+FROM claim_events ce
+LEFT JOIN adjusters a ON a.name = ce.resource
+WHERE ce.activity = 'E' AND a.adjuster_id IS NULL;
+
+13) Evaluations performed by someone who was not previously assigned on that claim
+SQL:
+WITH evals AS (
+  SELECT claim_id, timestamp AS e_ts, resource AS e_resource
+  FROM claim_events
+  WHERE activity = 'E'
+),
+assigns AS (
+  SELECT claim_id, timestamp AS a_ts, resource AS a_resource
+  FROM claim_events
+  WHERE activity = 'A'
+)
+SELECT e.claim_id, e.e_ts, e.e_resource
+FROM evals e
+LEFT JOIN assigns a
+  ON a.claim_id = e.claim_id
+ AND a.a_resource = e.e_resource
+ AND a.a_ts <= e.e_ts
+WHERE a.claim_id IS NULL;
+
+14) Specialization mismatch for assigned/evaluating adjusters versus claim type (assumes home_insurance  home, auto_insurance  auto)
+SQL:
+SELECT ce.claim_id, ce.activity, ce.resource, a.specialization, c.claim_type
+FROM claim_events ce
+JOIN adjusters a ON a.name = ce.resource
+JOIN claims c ON c.claim_id = ce.claim_id
+WHERE ce.activity IN ('A','E')
+  AND (
+    (c.claim_type = 'home_insurance' AND a.specialization <> 'home') OR
+    (c.claim_type = 'auto_insurance' AND a.specialization <> 'auto')
+  );
+
+15) Notification before approval (out-of-order check against typical business logic)
+SQL:
+WITH t AS (
+  SELECT claim_id,
+         MIN(timestamp) FILTER (WHERE activity = 'P') AS t_p,
+         MIN(timestamp) FILTER (WHERE activity = 'N') AS t_n
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id
+FROM t
+WHERE t_n IS NOT NULL AND (t_p IS NULL OR t_n < t_p);
+
+How to use the results
+- If query 2 returns rows, the noncoexistence E–C constraint does not reflect actual executions.
+- If queries 8–10 return many rows, the model’s allowance for skipping A/E/P/N is being used in practice and likely needs tightening.
+- If queries 3–4 and 13 return rows, the EA relationship is violated or incorrectly directed; consider enforcing A before E explicitly.
+- If query 7 returns rows, the “existence(C)” constraint is too strong for all claims (includes in-progress cases).

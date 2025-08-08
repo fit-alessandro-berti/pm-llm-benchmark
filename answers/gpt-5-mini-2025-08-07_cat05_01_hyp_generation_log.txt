@@ -1,0 +1,238 @@
+Below I (1) list the clear anomalies visible in the sample log, (2) give likely root-cause hypotheses, and (3) provide a set of focused PostgreSQL queries you can run to investigate each hypothesis. Each query includes a short note about what it finds and how to interpret results. Where useful I use small CTEs and window functions — they run on the provided schema (order_event_log, orders, resources).
+
+1) Quick anomalies visible in the sample
+- Out-of-order activities (sequence violations):
+  - case 1002: "Confirm Shipment" and "Ship Goods" occur before "Perform Credit Check" and "Validate Stock".
+  - case 1003: "Ship Goods" occurs before "Confirm Shipment" and before "Validate Stock".
+- Payment / invoice ordering anomalies:
+  - case 1004: "Receive Payment" occurs immediately after "Register Order" and before "Issue Invoice".
+- Missing / skipped steps:
+  - Some cases appear to skip "Perform Credit Check" or "Validate Stock" before shipping.
+- Non-monotonic timestamps or multiple same activities per case could indicate duplication or rework (need to detect).
+- Potential role/assignment issues (check that activities are executed by expected roles).
+
+2) Candidate hypotheses (why these anomalies might occur)
+- Business rules intentionally allow shortcuts for certain order types (e.g., priority orders bypass credit checks).
+- Process/workflow automation/configuration bug (e.g., workflow engine scheduling steps in wrong order).
+- Data ingestion / timestamp problems (clock skew on systems, delayed record ingestion causing bad ordering).
+- Manual overrides or emergency handling (e.g., logistics shipped early to meet SLA).
+- Misrouted tasks or incorrect resource permissions (users performing activities outside their role).
+- Duplicate events due to retries or idempotency issues in upstream systems.
+
+3) SQL queries to investigate — run these and inspect returned case_ids and rows
+
+A. Define canonical activity sequence (used by several checks)
+Note: this small mapping is reused in subsequent queries.
+SQL:
+WITH activity_order(activity, seq) AS (
+  VALUES
+    ('Register Order', 1),
+    ('Perform Credit Check', 2),
+    ('Validate Stock', 3),
+    ('Confirm Shipment', 4),
+    ('Ship Goods', 5),
+    ('Issue Invoice', 6),
+    ('Receive Payment', 7)
+)
+SELECT * FROM activity_order;
+
+B. Detect sequence violations (any later event that has a lower expected sequence number)
+What it shows: cases where the temporal order is inconsistent with the expected process order.
+SQL:
+WITH activity_order(activity, seq) AS (
+  VALUES
+    ('Register Order', 1),
+    ('Perform Credit Check', 2),
+    ('Validate Stock', 3),
+    ('Confirm Shipment', 4),
+    ('Ship Goods', 5),
+    ('Issue Invoice', 6),
+    ('Receive Payment', 7)
+),
+joined AS (
+  SELECT l.*,
+         ao.seq
+  FROM order_event_log l
+  JOIN activity_order ao ON l.activity = ao.activity
+),
+seq_check AS (
+  SELECT case_id, event_id, activity, timestamp, seq,
+         lag(seq) OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS prev_seq
+  FROM joined
+)
+SELECT *
+FROM seq_check
+WHERE prev_seq IS NOT NULL AND seq < prev_seq
+ORDER BY case_id, timestamp;
+
+Interpretation: any returned rows indicate an event that goes backward relative to the canonical sequence. Use the case_id list to inspect full traces.
+
+C. Find cases where specific prerequisite was skipped — e.g., missing credit check
+What it shows: orders missing a "Perform Credit Check".
+SQL:
+SELECT o.case_id, o.order_value
+FROM orders o
+LEFT JOIN (
+  SELECT DISTINCT case_id FROM order_event_log WHERE activity = 'Perform Credit Check'
+) cc ON o.case_id = cc.case_id
+WHERE cc.case_id IS NULL
+ORDER BY o.order_value DESC;
+
+Variation: filter high-value orders (suspect risk):
+SQL:
+-- high-value threshold e.g. 1000
+SELECT o.case_id, o.order_value
+FROM orders o
+LEFT JOIN order_event_log l ON o.case_id = l.case_id AND l.activity = 'Perform Credit Check'
+WHERE o.order_value > 1000 AND l.case_id IS NULL;
+
+Interpretation: high-value orders without credit checks are high risk.
+
+D. Cases where "Ship Goods" happened before "Validate Stock"
+What it shows: shipping before stock validation.
+SQL:
+SELECT s.case_id, s.event_id AS ship_event, s.timestamp AS ship_ts, v.event_id AS validate_event, v.timestamp AS validate_ts
+FROM order_event_log s
+JOIN order_event_log v ON s.case_id = v.case_id AND v.activity = 'Validate Stock'
+WHERE s.activity = 'Ship Goods' AND s.timestamp < v.timestamp
+ORDER BY s.case_id;
+
+E. Cases where "Confirm Shipment" or "Ship Goods" occur before "Perform Credit Check"
+SQL:
+SELECT x.case_id, x.activity, x.timestamp AS event_ts, cc.timestamp AS credit_ts
+FROM order_event_log x
+JOIN order_event_log cc ON x.case_id = cc.case_id AND cc.activity = 'Perform Credit Check'
+WHERE x.activity IN ('Confirm Shipment','Ship Goods') AND x.timestamp < cc.timestamp
+ORDER BY x.case_id, x.timestamp;
+
+F. Payment before invoice (or before register)
+What it shows: payments recorded before invoices or before order registration.
+SQL (payment before invoice):
+SELECT p.case_id, p.timestamp AS pay_ts, i.timestamp AS inv_ts
+FROM order_event_log p
+JOIN order_event_log i ON p.case_id = i.case_id AND i.activity = 'Issue Invoice'
+WHERE p.activity = 'Receive Payment' AND p.timestamp < i.timestamp
+ORDER BY p.case_id;
+
+SQL (payment before order registration):
+SELECT p.case_id, p.timestamp AS pay_ts, r.timestamp AS reg_ts
+FROM order_event_log p
+JOIN order_event_log r ON p.case_id = r.case_id AND r.activity = 'Register Order'
+WHERE p.activity = 'Receive Payment' AND p.timestamp < r.timestamp
+ORDER BY p.case_id;
+
+G. Detect non-monotonic timestamps inside the same case (timestamp decreases)
+What it shows: possible clock-skew or ingestion order problems.
+SQL:
+WITH t AS (
+  SELECT case_id, event_id, activity, timestamp,
+         lag(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS prev_ts
+  FROM order_event_log
+)
+SELECT case_id, event_id, activity, prev_ts, timestamp
+FROM t
+WHERE prev_ts IS NOT NULL AND timestamp < prev_ts
+ORDER BY case_id, timestamp;
+
+H. Duplicate or repeated activities per case (same activity more than once)
+SQL:
+SELECT case_id, activity, count(*) AS occurrences
+FROM order_event_log
+GROUP BY case_id, activity
+HAVING count(*) > 1
+ORDER BY occurrences DESC, case_id;
+
+Interpretation: duplicates might be rework, retries, or data duplication.
+
+I. Check resource-role mismatches (activity done by unexpected role)
+Define expected role mapping and compare to resources table.
+SQL:
+WITH expected(activity, expected_role) AS (
+  VALUES
+    ('Register Order','Sales Executive'),
+    ('Perform Credit Check','Credit Analyst'),
+    ('Validate Stock','Warehouse Staff'),
+    ('Confirm Shipment','Logistics Manager'),
+    ('Ship Goods','Warehouse Staff'),
+    ('Issue Invoice','Accountant'),
+    ('Receive Payment','Cashier')
+)
+SELECT l.case_id, l.event_id, l.activity, l.timestamp, l.resource, r.role AS actual_role, e.expected_role
+FROM order_event_log l
+LEFT JOIN resources r ON l.resource = r.resource_id
+JOIN expected e ON l.activity = e.activity
+WHERE r.role IS DISTINCT FROM e.expected_role OR r.role IS NULL
+ORDER BY l.case_id, l.timestamp;
+
+Interpretation: results show events potentially handled by unexpected roles — check access rights or mislabelled resources.
+
+J. Calculate time-to-ship and invoice-to-payment delays (identify long waits)
+What it shows: slow parts of the process.
+SQL:
+WITH times AS (
+  SELECT case_id,
+    max(case when activity = 'Register Order' then timestamp end) AS register_ts,
+    max(case when activity = 'Ship Goods' then timestamp end) AS ship_ts,
+    max(case when activity = 'Issue Invoice' then timestamp end) AS invoice_ts,
+    max(case when activity = 'Receive Payment' then timestamp end) AS payment_ts
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT case_id,
+       register_ts,
+       ship_ts,
+       ship_ts - register_ts AS time_to_ship,
+       invoice_ts,
+       payment_ts,
+       payment_ts - invoice_ts AS invoice_to_payment
+FROM times
+ORDER BY time_to_ship DESC NULLS LAST
+LIMIT 200;
+
+Adjust thresholds as appropriate (e.g., flag time_to_ship > interval '2 days' or invoice_to_payment > interval '3 days').
+
+K. Full event trace for suspicious cases
+Once you have a set of case ids from the queries above, fetch their full trace:
+SQL:
+-- replace (...) with a subquery or explicit list of case_id values
+SELECT *
+FROM order_event_log
+WHERE case_id IN (
+  -- example: suspicious cases from sequence violations
+  SELECT DISTINCT case_id FROM (
+    WITH activity_order(activity, seq) AS (
+      VALUES
+        ('Register Order', 1),
+        ('Perform Credit Check', 2),
+        ('Validate Stock', 3),
+        ('Confirm Shipment', 4),
+        ('Ship Goods', 5),
+        ('Issue Invoice', 6),
+        ('Receive Payment', 7)
+    )
+    SELECT l.case_id
+    FROM order_event_log l
+    JOIN activity_order ao ON l.activity = ao.activity
+    GROUP BY l.case_id
+    HAVING bool_or(ao.seq < lag(ao.seq) OVER (ORDER BY l.timestamp))
+  ) s
+)
+ORDER BY case_id, timestamp, event_id;
+
+(If the inner subquery is too clever for your environment, just replace the IN list with explicit case_ids found earlier, e.g., IN (1002,1003,1004).)
+
+4) Practical next steps and remediation suggestions
+- Triage results: inspect full traces for case_ids returned by the sequence-violation and payment-before-invoice queries.
+- If many non-monotonic timestamp rows  check system clocks and event ingestion pipeline (unify to UTC, fix agents).
+- If specific order types (orders.order_type) have allowed deviations  document exceptions and, if intended, mark events with a flag/attribute so analytics can exclude them.
+- If critical activities are skipped for high-value orders  enforce hard workflow checks (block shipping until credit check completed) or add an approval override log.
+- If role mismatches found  validate user permissions, fix resource assignment, add validation in the workflow engine.
+- Add automated monitoring/alerts (e.g., daily job to run the sequence-violation query + high-value missing-credit-check query) to catch regressions.
+- Consider adding soft constraints (application-layer) and recording reason codes on overrides to make future forensic analysis easier.
+
+If you’d like, I can:
+- Provide those queries packaged as views or scheduled monitoring SQL.
+- Create a single query that outputs a short score per case (count of violations, number of out-of-order events, whether credit check is missing, role mismatches) so you can quickly rank suspicious cases.
+- Tune thresholds (e.g., delays considered too long) to your SLA and returns example results from the sample rows.
+
+Which of the investigation queries should I run first (or should I prepare the ranking/score per case)?

@@ -1,0 +1,242 @@
+Here are several anomalies I can infer from the sample event logs, plausible root causes, and ready-to-run SQL queries you can use to investigate each hypothesis in PostgreSQL.
+
+1) Anomaly: Out-of-sequence or out-of-order events (shipping occurs before required preceding steps)
+- Cases affected (from the samples):
+  - Case 1003: Perform Credit Check (9:00) -> Ship Goods (9:10) -> Confirm Shipment (9:45) -> Invoice (9:30) [Ship Goods happened before Confirm Shipment; also Invoice occurred before Confirm Shipment]
+  - Case 1002: Confirm Shipment (08:25) -> Ship Goods (08:40) -> Perform Credit Check (09:10) -> Validate Stock (09:15) [Ship/confirm ordering is OK, but a credit check should precede shipment; no stock check prior to shipping in terms of policy expectation]
+  - Case 1004: Register Order (09:00) -> Receive Payment (09:05) -> Issue Invoice (09:20) [Payment happened before Invoice]
+
+- Likely causes:
+  - Manual overrides or parallel handling allowing shipping before finance/stock checks.
+  - Data-entry errors in the event log (timestamp mistakes or mis-logged activities).
+  - Gaps in automated workflow enforcement in the application.
+
+- Investigative queries (PostgreSQL):
+  - Detect any pair of events within the same case where an event that should come later (by canonical order) appears earlier than one that should come earlier.
+    - Canonical order mapping: Register Order (1), Perform Credit Check (2), Validate Stock (3), Confirm Shipment (4), Ship Goods (5), Issue Invoice (6), Receive Payment (7)
+    - Query:
+      - 
+      WITH mapping AS (
+        SELECT 'Register Order' AS activity, 1 AS ord UNION ALL
+        SELECT 'Perform Credit Check', 2 UNION ALL
+        SELECT 'Validate Stock', 3 UNION ALL
+        SELECT 'Confirm Shipment', 4 UNION ALL
+        SELECT 'Ship Goods', 5 UNION ALL
+        SELECT 'Issue Invoice', 6 UNION ALL
+        SELECT 'Receive Payment', 7
+      )
+      SELECT a.case_id,
+             a.event_id AS later_event_id, a.activity AS later_activity, a.timestamp AS later_ts,
+             b.event_id AS earlier_event_id, b.activity AS earlier_activity, b.timestamp AS earlier_ts
+      FROM order_event_log a
+      JOIN order_event_log b ON a.case_id = b.case_id AND a.event_id <> b.event_id
+      JOIN mapping ma ON a.activity = ma.activity
+      JOIN mapping mb ON b.activity = mb.activity
+      WHERE a.timestamp > b.timestamp AND ma.ord < mb.ord
+      ORDER BY a.case_id, a.timestamp;
+     
+  - Purpose: returns offending event pairs that violate the canonical order so you can inspect the root cause (log entries, resources, and times).
+
+  - Optional targeted version to just list affected cases and offending pairs:
+    - 
+      WITH mapping AS (
+        SELECT 'Register Order' AS activity, 1 AS ord UNION ALL
+        SELECT 'Perform Credit Check', 2 UNION ALL
+        SELECT 'Validate Stock', 3 UNION ALL
+        SELECT 'Confirm Shipment', 4 UNION ALL
+        SELECT 'Ship Goods', 5 UNION ALL
+        SELECT 'Issue Invoice', 6 UNION ALL
+        SELECT 'Receive Payment', 7
+      )
+      SELECT DISTINCT a.case_id
+      FROM order_event_log a
+      JOIN order_event_log b ON a.case_id = b.case_id
+      JOIN mapping ma ON a.activity = ma.activity
+      JOIN mapping mb ON b.activity = mb.activity
+      WHERE a.timestamp > b.timestamp AND ma.ord < mb.ord;
+
+- Quick remediation hint: enforce the canonical sequence in the application layer, or add a constraint/verification step that rejects or flags events that violate the allowed order.
+
+2) Anomaly: Missing required steps in the process (e.g., stock validation not present before shipping, or missing in the log)
+- Case observations:
+  - Case 1003 shows Ship Goods and then Invoice and Confirm Shipment, but there is no stock validation event for this case.
+  - Case 1004 shows Register Order and Payment, then Invoice and Shipment, with no Perform Credit Check, no Stock Validation, etc.
+
+- Investigative queries:
+  - Find cases that do not contain all expected activities (Register Order, Perform Credit Check, Validate Stock, Confirm Shipment, Ship Goods, Issue Invoice, Receive Payment):
+    - 
+      SELECT case_id
+      FROM (
+        SELECT case_id,
+               SUM(CASE WHEN activity = 'Register Order' THEN 1 ELSE 0 END) AS reg_present,
+               SUM(CASE WHEN activity = 'Perform Credit Check' THEN 1 ELSE 0 END) AS credit_present,
+               SUM(CASE WHEN activity = 'Validate Stock' THEN 1 ELSE 0 END) AS stock_present,
+               SUM(CASE WHEN activity = 'Confirm Shipment' THEN 1 ELSE 0 END) AS confirm_present,
+               SUM(CASE WHEN activity = 'Ship Goods' THEN 1 ELSE 0 END) AS ship_present,
+               SUM(CASE WHEN activity = 'Issue Invoice' THEN 1 ELSE 0 END) AS invoice_present,
+               SUM(CASE WHEN activity = 'Receive Payment' THEN 1 ELSE 0 END) AS payment_present
+        FROM order_event_log
+        GROUP BY case_id
+      ) t
+      WHERE reg_present = 0 OR credit_present = 0 OR stock_present = 0 OR confirm_present = 0 OR ship_present = 0 OR invoice_present = 0 OR payment_present = 0;
+
+  - Also identify specific cases missing stock validation (regardless of other steps):
+    - 
+      SELECT DISTINCT case_id
+      FROM order_event_log
+      WHERE case_id NOT IN (
+        SELECT case_id FROM order_event_log WHERE activity = 'Validate Stock'
+      );
+
+- Case-specific follow-up (for those cases):
+  - If you want to examine a particular case, join with orders to see value and type for impact assessment:
+    - 
+      SELECT o.case_id, o.customer_id, o.order_type, o.order_value,
+             e.activity, e.timestamp, e.resource
+      FROM orders o
+      LEFT JOIN order_event_log e ON o.case_id = e.case_id
+      WHERE o.case_id = <CASE_ID>;
+
+3) Anomaly: Prepayment before invoicing (Receive Payment before Issue Invoice)
+- Observed:
+  - Case 1004: Receive Payment at 09:05, Invoice at 09:20 — payment occurred before invoice (prepayment), which is unusual under the standard flow.
+
+- Investigative queries:
+  - Find cases where the first payment timestamp is before the first invoice timestamp:
+    - 
+      SELECT case_id,
+             MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS first_payment_ts,
+             MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS first_invoice_ts
+      FROM order_event_log
+      GROUP BY case_id
+      HAVING first_payment_ts IS NOT NULL
+         AND first_invoice_ts IS NOT NULL
+         AND first_payment_ts < first_invoice_ts;
+
+  - If you want to see the actual payment and invoice details for those cases:
+    - 
+      SELECT o.case_id, e_pay.event_id AS pay_id, e_pay.timestamp AS pay_ts, e_inv.event_id AS inv_id, e_inv.timestamp AS inv_ts, e_inv.additional_info
+      FROM (
+        SELECT case_id,
+               MIN(CASE WHEN activity = 'Receive Payment' THEN event_id END) AS pay_id
+        FROM order_event_log
+        GROUP BY case_id
+      ) AS p
+      JOIN order_event_log AS e_pay ON p.case_id = e_pay.case_id AND p.pay_id = e_pay.event_id
+      JOIN (
+        SELECT case_id,
+               MIN(CASE WHEN activity = 'Issue Invoice' THEN event_id END) AS inv_id
+        FROM order_event_log
+        GROUP BY case_id
+      ) AS i ON p.case_id = i.case_id
+      JOIN order_event_log AS e_inv ON i.case_id = e_inv.case_id AND i.inv_id = e_inv.event_id
+      WHERE e_pay.timestamp < e_inv.timestamp;
+
+- Quick interpretation: if you see many such cases, you may need to handle prepayments explicitly in your process model and UI, or enforce that an invoice is issued before payment in the workflow.
+
+4) Anomaly: Low credit score used in credit check (policy violation risk)
+- Observed:
+  - Case 1002 has credit_score=650 (below a common threshold like 700). Depending on your policy, this could require a hold, escalation, or denial.
+
+- Investigative queries:
+  - Extract credit scores from credit check events and flag those below a threshold (parameterize threshold as needed, e.g., 700):
+    - 
+      WITH cc AS (
+        SELECT case_id,
+               (regexp_matches(additional_info, 'credit_score=(\d+)', 'i'))[1]::int AS credit_score
+        FROM order_event_log
+        WHERE activity = 'Perform Credit Check' AND additional_info LIKE '%credit_score=%'
+      )
+      SELECT case_id, credit_score
+      FROM cc
+      WHERE credit_score < 700;
+
+  - If you want to see the context (which case, order value, etc.), join with orders:
+    - 
+      WITH cc AS (
+        SELECT case_id,
+               (regexp_matches(additional_info, 'credit_score=(\d+)', 'i'))[1]::int AS credit_score
+        FROM order_event_log
+        WHERE activity = 'Perform Credit Check' AND additional_info LIKE '%credit_score=%'
+      )
+      SELECT o.case_id, o.customer_id, o.order_value, cc.credit_score
+      FROM cc
+      JOIN orders o ON o.case_id = cc.case_id
+      WHERE cc.credit_score < 700;
+
+- Actionable note: consider enforcing a credit-check threshold before shipment and/or flag for manual review when credit_score is below threshold.
+
+5) Anomaly: Flags indicating “early” shipping (attempted_early)
+- Observed:
+  - Case 1002 has additional_info: attempted_early=Y on the Confirm Shipment event. This explicitly indicates an attempted early shipment.
+
+- Investigative queries:
+  - List all events with this flag:
+    - 
+      SELECT case_id, event_id, activity, timestamp, resource, additional_info
+      FROM order_event_log
+      WHERE additional_info LIKE '%attempted_early=Y%';
+
+- Actionable note: this flag supports enforcing a policy that shipments should not be attempted before the standard checks; investigate whether this was approved and whether it should be blocked by the system.
+
+6) Anomaly: Cases with no credit check at all (potential policy violation)
+- Observed:
+  - Case 1004 appears to proceed with payment and shipment without a credit check in the logs.
+
+- Investigative queries:
+  - Find cases with zero Perform Credit Check events:
+    - 
+      SELECT case_id
+      FROM order_event_log
+      GROUP BY case_id
+      HAVING SUM(CASE WHEN activity = 'Perform Credit Check' THEN 1 ELSE 0 END) = 0;
+
+- Actionable note: if a credit check is mandatory, this indicates a data/logging gap or a process bypass that needs remediation.
+
+7) Anomaly: Shipments where stock validation is missing or occurs after shipping
+- Observed:
+  - Case 1003 has Ship Goods with no stock validation, while in some other cases stock validation occurs after the shipping step.
+
+- Investig investigative queries:
+  - Cases where Ship Goods occurred before any Validate Stock event:
+    - 
+      SELECT DISTINCT o.case_id
+      FROM order_event_log o
+      LEFT JOIN order_event_log s ON o.case_id = s.case_id AND s.activity = 'Validate Stock'
+      WHERE o.activity = 'Ship Goods'
+        AND (SELECT MIN(timestamp) FROM order_event_log s2 WHERE s2.case_id = o.case_id AND s2.activity = 'Validate Stock') > o.timestamp
+        OR (SELECT COUNT(*) FROM order_event_log s3 WHERE s3.case_id = o.case_id AND s3.activity = 'Validate Stock') = 0;
+
+- Quick follow-up:
+  - For cases missing stock validation, you may want to inspect inventory policies, and whether a stock check is optional for certain order types.
+
+8) Optional/ongoing monitoring aids (useful for dashboards)
+- Cases missing essential steps (as in #2) can be monitored with a single view:
+  - 
+    SELECT case_id,
+           MAX(CASE WHEN activity = 'Register Order' THEN 1 ELSE 0 END) AS has_register,
+           MAX(CASE WHEN activity = 'Perform Credit Check' THEN 1 ELSE 0 END) AS has_credit_check,
+           MAX(CASE WHEN activity = 'Validate Stock' THEN 1 ELSE 0 END) AS has_stock_validation,
+           MAX(CASE WHEN activity = 'Confirm Shipment' THEN 1 ELSE 0 END) AS has_confirm_shipment,
+           MAX(CASE WHEN activity = 'Ship Goods' THEN 1 ELSE 0 END) AS has_ship_goods,
+           MAX(CASE WHEN activity = 'Issue Invoice' THEN 1 ELSE 0 END) AS has_invoice,
+           MAX(CASE WHEN activity = 'Receive Payment' THEN 1 ELSE 0 END) AS has_payment
+    FROM order_event_log
+    GROUP BY case_id
+    HAVING has_register = 0 OR has_credit_check = 0 OR has_stock_validation = 0 OR has_confirm_shipment = 0 OR has_ship_goods = 0 OR has_invoice = 0 OR has_payment = 0;
+
+- Time-between-steps analytics (to spot unusual delays):
+  - Example: time gap between credit check and stock validation per case
+    - 
+      SELECT case_id,
+             EXTRACT(EPOCH FROM MIN(timestamp) FILTER (WHERE activity = 'Validate Stock') - MIN(timestamp) FILTER (WHERE activity = 'Perform Credit Check')) AS gap_seconds
+      FROM order_event_log
+      GROUP BY case_id;
+
+Notes and guidance
+- Thresholds and policies (e.g., credit_score cutoff) should be parameterized so you can adjust without rewriting queries.
+- The canonical order mapping used in anomaly queries is based on the assumed process flow you provided. If your real process differs, adjust the mapping accordingly.
+- Some anomalies (like a payment before an invoice) may reflect legitimate business scenarios (e.g., prepayment or cash-on-delivery arrangements). Use business context to validate whether these are truly undesired or expected in specific cases.
+- When implementing these checks in production, consider enforcing constraints or adding a workflow validation step in the ETL/application layer to prevent or flag violations in real time.
+
+If you’d like, I can tailor these queries to your exact current production schema (including handling any variations in activity naming) and provide a compact monitoring dashboard SQL using a few aggregated anomaly flags.
