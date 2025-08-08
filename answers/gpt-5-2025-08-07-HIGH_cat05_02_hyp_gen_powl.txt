@@ -1,0 +1,269 @@
+Part 1 – What is anomalous in the POWL model
+
+- Loop(E, P)
+  - In POWL/process-tree semantics, a 2-child loop executes as: E (P E)*, and exits after an E. That implies:
+    - Approve (P) is optional (you can exit after the first E without any P).
+    - Approve (P) can occur multiple times, interleaved with multiple evaluations (E).
+    - P is never the last activity in the loop; the loop always ends with an E.
+  - Business anomaly: a claim may be evaluated but never approved; or approved multiple times before the last evaluation. Typically Approval should be mandatory and final before notification/closure.
+
+- XOR(N, skip)
+  - Notification can be skipped entirely. That may be intended for certain edge cases but is unusual if customer notification is mandated.
+  - Combined with the missing order constraint to C (see below), notification can happen after C or be skipped while still closing the claim.
+
+- Partial order edges
+  - Edges: R  A  loop  XOR(N/skip). There is no XOR  C edge, and there is an extra A  C edge.
+  - Consequences:
+    - Closure (C) is permitted immediately after A, before evaluation/approval/notification happen.
+    - Activities can occur after the claim is closed (e.g., E, P, or N after C).
+    - C is not guaranteed to be the last step.
+
+- Overall deviation from the intended flow
+  - Intended: R  A  E  P  (N or skip)  C.
+  - Actual model allows: R  A  C … followed by E/P/N; or R  A  E  (exit loop)  …  C with no P; or repeated P’s; or N occurring after C or being skipped.
+
+Part 2 – Plausible hypotheses for why these anomalies exist
+
+- Partially implemented policy changes
+  - The organization may have relaxed notification requirements for certain cases, and the model added an XOR(skip) but did not tighten the ordering so that C still waits for N/skip completion.
+  - The rework cycle around evaluation was added, but approval should have been placed after the loop; this change may have been only partially reflected in the model.
+
+- Miscommunication in design handoff
+  - Process owner wanted a re-evaluation loop (E ), but the modeler looped E with P, making P optional and repeatable.
+
+- Technical/workflow system limitation or misconfiguration
+  - The modeling tool’s partial order construct was used to improve concurrency, but critical edges (xor  C) were omitted, and a shortcut (A  C) was added, unintentionally permitting premature closure.
+
+- Exceptional-case handling baked into the “happy path”
+  - To allow withdrawal/duplicate claims to be closed early, the designer added A  C instead of modeling explicit exception paths, enabling premature closure on all cases.
+
+- Data capture/automation side effects
+  - System jobs or integrations may post C (close) automatically on certain conditions (e.g., timeout, cancellation) irrespective of E and P, which the model then mirrored.
+
+Part 3 – How to verify with the database (PostgreSQL queries)
+
+Notes
+- We assume claim_events.activity uses the single-letter codes: R, A, E, P, N, C.
+- When checking order, we compare timestamps; if multiple events share the same timestamp, add event_id as a tie-breaker where needed.
+- Treat “skip notification” as the absence of an N event.
+
+A. Helper aggregate per claim
+
+Use this once and reuse in subsequent queries.
+
+SQL:
+WITH ev AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS t_r_first,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS t_a_first,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS t_e_first,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS t_p_first,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS t_n_first,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS t_c_first,
+    COUNT(*) FILTER (WHERE activity = 'E') AS cnt_e,
+    COUNT(*) FILTER (WHERE activity = 'P') AS cnt_p,
+    COUNT(*) FILTER (WHERE activity = 'N') AS cnt_n,
+    COUNT(*) FILTER (WHERE activity = 'C') AS cnt_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+
+B. Claims closed without proper evaluation/approval or closed before those steps
+
+1) Closed without any evaluation or approval present at all:
+SQL:
+WITH ev AS ( ... )
+SELECT claim_id, t_a_first, t_e_first, t_p_first, t_c_first
+FROM ev
+WHERE t_c_first IS NOT NULL
+  AND (t_e_first IS NULL OR t_p_first IS NULL);
+
+2) Closed before the first evaluation or approval (even if E/P happened later):
+SQL:
+WITH ev AS ( ... )
+SELECT claim_id, t_e_first, t_p_first, t_c_first
+FROM ev
+WHERE t_c_first IS NOT NULL
+  AND (t_e_first IS NULL OR t_c_first < t_e_first
+       OR t_p_first IS NULL OR t_c_first < t_p_first);
+
+3) Events occurring after the first closure (C not last):
+SQL:
+WITH first_c AS (
+  SELECT claim_id, timestamp AS t_c_first
+  FROM (
+    SELECT claim_id, timestamp,
+           ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp, event_id) AS rn
+    FROM claim_events
+    WHERE activity = 'C'
+  ) x
+  WHERE rn = 1
+)
+SELECT e.claim_id,
+       COUNT(*) AS events_after_close
+FROM claim_events e
+JOIN first_c c USING (claim_id)
+WHERE e.timestamp > c.t_c_first
+GROUP BY e.claim_id
+HAVING COUNT(*) > 0
+ORDER BY events_after_close DESC;
+
+C. Approvals repeated and out-of-order approval
+
+1) Claims with multiple approvals:
+SQL:
+SELECT claim_id, COUNT(*) AS approvals
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY claim_id
+HAVING COUNT(*) > 1
+ORDER BY approvals DESC;
+
+2) Approval seen before the first evaluation (violates loop “E first” intent):
+SQL:
+WITH ev AS ( ... )
+SELECT claim_id, t_p_first, t_e_first
+FROM ev
+WHERE t_p_first IS NOT NULL
+  AND (t_e_first IS NULL OR t_p_first < t_e_first);
+
+3) Many E’s plus P(s) indicating heavy rework:
+SQL:
+WITH ev AS ( ... )
+SELECT claim_id, cnt_e, cnt_p
+FROM ev
+WHERE cnt_e > 1 AND cnt_p >= 1
+ORDER BY cnt_e DESC, cnt_p DESC;
+
+D. Notification skipped or sequenced after closure
+
+1) Notification missing entirely (skip path used):
+SQL:
+WITH ev AS ( ... )
+SELECT claim_id
+FROM ev
+WHERE t_c_first IS NOT NULL
+  AND t_n_first IS NULL;
+
+2) Notification occurs after closure:
+SQL:
+WITH ev AS ( ... )
+SELECT claim_id, t_n_first, t_c_first
+FROM ev
+WHERE t_n_first IS NOT NULL AND t_c_first IS NOT NULL
+  AND t_n_first > t_c_first;
+
+3) Summary of notification behavior by claim_type:
+SQL:
+WITH ev AS ( ... )
+SELECT c.claim_type,
+       COUNT(*) AS total_claims,
+       COUNT(*) FILTER (WHERE ev.t_n_first IS NULL) AS no_notification,
+       COUNT(*) FILTER (WHERE ev.t_n_first IS NOT NULL AND ev.t_n_first > ev.t_c_first) AS notified_after_close
+FROM claims c
+LEFT JOIN ev ON ev.claim_id = c.claim_id
+GROUP BY c.claim_type
+ORDER BY c.claim_type;
+
+E. Basic sequence conformance checks to the intended flow
+
+1) Evaluation before assignment (violates A  E):
+SQL:
+WITH ev AS ( ... )
+SELECT claim_id, t_a_first, t_e_first
+FROM ev
+WHERE t_e_first IS NOT NULL AND t_a_first IS NOT NULL
+  AND t_e_first < t_a_first;
+
+2) Closure not last (string-based quick spot check):
+SQL:
+SELECT claim_id,
+       STRING_AGG(activity, '->' ORDER BY timestamp, event_id) AS trace
+FROM claim_events
+GROUP BY claim_id
+HAVING POSITION('->C->' IN STRING_AGG(activity, '->' ORDER BY timestamp, event_id)) > 0;
+
+F. Who or what is causing premature closures
+
+1) Closures that occur before first E or P, by resource performing C:
+SQL:
+WITH ev AS ( ... )
+SELECT COALESCE(c.resource, 'unknown') AS closer,
+       COUNT(*) AS premature_closures
+FROM claim_events c
+JOIN ev USING (claim_id)
+WHERE c.activity = 'C'
+  AND c.timestamp = ev.t_c_first
+  AND (ev.t_e_first IS NULL OR c.timestamp < ev.t_e_first
+       OR ev.t_p_first IS NULL OR c.timestamp < ev.t_p_first)
+GROUP BY 1
+ORDER BY premature_closures DESC;
+
+2) Trend over time to detect change points (e.g., after a policy/tool change):
+SQL:
+WITH ev AS ( ... )
+SELECT DATE_TRUNC('month', t_c_first) AS month,
+       COUNT(*) FILTER (
+         WHERE t_c_first IS NOT NULL
+           AND (t_e_first IS NULL OR t_c_first < t_e_first
+                OR t_p_first IS NULL OR t_c_first < t_p_first)
+       ) AS premature_closures,
+       COUNT(*) AS total_closed
+FROM ev
+GROUP BY 1
+ORDER BY 1;
+
+G. Adjuster assignment sanity checks (possible miscommunication)
+
+1) Check assigned adjuster name exists in adjusters table:
+SQL:
+WITH assigned AS (
+  SELECT claim_id, MIN(timestamp) AS t_assign, resource AS adjuster_name
+  FROM claim_events
+  WHERE activity = 'A'
+  GROUP BY claim_id, resource
+),
+linked AS (
+  SELECT a.claim_id, a.adjuster_name, ad.adjuster_id, ad.specialization
+  FROM assigned a
+  LEFT JOIN adjusters ad ON ad.name = a.adjuster_name
+)
+SELECT claim_id, adjuster_name
+FROM linked
+WHERE adjuster_id IS NULL;
+
+2) Specialization vs claim_type mismatch (simple mapping home_insurancehome, auto_insuranceauto):
+SQL:
+WITH assigned AS (
+  SELECT claim_id, MIN(timestamp) AS t_assign, resource AS adjuster_name
+  FROM claim_events
+  WHERE activity = 'A'
+  GROUP BY claim_id, resource
+),
+linked AS (
+  SELECT a.claim_id, ad.name, ad.specialization
+  FROM assigned a
+  JOIN adjusters ad ON ad.name = a.adjuster_name
+)
+SELECT c.claim_id, c.claim_type, l.name AS adjuster, l.specialization
+FROM claims c
+JOIN linked l ON l.claim_id = c.claim_id
+WHERE (CASE
+         WHEN c.claim_type ILIKE 'home%' THEN 'home'
+         WHEN c.claim_type ILIKE 'auto%' THEN 'auto'
+         ELSE NULL
+       END) IS DISTINCT FROM l.specialization;
+
+How the results relate to the hypotheses
+
+- If premature closures (C before E/P) spike at a certain month, or are mostly done by “system” resources, that supports the “technical error/system job” hypothesis.
+- If many claims show multiple P events or EPE patterns, that supports a mis-modeled rework loop.
+- If notification is frequently missing or occurs after closure, that supports the incomplete ordering around XOR(N, skip) and business-rule changes not fully realized.
+- If there are many adjuster specialization mismatches, that supports miscommunication/incorrect assignments leading to rework.
+
+Optional modeling fixes to consider after verification
+
+- Move P outside the loop so that P becomes mandatory and final after the re-evaluation loop: A  Loop(E, rework)  P.
+- Keep XOR(N, skip) but enforce XOR  C to ensure notification (or explicit skip) completes before closure.
+- Remove A  C shortcut and explicitly model exceptions (e.g., “Withdraw” path) if needed, with distinct activities and controls.
