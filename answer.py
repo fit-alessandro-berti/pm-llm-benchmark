@@ -2,13 +2,69 @@ import os
 import traceback
 import time
 import sys
-from common import query_text_simple, query_image_simple, callback_write, set_api_key, is_visual_model, MODELS_DICT
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from common import query_text_simple, query_image_simple, callback_write, set_api_key, is_visual_model, MODELS_DICT, \
+    query_text_simple_with_rate_limit, query_image_simple_with_rate_limit, RATE_LIMITER, configure_rate_limiter
 import common
 
 WAITING_TIME_RETRY = 15
+USE_MULTITHREADING = True
+MAX_WORKERS = 5
 
 
-def answer_question(model_name, api_url=None, api_key=None, alias_model_name=None):
+def process_single_question(q, model_name, alias_model_name, use_rate_limit=False):
+    """Process a single question."""
+    question_path = os.path.join("questions", q)
+    answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
+        ".png", ".txt")
+    
+    if not os.path.exists(answer_path):
+        # Check if file is already being processed
+        if use_rate_limit and RATE_LIMITER.is_file_processing(answer_path):
+            print(f"File {answer_path} already being processed, skipping")
+            return False
+        
+        try:
+            if question_path.endswith(".txt"):
+                print("Executing", question_path)
+                if use_rate_limit:
+                    query_text_simple_with_rate_limit(question_path, answer_path, callback_write, 
+                                                     use_rate_limit=True)
+                else:
+                    query_text_simple(question_path, answer_path, callback_write)
+                return True
+            elif is_visual_model(model_name):
+                try:
+                    print("Executing", question_path)
+                    if use_rate_limit:
+                        query_image_simple_with_rate_limit(question_path, answer_path, callback_write,
+                                                          use_rate_limit=True)
+                    else:
+                        query_image_simple(question_path, answer_path, callback_write)
+                except:
+                    traceback.print_exc()
+                return True
+        except SystemExit as e:
+            sys.exit(0)
+        except Exception as e:
+            if "context length" in str(e):
+                return False
+            
+            traceback.print_exc()
+            
+            if not use_rate_limit:
+                # If not using rate limit, sleep and retry (original behavior)
+                print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
+                time.sleep(WAITING_TIME_RETRY)
+                return None  # Indicates retry needed
+            else:
+                # With rate limiting, the retry is handled by the rate limiter
+                return False
+    return False
+
+
+def answer_question(model_name, api_url=None, api_key=None, alias_model_name=None, use_multithreading=None):
     if api_url is not None:
         common.Shared.API_URL = api_url
 
@@ -26,44 +82,63 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
 
     print("=====", common.Shared.ALIAS_MODEL_NAME)
 
+    if use_multithreading is None:
+        use_multithreading = USE_MULTITHREADING
+    
     questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endswith(".png")]
-
-    for q in questions:
-        question_path = os.path.join("questions", q)
-        answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
-            ".png", ".txt")
-
-        if not os.path.exists(answer_path):
-            while not os.path.exists(answer_path):
+    
+    if use_multithreading:
+        # Multi-threaded processing
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = []
+            for q in questions:
+                answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
+                    ".png", ".txt")
+                
+                if not os.path.exists(answer_path):
+                    # Submit task to thread pool
+                    future = executor.submit(process_single_question, q, model_name, alias_model_name, 
+                                           use_rate_limit=True)
+                    futures.append((q, future))
+            
+            # Wait for all tasks to complete
+            for q, future in futures:
                 try:
-                    if question_path.endswith(".txt"):
-                        print("Executing", question_path)
-                        query_text_simple(question_path, answer_path, callback_write)
-                        break
-                    elif is_visual_model(model_name):
-                        try:
-                            print("Executing", question_path)
-                            query_image_simple(question_path, answer_path, callback_write)
-                        except:
-                            traceback.print_exc()
-                        break
-                    else:
-                        break
-                except SystemExit as e:
-                    sys.exit(0)
+                    result = future.result(timeout=300)  # 5 minute timeout per question
+                    if result:
+                        print(f"Successfully processed {q}")
                 except Exception as e:
-                    if "context length" in str(e):
-                        break
-
+                    print(f"Failed to process {q}: {e}")
                     traceback.print_exc()
+    else:
+        # Single-threaded processing (original behavior)
+        for q in questions:
+            question_path = os.path.join("questions", q)
+            answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
+                ".png", ".txt")
 
-                    print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
-
-                    time.sleep(WAITING_TIME_RETRY)
+            if not os.path.exists(answer_path):
+                while not os.path.exists(answer_path):
+                    result = process_single_question(q, model_name, alias_model_name, use_rate_limit=False)
+                    if result is None:
+                        # Retry needed
+                        continue
+                    else:
+                        # Success or permanent failure
+                        break
 
 
 if __name__ == "__main__":
-    if False:
+    # Configure rate limiter
+    configure_rate_limiter(
+        requests_per_minute=60,
+        requests_per_hour=1000,
+        tokens_per_minute=90000,
+        tokens_per_hour=2000000,
+        max_concurrent=10
+    )
+    
+    if True:
         e_m_name = common.clean_model_name(common.EVALUATING_MODEL_NAME)
         common.insert_api_keys()
 
@@ -115,7 +190,8 @@ if __name__ == "__main__":
                         excluded_providers = {}
 
                         if provider not in excluded_providers and this_provider not in excluded_providers:
-                            answer_question(model_name, api_url=api_url, api_key=api_key, alias_model_name=alias_model_name)
+                            answer_question(model_name, api_url=api_url, api_key=api_key, 
+                                         alias_model_name=alias_model_name, use_multithreading=USE_MULTITHREADING)
                         else:
                             print(model_name, provider, "excluded")
 
@@ -135,4 +211,4 @@ if __name__ == "__main__":
     else:
         models = [common.ANSWERING_MODEL_NAME]
         for model in models:
-            answer_question(model)
+            answer_question(model, use_multithreading=USE_MULTITHREADING)

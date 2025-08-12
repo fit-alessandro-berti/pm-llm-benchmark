@@ -1,5 +1,9 @@
 import os.path
 import traceback
+import threading
+import time
+from collections import deque
+from datetime import datetime, timedelta
 
 import requests
 import re
@@ -14,6 +18,148 @@ ANSWERING_MODEL_NAME = "gpt-5-2025-08-07-HIGH" if len(sys.argv) < 3 else sys.arg
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
+
+
+class RateLimiter:
+    """Thread-safe rate limiter for API requests with support for multiple limits."""
+    
+    def __init__(self, requests_per_minute=60, requests_per_hour=1000, 
+                 tokens_per_minute=90000, tokens_per_hour=2000000,
+                 max_concurrent=10):
+        self.requests_per_minute = requests_per_minute
+        self.requests_per_hour = requests_per_hour
+        self.tokens_per_minute = tokens_per_minute
+        self.tokens_per_hour = tokens_per_hour
+        self.max_concurrent = max_concurrent
+        
+        self.lock = threading.Lock()
+        self.request_times = deque()
+        self.token_usage = deque()  # (timestamp, token_count)
+        self.concurrent_requests = 0
+        self.processing_files = {}  # Track files being processed: {filepath: thread_id}
+        
+    def can_acquire(self, estimated_tokens=4000, filepath=None):
+        """Check if a request can be made based on rate limits."""
+        with self.lock:
+            now = datetime.now()
+            
+            # Check if file is already being processed
+            if filepath and filepath in self.processing_files:
+                return False, "File already being processed"
+            
+            # Check concurrent requests limit
+            if self.concurrent_requests >= self.max_concurrent:
+                return False, "Max concurrent requests reached"
+            
+            # Clean old entries
+            minute_ago = now - timedelta(minutes=1)
+            hour_ago = now - timedelta(hours=1)
+            
+            self.request_times = deque([t for t in self.request_times if t > hour_ago])
+            self.token_usage = deque([(t, tokens) for t, tokens in self.token_usage if t > hour_ago])
+            
+            # Count requests in windows
+            requests_last_minute = sum(1 for t in self.request_times if t > minute_ago)
+            requests_last_hour = len(self.request_times)
+            
+            # Count tokens in windows
+            tokens_last_minute = sum(tokens for t, tokens in self.token_usage if t > minute_ago)
+            tokens_last_hour = sum(tokens for _, tokens in self.token_usage)
+            
+            # Check all limits
+            if requests_last_minute >= self.requests_per_minute:
+                return False, "Requests per minute limit reached"
+            if requests_last_hour >= self.requests_per_hour:
+                return False, "Requests per hour limit reached"
+            if tokens_last_minute + estimated_tokens > self.tokens_per_minute:
+                return False, "Tokens per minute limit reached"
+            if tokens_last_hour + estimated_tokens > self.tokens_per_hour:
+                return False, "Tokens per hour limit reached"
+            
+            return True, "OK"
+    
+    def acquire(self, estimated_tokens=4000, filepath=None):
+        """Acquire a slot for making a request. Returns True if acquired, False otherwise."""
+        can_proceed, reason = self.can_acquire(estimated_tokens, filepath)
+        if not can_proceed:
+            return False, reason
+        
+        with self.lock:
+            now = datetime.now()
+            self.request_times.append(now)
+            self.token_usage.append((now, estimated_tokens))
+            self.concurrent_requests += 1
+            
+            if filepath:
+                self.processing_files[filepath] = threading.current_thread().ident
+            
+            return True, "Acquired"
+    
+    def release(self, actual_tokens=None, filepath=None):
+        """Release the slot after request completion."""
+        with self.lock:
+            self.concurrent_requests = max(0, self.concurrent_requests - 1)
+            
+            if filepath and filepath in self.processing_files:
+                del self.processing_files[filepath]
+            
+            # Update token count if actual usage is provided
+            if actual_tokens and self.token_usage:
+                last_time, estimated = self.token_usage[-1]
+                if estimated != actual_tokens:
+                    self.token_usage[-1] = (last_time, actual_tokens)
+    
+    def wait_for_slot(self, estimated_tokens=4000, filepath=None, max_wait=300):
+        """Wait until a slot becomes available or timeout."""
+        start_time = time.time()
+        wait_interval = 1  # Start with 1 second wait
+        
+        while time.time() - start_time < max_wait:
+            acquired, reason = self.acquire(estimated_tokens, filepath)
+            if acquired:
+                return True, reason
+            
+            # Exponential backoff with jitter
+            time.sleep(wait_interval + (time.time() % 0.5))
+            wait_interval = min(wait_interval * 1.2, 10)  # Cap at 10 seconds
+        
+        return False, "Timeout waiting for slot"
+    
+    def is_file_processing(self, filepath):
+        """Check if a file is currently being processed."""
+        with self.lock:
+            return filepath in self.processing_files
+    
+    def get_stats(self):
+        """Get current rate limiter statistics."""
+        with self.lock:
+            now = datetime.now()
+            minute_ago = now - timedelta(minutes=1)
+            hour_ago = now - timedelta(hours=1)
+            
+            requests_last_minute = sum(1 for t in self.request_times if t > minute_ago)
+            requests_last_hour = len([t for t in self.request_times if t > hour_ago])
+            tokens_last_minute = sum(tokens for t, tokens in self.token_usage if t > minute_ago)
+            tokens_last_hour = sum(tokens for t, tokens in self.token_usage if t > hour_ago)
+            
+            return {
+                "concurrent_requests": self.concurrent_requests,
+                "requests_last_minute": requests_last_minute,
+                "requests_last_hour": requests_last_hour,
+                "tokens_last_minute": tokens_last_minute,
+                "tokens_last_hour": tokens_last_hour,
+                "processing_files": list(self.processing_files.keys())
+            }
+
+
+# Global rate limiter instance
+RATE_LIMITER = RateLimiter(
+    requests_per_minute=60,
+    requests_per_hour=1000,
+    tokens_per_minute=90000,
+    tokens_per_hour=2000000,
+    max_concurrent=10
+)
 
 
 class Shared:
@@ -172,7 +318,8 @@ MODELS_DICT = {
             "openrouter/cypher-alpha:free", "moonshotai/kimi-k2",
             "thudm/glm-4.1v-9b-thinking", "qwen/qwen3-235b-a22b-07-25", "qwen/qwen3-coder",
             "z-ai/glm-4.5", "z-ai/glm-4.5-air", "qwen/qwen3-30b-a3b-instruct-2507",
-            "openrouter/horizon-alpha", "openrouter/horizon-beta"
+            "openrouter/horizon-alpha", "openrouter/horizon-beta",
+            "ai21/jamba-large-1.7", "ai21/jamba-mini-1.7"
         }
     },
     "manual": {
@@ -891,6 +1038,26 @@ def query_text_simple_google(question, api_url, target_file):
     return response_message
 
 
+def query_text_simple_with_rate_limit(question_path, target_file, callback, question=None, 
+                                      use_rate_limit=True, estimated_tokens=4000):
+    """Wrapper for query_text_simple with rate limiting support."""
+    filepath = target_file if use_rate_limit else None
+    
+    if use_rate_limit:
+        # Wait for a slot to become available
+        acquired, reason = RATE_LIMITER.wait_for_slot(estimated_tokens, filepath, max_wait=300)
+        if not acquired:
+            raise Exception(f"Failed to acquire rate limit slot: {reason}")
+    
+    try:
+        # Call the original function
+        query_text_simple(question_path, target_file, callback, question)
+    finally:
+        if use_rate_limit:
+            # Release the slot
+            RATE_LIMITER.release(estimated_tokens, filepath)
+
+
 def query_text_simple(question_path, target_file, callback, question=None):
     if question is None:
         question = open(question_path, "r", encoding="utf-8").read()
@@ -1132,6 +1299,26 @@ def query_image_simple_google(base64_image, api_url, target_file, text):
     return response_message
 
 
+def query_image_simple_with_rate_limit(question_path, target_file, callback, base64_image=None, 
+                                       text=None, use_rate_limit=True, estimated_tokens=4000):
+    """Wrapper for query_image_simple with rate limiting support."""
+    filepath = target_file if use_rate_limit else None
+    
+    if use_rate_limit:
+        # Wait for a slot to become available
+        acquired, reason = RATE_LIMITER.wait_for_slot(estimated_tokens, filepath, max_wait=300)
+        if not acquired:
+            raise Exception(f"Failed to acquire rate limit slot: {reason}")
+    
+    try:
+        # Call the original function
+        query_image_simple(question_path, target_file, callback, base64_image, text)
+    finally:
+        if use_rate_limit:
+            # Release the slot
+            RATE_LIMITER.release(estimated_tokens, filepath)
+
+
 def query_image_simple(question_path, target_file, callback, base64_image=None, text=None):
     if text is None:
         text = "Can you describe the provided visualization?"
@@ -1232,6 +1419,21 @@ def clean_model_name(m_name):
 
 def get_base_evaluation_path(model_name):
     return "evaluation" if "gpt-4o" in model_name else "evaluation-" + clean_model_name(model_name).split("-exp")[0].split("-preview")[0]
+
+
+def configure_rate_limiter(requests_per_minute=60, requests_per_hour=1000,
+                          tokens_per_minute=90000, tokens_per_hour=2000000,
+                          max_concurrent=10):
+    """Configure the global rate limiter with new settings."""
+    global RATE_LIMITER
+    RATE_LIMITER = RateLimiter(
+        requests_per_minute=requests_per_minute,
+        requests_per_hour=requests_per_hour,
+        tokens_per_minute=tokens_per_minute,
+        tokens_per_hour=tokens_per_hour,
+        max_concurrent=max_concurrent
+    )
+    return RATE_LIMITER
 
 
 if __name__ == "__main__":
