@@ -184,7 +184,7 @@ if __name__ == "__main__":
         requests_per_hour=1000,
         tokens_per_minute=90000,
         tokens_per_hour=2000000,
-        max_concurrent=5
+        max_concurrent=10
     )
 
     print(EVALUATING_MODEL_NAME)

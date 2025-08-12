@@ -131,11 +131,11 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
 if __name__ == "__main__":
     # Configure rate limiter
     configure_rate_limiter(
-        requests_per_minute=60,
+        requests_per_minute=5,
         requests_per_hour=1000,
         tokens_per_minute=90000,
         tokens_per_hour=2000000,
-        max_concurrent=10
+        max_concurrent=5
     )
     
     if True:
