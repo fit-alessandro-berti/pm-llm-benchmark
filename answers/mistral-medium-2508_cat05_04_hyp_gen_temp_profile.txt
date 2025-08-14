@@ -1,0 +1,239 @@
+### **Analysis of Temporal Anomalies in Insurance Claim Handling**
+
+The temporal profile model reveals several irregularities in the time intervals between key activities in the claim processing workflow. Below are the identified anomalies, potential root causes, and SQL-based verification strategies.
+
+---
+
+## **1. Identified Anomalies**
+
+### **A. Suspiciously Low Variability in "Receive (R) to Approve (P)" (25 hours avg, 1-hour STDEV)**
+- **Issue:** The standard deviation is abnormally low (1 hour) for a process that should naturally vary based on claim complexity, adjuster workload, and external factors.
+- **Possible Implications:**
+  - **Artificial scheduling:** Approvals may be batched or forced to meet arbitrary deadlines rather than following organic processing.
+  - **Automated approvals without proper evaluation:** Some claims may bypass manual review, leading to inconsistent risk assessment.
+  - **Data manipulation:** Timestamps may be backfilled or adjusted to meet KPIs.
+
+### **B. Excessive Delay in "Approve (P) to Notify (N)" (7 days avg, 2-day STDEV)**
+- **Issue:** A week-long delay between approval and customer notification is unusually high, with significant variability.
+- **Possible Implications:**
+  - **Backlog in notifications:** Manual or batch-processing of notifications may cause delays.
+  - **Resource constraints:** Limited staff may prioritize certain claims over others.
+  - **Technical issues:** Integration failures between approval and notification systems.
+  - **Intentional delays:** Some claims may be held for fraud checks or additional verification.
+
+### **C. Premature Closure in "Assign (A) to Close (C)" (2 hours avg, 1-hour STDEV)**
+- **Issue:** Claims are closing shortly after assignment, often skipping **Evaluate (E)** and **Approve (P)** steps.
+- **Possible Implications:**
+  - **Auto-closure of simple claims:** Low-value or straightforward claims may be fast-tracked.
+  - **Data entry errors:** Some claims may be marked as closed prematurely.
+  - **Fraudulent activity:** Adjusters may be closing claims without proper evaluation.
+
+### **D. Unrealistically Fast "Evaluate (E) to Notify (N)" (5 minutes avg, 1-minute STDEV)**
+- **Issue:** The transition from evaluation to notification is nearly instantaneous, suggesting missing steps or automated triggers.
+- **Possible Implications:**
+  - **Automated notifications:** System may send notifications immediately after evaluation without human review.
+  - **Skipped approval step:** Some claims may bypass **Approve (P)**, leading to compliance risks.
+  - **Incorrect logging:** Timestamps may not accurately reflect the real process.
+
+---
+
+## **2. Hypotheses for Root Causes**
+
+| **Anomaly**               | **Possible Causes**                                                                 |
+|---------------------------|------------------------------------------------------------------------------------|
+| **R  P (Low STDEV)**     | - Batch processing of approvals <br> - Automated approvals without evaluation <br> - Timestamp manipulation |
+| **P  N (Long Delay)**    | - Manual notification backlog <br> - Resource shortages in customer communications <br> - System integration delays |
+| **A  C (Premature Close)** | - Auto-closure of low-risk claims <br> - Adjuster bypassing evaluation <br> - Data entry errors |
+| **E  N (Too Fast)**      | - Automated notifications without approval <br> - Missing process steps <br> - Incorrect event logging |
+
+---
+
+## **3. SQL Verification Queries**
+
+### **A. Investigating "Receive (R) to Approve (P)" Anomalies**
+**Goal:** Find claims where the time between **R** and **P** deviates significantly from the average (25 hours ± 1 hour).
+
+```sql
+WITH claim_times AS (
+    SELECT
+        ce1.claim_id,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS time_diff_seconds
+    FROM
+        claim_events ce1
+    JOIN
+        claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    WHERE
+        ce1.activity = 'R'
+        AND ce2.activity = 'P'
+        AND ce1.timestamp < ce2.timestamp
+)
+SELECT
+    c.claim_id,
+    c.claim_type,
+    a.name AS adjuster_name,
+    a.specialization,
+    ct.time_diff_seconds,
+    (ct.time_diff_seconds - 90000) / 3600 AS z_score  -- (actual - avg) / stdev
+FROM
+    claim_times ct
+JOIN
+    claims c ON ct.claim_id = c.claim_id
+LEFT JOIN
+    claim_events ce ON ct.claim_id = ce.claim_id AND ce.activity = 'A'
+LEFT JOIN
+    adjusters a ON ce.resource = a.adjuster_id::TEXT
+WHERE
+    ABS((ct.time_diff_seconds - 90000) / 3600) > 3  -- Flag outliers (>3)
+ORDER BY
+    z_score DESC;
+```
+
+**Expected Insights:**
+- Are certain **claim_types** or **adjusters** more likely to have rigid approval times?
+- Do outliers correlate with **high-value claims** or **specific regions**?
+
+---
+
+### **B. Analyzing "Approve (P) to Notify (N)" Delays**
+**Goal:** Identify claims where notification takes **>10 days** (avg + 1.5).
+
+```sql
+WITH notification_delays AS (
+    SELECT
+        ce1.claim_id,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) / 86400 AS days_delayed
+    FROM
+        claim_events ce1
+    JOIN
+        claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    WHERE
+        ce1.activity = 'P'
+        AND ce2.activity = 'N'
+        AND ce1.timestamp < ce2.timestamp
+)
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    a.name AS adjuster_name,
+    nd.days_delayed,
+    ce.additional_info AS approval_notes
+FROM
+    notification_delays nd
+JOIN
+    claims c ON nd.claim_id = c.claim_id
+LEFT JOIN
+    claim_events ce ON nd.claim_id = ce.claim_id AND ce.activity = 'P'
+LEFT JOIN
+    adjusters a ON ce.resource = a.adjuster_id::TEXT
+WHERE
+    nd.days_delayed > 14  -- Avg (7) + 1.5 (~3) = 10+ days
+ORDER BY
+    nd.days_delayed DESC;
+```
+
+**Expected Insights:**
+- Are delays concentrated in **certain adjusters** or **claim types**?
+- Do **high-value claims** experience longer notification delays?
+
+---
+
+### **C. Detecting Premature Closures ("Assign (A) to Close (C)")**
+**Goal:** Find claims closed **within 4 hours of assignment** (avg + 1) that skip **Evaluate (E)** or **Approve (P)**.
+
+```sql
+WITH premature_closures AS (
+    SELECT
+        ce1.claim_id,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS time_diff_seconds
+    FROM
+        claim_events ce1
+    JOIN
+        claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    WHERE
+        ce1.activity = 'A'
+        AND ce2.activity = 'C'
+        AND ce1.timestamp < ce2.timestamp
+        AND ce2.timestamp < ce1.timestamp + INTERVAL '4 hours'
+)
+SELECT
+    pc.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    a.name AS adjuster_name,
+    pc.time_diff_seconds,
+    EXISTS (
+        SELECT 1 FROM claim_events ce
+        WHERE ce.claim_id = pc.claim_id AND ce.activity IN ('E', 'P')
+    ) AS has_evaluation_or_approval
+FROM
+    premature_closures pc
+JOIN
+    claims c ON pc.claim_id = c.claim_id
+LEFT JOIN
+    claim_events ce ON pc.claim_id = ce.claim_id AND ce.activity = 'A'
+LEFT JOIN
+    adjusters a ON ce.resource = a.adjuster_id::TEXT
+ORDER BY
+    pc.time_diff_seconds;
+```
+
+**Expected Insights:**
+- Are **low-value claims** more likely to be closed prematurely?
+- Do certain **adjusters** frequently skip evaluation steps?
+
+---
+
+### **D. Examining Ultra-Fast "Evaluate (E) to Notify (N)" Transitions**
+**Goal:** Find cases where notification occurs **<10 minutes** after evaluation (avg + 1).
+
+```sql
+WITH fast_notifications AS (
+    SELECT
+        ce1.claim_id,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS time_diff_seconds
+    FROM
+        claim_events ce1
+    JOIN
+        claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    WHERE
+        ce1.activity = 'E'
+        AND ce2.activity = 'N'
+        AND ce1.timestamp < ce2.timestamp
+        AND (ce2.timestamp - ce1.timestamp) < INTERVAL '10 minutes'
+)
+SELECT
+    fn.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    a.name AS adjuster_name,
+    fn.time_diff_seconds,
+    EXISTS (
+        SELECT 1 FROM claim_events ce
+        WHERE ce.claim_id = fn.claim_id AND ce.activity = 'P'
+    ) AS has_approval_step
+FROM
+    fast_notifications fn
+JOIN
+    claims c ON fn.claim_id = c.claim_id
+LEFT JOIN
+    claim_events ce ON fn.claim_id = ce.claim_id AND ce.activity = 'E'
+LEFT JOIN
+    adjusters a ON ce.resource = a.adjuster_id::TEXT
+ORDER BY
+    fn.time_diff_seconds;
+```
+
+**Expected Insights:**
+- Are **automated claims** (e.g., low-value, simple) notified instantly?
+- Do some **adjusters** bypass approval steps?
+
+---
+
+## **4. Recommended Next Steps**
+1. **Correlate anomalies with adjuster performance** to identify training needs or fraud risks.
+2. **Audit claims with missing steps** (e.g., no **Evaluate** or **Approve**) for compliance violations.
+3. **Investigate system logs** for timestamp manipulations or automation errors.
+4. **Adjust KPIs** if artificial scheduling (e.g., forced 25-hour approvals) is distorting process metrics.
+
+Would you like additional queries to explore specific adjuster behaviors or regional patterns?

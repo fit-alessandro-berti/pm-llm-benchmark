@@ -238,7 +238,7 @@ MODELS_DICT = {
         "models": {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
             "codestral-2501", "mistral-large-2411", "mistral-small-2501", "mistral-small-2503", "mistral-small-2506",
-            "open-mixtral-8x22b", "mistral-medium-2505", "devstral-medium-2507"
+            "open-mixtral-8x22b", "mistral-medium-2505", "devstral-medium-2507", "mistral-medium-2508"
         }
     },
     "grok": {
