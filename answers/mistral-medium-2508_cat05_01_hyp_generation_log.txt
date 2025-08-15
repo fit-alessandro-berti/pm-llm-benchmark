@@ -1,0 +1,361 @@
+# Analysis of Order Process Anomalies
+
+Based on the provided event logs and process flow, I've identified several anomalies and undesirable behaviors that warrant investigation.
+
+## Major Anomalies Identified
+
+### 1. Process Sequence Violations
+
+**Case 1002 (Priority Order):**
+- The normal flow is violated with "Confirm Shipment" occurring before "Perform Credit Check" and "Validate Stock"
+- This suggests a "ship first, check later" approach which is risky for credit and inventory management
+- The "attempted_early=Y" flag in the Confirm Shipment event suggests this was intentional
+
+**Case 1003:**
+- "Ship Goods" occurs before "Confirm Shipment" (with a "late_confirmation=Y" flag)
+- This is the opposite violation - shipping without proper confirmation
+
+**Case 1004:**
+- "Receive Payment" occurs before "Issue Invoice" which is completely backwards from normal accounting practices
+- The shipment was initially marked as "not scheduled" but then goods were shipped anyway
+
+### 2. Missing Process Steps
+
+**Case 1003:**
+- Missing "Validate Stock" activity entirely
+- This could lead to shipping items that aren't actually in stock
+
+**Case 1004:**
+- Missing "Perform Credit Check" activity
+- This is particularly concerning as it means orders are being processed without credit verification
+
+### 3. Timing Anomalies
+
+**Case 1002:**
+- Extremely fast processing (from order to shipment in 20 minutes)
+- While this is a "priority" order, the speed suggests possible bypassing of normal controls
+
+**Case 1004:**
+- Payment received just 5 minutes after order registration
+- This is highly unusual and suggests either pre-payment or some other irregular process
+
+## Hypothesized Causes
+
+1. **System Workarounds:**
+   - Employees may be using system backdoors or manual overrides to bypass normal workflows
+   - The system may have insufficient validation to prevent out-of-sequence operations
+
+2. **Role-Based Access Issues:**
+   - Some roles may have excessive permissions allowing them to perform activities outside their normal scope
+   - The "attempted_early" and "late_confirmation" flags suggest manual interventions
+
+3. **Priority Order Handling:**
+   - The priority order (1002) shows significant process deviations, suggesting special handling that may lack proper controls
+   - There may be pressure to expedite priority orders at the expense of proper procedures
+
+4. **Training Gaps:**
+   - Employees may not fully understand the proper sequence of operations
+   - The missing steps suggest some employees may not know all required activities
+
+5. **System Integration Issues:**
+   - The payment before invoice in case 1004 suggests possible integration problems between financial systems
+   - There may be asynchronous processing that isn't properly synchronized
+
+6. **Fraud Potential:**
+   - The unusual payment patterns in case 1004 could indicate fraudulent activity
+   - The missing credit check in case 1004 is particularly concerning from a fraud prevention perspective
+
+## Proposed SQL Investigations
+
+### 1. Identify All Process Sequence Violations
+
+```sql
+WITH expected_sequence AS (
+    SELECT
+        'Register Order' AS activity,
+        1 AS expected_order UNION ALL
+    SELECT 'Perform Credit Check', 2 UNION ALL
+    SELECT 'Validate Stock', 3 UNION ALL
+    SELECT 'Confirm Shipment', 4 UNION ALL
+    SELECT 'Ship Goods', 5 UNION ALL
+    SELECT 'Issue Invoice', 6 UNION ALL
+    SELECT 'Receive Payment', 7
+),
+case_activities AS (
+    SELECT
+        case_id,
+        activity,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS actual_order
+    FROM order_event_log
+)
+SELECT
+    c.case_id,
+    o.order_type,
+    o.order_value,
+    c.activity,
+    c.actual_order,
+    e.expected_order,
+    c.actual_order - e.expected_order AS deviation
+FROM case_activities c
+JOIN expected_sequence e ON c.activity = e.activity
+JOIN orders o ON c.case_id = o.case_id
+WHERE c.actual_order != e.expected_order
+ORDER BY ABS(c.actual_order - e.expected_order) DESC, c.case_id;
+```
+
+### 2. Find Cases with Missing Required Activities
+
+```sql
+WITH required_activities AS (
+    SELECT 'Register Order' AS activity UNION ALL
+    SELECT 'Perform Credit Check' UNION ALL
+    SELECT 'Validate Stock' UNION ALL
+    SELECT 'Confirm Shipment' UNION ALL
+    SELECT 'Ship Goods' UNION ALL
+    SELECT 'Issue Invoice' UNION ALL
+    SELECT 'Receive Payment'
+),
+case_activities AS (
+    SELECT DISTINCT case_id, activity
+    FROM order_event_log
+),
+missing_activities AS (
+    SELECT
+        r.activity,
+        c.case_id,
+        o.order_type,
+        o.order_value
+    FROM required_activities r
+    CROSS JOIN (SELECT DISTINCT case_id FROM order_event_log) c
+    LEFT JOIN case_activities ca ON r.activity = ca.activity AND c.case_id = ca.case_id
+    JOIN orders o ON c.case_id = o.case_id
+    WHERE ca.activity IS NULL
+)
+SELECT * FROM missing_activities
+ORDER BY case_id, activity;
+```
+
+### 3. Analyze Processing Time Anomalies
+
+```sql
+WITH order_durations AS (
+    SELECT
+        case_id,
+        MIN(timestamp) AS order_start,
+        MAX(timestamp) AS order_end,
+        MAX(timestamp) - MIN(timestamp) AS total_duration
+    FROM order_event_log
+    GROUP BY case_id
+),
+avg_durations AS (
+    SELECT
+        AVG(EXTRACT(EPOCH FROM total_duration)/3600) AS avg_hours,
+        STDDEV(EXTRACT(EPOCH FROM total_duration)/3600) AS stddev_hours
+    FROM order_durations
+)
+SELECT
+    o.case_id,
+    o.order_type,
+    o.order_value,
+    od.total_duration,
+    EXTRACT(EPOCH FROM od.total_duration)/3600 AS duration_hours,
+    ad.avg_hours,
+    ad.stddev_hours,
+    (EXTRACT(EPOCH FROM od.total_duration)/3600 - ad.avg_hours)/NULLIF(ad.stddev_hours, 0) AS z_score
+FROM order_durations od
+JOIN orders o ON od.case_id = o.case_id
+CROSS JOIN avg_durations ad
+ORDER BY ABS(z_score) DESC;
+```
+
+### 4. Investigate Role-Based Anomalies
+
+```sql
+SELECT
+    oel.case_id,
+    o.order_type,
+    o.order_value,
+    oel.activity,
+    oel.resource,
+    r.role,
+    r.department,
+    oel.timestamp,
+    LAG(oel.activity) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) AS previous_activity,
+    LEAD(oel.activity) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) AS next_activity
+FROM order_event_log oel
+JOIN orders o ON oel.case_id = o.case_id
+JOIN resources r ON oel.resource = r.resource_id
+WHERE
+    -- Credit checks not performed by Finance
+    (oel.activity = 'Perform Credit Check' AND r.department != 'Finance')
+    OR
+    -- Shipments not confirmed by Logistics
+    (oel.activity = 'Confirm Shipment' AND r.department != 'Logistics')
+    OR
+    -- Invoices not issued by Finance
+    (oel.activity = 'Issue Invoice' AND r.department != 'Finance')
+ORDER BY oel.case_id, oel.timestamp;
+```
+
+### 5. Examine Payment Before Invoice Cases
+
+```sql
+WITH payment_before_invoice AS (
+    SELECT
+        oel1.case_id,
+        oel1.timestamp AS payment_time,
+        oel2.timestamp AS invoice_time,
+        oel1.timestamp < oel2.timestamp AS is_correct_order,
+        EXTRACT(EPOCH FROM (oel2.timestamp - oel1.timestamp))/60 AS minutes_between
+    FROM order_event_log oel1
+    JOIN order_event_log oel2 ON oel1.case_id = oel2.case_id
+    WHERE oel1.activity = 'Receive Payment'
+    AND oel2.activity = 'Issue Invoice'
+)
+SELECT
+    pbi.case_id,
+    o.order_type,
+    o.order_value,
+    pbi.is_correct_order,
+    CASE
+        WHEN NOT pbi.is_correct_order THEN 'Payment before invoice'
+        ELSE 'Normal sequence'
+    END AS sequence_status,
+    ABS(pbi.minutes_between) AS abs_minutes_between,
+    oel1.additional_info AS payment_details,
+    oel2.additional_info AS invoice_details
+FROM payment_before_invoice pbi
+JOIN orders o ON pbi.case_id = o.case_id
+JOIN order_event_log oel1 ON pbi.case_id = oel1.case_id AND oel1.activity = 'Receive Payment'
+JOIN order_event_log oel2 ON pbi.case_id = oel2.case_id AND oel2.activity = 'Issue Invoice'
+ORDER BY pbi.is_correct_order, ABS(pbi.minutes_between);
+```
+
+### 6. Analyze Priority Order Handling Differences
+
+```sql
+WITH order_stats AS (
+    SELECT
+        o.case_id,
+        o.order_type,
+        o.order_value,
+        MIN(oel.timestamp) AS first_activity_time,
+        MAX(oel.timestamp) AS last_activity_time,
+        MAX(oel.timestamp) - MIN(oel.timestamp) AS total_duration,
+        COUNT(*) AS total_activities,
+        BOOL_AND(oel.activity = 'Perform Credit Check') AS has_credit_check,
+        BOOL_AND(oel.activity = 'Validate Stock') AS has_stock_validation
+    FROM orders o
+    JOIN order_event_log oel ON o.case_id = oel.case_id
+    GROUP BY o.case_id, o.order_type, o.order_value
+)
+SELECT
+    order_type,
+    AVG(EXTRACT(EPOCH FROM total_duration)/3600) AS avg_duration_hours,
+    AVG(total_activities) AS avg_activities,
+    SUM(CASE WHEN NOT has_credit_check THEN 1 ELSE 0 END) AS missing_credit_checks,
+    SUM(CASE WHEN NOT has_stock_validation THEN 1 ELSE 0 END) AS missing_stock_validations,
+    COUNT(*) AS total_orders
+FROM order_stats
+GROUP BY order_type
+ORDER BY avg_duration_hours;
+```
+
+### 7. Investigate Early/Late Confirmation Flags
+
+```sql
+SELECT
+    oel.case_id,
+    o.order_type,
+    o.order_value,
+    oel.activity,
+    oel.additional_info,
+    oel.timestamp,
+    LAG(oel.activity) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) AS previous_activity,
+    LEAD(oel.activity) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) AS next_activity,
+    r.role,
+    r.department
+FROM order_event_log oel
+JOIN orders o ON oel.case_id = o.case_id
+JOIN resources r ON oel.resource = r.resource_id
+WHERE oel.additional_info LIKE '%early%' OR oel.additional_info LIKE '%late%'
+ORDER BY oel.case_id, oel.timestamp;
+```
+
+### 8. Correlation Between Credit Scores and Process Deviations
+
+```sql
+WITH credit_scores AS (
+    SELECT
+        case_id,
+        CAST(SPLIT_PART(additional_info, '=', 2) AS INTEGER) AS credit_score
+    FROM order_event_log
+    WHERE activity = 'Perform Credit Check'
+),
+process_compliance AS (
+    SELECT
+        oel.case_id,
+        BOOL_AND(CASE WHEN oel.activity = 'Perform Credit Check' THEN TRUE ELSE NULL END) AS has_credit_check,
+        BOOL_AND(CASE WHEN oel.activity = 'Validate Stock' THEN TRUE ELSE NULL END) AS has_stock_check,
+        COUNT(DISTINCT oel.activity) = 7 AS complete_process
+    FROM order_event_log oel
+    GROUP BY oel.case_id
+)
+SELECT
+    o.case_id,
+    o.order_type,
+    o.order_value,
+    cs.credit_score,
+    pc.has_credit_check,
+    pc.has_stock_check,
+    pc.complete_process,
+    CASE
+        WHEN cs.credit_score < 700 AND NOT pc.complete_process THEN 'High-risk incomplete process'
+        WHEN cs.credit_score < 700 THEN 'High-risk but complete'
+        WHEN NOT pc.complete_process THEN 'Incomplete process'
+        ELSE 'Normal'
+    END AS risk_category
+FROM orders o
+LEFT JOIN credit_scores cs ON o.case_id = cs.case_id
+LEFT JOIN process_compliance pc ON o.case_id = pc.case_id
+ORDER BY
+    CASE
+        WHEN cs.credit_score < 700 AND NOT pc.complete_process THEN 1
+        WHEN cs.credit_score < 700 THEN 2
+        WHEN NOT pc.complete_process THEN 3
+        ELSE 4
+    END,
+    cs.credit_score;
+```
+
+## Recommended Next Steps
+
+1. **Process Audit:**
+   - Conduct a full audit of cases with sequence violations to understand the business impact
+   - Review all priority orders for proper controls
+
+2. **System Controls:**
+   - Implement sequence validation in the order processing system to prevent out-of-order operations
+   - Add mandatory fields/checks for all required process steps
+
+3. **Role Review:**
+   - Review role permissions to ensure employees can only perform appropriate activities
+   - Implement segregation of duties for critical financial operations
+
+4. **Training Program:**
+   - Develop targeted training for employees who bypassed steps or performed out-of-sequence activities
+   - Emphasize the importance of proper process flow, especially for financial controls
+
+5. **Monitoring:**
+   - Implement real-time monitoring for process deviations
+   - Set up alerts for unusual patterns like payments before invoices
+
+6. **Fraud Investigation:**
+   - Closely examine case 1004 for potential fraudulent activity
+   - Review all cases missing credit checks for credit risk exposure
+
+7. **Process Redesign:**
+   - Consider redesigning the priority order process to maintain proper controls while expediting
+   - Evaluate if certain steps can be parallelized rather than bypassed
+
+The SQL queries provided should help identify the scope of these issues and provide data to support corrective actions. The patterns suggest both systemic issues (process design flaws) and potential individual behaviors (workarounds or errors) that need to be addressed.
