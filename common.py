@@ -14,7 +14,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "gpt-5-2025-08-07-HIGH" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "gemma3:270m" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -274,7 +274,7 @@ MODELS_DICT = {
             "gemma3:1b-it-q8_0",
             "granite3.3", "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b",
             "phi4-mini-reasoning", "phi4-reasoning", "phi4-reasoning:plus",
-            "qwen3:4b-instruct-2507-q8_0"
+            "qwen3:4b-instruct-2507-q8_0", "gemma3:270m"
         }
     },
     "qwen": {

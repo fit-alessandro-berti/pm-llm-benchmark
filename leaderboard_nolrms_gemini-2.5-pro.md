@@ -82,6 +82,7 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | Phi-4-multimodal-instruct     | **17.7** | :white_check_mark: | :x:   | 2.1                  | 3.0                  | 1.2                  | 2.5                  | 3.3                  | 2.9                  | 2.8                  | 2.7                  |
 | olmo27b-1124-instruct-q8_0    | **16.4** | :white_check_mark: | :x:   | 2.2                  | 3.0                  | 1.4                  | 2.0                  | 3.0                  | 2.8                  | 1.9                  | 0.0                  |
 | gemma31b-it-q8_0              | **12.6** | :white_check_mark: | :x:   | 1.1                  | 1.9                  | 1.0                  | 1.4                  | 3.2                  | 2.0                  | 1.9                  | 0.0                  |
+| gemma3270m                    | **7.5**  | :white_check_mark: | :x:   | 0.8                  | 0.9                  | 0.8                  | 2.6                  | 0.8                  | 0.8                  | 0.7                  | 0.0                  |
 
 ### openrouterhorizon-beta   => 38.4 points
 
@@ -4826,4 +4827,62 @@ A score in the range **24-29** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             |    4    |
 | cat08_04_resource_assign           |    3    |
 | cat08_05_task_schedul              |    6    |
+
+
+
+### gemma3270m   => 7.5 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |     1   |
+| cat01_02_activity_context          |     1   |
+| cat01_03_high_level_events         |     1   |
+| cat01_04_sensor_recordings         |     1   |
+| cat01_05_merge_two_logs            |     1   |
+| cat01_06_system_logs               |     1   |
+| cat01_07_interv_to_pseudo_bpmn     |     1   |
+| cat01_08_tables_to_log             |     1   |
+| cat02_01_conformance_textual       |     1   |
+| cat02_02_conf_desiderata           |     1   |
+| cat02_03_anomaly_event_log         |     1   |
+| cat02_04_powl_anomaly_detection    |     1   |
+| cat02_05_two_powls_anomalies       |     1   |
+| cat02_06_root_cause_1              |     1   |
+| cat02_07_root_cause_2              |     1   |
+| cat02_08_underfitting_process_tree |     1   |
+| cat02_09_fix_process_tree          |     1.5 |
+| cat03_01_process_tree_generation   |     1   |
+| cat03_02_powl_generation           |     1   |
+| cat03_03_log_skeleton_generation   |     1   |
+| cat03_04_declare_generation        |     1   |
+| cat03_05_temp_profile_generation   |     1   |
+| cat03_06_petri_net_generation      |     1   |
+| cat03_07_process_tree_discovery    |     1   |
+| cat03_08_powl_discovery            |     1   |
+| cat04_01_pseudo_bpmn_description   |     1   |
+| cat04_02_pseudo_bpmn_open_question |     7.6 |
+| cat04_03_declare_open_question     |     4.5 |
+| cat04_04_declare_description       |    10   |
+| cat04_05_sql_filt_num_events       |     1   |
+| cat04_06_sql_filt_three_df         |     1   |
+| cat04_07_sql_filt_top_k_vars       |     1   |
+| cat05_01_hyp_generation_log        |     1   |
+| cat05_02_hyp_gen_powl              |     1   |
+| cat05_03_hyp_gen_declare           |     1   |
+| cat05_04_hyp_gen_temp_profile      |     1   |
+| cat05_05_question_gen_nlp          |     2   |
+| cat05_06_question_pseudo_bpmn      |     1   |
+| cat05_07_question_interview        |     1   |
+| cat06_01_bias_text                 |     2   |
+| cat06_02_bias_event_log            |     1   |
+| cat06_03_bias_powl                 |     1   |
+| cat06_04_bias_two_logs             |     1   |
+| cat06_05_bias_two_logs_2           |     1   |
+| cat06_06_bias_mitigation_declare   |     1   |
+| cat06_07_fair_unfair_powl          |     1   |
+| cat08_01_queue_mining              |     1   |
+| cat08_02_instance_spanning         |     1.5 |
+| cat08_03_transport_opt             |     1.5 |
+| cat08_04_resource_assign           |     2   |
+| cat08_05_task_schedul              |     1   |
 
