@@ -274,7 +274,7 @@ MODELS_DICT = {
             "gemma3:1b-it-q8_0",
             "granite3.3", "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b",
             "phi4-mini-reasoning", "phi4-reasoning", "phi4-reasoning:plus",
-            "qwen3:4b-instruct-2507-q8_0", "gemma3:270m"
+            "qwen3:4b-instruct-2507-q8_0", "gemma3:270m", "qwen3:4b-thinking-2507-q8_0"
         }
     },
     "qwen": {
@@ -810,13 +810,14 @@ def query_text_simple_generic(question, api_url, target_file):
                     continue
 
                 # Append the chunk's text to our overall response message
+
                 chunk = data.get("response", "")
                 response_message += chunk
                 chunk_count += 1
                 #print(chunk_count)
 
                 if chunk_count % 10 == 0:
-                    #print(chunk_count)
+                    #print(target_file, chunk_count)
                     #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                     pass
 
