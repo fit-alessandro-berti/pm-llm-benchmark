@@ -259,7 +259,7 @@ MODELS_DICT = {
             "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
             "Qwen/Qwen3-30B-A3B", "Qwen/Qwen3-32B", "Qwen/Qwen3-14B", "Qwen/Qwen3-235B-A22B",
-            "deepseek-ai/DeepSeek-R1-0528"
+            "deepseek-ai/DeepSeek-R1-0528", "deepseek-ai/DeepSeek-V3.1"
         }
     },
     "ollama_local": {
@@ -869,8 +869,8 @@ def query_text_simple_generic(question, api_url, target_file):
                                     chunk_count += 1
                                     #print(chunk_count)
                                     if chunk_count % 10 == 0:
-                                        #print(chunk_count, len(response_message))
-                                        #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
+                                        #print(target_file, chunk_count, len(response_message))
+                                        #print(target_file, chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                                         pass
                                 elif chunk_reasoning_content:
                                     thinking_content += chunk_reasoning_content
