@@ -1,0 +1,96 @@
+**Anomalies Identified in Temporal Profile Model:**
+
+1.  **Receive to Approve (R, P):** The average time of ~25 hours is paired with an exceptionally low standard deviation (1 hour), making the process appear rigid and unnaturally consistent.
+2.  **Approve to Notify (P, N):** The average delay is extremely long (7 days) and highly inconsistent (STDEV of 2 days), suggesting a major, unpredictable bottleneck.
+3.  **Assign to Close (A, C):** The quick average time (2 hours) suggests claims may be closed directly after assignment, bypassing critical evaluation and approval steps.
+4.  **Evaluate to Notify (E, N):** The 5-minute average is unrealistically fast for a manual or considered step, indicating potential automation or the skipping of intermediary tasks.
+
+**Hypotheses for Anomalies:**
+
+1.  **Hypothesis for (R, P):** The approval step (`P`) might be automated or governed by a strict, time-based rule (e.g., "approve all claims after 24 hours if no fraud flag is raised"), removing natural human processing time variability.
+2.  **Hypothesis for (P, N):** The notification step (`N`) could be a manually executed batch job (e.g., generating and mailing paper checks weekly) instead of an immediate, automated task, leading to long and variable delays.
+3.  **Hypothesis for (A, C):** Adjusters might be incorrectly closing claims (e.g., as duplicates or due to lack of coverage) immediately after assignment without performing the required evaluation, or a system error is auto-closing certain claim types.
+4.  **Hypothesis for (E, N):** The `N` activity might be an automated system notification (e.g., an instant email) triggered immediately by the `E` event, or the `E` event is logged retroactively only moments before the notification is sent.
+
+**Verification SQL Queries:**
+
+1.  **Query to Investigate Rigid R->P Timing:**
+    This query finds claims where the time from Receive (`R`) to Approve (`P`) deviates significantly from the expected average, which could indicate exceptions to the hypothesized automated rule.
+
+```sql
+WITH time_diffs AS (
+    SELECT
+        ce_r.claim_id,
+        EXTRACT(EPOCH FROM (MAX(ce_p.timestamp) - MAX(ce_r.timestamp))) AS time_diff_seconds
+    FROM claim_events ce_r
+    JOIN claim_events ce_p ON ce_r.claim_id = ce_p.claim_id
+    WHERE ce_r.activity = 'R'
+    AND ce_p.activity = 'P'
+    GROUP BY ce_r.claim_id
+)
+SELECT
+    claim_id,
+    time_diff_seconds,
+    (time_diff_seconds - 90000) / 3600 AS deviation_from_avg_hours -- Z-score proxy
+FROM time_diffs
+WHERE ABS(time_diff_seconds - 90000) > 3600 * 2 -- Filter for claims >2 STD away
+ORDER BY deviation_from_avg_hours DESC;
+```
+
+2.  **Query to Investigate Long P->N Delays and Correlate with Resources:**
+    This query identifies the slowest notifications after approval and shows which resource was responsible, helping pinpoint if delays are systemic or tied to specific individuals/teams.
+
+```sql
+SELECT
+    ce_p.claim_id,
+    ce_p.resource AS approval_resource,
+    ce_n.resource AS notify_resource,
+    EXTRACT(EPOCH FROM (ce_n.timestamp - ce_p.timestamp)) / 86400.0 AS delay_days
+FROM claim_events ce_p
+JOIN claim_events ce_n ON ce_p.claim_id = ce_n.claim_id
+WHERE ce_p.activity = 'P'
+AND ce_n.activity = 'N'
+AND (ce_n.timestamp - ce_p.timestamp) > INTERVAL '5 days' -- Filter for excessively long delays
+ORDER BY delay_days DESC;
+```
+
+3.  **Query to Find Claims Closed Immediately After Assignment:**
+    This query finds claims closed very quickly after being assigned, which may indicate improper closure and a bypassing of process steps. It includes claim details for further analysis.
+
+```sql
+SELECT
+    ce_a.claim_id,
+    c.claim_type,
+    ce_a.resource AS assigned_adjuster,
+    EXTRACT(EPOCH FROM (ce_c.timestamp - ce_a.timestamp)) / 60.0 AS time_to_close_minutes
+FROM claim_events ce_a
+JOIN claim_events ce_c ON ce_a.claim_id = ce_c.claim_id
+JOIN claims c ON ce_a.claim_id = c.claim_id
+WHERE ce_a.activity = 'A'
+AND ce_c.activity = 'C'
+AND ce_c.timestamp - ce_a.timestamp < INTERVAL '1 hour' -- Filter for very quick closures
+ORDER BY time_to_close_minutes ASC;
+```
+
+4.  **Query to Check for Missing Process Steps in Quickly Closed Claims:**
+    This query builds on the previous one by checking if the critical Evaluate (`E`) and Approve (`P`) steps are missing for claims closed quickly after assignment, confirming the hypothesis of a bypassed process.
+
+```sql
+WITH quickly_closed_claims AS (
+    SELECT ce_a.claim_id
+    FROM claim_events ce_a
+    JOIN claim_events ce_c ON ce_a.claim_id = ce_c.claim_id
+    WHERE ce_a.activity = 'A'
+    AND ce_c.activity = 'C'
+    AND ce_c.timestamp - ce_a.timestamp < INTERVAL '4 hours' -- Broader filter
+)
+SELECT
+    qcc.claim_id,
+    BOOL_OR(ce.activity = 'E') AS was_evaluated,
+    BOOL_OR(ce.activity = 'P') AS was_approved
+FROM quickly_closed_claims qcc
+LEFT JOIN claim_events ce ON qcc.claim_id = ce.claim_id AND ce.activity IN ('E', 'P')
+GROUP BY qcc.claim_id
+HAVING BOOL_OR(ce.activity = 'E') = FALSE OR BOOL_OR(ce.activity = 'P') = FALSE;
+-- Shows claims missing E, P, or both
+```

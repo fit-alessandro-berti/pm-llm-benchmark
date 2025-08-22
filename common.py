@@ -14,7 +14,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "gpt-5-2025-08-07-HIGH" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "deepseek-reasoner" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -259,7 +259,7 @@ MODELS_DICT = {
             "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
             "Qwen/Qwen3-30B-A3B", "Qwen/Qwen3-32B", "Qwen/Qwen3-14B", "Qwen/Qwen3-235B-A22B",
-            "deepseek-ai/DeepSeek-R1-0528"
+            "deepseek-ai/DeepSeek-R1-0528", "deepseek-ai/DeepSeek-V3.1"
         }
     },
     "ollama_local": {
@@ -274,7 +274,7 @@ MODELS_DICT = {
             "gemma3:1b-it-q8_0",
             "granite3.3", "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b",
             "phi4-mini-reasoning", "phi4-reasoning", "phi4-reasoning:plus",
-            "qwen3:4b-instruct-2507-q8_0"
+            "qwen3:4b-instruct-2507-q8_0", "gemma3:270m", "qwen3:4b-thinking-2507-q8_0"
         }
     },
     "qwen": {
@@ -402,7 +402,7 @@ MODELS_DICT = {
                 "provider": "openai",
                 "base_model": "chatgpt-4o-latest"
             },
-            "gpt-5-chat-latest-2025-08-08": {
+            "gpt-5-chat-latest-2025-08-22": {
                 "provider": "openai",
                 "base_model": "gpt-5-chat-latest"
             },
@@ -576,7 +576,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner"]
 
     for p in patterns:
         if p in m_name:
@@ -588,8 +588,8 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss"]:
-        if p in model_name and not "deepseek-v3" in model_name:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner"]:
+        if p in model_name and not ("deepseek-v3" in model_name and not "-reasoner" in model_name):
             if not "qwen3" in model_name or ("qwen3" in model_name and not ("nstruct" in model_name or "coder" in model_name)):
                 return True
     return False
@@ -843,13 +843,14 @@ def query_text_simple_generic(question, api_url, target_file):
                     continue
 
                 # Append the chunk's text to our overall response message
+
                 chunk = data.get("response", "")
                 response_message += chunk
                 chunk_count += 1
                 #print(chunk_count)
 
                 if chunk_count % 10 == 0:
-                    #print(chunk_count)
+                    #print(target_file, chunk_count)
                     #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                     pass
 
@@ -901,15 +902,16 @@ def query_text_simple_generic(question, api_url, target_file):
                                     chunk_count += 1
                                     #print(chunk_count)
                                     if chunk_count % 10 == 0:
-                                        #print(chunk_count, len(response_message))
-                                        #print(chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
+                                        #print(target_file, chunk_count, len(response_message))
+                                        #print(target_file, chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
                                         pass
                                 elif chunk_reasoning_content:
                                     thinking_content += chunk_reasoning_content
                                     chunk_count += 1
                                     #print("thinking", chunk_count)
                                     if chunk_count % 10 == 0:
-                                        #print("thinking", chunk_count, len(response_message), response_message.replace("\n", " ").replace("\r", "").strip())
+                                        #print("thinking", target_file, chunk_count, len(thinking_content))
+                                        #print("thinking", chunk_count, len(thinking_content), thinking_content.replace("\n", " ").replace("\r", "").strip())
                                         pass
                         except json.JSONDecodeError:
                             # Possibly a keep-alive or incomplete chunk
