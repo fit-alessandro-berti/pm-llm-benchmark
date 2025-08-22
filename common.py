@@ -576,7 +576,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner"]
 
     for p in patterns:
         if p in m_name:
@@ -588,8 +588,8 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "deepseek-reasoner"]:
-        if p in model_name and not "deepseek-v3" in model_name:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner"]:
+        if p in model_name and not ("deepseek-v3" in model_name and not "-reasoner" in model_name):
             if not "qwen3" in model_name or ("qwen3" in model_name and not ("nstruct" in model_name or "coder" in model_name)):
                 return True
     return False
