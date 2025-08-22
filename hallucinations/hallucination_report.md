@@ -3,6 +3,7 @@
 | Model | Total | 1a_instruction_override | 1b_context_omission | 1c_prompt_contradiction | 2a_concept_fabrication | 2b_spurious_numeric | 2c_false_citation | 3a_unsupported_leap | 3b_self_contradiction | 3c_circular_reasoning | 4a_syntax_error | 4b_model_semantics_breach | 4c_visual_descr_mismatch |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Qwen3-235B-A22B-Thinking-2507 | 39 | 1 | 2 | 3 | 2 | 14 | 0 | 14 | 2 | 0 | 0 | 0 | 0 |
+| DeepSeek-V3.1-Reasoner | 56 | 1 | 14 | 1 | 6 | 1 | 0 | 24 | 2 | 0 | 1 | 5 | 0 |
 | Grok-3-beta-thinking-20250221 | 58 | 6 | 16 | 0 | 0 | 5 | 0 | 26 | 2 | 0 | 1 | 2 | 0 |
 | qwen34b-thinking-2507-q8 | 64 | 5 | 6 | 2 | 2 | 12 | 2 | 20 | 7 | 0 | 4 | 3 | 0 |
 | gpt-5-mini-2025-08-07 | 66 | 3 | 9 | 1 | 1 | 6 | 0 | 28 | 4 | 0 | 2 | 9 | 2 |
@@ -39,11 +40,13 @@
 | deepseek-aiDeepSeek-R1-Distill-Llama-70B | 113 | 5 | 41 | 1 | 4 | 9 | 0 | 42 | 2 | 0 | 1 | 4 | 1 |
 | o3-pro-2025-06-10-search | 114 | 1 | 17 | 0 | 1 | 11 | 0 | 53 | 6 | 0 | 3 | 11 | 3 |
 | z-aiglm-4.5 | 117 | 2 | 21 | 1 | 5 | 14 | 0 | 54 | 6 | 0 | 3 | 9 | 1 |
+| deepseek-aiDeepSeek-V3.1 | 118 | 3 | 16 | 2 | 5 | 6 | 1 | 58 | 11 | 1 | 3 | 10 | 1 |
 | QwenQwen3-30B-A3B | 120 | 5 | 21 | 1 | 2 | 20 | 0 | 48 | 8 | 0 | 0 | 6 | 3 |
 | grok-3 | 121 | 6 | 23 | 1 | 0 | 10 | 0 | 63 | 10 | 0 | 0 | 5 | 0 |
 | gemini-2.5-flash-nothink | 123 | 3 | 23 | 2 | 2 | 9 | 0 | 54 | 6 | 0 | 1 | 11 | 6 |
 | deepseekdeepseek-r1-distill-qwen-14b | 126 | 5 | 43 | 3 | 3 | 7 | 2 | 48 | 2 | 0 | 2 | 8 | 0 |
 | qwen-turbo-2025-04-28 | 126 | 6 | 28 | 2 | 1 | 13 | 1 | 56 | 4 | 0 | 0 | 6 | 2 |
+| gpt-5-chat-latest-2025-08-22 | 129 | 8 | 28 | 1 | 2 | 13 | 0 | 54 | 7 | 1 | 2 | 7 | 3 |
 | nvidiallama-3.3-nemotron-super-49b-v1-thinkenab | 129 | 7 | 27 | 2 | 4 | 19 | 0 | 44 | 5 | 0 | 5 | 2 | 4 |
 | grok-4-0709 | 130 | 5 | 11 | 2 | 10 | 16 | 0 | 55 | 4 | 1 | 2 | 10 | 9 |
 | o3-2025-04-16-search | 130 | 1 | 13 | 2 | 8 | 18 | 2 | 49 | 11 | 1 | 2 | 13 | 4 |
