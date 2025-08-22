@@ -3,9 +3,11 @@
 | Model | Total | 1a_instruction_override | 1b_context_omission | 1c_prompt_contradiction | 2a_concept_fabrication | 2b_spurious_numeric | 2c_false_citation | 3a_unsupported_leap | 3b_self_contradiction | 3c_circular_reasoning | 4a_syntax_error | 4b_model_semantics_breach | 4c_visual_descr_mismatch |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Qwen3-235B-A22B-Thinking-2507 | 39 | 1 | 2 | 3 | 2 | 14 | 0 | 14 | 2 | 0 | 0 | 0 | 0 |
+| qwen-qwq-32b-nostepbystep-morehypgen | 54 | 3 | 7 | 1 | 0 | 7 | 0 | 26 | 1 | 0 | 2 | 6 | 1 |
 | DeepSeek-V3.1-Reasoner | 56 | 1 | 14 | 1 | 6 | 1 | 0 | 24 | 2 | 0 | 1 | 5 | 0 |
 | Grok-3-beta-thinking-20250221 | 58 | 6 | 16 | 0 | 0 | 5 | 0 | 26 | 2 | 0 | 1 | 2 | 0 |
 | qwen34b-thinking-2507-q8 | 64 | 5 | 6 | 2 | 2 | 12 | 2 | 20 | 7 | 0 | 4 | 3 | 0 |
+| qwen-qwq-32b-nostepbystep-lesshypgen | 65 | 4 | 13 | 1 | 0 | 13 | 1 | 20 | 4 | 0 | 3 | 2 | 3 |
 | gpt-5-mini-2025-08-07 | 66 | 3 | 9 | 1 | 1 | 6 | 0 | 28 | 4 | 0 | 2 | 9 | 2 |
 | qwen-qwq-32b-nostepbystep-moremoral | 68 | 9 | 14 | 0 | 1 | 16 | 0 | 20 | 3 | 0 | 0 | 4 | 0 |
 | Qwen3-30B-A3B-2507-Thinking | 68 | 2 | 6 | 2 | 5 | 13 | 2 | 28 | 5 | 0 | 3 | 1 | 1 |
