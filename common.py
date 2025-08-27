@@ -14,7 +14,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "grok-code-fast-1" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "nousresearch/hermes-4-70b" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -434,6 +434,11 @@ MODELS_DICT = {
                 "provider": "openrouter",
                 "base_model": "qwen/qwq-32b-preview"
             },
+            "nousresearch/hermes-4-70b": {
+                "provider": "openrouter",
+                "base_model": "nousresearch/hermes-4-70b",
+                "added_to_payload": {"reasoning": {"enabled": True}}
+            },
             "claude-3-7-sonnet-thinkhigh-20250219": {
                 "provider": "claude",
                 "base_model": "claude-3-7-sonnet-20250219",
@@ -576,7 +581,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous"]
 
     for p in patterns:
         if p in m_name:
@@ -588,7 +593,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous"]:
         if p in model_name and not ("deepseek-v3" in model_name and not "-reasoner" in model_name):
             if not "qwen3" in model_name or ("qwen3" in model_name and not ("nstruct" in model_name or "coder" in model_name)):
                 return True
@@ -825,6 +830,8 @@ def query_text_simple_generic(question, api_url, target_file):
         # Non-OLLAMA (OpenAI or OpenAI-compatible endpoint)
         payload.update(get_llm_specific_settings())
 
+        #print(payload)
+
         # For debugging/logging
         dump_payload(payload, target_file)
 
@@ -861,8 +868,16 @@ def query_text_simple_generic(question, api_url, target_file):
                             data_json = json.loads(data_str)
                             if "choices" in data_json:
                                 # Each chunk has a delta with partial content
-                                chunk_content = data_json["choices"][0]["delta"].get("content", "")
-                                chunk_reasoning_content = data_json["choices"][0]["delta"].get("reasoning_content", "")
+                                #print(data_json)
+                                delta = data_json["choices"][0]["delta"]
+                                chunk_content = delta.get("content", "")
+                                chunk_reasoning_content = ""
+                                if "reasoning_content" in delta:
+                                    chunk_reasoning_content = delta.get("reasoning_content", "")
+                                elif "reasoning" in delta:
+                                    chunk_reasoning_content = delta.get("reasoning", "")
+
+                                #print(chunk_reasoning_content)
 
                                 if chunk_content:
                                     response_message += chunk_content

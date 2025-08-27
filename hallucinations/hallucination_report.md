@@ -3,6 +3,7 @@
 | Model | Total | 1a_instruction_override | 1b_context_omission | 1c_prompt_contradiction | 2a_concept_fabrication | 2b_spurious_numeric | 2c_false_citation | 3a_unsupported_leap | 3b_self_contradiction | 3c_circular_reasoning | 4a_syntax_error | 4b_model_semantics_breach | 4c_visual_descr_mismatch |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Qwen3-235B-A22B-Thinking-2507 | 39 | 1 | 2 | 3 | 2 | 14 | 0 | 14 | 2 | 0 | 0 | 0 | 0 |
+| nousresearchhermes-4-70b | 47 | 3 | 5 | 2 | 1 | 8 | 0 | 18 | 2 | 0 | 2 | 4 | 2 |
 | DeepSeek-V3.1-Reasoner | 56 | 1 | 14 | 1 | 6 | 1 | 0 | 24 | 2 | 0 | 1 | 5 | 0 |
 | Grok-3-beta-thinking-20250221 | 58 | 6 | 16 | 0 | 0 | 5 | 0 | 26 | 2 | 0 | 1 | 2 | 0 |
 | qwen34b-thinking-2507-q8 | 64 | 5 | 6 | 2 | 2 | 12 | 2 | 20 | 7 | 0 | 4 | 3 | 0 |
@@ -30,6 +31,7 @@
 | exaone-deep7.8b-fp16 | 106 | 2 | 18 | 2 | 3 | 23 | 0 | 34 | 4 | 0 | 4 | 11 | 4 |
 | qwenqwen3-235b-a22b-07-25 | 106 | 7 | 14 | 2 | 2 | 12 | 0 | 50 | 8 | 1 | 3 | 2 | 0 |
 | exaone-deep32b-fp16 | 107 | 11 | 23 | 2 | 2 | 15 | 0 | 40 | 2 | 0 | 5 | 5 | 0 |
+| grok-code-fast-1 | 107 | 4 | 14 | 2 | 8 | 24 | 1 | 42 | 5 | 0 | 0 | 3 | 2 |
 | deepseek-aiDeepSeek-R1-Distill-Qwen-32B | 108 | 5 | 40 | 2 | 1 | 14 | 0 | 39 | 1 | 0 | 1 | 3 | 1 |
 | o3-pro-2025-06-10 | 108 | 4 | 17 | 0 | 2 | 11 | 0 | 48 | 5 | 0 | 5 | 8 | 5 |
 | QwenQwen3-235B-A22B | 108 | 8 | 17 | 2 | 2 | 20 | 1 | 42 | 7 | 0 | 2 | 4 | 0 |
