@@ -577,6 +577,9 @@ def is_open_source(m_name):
         if p in m_name:
             return False
 
+    if "qwen3-max" in m_name:
+        return False
+
     return True
 
 
