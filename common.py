@@ -571,7 +571,7 @@ def is_visual_model(model_name):
 
 def is_open_source(m_name):
     m_name = m_name.lower()
-    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "qwen-plus", "qwen-turbo", "qwen-max", "sonar-", "quasar", "optimus", "o3-2", "o4-mini-2", "gpt-5"]
+    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "qwen-plus", "qwen-turbo", "qwen-max", "sonar-", "quasar", "optimus", "o3-2", "o4-mini-2", "gpt-5", "horizon", "cypher"]
 
     for p in patterns:
         if p in m_name:
