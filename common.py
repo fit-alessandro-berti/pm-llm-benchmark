@@ -319,7 +319,8 @@ MODELS_DICT = {
             "thudm/glm-4.1v-9b-thinking", "qwen/qwen3-235b-a22b-07-25", "qwen/qwen3-coder",
             "z-ai/glm-4.5", "z-ai/glm-4.5-air", "qwen/qwen3-30b-a3b-instruct-2507",
             "openrouter/horizon-alpha", "openrouter/horizon-beta",
-            "ai21/jamba-large-1.7", "ai21/jamba-mini-1.7"
+            "ai21/jamba-large-1.7", "ai21/jamba-mini-1.7",
+            "moonshotai/kimi-k2-0905"
         }
     },
     "manual": {

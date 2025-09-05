@@ -1,0 +1,158 @@
+Below is a concise “anomaly checklist” together with the SQL that lets you quantify or drill-down into each finding.  
+Run the queries in the order shown; each result set tells you whether the suspected problem is a one-off or a systemic pattern.
+
+--------------------------------------------------
+1.  Activities executed in the wrong sequence  
+    (ship before credit-check, invoice before shipment, payment before invoice, etc.)
+--------------------------------------------------
+```sql
+/* 1-a How often does “Ship Goods” appear BEFORE “Perform Credit Check”? */
+WITH ordered AS (
+    SELECT case_id,
+           min(CASE WHEN activity='Ship Goods' THEN timestamp END) AS ship_ts,
+           min(CASE WHEN activity='Perform Credit Check' THEN timestamp END) AS credit_ts
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT count(*) AS cases_ship_before_credit
+FROM ordered
+WHERE ship_ts < credit_ts;
+
+/* 1-b Same idea for any pair you want – just change the activity names */
+/* 1-c List the actual cases so you can read the narrative */
+SELECT case_id,
+       string_agg(activity||' @ '||to_char(timestamp,'YYYY-MM-DD HH:MI'), '  ' ORDER BY timestamp) AS story
+FROM order_event_log
+WHERE case_id IN (1002,1003)          -- already known offenders
+GROUP BY case_id;
+```
+Hypothesis:  
+Sales reps are pressured to ship same-day for priority clients; credit check is done retroactively.  
+Check: restrict 1-b to order_type = ‘priority’ – if the ratio jumps, the hypothesis is supported.
+
+--------------------------------------------------
+2.  Missing mandatory activities
+--------------------------------------------------
+```sql
+/* 2-a Orders that never got “Validate Stock” */
+SELECT o.case_id
+FROM orders o
+LEFT JOIN order_event_log l
+       ON o.case_id = l.case_id AND l.activity = 'Validate Stock'
+WHERE l.case_id IS NULL;
+
+/* 2-b General template: any activity missing */
+SELECT activity, count(DISTINCT case_id) AS missing_cases
+FROM (SELECT DISTINCT activity FROM order_event_log) a
+CROSS JOIN (SELECT DISTINCT case_id FROM orders) c
+LEFT JOIN order_event_log l USING (activity, case_id)
+WHERE l.case_id IS NULL
+GROUP BY activity
+ORDER BY missing_cases DESC;
+```
+Hypothesis:  
+Stock validation is skipped when an automatic ATP (available-to-promise) feed is green.  
+Check: join with additional_info LIKE ‘stock_checked=OK’ – if 100 % of those have no stand-alone validate-stock event, the feed is the explanation.
+
+--------------------------------------------------
+3.  Duplicate or recycled tracking / invoice IDs
+--------------------------------------------------
+```sql
+/* 3-a One tracking_id used on >1 case */
+SELECT additional_info, count(DISTINCT case_id) AS cases
+FROM order_event_log
+WHERE activity IN ('Ship Goods','Confirm Shipment')
+  AND additional_info LIKE 'tracking_id=%'
+GROUP BY additional_info
+HAVING count(DISTINCT case_id) > 1;
+
+/* 3-b Same for invoice_id */
+SELECT substring(additional_info FROM 'invoice_id=([^ ]+)') AS invoice_id,
+       count(DISTINCT case_id) AS cases
+FROM order_event_log
+WHERE activity = 'Issue Invoice'
+GROUP BY invoice_id
+HAVING count(DISTINCT case_id) > 1;
+```
+Hypothesis:  
+Copy-paste error in the shipping software or manual re-use of IDs.  
+Check: correlate with resource – if only one WarehouseClerk shows up in 3-a, coaching is required.
+
+--------------------------------------------------
+4.  Time travellers: negative throughput times
+--------------------------------------------------
+```sql
+/* 4 Overall end-to-end lead time < 0 */
+SELECT case_id,
+       max(timestamp) - min(timestamp) AS lead_time
+FROM order_event_log
+GROUP BY case_id
+HAVING max(timestamp) - min(timestamp) < INTERVAL '0';
+```
+(You will get zero rows unless someone edited timestamps manually – but the query is one line of defence.)
+
+--------------------------------------------------
+5.  Fast-track without approval
+--------------------------------------------------
+```sql
+/* 5 Priority orders that skipped credit check entirely */
+SELECT o.case_id, o.order_type
+FROM orders o
+LEFT JOIN order_event_log c
+       ON o.case_id = c.case_id AND c.activity = 'Perform Credit Check'
+WHERE o.order_type = 'priority'
+  AND c.case_id IS NULL;
+```
+Hypothesis:  
+“Priority” flag is being set after the fact to justify the shortcut.  
+Check: timestamp of the first event – if the case starts with “Confirm Shipment”, the order was probably upgraded retrospectively.
+
+--------------------------------------------------
+6.  Payments posted by non-Finance users
+--------------------------------------------------
+```sql
+SELECT l.case_id, l.resource, r.department
+FROM order_event_log l
+JOIN resources r ON l.resource = r.resource_id
+WHERE l.activity = 'Receive Payment'
+  AND r.department <> 'Finance';
+```
+Hypothesis:  
+Cashier function is delegated to Sales to hit month-end targets.  
+Check: correlate with additional_info amount – large ones first.
+
+--------------------------------------------------
+7.  Human versus automated steps
+--------------------------------------------------
+```sql
+/* 7 Cases where a WarehouseClerk executed “Confirm Shipment” (manager task) */
+SELECT l.case_id, l.resource, r.role
+FROM order_event_log l
+JOIN resources r ON l.resource = r.resource_id
+WHERE l.activity = 'Confirm Shipment'
+  AND r.role NOT LIKE '%Manager%';
+```
+Hypothesis:  
+Managers are overloaded and delegate, breaking 4-eye principle.  
+Check: count per clerk – if one clerk appears disproportionately, training or head-count issue.
+
+--------------------------------------------------
+8.  Role segregation conflicts
+--------------------------------------------------
+```sql
+/* 8 Same person executed both “Issue Invoice” and “Receive Payment” – segregation-of-duties breach */
+SELECT case_id, resource
+FROM order_event_log
+WHERE activity IN ('Issue Invoice','Receive Payment')
+GROUP BY case_id, resource
+HAVING count(DISTINCT activity) = 2;
+```
+Hypothesis:  
+Small team / fraud risk.  
+Check: restrict to amounts above a threshold to prioritise reviews.
+
+--------------------------------------------------
+Next steps  
+1. Run the quick counts above to build a “top-5 anomalies” list.  
+2. For every count > 1 % of total cases, drill down with the detail queries.  
+3. Feed the resulting case lists into a root-cause workshop (system logs, policy docs, staff interviews).
