@@ -1,0 +1,172 @@
+### 1. **Identify the Anomalies in the Given POWL Model**
+
+The provided POWL model contains several structural anomalies that deviate from the intended process flow:
+
+#### a. **Loop Between Evaluate (E) and Approve (P)**
+- The model defines a loop: `E  (P  E)*`, meaning after an initial evaluation, the system may repeatedly approve and re-evaluate the same claim.
+- **Anomaly**: This contradicts the intended linear flow (E  P once). It permits multiple approvals and evaluations per claim, which is illogical in standard insurance workflows — a claim should be evaluated once, approved (or denied) once, and then proceed.
+
+#### b. **XOR Skipping Customer Notification (N)**
+- The XOR construct allows either notifying the customer (N) or silently skipping it.
+- **Anomaly**: Customer notification is a critical compliance and customer service step. Skipping it entirely violates standard business practice and may breach regulatory or contractual obligations.
+
+#### c. **Premature Claim Closure via Partial Ordering**
+- The model adds a direct edge `A  C` (Assign Adjuster  Close Claim), bypassing evaluation, approval, and notification.
+- **Anomaly**: This permits claims to be closed immediately after assignment — before any substantive review. This could represent fraudulent, erroneous, or “rubber-stamp” closures that circumvent due process.
+
+#### d. **Lack of Strict Ordering Between XOR and Close (C)**
+- The model does not enforce `xor  C`, meaning closing can occur concurrently with or even before the decision to notify.
+- **Anomaly**: Closing a claim before deciding whether to notify the customer is logically inconsistent and risks leaving customers uninformed about claim outcomes.
+
+---
+
+### 2. **Generate Hypotheses on Why These Anomalies Might Exist**
+
+#### a. **Loop (E  P) Hypotheses**
+- **Partial Rule Implementation**: Business may have introduced “re-evaluation after approval” for edge cases (e.g., escalated claims), but the model generalized it to all claims.
+- **Misinterpretation of Feedback Loops**: Modelers may have confused iterative refinement (e.g., adjuster requests more info  re-evaluate) with repeated approval cycles.
+- **Tool Limitation**: The modeling tool may not support conditional re-evaluation, forcing modelers to use a loop as a workaround.
+
+#### b. **XOR Skipping Notification (N) Hypotheses**
+- **Legacy Behavior**: Older system may have allowed skipping notification for “auto-denied” or trivial claims, and this was carried over without review.
+- **Compliance Oversight**: Regulatory requirement for notification may have been overlooked during process redesign.
+- **Performance Optimization Attempt**: Someone may have tried to “optimize” process speed by skipping “non-essential” steps — without realizing the customer impact.
+
+#### c. **Premature Closure (A  C) Hypotheses**
+- **Error in Modeling**: Accidental edge added during drag-and-drop modeling.
+- **Emergency Override Path**: Intended as a rare administrative override (e.g., duplicate claim deletion), but modeled as a mainstream path.
+- **Testing Artifact**: Leftover from testing scenarios (e.g., “close dummy claims quickly”) that was never removed.
+
+#### d. **Loose Ordering (xor —/ C) Hypotheses**
+- **Concurrency Misconception**: Modelers assumed “notify” and “close” can happen in parallel — not realizing closure should be the final step.
+- **Event Log Noise**: Observed cases where “close” timestamp preceded “notify” due to clock skew or batch processing, leading modelers to relax ordering.
+
+---
+
+### 3. **Propose Database Queries to Verify Hypotheses**
+
+Using the `claim_events` table (which logs activity timestamps and resources), we can detect real-world instances of these anomalies.
+
+> **Note**: We assume activity labels in `claim_events.activity` match the model: 'R', 'A', 'E', 'P', 'N', 'C'.
+
+---
+
+####  **Query 1: Detect Claims Closed Without Evaluation or Approval**
+
+```sql
+SELECT DISTINCT c.claim_id
+FROM claims c
+JOIN claim_events ce_close ON c.claim_id = ce_close.claim_id AND ce_close.activity = 'C'
+LEFT JOIN claim_events ce_eval ON c.claim_id = ce_eval.claim_id AND ce_eval.activity = 'E'
+LEFT JOIN claim_events ce_approve ON c.claim_id = ce_approve.claim_id AND ce_approve.activity = 'P'
+WHERE ce_eval.event_id IS NULL OR ce_approve.event_id IS NULL
+ORDER BY c.claim_id;
+```
+
+>  **Verifies**: Premature closure (A  C) and missing mandatory steps.  
+>  **Expected Findings**: If many claims appear here, hypothesis of “rubber-stamp closures” or modeling error is supported.
+
+---
+
+####  **Query 2: Find Claims with Multiple Approvals or Evaluations**
+
+```sql
+SELECT claim_id,
+       COUNT(*) FILTER (WHERE activity = 'E') AS eval_count,
+       COUNT(*) FILTER (WHERE activity = 'P') AS approve_count
+FROM claim_events
+WHERE activity IN ('E', 'P')
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'E') > 1
+    OR COUNT(*) FILTER (WHERE activity = 'P') > 1
+ORDER BY claim_id;
+```
+
+>  **Verifies**: Loop anomaly (E  P) causing repeated steps.  
+>  **Expected Findings**: If claims show >1 E or P, loop is being executed in practice — possibly indicating rework or modeling artifact.
+
+---
+
+####  **Query 3: Identify Claims Where Notification Was Skipped**
+
+```sql
+SELECT DISTINCT c.claim_id
+FROM claims c
+JOIN claim_events ce_approve ON c.claim_id = ce_approve.claim_id AND ce_approve.activity = 'P'
+LEFT JOIN claim_events ce_notify ON c.claim_id = ce_notify.claim_id AND ce_notify.activity = 'N'
+WHERE ce_notify.event_id IS NULL
+ORDER BY c.claim_id;
+```
+
+>  **Verifies**: XOR skip path in practice.  
+>  **Expected Findings**: High skip rate suggests intentional design or oversight. Cross-check with claim type or region for patterns.
+
+---
+
+####  **Query 4: Find Claims Where “Close” Occurred Before “Notify” or Without “Notify”**
+
+```sql
+SELECT c.claim_id,
+       ce_close.timestamp AS close_time,
+       ce_notify.timestamp AS notify_time
+FROM claims c
+JOIN claim_events ce_close ON c.claim_id = ce_close.claim_id AND ce_close.activity = 'C'
+LEFT JOIN claim_events ce_notify ON c.claim_id = ce_notify.claim_id AND ce_notify.activity = 'N'
+WHERE ce_notify.timestamp IS NULL
+   OR ce_close.timestamp < ce_notify.timestamp
+ORDER BY c.claim_id;
+```
+
+>  **Verifies**: Loose ordering between N and C.  
+>  **Expected Findings**: If `close_time < notify_time`, process is illogically ordered — supports hypothesis of concurrency misconception or timestamp drift.
+
+---
+
+####  **Bonus Query: Trace Full Sequence Per Claim to Detect Any Out-of-Order Execution**
+
+```sql
+WITH claim_sequence AS (
+    SELECT claim_id,
+           activity,
+           timestamp,
+           ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp) as step_order
+    FROM claim_events
+    WHERE activity IN ('R', 'A', 'E', 'P', 'N', 'C')
+),
+sequence_check AS (
+    SELECT claim_id,
+           STRING_AGG(activity, '  ' ORDER BY step_order) AS actual_sequence
+    FROM claim_sequence
+    GROUP BY claim_id
+)
+SELECT claim_id, actual_sequence
+FROM sequence_check
+WHERE actual_sequence NOT LIKE 'R  A  E  P  N  C'
+  AND actual_sequence NOT LIKE 'R  A  E  P  C'  -- if N is optional per some policies
+ORDER BY claim_id;
+```
+
+>  **Verifies**: Any deviation from intended or acceptable flows.  
+>  **Use**: Manually inspect patterns — e.g., "R  A  C", "R  A  E  P  E  P  C", etc.
+
+---
+
+###  Summary of Verification Strategy
+
+| Anomaly                  | Query # | What It Detects                                      | Business Impact Insight                         |
+|--------------------------|---------|------------------------------------------------------|-------------------------------------------------|
+| Premature Closure (AC)  | 1, 4    | Claims closed without E or P                         | Risk of fraud, non-compliance, poor governance  |
+| Loop (EP)               | 2       | Multiple E or P per claim                            | Rework, inefficiency, modeling error            |
+| Skip Notification (XOR)  | 3       | Claims approved but not notified                     | Customer dissatisfaction, regulatory risk       |
+| Out-of-order Close       | 4, 5    | Close before Notify or missing Notify                | Process incoherence, poor UX                    |
+
+---
+
+###  Recommended Next Steps
+
+1. **Run Queries & Quantify Anomalies**: Measure frequency and monetary impact (join with `claims.claim_amount`).
+2. **Interview Stakeholders**: Ask adjusters or managers if skipping steps or re-approvals are intentional.
+3. **Audit High-Risk Claims**: Manually review claims that closed without evaluation — were they duplicates? Test data? Fraud?
+4. **Update Process Model**: Remove `A  C` edge, replace loop with optional re-evaluation subprocess, enforce `N  C` ordering, and make notification mandatory unless explicitly justified by claim type.
+
+By grounding model anomalies in actual event data, you transform theoretical process flaws into actionable operational insights.

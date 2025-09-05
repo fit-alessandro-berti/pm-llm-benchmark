@@ -1,0 +1,231 @@
+Looking at the event logs for the four sample orders, I can identify several anomalies and undesirable behaviors that deviate from the assumed normal process flow:
+
+## Identified Anomalies
+
+### 1. **Out-of-Sequence Process Execution**
+- **Order 1002**: "Confirm Shipment" (event 9) occurs BEFORE "Perform Credit Check" (event 11) and "Validate Stock" (event 12)
+- **Order 1003**: "Ship Goods" (event 17) occurs BEFORE "Confirm Shipment" (event 19) - shipping without confirmation
+- **Order 1004**: "Receive Payment" (event 22) occurs BEFORE "Issue Invoice" (event 23) and even before basic validation steps
+
+### 2. **Missing Critical Steps**
+- **Order 1004**: Completely missing "Perform Credit Check" and "Validate Stock" activities
+- **Order 1003**: Missing "Validate Stock" activity (goods were shipped without stock validation)
+
+### 3. **Suspicious Timing Patterns**
+- **Order 1004**: Payment received just 5 minutes after order registration, suggesting potential system manipulation or pre-payment scenario that bypasses controls
+- **Order 1002**: Shipment confirmed just 5 minutes after order registration, indicating possible policy violation
+
+## Hypothesized Causes
+
+1. **System Integration Issues**: Different departments might be using disconnected systems allowing out-of-sequence processing
+2. **Policy Violations**: Staff may be bypassing controls for "priority" customers or due to performance pressure
+3. **Training Deficiencies**: Staff may not understand the required process flow
+4. **Authorization Problems**: System may not enforce proper workflow sequencing
+5. **Fraud or Manipulation**: Particularly in Order 1004 where payment precedes invoice and critical validations are skipped
+
+## Investigative SQL Queries
+
+```sql
+-- 1. Find all orders with activities performed out of expected sequence
+WITH ordered_events AS (
+    SELECT 
+        case_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as actual_sequence,
+        CASE activity
+            WHEN 'Register Order' THEN 1
+            WHEN 'Perform Credit Check' THEN 2
+            WHEN 'Validate Stock' THEN 3
+            WHEN 'Confirm Shipment' THEN 4
+            WHEN 'Ship Goods' THEN 5
+            WHEN 'Issue Invoice' THEN 6
+            WHEN 'Receive Payment' THEN 7
+            ELSE 99
+        END as expected_sequence
+    FROM order_event_log
+),
+sequence_violations AS (
+    SELECT 
+        case_id,
+        activity,
+        actual_sequence,
+        expected_sequence,
+        actual_sequence - expected_sequence as sequence_deviation
+    FROM ordered_events
+    WHERE actual_sequence != expected_sequence
+)
+SELECT 
+    sv.case_id,
+    sv.activity,
+    sv.actual_sequence,
+    sv.expected_sequence,
+    sv.sequence_deviation,
+    o.order_type,
+    o.order_value
+FROM sequence_violations sv
+JOIN orders o ON sv.case_id = o.case_id
+ORDER BY sv.case_id, sv.actual_sequence;
+
+-- 2. Identify orders missing critical validation steps
+WITH order_activities AS (
+    SELECT 
+        case_id,
+        ARRAY_AGG(activity ORDER BY timestamp) as activities_performed,
+        COUNT(*) as total_activities
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT 
+    oa.case_id,
+    oa.activities_performed,
+    o.order_type,
+    o.order_value,
+    o.customer_id,
+    CASE 
+        WHEN NOT 'Perform Credit Check' = ANY(oa.activities_performed) THEN 'Missing Credit Check'
+        WHEN NOT 'Validate Stock' = ANY(oa.activities_performed) THEN 'Missing Stock Validation'
+        ELSE 'Other Issue'
+    END as missing_step
+FROM order_activities oa
+JOIN orders o ON oa.case_id = o.case_id
+WHERE NOT 'Perform Credit Check' = ANY(oa.activities_performed) 
+   OR NOT 'Validate Stock' = ANY(oa.activities_performed);
+
+-- 3. Find unusually fast processing times between critical steps
+WITH activity_timestamps AS (
+    SELECT 
+        case_id,
+        activity,
+        timestamp,
+        LEAD(activity) OVER (PARTITION BY case_id ORDER BY timestamp) as next_activity,
+        LEAD(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) as next_timestamp,
+        EXTRACT(EPOCH FROM (LEAD(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) - timestamp))/60 as minutes_to_next
+    FROM order_event_log
+)
+SELECT 
+    at.case_id,
+    at.activity,
+    at.next_activity,
+    at.minutes_to_next,
+    r1.role as current_role,
+    r2.role as next_role,
+    o.order_value,
+    o.order_type
+FROM activity_timestamps at
+JOIN order_event_log oel1 ON at.case_id = oel1.case_id AND at.activity = oel1.activity
+JOIN resources r1 ON oel1.resource = r1.resource_id
+LEFT JOIN order_event_log oel2 ON at.case_id = oel2.case_id AND at.next_activity = oel2.activity
+LEFT JOIN resources r2 ON oel2.resource = r2.resource_id
+JOIN orders o ON at.case_id = o.case_id
+WHERE at.minutes_to_next < 10  -- Less than 10 minutes between steps
+AND (
+    (at.activity = 'Register Order' AND at.next_activity IN ('Confirm Shipment', 'Ship Goods', 'Receive Payment'))
+    OR (at.activity = 'Issue Invoice' AND at.next_activity = 'Receive Payment' AND at.minutes_to_next < 5)
+)
+ORDER BY at.minutes_to_next;
+
+-- 4. Identify resources frequently involved in anomalous processes
+WITH anomalous_orders AS (
+    SELECT DISTINCT case_id
+    FROM (
+        -- Orders with sequence violations
+        SELECT case_id FROM (
+            SELECT 
+                case_id,
+                activity,
+                ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as actual_sequence,
+                CASE activity
+                    WHEN 'Register Order' THEN 1
+                    WHEN 'Perform Credit Check' THEN 2
+                    WHEN 'Validate Stock' THEN 3
+                    WHEN 'Confirm Shipment' THEN 4
+                    WHEN 'Ship Goods' THEN 5
+                    WHEN 'Issue Invoice' THEN 6
+                    WHEN 'Receive Payment' THEN 7
+                    ELSE 99
+                END as expected_sequence
+            FROM order_event_log
+        ) seq
+        WHERE actual_sequence != expected_sequence
+        
+        UNION
+        
+        -- Orders missing critical steps
+        SELECT case_id
+        FROM order_event_log
+        GROUP BY case_id
+        HAVING COUNT(CASE WHEN activity = 'Perform Credit Check' THEN 1 END) = 0
+           OR COUNT(CASE WHEN activity = 'Validate Stock' THEN 1 END) = 0
+    ) anomalies
+)
+SELECT 
+    oel.resource,
+    r.role,
+    r.department,
+    COUNT(*) as anomalous_events,
+    COUNT(DISTINCT oel.case_id) as anomalous_orders,
+    STRING_AGG(DISTINCT oel.activity, ', ') as activities_involved,
+    AVG(ord.order_value) as avg_order_value
+FROM order_event_log oel
+JOIN anomalous_orders ao ON oel.case_id = ao.case_id
+JOIN resources r ON oel.resource = r.resource_id
+JOIN orders ord ON oel.case_id = ord.case_id
+GROUP BY oel.resource, r.role, r.department
+ORDER BY anomalous_orders DESC, anomalous_events DESC;
+
+-- 5. Analyze patterns by order type and value
+SELECT 
+    o.order_type,
+    CASE 
+        WHEN o.order_value < 1000 THEN 'Low Value'
+        WHEN o.order_value < 2500 THEN 'Medium Value'
+        ELSE 'High Value'
+    END as value_category,
+    COUNT(*) as total_orders,
+    COUNT(CASE 
+        WHEN oel_missing.case_id IS NOT NULL THEN 1
+        WHEN seq_violation.case_id IS NOT NULL THEN 1
+    END) as anomalous_orders,
+    ROUND(COUNT(CASE 
+        WHEN oel_missing.case_id IS NOT NULL THEN 1
+        WHEN seq_violation.case_id IS NOT NULL THEN 1
+    END) * 100.0 / COUNT(*), 2) as anomaly_percentage
+FROM orders o
+LEFT JOIN (
+    SELECT case_id
+    FROM order_event_log
+    GROUP BY case_id
+    HAVING COUNT(CASE WHEN activity = 'Perform Credit Check' THEN 1 END) = 0
+       OR COUNT(CASE WHEN activity = 'Validate Stock' THEN 1 END) = 0
+) oel_missing ON o.case_id = oel_missing.case_id
+LEFT JOIN (
+    SELECT DISTINCT case_id
+    FROM (
+        SELECT 
+            case_id,
+            ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as actual_sequence,
+            CASE activity
+                WHEN 'Register Order' THEN 1
+                WHEN 'Perform Credit Check' THEN 2
+                WHEN 'Validate Stock' THEN 3
+                WHEN 'Confirm Shipment' THEN 4
+                WHEN 'Ship Goods' THEN 5
+                WHEN 'Issue Invoice' THEN 6
+                WHEN 'Receive Payment' THEN 7
+                ELSE 99
+            END as expected_sequence
+        FROM order_event_log
+    ) seq
+    WHERE actual_sequence != expected_sequence
+) seq_violation ON o.case_id = seq_violation.case_id
+GROUP BY o.order_type, 
+    CASE 
+        WHEN o.order_value < 1000 THEN 'Low Value'
+        WHEN o.order_value < 2500 THEN 'Medium Value'
+        ELSE 'High Value'
+    END
+ORDER BY o.order_type, value_category;
+```
+
+These queries will help identify systemic issues, pinpoint problematic resources or departments, and reveal whether anomalies correlate with order types or values - which could indicate whether these are intentional policy exceptions or genuine process failures.

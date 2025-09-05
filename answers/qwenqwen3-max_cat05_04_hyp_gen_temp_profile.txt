@@ -1,0 +1,166 @@
+### Anomalies in the Temporal Profile Model
+
+1. **Receive  Approve (R  P)**  
+   - Average: ~25 hours  
+   - Standard Deviation: Only 1 hour  
+    Suspiciously consistent timing. Real-world claim approvals typically involve variable review times; such low variance suggests artificial scheduling or batch processing rather than organic workflow.
+
+2. **Approve  Notify (P  N)**  
+   - Average: 7 days  
+   - Standard Deviation: 2 days  
+    Extremely long and highly variable delay. Indicates systemic lag, possibly due to manual handoffs, communication bottlenecks, or prioritization issues.
+
+3. **Assign  Close (A  C)**  
+   - Average: 2 hours  
+   - Standard Deviation: 1 hour  
+    Claims closing rapidly after assignment, potentially skipping critical steps like evaluation or approval. Suggests premature closures or automated shortcuts.
+
+4. **Evaluate  Notify (E  N)**  
+   - Average: 5 minutes  
+   - Standard Deviation: 1 minute  
+    Unrealistically fast transition. Implies either automation skipping human review, mislabeled events, or missing intermediate steps (e.g., no approval recorded).
+
+---
+
+### Hypotheses for Anomalies
+
+1. **R  P Consistency**  
+   - Approval may be batched at fixed daily intervals (e.g., end-of-day auto-approvals for low-risk claims), creating artificial uniformity.  
+   - Could also indicate system-generated timestamps not reflecting actual human decision time.
+
+2. **P  N Delay**  
+   - Notification may be manually triggered by staff only after compiling documents or scheduling customer calls, leading to backlog accumulation.  
+   - Could reflect regional or adjuster-specific delays due to workload imbalance.
+
+3. **A  C Premature Closure**  
+   - Adjusters may be closing claims without proper documentation due to performance pressure.  
+   - Could also indicate system errors where “Close” is auto-triggered after assignment for certain claim types (e.g., duplicates or test claims).
+
+4. **E  N Speed**  
+   - Evaluation and notification may be conflated in the system — e.g., “Notify” is logged immediately upon system-generated evaluation without human intervention.  
+   - May also indicate missing “Approve” events due to logging errors, making it appear that evaluation directly triggers notification.
+
+---
+
+### Verification SQL Queries
+
+#### 1. Identify claims with unusually fast RP transitions (low variance cluster)
+```sql
+SELECT 
+    claim_id,
+    EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS r_to_p_seconds
+FROM 
+    claim_events r
+JOIN 
+    claim_events p ON r.claim_id = p.claim_id
+WHERE 
+    r.activity = 'R' 
+    AND p.activity = 'P'
+    AND EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) BETWEEN 86400 AND 93600  -- 24–26 hours
+ORDER BY 
+    r_to_p_seconds;
+```
+
+#### 2. Flag claims with extreme PN delays (>9 days or <5 days)
+```sql
+SELECT 
+    p.claim_id,
+    p.timestamp AS approve_time,
+    n.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400 AS days_to_notify,
+    c.claim_type,
+    a.region,
+    a.name AS adjuster_name
+FROM 
+    claim_events p
+JOIN 
+    claim_events n ON p.claim_id = n.claim_id
+JOIN 
+    claims c ON p.claim_id = c.claim_id
+JOIN 
+    adjusters a ON n.resource = a.adjuster_id::VARCHAR
+WHERE 
+    p.activity = 'P' 
+    AND n.activity = 'N'
+    AND (
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) > 777600  -- >9 days
+        OR EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) < 432000 -- <5 days
+    )
+ORDER BY 
+    days_to_notify DESC;
+```
+
+#### 3. Detect claims closed shortly after assignment (potential skipped steps)
+```sql
+SELECT 
+    a.claim_id,
+    a.timestamp AS assign_time,
+    c.timestamp AS close_time,
+    EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) / 3600 AS hours_to_close,
+    COUNT(e.event_id) FILTER (WHERE e.activity IN ('E', 'P', 'N')) AS intermediate_steps
+FROM 
+    claim_events a
+JOIN 
+    claim_events c ON a.claim_id = c.claim_id
+LEFT JOIN 
+    claim_events e ON a.claim_id = e.claim_id AND e.timestamp > a.timestamp AND e.timestamp < c.timestamp
+WHERE 
+    a.activity = 'A'
+    AND c.activity = 'C'
+    AND EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) < 7200  -- <2 hours
+GROUP BY 
+    a.claim_id, a.timestamp, c.timestamp
+HAVING 
+    COUNT(e.event_id) FILTER (WHERE e.activity IN ('E', 'P', 'N')) = 0  -- No intermediate steps
+ORDER BY 
+    hours_to_close;
+```
+
+#### 4. Investigate claims with EN transitions under 6 minutes
+```sql
+SELECT 
+    e.claim_id,
+    e.timestamp AS evaluate_time,
+    n.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS e_to_n_seconds,
+    c.claim_type,
+    a.specialization
+FROM 
+    claim_events e
+JOIN 
+    claim_events n ON e.claim_id = n.claim_id
+JOIN 
+    claims c ON e.claim_id = c.claim_id
+JOIN 
+    adjusters a ON e.resource = a.adjuster_id::VARCHAR
+WHERE 
+    e.activity = 'E' 
+    AND n.activity = 'N'
+    AND EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) < 360  -- <6 minutes
+ORDER BY 
+    e_to_n_seconds;
+```
+
+#### 5. Correlate anomalies with adjuster or claim type (example: PN delays by region)
+```sql
+SELECT 
+    a.region,
+    COUNT(*) AS delayed_notifications,
+    AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400) AS avg_days_to_notify
+FROM 
+    claim_events p
+JOIN 
+    claim_events n ON p.claim_id = n.claim_id
+JOIN 
+    adjusters a ON p.resource = a.adjuster_id::VARCHAR
+WHERE 
+    p.activity = 'P' 
+    AND n.activity = 'N'
+    AND EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) > 604800  -- >7 days
+GROUP BY 
+    a.region
+ORDER BY 
+    avg_days_to_notify DESC;
+```
+
+These queries can isolate anomalous cases, correlate them with operational variables (adjuster, region, claim type), and help determine whether the timing irregularities are systemic, role-specific, or data-logging artifacts.
