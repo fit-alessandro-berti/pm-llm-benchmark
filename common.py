@@ -442,6 +442,11 @@ MODELS_DICT = {
                 "base_model": "nousresearch/hermes-4-70b",
                 "added_to_payload": {"reasoning": {"enabled": True}}
             },
+            "nvidia/nemotron-nano-9b-v2-thinking": {
+                "provider": "openrouter",
+                "base_model": "nvidia/nemotron-nano-9b-v2",
+                "added_to_payload": {"reasoning": {"enabled": True}}
+            },
             "claude-3-7-sonnet-thinkhigh-20250219": {
                 "provider": "claude",
                 "base_model": "claude-3-7-sonnet-20250219",
@@ -600,7 +605,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous", "qwen3-next-80b-a3b-thinking"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous", "qwen3-next-80b-a3b-thinking", "nemotron-nano-9b-v2-thinking"]:
         if p in model_name and not ("deepseek-v3" in model_name and not "-reasoner" in model_name):
             if (not "qwen3" in model_name) or ("qwen3" in model_name and not ("nstruct" in model_name or "coder" in model_name or "max" in model_name)):
                 return True
