@@ -14,7 +14,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "qwen/qwen3-max" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "qwen/qwen3-next-80b-a3b-instruct" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
@@ -321,7 +321,8 @@ MODELS_DICT = {
             "openrouter/horizon-alpha", "openrouter/horizon-beta",
             "ai21/jamba-large-1.7", "ai21/jamba-mini-1.7",
             "moonshotai/kimi-k2-0905", "qwen/qwen3-max",
-            "openrouter/sonoma-dusk-alpha", "openrouter/sonoma-sky-alpha"
+            "openrouter/sonoma-dusk-alpha", "openrouter/sonoma-sky-alpha",
+            "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking"
         }
     },
     "manual": {
@@ -599,7 +600,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous", "qwen3-next-80b-a3b-thinking"]:
         if p in model_name and not ("deepseek-v3" in model_name and not "-reasoner" in model_name):
             if (not "qwen3" in model_name) or ("qwen3" in model_name and not ("nstruct" in model_name or "coder" in model_name or "max" in model_name)):
                 return True
