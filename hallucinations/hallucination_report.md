@@ -2,6 +2,7 @@
 
 | Model | Total | 1a_instruction_override | 1b_context_omission | 1c_prompt_contradiction | 2a_concept_fabrication | 2b_spurious_numeric | 2c_false_citation | 3a_unsupported_leap | 3b_self_contradiction | 3c_circular_reasoning | 4a_syntax_error | 4b_model_semantics_breach | 4c_visual_descr_mismatch |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| qwenqwen3-next-80b-a3b-thinking | 30 | 3 | 5 | 2 | 1 | 5 | 1 | 7 | 1 | 0 | 3 | 2 | 0 |
 | Qwen3-235B-A22B-Thinking-2507 | 39 | 1 | 2 | 3 | 2 | 14 | 0 | 14 | 2 | 0 | 0 | 0 | 0 |
 | nousresearchhermes-4-70b | 47 | 3 | 5 | 2 | 1 | 8 | 0 | 18 | 2 | 0 | 2 | 4 | 2 |
 | DeepSeek-V3.1-Reasoner | 56 | 1 | 14 | 1 | 6 | 1 | 0 | 24 | 2 | 0 | 1 | 5 | 0 |
@@ -18,6 +19,7 @@
 | phi4-reasoningplus | 80 | 5 | 20 | 1 | 0 | 4 | 0 | 37 | 0 | 0 | 1 | 4 | 4 |
 | gpt-5-2025-08-07-HIGH | 82 | 4 | 19 | 1 | 1 | 5 | 0 | 30 | 2 | 0 | 3 | 9 | 6 |
 | nvidiallama-3.1-nemotron-ultra-253b-v1-thinkenab | 89 | 7 | 21 | 1 | 0 | 17 | 0 | 29 | 6 | 0 | 0 | 3 | 4 |
+| nvidianemotron-nano-9b-v2-thinking | 89 | 2 | 15 | 2 | 11 | 17 | 0 | 29 | 2 | 0 | 1 | 9 | 0 |
 | qwen-qwq-32b-nostepbystep | 90 | 2 | 13 | 0 | 0 | 26 | 0 | 29 | 6 | 0 | 4 | 2 | 4 |
 | gemini-2.5-pro-thinkhigh | 93 | 1 | 22 | 0 | 2 | 6 | 0 | 44 | 1 | 0 | 1 | 7 | 5 |
 | magistral-medium-2506 | 95 | 1 | 11 | 4 | 2 | 9 | 0 | 43 | 7 | 0 | 3 | 8 | 1 |
@@ -51,6 +53,7 @@
 | qwen-turbo-2025-04-28 | 126 | 6 | 28 | 2 | 1 | 13 | 1 | 56 | 4 | 0 | 0 | 6 | 2 |
 | gpt-5-chat-latest-2025-08-22 | 129 | 8 | 28 | 1 | 2 | 13 | 0 | 54 | 7 | 1 | 2 | 7 | 3 |
 | nvidiallama-3.3-nemotron-super-49b-v1-thinkenab | 129 | 7 | 27 | 2 | 4 | 19 | 0 | 44 | 5 | 0 | 5 | 2 | 4 |
+| qwenqwen3-next-80b-a3b-instruct | 129 | 5 | 12 | 3 | 13 | 19 | 1 | 47 | 10 | 0 | 1 | 9 | 3 |
 | grok-4-0709 | 130 | 5 | 11 | 2 | 10 | 16 | 0 | 55 | 4 | 1 | 2 | 10 | 9 |
 | o3-2025-04-16-search | 130 | 1 | 13 | 2 | 8 | 18 | 2 | 49 | 11 | 1 | 2 | 13 | 4 |
 | QwenQwen3-14B | 130 | 5 | 22 | 3 | 5 | 19 | 0 | 53 | 9 | 1 | 1 | 6 | 2 |
