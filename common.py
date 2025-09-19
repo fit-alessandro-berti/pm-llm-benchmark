@@ -14,7 +14,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "qwen/qwen3-max" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "Grok-4-fast" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]

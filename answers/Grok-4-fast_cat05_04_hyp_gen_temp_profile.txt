@@ -1,0 +1,146 @@
+### Identified Anomalies in the Temporal Profile Model
+
+The temporal profile model reveals several irregularities in the timing between claim handling activities, which deviate from what would be expected in a standard insurance process flow. These include:
+
+- **R to P (Receive to Approve)**: Average time of approximately 25 hours (90,000 seconds) with an unusually low standard deviation of 1 hour (3,600 seconds). This suggests highly consistent but potentially artificial timing, lacking natural variability.
+- **P to N (Approve to Notify)**: Average time of 7 days (604,800 seconds) with a high standard deviation of 2 days (172,800 seconds). This indicates significant inconsistency, with some cases proceeding quickly and others facing prolonged delays.
+- **A to C (Assign to Close)**: Average time of 2 hours (7,200 seconds) with a standard deviation of 1 hour (3,600 seconds). Such a short interval implies rapid closure without sufficient intermediate steps, which is atypical for a multi-stage process.
+- **E to N (Evaluate to Notify)**: Average time of 5 minutes (300 seconds) with a low standard deviation of 1 minute (60 seconds). This extremely brief transition raises concerns about rushed or skipped procedural checks.
+
+These patterns point to potential disruptions in the expected sequence (R → A → E → P → N → C), such as skipped steps, unnatural uniformity, or external bottlenecks.
+
+### Hypotheses for the Anomalies
+
+Several explanations could account for these timing irregularities, drawing from common process inefficiencies in insurance workflows:
+
+- **For R to P**: The low variability might stem from automated approval scripts or batch processing that enforce a fixed schedule, possibly bypassing thorough evaluation for low-risk claims. This could be a cost-saving measure but risks overlooking fraud or errors.
+- **For P to N**: The long average and high variability may result from resource bottlenecks, such as limited customer service staff for notifications, leading to backlogs during peak periods. Alternatively, it could reflect manual interventions where high-value claims require additional managerial sign-off before notification.
+- **For A to C**: The quick closure after assignment might indicate a shortcut for denied or trivial claims, where adjusters close cases immediately upon review without full evaluation or approval, potentially due to high caseloads or policy exceptions for certain claim types.
+- **For E to N**: The minimal time could arise from integrated automation where evaluation triggers instant notifications via email/SMS systems, but this might skip human verification steps, introducing compliance risks or data entry errors if the evaluation is superficial.
+
+Overall, these could be exacerbated by inconsistent resource allocation (e.g., understaffed regions) or systemic issues like outdated software causing artificial delays or accelerations.
+
+### Proposed Verification Approaches Using SQL Queries
+
+To verify these anomalies, the following SQL queries target the `claim_events` table, computing time differences in seconds between relevant activity timestamps for each claim. They identify outlier claims (e.g., deviations beyond mean ± 2 standard deviations, using the profile values) and correlate with factors like claim type, adjuster specialization, or region from the `claims` and `adjusters` tables. Joins are used where needed to enrich analysis.
+
+#### 1. Verify R to P Anomaly (Claims with Approval Timing Outside 25h ± 2h Range)
+This query flags claims where the time from Receive to Approve deviates significantly, then groups by claim type to spot patterns.
+```sql
+WITH time_diffs AS (
+    SELECT 
+        ce.claim_id,
+        EXTRACT(EPOCH FROM (MAX(CASE WHEN activity = 'P' THEN timestamp END) - 
+                            MAX(CASE WHEN activity = 'R' THEN timestamp END))) AS seconds_between_rp,
+        c.claim_type
+    FROM claim_events ce
+    JOIN claims c ON ce.claim_id = c.claim_id
+    WHERE activity IN ('R', 'P')
+    GROUP BY ce.claim_id, c.claim_type
+    HAVING COUNT(DISTINCT activity) = 2  -- Ensure both activities occurred
+)
+SELECT 
+    claim_id,
+    claim_type,
+    seconds_between_rp,
+    CASE 
+        WHEN seconds_between_rp < 90000 - 7200 OR seconds_between_rp > 90000 + 7200 
+        THEN 'Outlier' 
+        ELSE 'Normal' 
+    END AS deviation_flag
+FROM time_diffs
+ORDER BY ABS(seconds_between_rp - 90000);
+```
+
+#### 2. Verify P to N Anomaly (Claims with Notification Delays >7 Days ±4 Days)
+This identifies prolonged approvals to notifications, correlating with adjuster region to check for geographic bottlenecks.
+```sql
+WITH time_diffs AS (
+    SELECT 
+        ce.claim_id,
+        a.region,
+        EXTRACT(EPOCH FROM (MAX(CASE WHEN activity = 'N' THEN timestamp END) - 
+                            MAX(CASE WHEN activity = 'P' THEN timestamp END))) AS seconds_between_pn,
+        re.resource AS notifier_resource
+    FROM claim_events ce
+    JOIN claims c ON ce.claim_id = c.claim_id
+    JOIN adjusters a ON re.resource = a.adjuster_id::VARCHAR  -- Assuming resource links to adjuster_id
+    WHERE activity IN ('P', 'N')
+    GROUP BY ce.claim_id, a.region, notifier_resource
+    HAVING COUNT(DISTINCT activity) = 2
+)
+SELECT 
+    claim_id,
+    region,
+    notifier_resource,
+    seconds_between_pn / 86400 AS days_between_pn,  -- Convert to days for readability
+    CASE 
+        WHEN seconds_between_pn > 604800 + 345600 OR seconds_between_pn < 604800 - 345600 
+        THEN 'Outlier (High Variability)' 
+        ELSE 'Normal' 
+    END AS deviation_flag
+FROM time_diffs
+WHERE seconds_between_pn > 604800 - 172800  -- Focus on extended delays
+ORDER BY seconds_between_pn DESC;
+```
+
+#### 3. Verify A to C Anomaly (Claims Closed <2 Hours After Assignment)
+This detects premature closures, filtering by adjuster specialization to see if certain experts handle expedited cases.
+```sql
+WITH time_diffs AS (
+    SELECT 
+        ce.claim_id,
+        a.specialization,
+        EXTRACT(EPOCH FROM (MAX(CASE WHEN activity = 'C' THEN timestamp END) - 
+                            MAX(CASE WHEN activity = 'A' THEN timestamp END))) AS seconds_between_ac
+    FROM claim_events ce
+    JOIN claims c ON ce.claim_id = c.claim_id
+    JOIN adjusters a ON (SELECT resource FROM claim_events WHERE claim_id = ce.claim_id AND activity = 'A')::INTEGER = a.adjuster_id
+    WHERE activity IN ('A', 'C')
+    GROUP BY ce.claim_id, a.specialization
+    HAVING COUNT(DISTINCT activity) = 2
+)
+SELECT 
+    claim_id,
+    specialization,
+    seconds_between_ac / 3600 AS hours_between_ac,
+    CASE 
+        WHEN seconds_between_ac < 7200 - 7200 THEN 'Extreme Outlier (Premature Close)' 
+        WHEN seconds_between_ac < 7200 THEN 'Short Close' 
+        ELSE 'Normal' 
+    END AS deviation_flag
+FROM time_diffs
+ORDER BY seconds_between_ac ASC;
+```
+
+#### 4. Verify E to N Anomaly (Claims with Notification <5 Minutes After Evaluation)
+This checks for rushed transitions, correlating with customer segments via claim amount to identify if high-value claims are expedited.
+```sql
+WITH time_diffs AS (
+    SELECT 
+        ce.claim_id,
+        c.claim_amount,
+        c.customer_id,
+        EXTRACT(EPOCH FROM (MAX(CASE WHEN activity = 'N' THEN timestamp END) - 
+                            MAX(CASE WHEN activity = 'E' THEN timestamp END))) AS seconds_between_en
+    FROM claim_events ce
+    JOIN claims c ON ce.claim_id = c.claim_id
+    WHERE activity IN ('E', 'N')
+    GROUP BY ce.claim_id, c.claim_amount, c.customer_id
+    HAVING COUNT(DISTINCT activity) = 2
+)
+SELECT 
+    claim_id,
+    customer_id,
+    claim_amount,
+    seconds_between_en AS seconds_between_en,
+    CASE 
+        WHEN seconds_between_en < 300 - 120 THEN 'Extreme Outlier (Too Rapid)' 
+        WHEN seconds_between_en < 300 THEN 'Rapid Transition' 
+        ELSE 'Normal' 
+    END AS deviation_flag
+FROM time_diffs
+ORDER BY seconds_between_en ASC;
+```
+
+These queries can be run independently or combined for broader analysis (e.g., via UNION or subqueries). They provide actionable insights by surfacing specific claim_ids for manual review, helping to confirm hypotheses like resource-driven delays.
