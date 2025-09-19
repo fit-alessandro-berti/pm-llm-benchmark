@@ -281,10 +281,8 @@ MODELS_DICT = {
         "api_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/",
         "api_key": "sk-",
         "models": {
-            "qwen-max-2025-01-25",
             "qwen2.5-72b-instruct", "qwen2.5-32b-instruct",
             "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m", "qwen2.5-omni-7b",
-            "qwen-plus-2025-04-28", "qwen-turbo-2025-04-28"
         }
     },
     "nvidia": {
@@ -321,7 +319,8 @@ MODELS_DICT = {
             "openrouter/horizon-alpha", "openrouter/horizon-beta",
             "ai21/jamba-large-1.7", "ai21/jamba-mini-1.7",
             "moonshotai/kimi-k2-0905", "qwen/qwen3-max",
-            "openrouter/sonoma-dusk-alpha", "openrouter/sonoma-sky-alpha"
+            "openrouter/sonoma-dusk-alpha", "openrouter/sonoma-sky-alpha",
+            "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking"
         }
     },
     "manual": {
@@ -439,6 +438,11 @@ MODELS_DICT = {
             "nousresearch/hermes-4-70b": {
                 "provider": "openrouter",
                 "base_model": "nousresearch/hermes-4-70b",
+                "added_to_payload": {"reasoning": {"enabled": True}}
+            },
+            "nvidia/nemotron-nano-9b-v2-thinking": {
+                "provider": "openrouter",
+                "base_model": "nvidia/nemotron-nano-9b-v2",
                 "added_to_payload": {"reasoning": {"enabled": True}}
             },
             "claude-3-7-sonnet-thinkhigh-20250219": {
@@ -572,7 +576,7 @@ def is_visual_model(model_name):
 
 def is_open_source(m_name):
     m_name = m_name.lower()
-    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "qwen-plus", "qwen-turbo", "qwen-max", "sonar-", "quasar", "optimus", "o3-2", "o4-mini-2", "gpt-5", "horizon", "cypher", "mistral-medium", "magistral-medium", "sonoma"]
+    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "sonar-", "quasar", "optimus", "o3-2", "o4-mini-2", "gpt-5", "horizon", "cypher", "mistral-medium", "magistral-medium", "sonoma"]
 
     for p in patterns:
         if p in m_name:
@@ -586,7 +590,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous", "sonoma"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous"]
 
     for p in patterns:
         if p in m_name:
@@ -599,7 +603,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "qwen-turbo", "qwen-plus", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous", "qwen3-next-80b-a3b-thinking", "nemotron-nano-9b-v2-thinking"]:
         if p in model_name and not ("deepseek-v3" in model_name and not "-reasoner" in model_name):
             if (not "qwen3" in model_name) or ("qwen3" in model_name and not ("nstruct" in model_name or "coder" in model_name or "max" in model_name)):
                 return True
@@ -659,16 +663,13 @@ def get_llm_specific_settings() -> Dict[str, Any]:
         max_tokens = Shared.MAX_REQUESTED_TOKENS if Shared.MAX_REQUESTED_TOKENS is not None else 65536
         options["max_tokens"] = max_tokens
 
-    if "qwen3" in model_name.lower() or "qwen-turbo" in model_name.lower() or "qwen-plus" in model_name.lower():
+    if "qwen3" in model_name.lower():
         options["temperature"] = 0.6
 
     if "qwen3" in model_name.lower():
         options["top_p"] = 0.95
         options["top_k"] = 0.20
         options["min_p"] = 0
-
-    if "qwen-turbo" in model_name.lower() or "qwen-plus" in model_name.lower():
-        options["enable_thinking"] = True
 
     if Shared.CUSTOM_TEMPERATURE is not None:
         options["temperature"] = Shared.CUSTOM_TEMPERATURE
