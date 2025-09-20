@@ -114,22 +114,22 @@ if __name__ == "__main__":
     
     # Configure rate limiter
     configure_rate_limiter(
-        requests_per_minute=60,
-        requests_per_hour=1000,
-        tokens_per_minute=90000,
+        requests_per_minute=100,
+        requests_per_hour=20000,
+        tokens_per_minute=900000,
         tokens_per_hour=2000000,
-        max_concurrent=10
+        max_concurrent=50
     )
     
     # Enable multi-threading in evalscript
     evalscript.Shared.USE_MULTITHREADING = True
-    evalscript.Shared.MAX_WORKERS = 5
+    evalscript.Shared.MAX_WORKERS = 50
 
     iterations = sys.maxsize
     # iterations = 1
     
     use_multithreading = True  # Set to False to use original single-threaded behavior
-    max_model_workers = 3  # Number of models to process in parallel
+    max_model_workers = 15  # Number of models to process in parallel
 
     for i in range(iterations):
         print(f"\n=== Iteration {i+1} ===")

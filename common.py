@@ -17,7 +17,7 @@ from typing import Dict, Any
 ANSWERING_MODEL_NAME = "Grok-4-fast" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
-EVALUATING_MODEL_NAME = "gemini-2.5-pro" if len(sys.argv) < 3 else sys.argv[2]
+EVALUATING_MODEL_NAME = "x-ai/grok-4-fast:free" if len(sys.argv) < 3 else sys.argv[2]
 
 
 class RateLimiter:
@@ -154,11 +154,11 @@ class RateLimiter:
 
 # Global rate limiter instance
 RATE_LIMITER = RateLimiter(
-    requests_per_minute=60,
-    requests_per_hour=1000,
-    tokens_per_minute=90000,
+    requests_per_minute=100,
+    requests_per_hour=20000,
+    tokens_per_minute=900000,
     tokens_per_hour=2000000,
-    max_concurrent=10
+    max_concurrent=50
 )
 
 
@@ -180,7 +180,7 @@ class Shared:
     # API_URL = "https://api.perplexity.ai/"
     # API_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/"
     # API_URL = "https://integrate.api.nvidia.com/v1/"
-    # API_URL = "https://openrouter.ai/api/v1/"
+    API_URL = "https://openrouter.ai/api/v1/"
     SYSTEM_PROMPT = None
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You should think step-by-step."
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant."
@@ -665,6 +665,10 @@ def get_llm_specific_settings() -> Dict[str, Any]:
 
     if "qwen3" in model_name.lower():
         options["temperature"] = 0.6
+
+    if "x-ai/grok-4-fast" in model_name:
+        options["reasoning"] = {"enabled": True}
+        print(options)
 
     if "qwen3" in model_name.lower():
         options["top_p"] = 0.95
@@ -1442,7 +1446,7 @@ def clean_model_name(m_name):
 
 
 def get_base_evaluation_path(model_name):
-    return "evaluation" if "gpt-4o" in model_name else "evaluation-" + clean_model_name(model_name).split("-exp")[0].split("-preview")[0]
+    return "evaluation" if "gpt-4o" in model_name else "evaluation-grok4-fast" if "grok-4-fast" in model_name else "evaluation-" + clean_model_name(model_name).split("-exp")[0].split("-preview")[0]
 
 
 def configure_rate_limiter(requests_per_minute=60, requests_per_hour=1000,

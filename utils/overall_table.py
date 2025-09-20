@@ -185,7 +185,12 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
         F.close()
 
     overall_table = pd.DataFrame(overall_table)
-    overall_table.columns = ["Model", "Score", "OS", "LRM", "PCo", "CC", "PMo", "PQ", "HG", "FA", "OPT", ":nerd_face: VI"]
+    lsttta = ["Model", "Score", "OS", "LRM", "PCo", "CC", "PMo", "PQ", "HG", "FA", "OPT", ":nerd_face: VI"]
+    if len(overall_table) > 0:
+        overall_table.columns = lsttta
+    else:
+        overall_table = pd.DataFrame({x: [] for x in lsttta})
+
     overall_table = overall_table.to_markdown(index=False)
 
     output = []
@@ -211,6 +216,9 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
 
 def get_suffix_name(e_m_name):
+    if "grok-4-fast" in e_m_name:
+        return "grok-4-fast"
+
     return e_m_name.split("-exp")[0].split("-preview")[0]
 
 

@@ -69,7 +69,7 @@ def execute_script(evaluation_folder, model_name):
         if force_custom_evaluation_lrm(model_name):
             numb0 = numb
             diff = 10.0 - numb0
-            factor = 1.15 if "qwq" in model_name else 1.09
+            factor = 1.15
             diff = round(diff * factor, 1)
             numb = max(1.0, 10.0 - diff)
 
