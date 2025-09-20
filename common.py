@@ -167,7 +167,8 @@ class Shared:
     MODEL_NAME = None
     ALIAS_MODEL_NAME = None
     MAX_REQUESTED_TOKENS = 32000
-    API_URL = "https://generativelanguage.googleapis.com/v1beta/"
+    API_URL = "https://openrouter.ai/api/v1/"
+    # API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.openai.com/v1/"
     # API_URL = "http://137.226.117.70:11434/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
@@ -180,7 +181,6 @@ class Shared:
     # API_URL = "https://api.perplexity.ai/"
     # API_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/"
     # API_URL = "https://integrate.api.nvidia.com/v1/"
-    API_URL = "https://openrouter.ai/api/v1/"
     SYSTEM_PROMPT = None
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant. You should think step-by-step."
     # SYSTEM_PROMPT = "You are a helpful and harmless assistant."
