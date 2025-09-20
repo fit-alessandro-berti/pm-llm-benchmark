@@ -668,7 +668,7 @@ def get_llm_specific_settings() -> Dict[str, Any]:
 
     if "x-ai/grok-4-fast" in model_name:
         options["reasoning"] = {"enabled": True}
-        print(options)
+        #print(options)
 
     if "qwen3" in model_name.lower():
         options["top_p"] = 0.95
