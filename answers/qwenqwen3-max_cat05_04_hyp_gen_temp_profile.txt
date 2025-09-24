@@ -1,0 +1,151 @@
+### Anomalies in the Temporal Profile Model
+
+1. **Receive  Approve (R  P):**  
+   - **Observation:** Average duration of ~25 hours with an extremely low standard deviation (1 hour).  
+   - **Anomaly:** Such tight consistency is atypical for a multi-step human-in-the-loop insurance process and may indicate artificial scheduling, batch processing, or missing intermediate steps.
+
+2. **Approve  Notify (P  N):**  
+   - **Observation:** Average delay of 7 days with a high standard deviation (2 days).  
+   - **Anomaly:** This prolonged and highly variable gap suggests inconsistent follow-up procedures, potential backlogs, or manual delays in customer communication.
+
+3. **Assign  Close (A  C):**  
+   - **Observation:** Average closure within 2 hours of assignment.  
+   - **Anomaly:** This rapid closure is inconsistent with the expected workflow that includes evaluation and approval. It may indicate premature closures, system errors, or bypassing of required steps.
+
+4. **Evaluate  Notify (E  N):**  
+   - **Observation:** Average of only 5 minutes between evaluation and notification.  
+   - **Anomaly:** Such a short interval is implausibly fast for a meaningful evaluation-to-notification transition in a real-world insurance context, possibly signaling automated shortcuts or missing validation steps.
+
+---
+
+### Hypotheses for Observed Anomalies
+
+- **R  P Consistency:** Approvals may be auto-generated for low-risk or pre-approved claim types (e.g., small auto claims), leading to fixed processing windows. Alternatively, timestamps might be backfilled or system-generated rather than reflecting actual human actions.
+
+- **P  N Delay:** Notification may depend on external systems (e.g., email queues, customer portal syncs) or manual outreach by under-resourced teams, causing unpredictable delays. High-value claims might undergo additional internal reviews before notification, increasing variance.
+
+- **A  C Premature Closure:** Adjusters might be closing claims without full processing due to performance pressure, system glitches, or misclassification (e.g., duplicate or fraudulent claims marked for immediate closure).
+
+- **E  N Speed:** The “Notify” event might be triggered automatically by the same system action that completes “Evaluate,” especially in digital-first workflows, effectively collapsing two logical steps into one technical event.
+
+---
+
+### Verification SQL Queries
+
+#### 1. **Identify claims with unusually fast R  P transitions (e.g., <20h or >30h)**
+```sql
+WITH r_p_times AS (
+    SELECT 
+        r.claim_id,
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS r_to_p_seconds
+    FROM 
+        claim_events r
+    JOIN 
+        claim_events p ON r.claim_id = p.claim_id
+    WHERE 
+        r.activity = 'R' AND p.activity = 'P'
+)
+SELECT 
+    claim_id,
+    r_to_p_seconds,
+    r_to_p_seconds / 3600 AS hours
+FROM 
+    r_p_times
+WHERE 
+    r_to_p_seconds < 72000  -- <20 hours
+    OR r_to_p_seconds > 108000; -- >30 hours
+```
+
+#### 2. **Find claims with excessive P  N delays (>10 days) or unusually fast (<1 day)**
+```sql
+SELECT 
+    p.claim_id,
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400 AS days_p_to_n
+FROM 
+    claim_events p
+JOIN 
+    claim_events n ON p.claim_id = n.claim_id
+WHERE 
+    p.activity = 'P' AND n.activity = 'N'
+    AND (
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) > 864000  -- >10 days
+        OR EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) < 86400  -- <1 day
+    );
+```
+
+#### 3. **Detect claims closed within 3 hours of assignment without intermediate E or P events**
+```sql
+WITH assigned_and_closed AS (
+    SELECT 
+        a.claim_id,
+        a.timestamp AS assign_time,
+        c.timestamp AS close_time,
+        EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) AS assign_to_close_sec
+    FROM 
+        claim_events a
+    JOIN 
+        claim_events c ON a.claim_id = c.claim_id
+    WHERE 
+        a.activity = 'A' AND c.activity = 'C'
+        AND EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) <= 10800  -- 3 hours
+),
+intermediate_events AS (
+    SELECT DISTINCT claim_id
+    FROM claim_events
+    WHERE activity IN ('E', 'P')
+)
+SELECT 
+    ac.claim_id,
+    ac.assign_to_close_sec / 3600 AS hours_a_to_c
+FROM 
+    assigned_and_closed ac
+LEFT JOIN 
+    intermediate_events ie ON ac.claim_id = ie.claim_id
+WHERE 
+    ie.claim_id IS NULL;  -- No E or P between A and C
+```
+
+#### 4. **Check if E  N transitions under 2 minutes correlate with specific claim types or adjusters**
+```sql
+SELECT 
+    e.claim_id,
+    c.claim_type,
+    e.resource AS evaluator,
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS e_to_n_seconds
+FROM 
+    claim_events e
+JOIN 
+    claim_events n ON e.claim_id = n.claim_id
+JOIN 
+    claims c ON e.claim_id = c.claim_id
+WHERE 
+    e.activity = 'E' AND n.activity = 'N'
+    AND EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) < 120;  -- <2 minutes
+```
+
+#### 5. **Analyze P  N delay by region or adjuster specialization**
+```sql
+SELECT 
+    adj.specialization,
+    adj.region,
+    AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400) AS avg_days_p_to_n,
+    STDDEV(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400) AS stddev_days
+FROM 
+    claim_events p
+JOIN 
+    claim_events n ON p.claim_id = n.claim_id
+JOIN 
+    claims c ON p.claim_id = c.claim_id
+JOIN 
+    adjusters adj ON c.adjuster_id = adj.adjuster_id  -- assuming claims.adjuster_id exists or via resource mapping
+WHERE 
+    p.activity = 'P' AND n.activity = 'N'
+GROUP BY 
+    adj.specialization, adj.region
+ORDER BY 
+    avg_days_p_to_n DESC;
+```
+
+> **Note:** If `claims` does not directly store `adjuster_id`, join via `claim_events.resource = adjusters.name` or a similar mapping based on actual data conventions.
+
+These queries enable targeted investigation into timing anomalies, helping distinguish between systemic process flaws, data quality issues, or legitimate business-driven patterns.

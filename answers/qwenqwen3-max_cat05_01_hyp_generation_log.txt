@@ -1,0 +1,181 @@
+Based on the provided event log and reference data, several anomalies and deviations from the assumed normal process flow are evident. Below is an analysis of these issues, potential root causes, and targeted SQL queries to investigate them further.
+
+---
+
+##  **Identified Anomalies**
+
+### **1. Out-of-Sequence Activities**
+- **Case 1002**:  
+  - `Confirm Shipment` (event 9) and `Ship Goods` (event 10) occur **before** `Perform Credit Check` (event 11) and `Validate Stock` (event 12).  
+  - This violates the expected sequence: credit check and stock validation should precede shipment confirmation.
+
+- **Case 1003**:  
+  - `Ship Goods` (event 17) occurs **before** `Confirm Shipment` (event 19).  
+  - This reverses the expected order of these two Logistics activities.
+
+- **Case 1004**:  
+  - `Receive Payment` (event 22) occurs **before** `Issue Invoice` (event 23), and even before any credit check, stock validation, or shipment.  
+  - This is a severe control violation—payment should follow invoicing, which itself follows fulfillment.
+
+### **2. Missing Activities**
+- **Case 1004** is missing:
+  - `Perform Credit Check`
+  - `Validate Stock`  
+  Despite being a standard-order case with high value ($3,000), critical risk and inventory checks are skipped.
+
+### **3. Premature or Illogical Timing**
+- In **Case 1004**, payment is received just **5 minutes** after order registration—before any operational steps. This suggests either:
+  - A prepayment for a known customer (legitimate but unusual), or
+  - A data entry/logic error (e.g., timestamp misassignment or manual override without audit trail).
+
+---
+
+##  **Hypothesized Causes**
+
+| Anomaly | Possible Causes |
+|--------|------------------|
+| **Out-of-sequence execution** | - System allows parallel or manual event entry without workflow enforcement<br>- Staff bypassing controls due to urgency (e.g., priority orders)<br>- Integration errors between subsystems (e.g., warehouse system logs shipment before ERP confirms it) |
+| **Missing credit/stock checks** | - Policy exception for high-value customers (but not logged)<br>- System bug skipping validation for certain channels (e.g., online)<br>- Human error or training gap |
+| **Payment before invoice** | - Cash-on-delivery mislogged as prepayment<br>- Test or internal order with fake timestamps<br>- Fraudulent activity or accounting error |
+
+---
+
+##  **Proposed Diagnostic SQL Queries**
+
+### **1. Detect Orders with Missing Critical Activities**
+Identify cases missing `Perform Credit Check` or `Validate Stock`.
+
+```sql
+SELECT o.case_id, o.order_type, o.order_value
+FROM orders o
+WHERE NOT EXISTS (
+    SELECT 1 FROM order_event_log e
+    WHERE e.case_id = o.case_id AND e.activity = 'Perform Credit Check'
+)
+OR NOT EXISTS (
+    SELECT 1 FROM order_event_log e
+    WHERE e.case_id = o.case_id AND e.activity = 'Validate Stock'
+);
+```
+
+### **2. Find Out-of-Sequence Activity Pairs**
+Detect cases where `Ship Goods` occurs before `Confirm Shipment`.
+
+```sql
+SELECT 
+    ship.case_id,
+    ship.timestamp AS ship_time,
+    confirm.timestamp AS confirm_time
+FROM order_event_log ship
+JOIN order_event_log confirm
+    ON ship.case_id = confirm.case_id
+WHERE ship.activity = 'Ship Goods'
+  AND confirm.activity = 'Confirm Shipment'
+  AND ship.timestamp < confirm.timestamp;
+```
+
+Similarly, check for `Receive Payment` before `Issue Invoice`:
+
+```sql
+SELECT 
+    pay.case_id,
+    pay.timestamp AS payment_time,
+    inv.timestamp AS invoice_time
+FROM order_event_log pay
+JOIN order_event_log inv
+    ON pay.case_id = inv.case_id
+WHERE pay.activity = 'Receive Payment'
+  AND inv.activity = 'Issue Invoice'
+  AND pay.timestamp < inv.timestamp;
+```
+
+### **3. Identify Orders Where Shipment Occurs Before Credit Check**
+```sql
+SELECT 
+    ship.case_id,
+    ship.timestamp AS ship_time,
+    credit.timestamp AS credit_time
+FROM order_event_log ship
+JOIN order_event_log credit
+    ON ship.case_id = credit.case_id
+WHERE ship.activity IN ('Confirm Shipment', 'Ship Goods')
+  AND credit.activity = 'Perform Credit Check'
+  AND ship.timestamp < credit.timestamp;
+```
+
+### **4. Analyze Resource Behavior by Role**
+Check if certain roles are associated with anomalous sequences (e.g., are Logistics staff initiating shipments without confirmation?).
+
+```sql
+SELECT 
+    r.role,
+    r.department,
+    e.activity,
+    COUNT(*) AS event_count
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE e.case_id IN (
+    -- Cases with known sequence violations
+    SELECT DISTINCT case_id FROM (
+        SELECT ship.case_id
+        FROM order_event_log ship
+        JOIN order_event_log confirm
+            ON ship.case_id = confirm.case_id
+        WHERE ship.activity = 'Ship Goods'
+          AND confirm.activity = 'Confirm Shipment'
+          AND ship.timestamp < confirm.timestamp
+        UNION
+        SELECT pay.case_id
+        FROM order_event_log pay
+        JOIN order_event_log inv
+            ON pay.case_id = inv.case_id
+        WHERE pay.activity = 'Receive Payment'
+          AND inv.activity = 'Issue Invoice'
+          AND pay.timestamp < inv.timestamp
+    ) AS anomalous
+)
+GROUP BY r.role, r.department, e.activity
+ORDER BY event_count DESC;
+```
+
+### **5. Check for High-Value Orders Missing Risk Controls**
+```sql
+SELECT 
+    o.case_id,
+    o.order_value,
+    o.order_type,
+    o.customer_id
+FROM orders o
+LEFT JOIN order_event_log credit
+    ON o.case_id = credit.case_id AND credit.activity = 'Perform Credit Check'
+WHERE o.order_value > 1000  -- threshold for credit check?
+  AND credit.event_id IS NULL;
+```
+
+### **6. Timeline Reconstruction per Case**
+To manually inspect sequences (useful for root-cause analysis):
+
+```sql
+SELECT 
+    e.case_id,
+    e.event_id,
+    e.activity,
+    e.timestamp,
+    e.resource,
+    r.role,
+    r.department
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE e.case_id IN (1002, 1003, 1004)  -- anomalous cases
+ORDER BY e.case_id, e.timestamp;
+```
+
+---
+
+##  **Next Steps**
+- Run the above queries to quantify how widespread these anomalies are.
+- Cross-reference with business rules: Are there legitimate exceptions (e.g., VIP customers exempt from credit checks)?
+- Evaluate system-level controls: Is the workflow engine enforcing sequence rules, or is the log purely observational?
+- Consider adding **process conformance monitoring** (e.g., using process mining techniques) to flag deviations in real time.
+
+These queries will help distinguish between **data quality issues**, **policy violations**, and **genuine process exceptions**—enabling targeted operational or system improvements.
