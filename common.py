@@ -545,7 +545,7 @@ def is_excluded_from_table(model_name):
 def get_ordered_references_llms(base_path="."):
     try:
         from utils import overall_table
-        output, all_jsons, ordered_llms = overall_table.execute(os.path.join(base_path, "evaluation-gemini-2.5-pro"),
+        output, all_jsons, ordered_llms = overall_table.execute(os.path.join(base_path, "evaluation-grok4-fast"),
                                                                 None, include_closed_source=True, require_vision=False,
                                                                 leaderboard_title="Overall Leaderboard")
     except:
