@@ -320,7 +320,8 @@ MODELS_DICT = {
             "ai21/jamba-large-1.7", "ai21/jamba-mini-1.7",
             "moonshotai/kimi-k2-0905", "qwen/qwen3-max",
             "openrouter/sonoma-dusk-alpha", "openrouter/sonoma-sky-alpha",
-            "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking"
+            "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking",
+            "openai/gpt-5-codex"
         }
     },
     "manual": {
