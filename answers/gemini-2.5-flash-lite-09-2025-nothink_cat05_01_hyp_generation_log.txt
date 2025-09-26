@@ -1,0 +1,174 @@
+Based on the provided example event log data and the assumed normal process flow, here are several identified anomalies and areas of concern, along with suggested SQL queries to investigate them.
+
+---
+
+## Identified Anomalies and Areas of Concern
+
+### 1. Deviations from the Normal Process Sequence (Process Deviations)
+
+The assumed normal flow is: Register $\rightarrow$ Credit Check $\rightarrow$ Validate Stock $\rightarrow$ Confirm Shipment $\rightarrow$ Ship $\rightarrow$ Invoice $\rightarrow$ Payment.
+
+**Case 1002 Analysis:**
+The sequence of events for Case 1002 is:
+Register $\rightarrow$ **Confirm Shipment** $\rightarrow$ **Ship Goods** $\rightarrow$ **Perform Credit Check** $\rightarrow$ **Validate Stock** $\rightarrow$ Issue Invoice $\rightarrow$ Receive Payment.
+
+*   **Anomaly:** Confirmation/Shipment occurred *before* the Credit Check and Stock Validation steps. This suggests work was performed on an order that might not have been financially or logistically ready.
+*   **Severity:** High risk. Shipping before credit approval is a major business risk.
+
+**Case 1004 Analysis:**
+The sequence of events for Case 1004 is:
+Register $\rightarrow$ **Receive Payment** $\rightarrow$ **Issue Invoice** $\rightarrow$ Confirm Shipment $\rightarrow$ Ship Goods.
+
+*   **Anomaly:** Payment was received and an Invoice was issued *before* the necessary prerequisite steps (Credit Check, Stock Validation) were even logged, and critically, before the shipment was officially confirmed (though shipment occurred afterward).
+*   **Severity:** High risk. Invoicing/Payment before internal checks might indicate poor internal controls.
+
+### 2. Unnecessary/Out-of-Order Steps
+
+**Case 1003 Analysis:**
+The sequence is: Register $\rightarrow$ Credit Check $\rightarrow$ **Ship Goods** $\rightarrow$ Invoice $\rightarrow$ **Confirm Shipment** $\rightarrow$ Payment.
+
+*   **Anomaly:** The actual goods were shipped (Event 17) *before* the shipment was officially confirmed (Event 19, LogisticsMgr_2). This might indicate a breakdown in the confirmation protocol or that the shipment happened ad-hoc.
+
+### 3. Resource Role Inconsistencies (If Resource Table is considered)
+
+While not strictly an anomaly in the log itself, the resource usage might indicate training gaps or role confusion. For instance, if `WarehouseClerk_3` executes `Ship Goods` but `LogisticsMgr_2` performs the preceding `Confirm Shipment`, this shows proper handover. However, checking who performs which step across many cases might reveal resource overlap or incorrect delegation.
+
+---
+
+## Suggested Investigation Queries
+
+The following SQL queries are designed to pull data that confirms these anomalies and explores their scope across all data.
+
+### Query 1: Identify all cases where critical dependency steps are performed out of expected order.
+
+This query specifically checks for orders that were shipped before credit was checked, which is a major compliance/risk issue.
+
+```sql
+WITH ProcessOrder AS (
+    -- Assign a sequence number based on the assumed flow
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        resource,
+        CASE activity
+            WHEN 'Register Order' THEN 1
+            WHEN 'Perform Credit Check' THEN 2
+            WHEN 'Validate Stock' THEN 3
+            WHEN 'Confirm Shipment' THEN 4
+            WHEN 'Ship Goods' THEN 5
+            WHEN 'Issue Invoice' THEN 6
+            WHEN 'Receive Payment' THEN 7
+            ELSE 99 -- Other/Skipped steps
+        END AS expected_step
+    FROM order_event_log
+),
+EventPair AS (
+    -- Create pairs of sequential events for each case
+    SELECT
+        T1.case_id,
+        T1.activity AS earlier_activity,
+        T1.timestamp AS earlier_ts,
+        T2.activity AS later_activity,
+        T2.timestamp AS later_ts
+    FROM ProcessOrder T1
+    JOIN ProcessOrder T2
+        ON T1.case_id = T2.case_id AND T1.event_id < T2.event_id
+)
+SELECT DISTINCT
+    E.case_id,
+    E.earlier_activity,
+    E.later_activity
+FROM EventPair E
+WHERE
+    -- Check if Ship Goods occurred before Perform Credit Check
+    (E.earlier_activity = 'Ship Goods' AND E.later_activity = 'Perform Credit Check')
+    OR
+    -- Check if Shipment Confirmation occurred before Stock Validation (or Credit Check)
+    (E.earlier_activity = 'Confirm Shipment' AND E.later_activity IN ('Perform Credit Check', 'Validate Stock'))
+    OR
+    -- Check if Payment/Invoice occurred before Credit Check
+    (E.earlier_activity IN ('Receive Payment', 'Issue Invoice') AND E.later_activity = 'Perform Credit Check')
+ORDER BY E.case_id;
+```
+
+### Query 2: Analyze the time lag between Register Order and the first critical validation step (Credit Check).
+
+Large gaps here might indicate bottlenecks in the Finance department.
+
+```sql
+SELECT
+    T1.case_id,
+    MAX(CASE WHEN T1.activity = 'Register Order' THEN T1.timestamp END) AS registration_time,
+    MAX(CASE WHEN T1.activity = 'Perform Credit Check' THEN T1.timestamp END) AS credit_check_time,
+    -- Join with orders table to check order value correlation
+    O.order_value,
+    O.order_type,
+    (MAX(CASE WHEN T1.activity = 'Perform Credit Check' THEN T1.timestamp END) - MAX(CASE WHEN T1.activity = 'Register Order' THEN T1.timestamp END)) AS lag_to_credit_check
+FROM order_event_log T1
+JOIN orders O ON T1.case_id = O.case_id
+WHERE T1.activity IN ('Register Order', 'Perform Credit Check')
+GROUP BY T1.case_id, O.order_value, O.order_type
+HAVING COUNT(DISTINCT T1.activity) = 2 -- Only look at cases that completed both steps
+ORDER BY lag_to_credit_check DESC;
+```
+
+### Query 3: Audit resources involved in out-of-sequence confirmations (e.g., Shipment occurred without prior confirmation).
+
+This checks for any case where goods were shipped before the logistics manager officially confirmed the shipment, potentially violating logistics protocols.
+
+```sql
+SELECT
+    T1.case_id,
+    T1.timestamp AS ship_time,
+    T2.timestamp AS confirm_time,
+    T1.resource AS ship_resource,
+    T2.resource AS confirm_resource
+FROM order_event_log T1
+LEFT JOIN order_event_log T2
+    ON T1.case_id = T2.case_id AND T1.event_id < T2.event_id
+WHERE
+    T1.activity = 'Ship Goods'
+    AND (
+        T2.activity IS NULL -- Ship occurred as the last event (not confirmed later)
+        OR T2.activity != 'Confirm Shipment' -- The next logged event wasn't the confirmation
+    )
+    -- Further restrict: Ensure that if Confirm Shipment *did* happen, it was *after* shipping
+    AND NOT EXISTS (
+        SELECT 1
+        FROM order_event_log T3
+        WHERE T3.case_id = T1.case_id
+          AND T3.activity = 'Confirm Shipment'
+          AND T3.timestamp < T1.timestamp
+    )
+ORDER BY T1.case_id;
+```
+
+### Query 4: Examine which 'resources' perform activities outside of their primary department, referencing the `resources` table.
+
+This helps spot if, for example, a Sales Rep is accidentally running Finance checks, which could point to access/permission issues.
+
+```sql
+SELECT DISTINCT
+    OEL.resource,
+    R.department AS declared_department,
+    OEL.activity,
+    SUBSTR(OEL.activity, 1, INSTR(OEL.activity, ' ') - 1) AS inferred_department
+FROM order_event_log OEL
+JOIN resources R ON OEL.resource = R.resource_id
+WHERE
+    -- Simplified check: Match the department inferred from the activity name vs. declared role
+    -- This relies on convention (e.g., 'Finance' in 'FinanceTeam_01' vs. 'Credit' in 'CreditOfficer')
+    CASE OEL.activity
+        WHEN 'Perform Credit Check' THEN 'Finance'
+        WHEN 'Issue Invoice' THEN 'Finance'
+        WHEN 'Receive Payment' THEN 'Finance'
+        WHEN 'Validate Stock' THEN 'Logistics'
+        WHEN 'Confirm Shipment' THEN 'Logistics'
+        WHEN 'Ship Goods' THEN 'Logistics'
+        WHEN 'Register Order' THEN 'Sales'
+        ELSE 'Unknown'
+    END <> R.department
+    AND R.department NOT IN ('Unknown', 'Finance') -- Filter out steps where Finance logic might overlap with generic roles
+ORDER BY OEL.resource, OEL.activity;
+```

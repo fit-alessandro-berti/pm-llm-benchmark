@@ -490,6 +490,26 @@ MODELS_DICT = {
                 "base_model": "grok-3-mini-fast",
                 "reasoning_effort": "low"
             },
+            "gemini-2.5-flash-09-2025-nothink": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-preview-09-2025",
+                "thinking_tokens": 0
+            },
+            "gemini-2.5-flash-09-2025-thinkhigh": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-preview-09-2025",
+                "thinking_tokens": 24576
+            },
+            "gemini-2.5-flash-lite-09-2025-thinkhigh": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-lite-preview-09-2025",
+                "thinking_tokens": 24576
+            },
+            "gemini-2.5-flash-lite-09-2025-nothink": {
+                "provider": "google",
+                "base_model": "gemini-2.5-flash-lite-preview-09-2025",
+                "thinking_tokens": 0
+            },
             "gemini-2.5-flash-nothink": {
                 "provider": "google",
                 "base_model": "gemini-2.5-flash",

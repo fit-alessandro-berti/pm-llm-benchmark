@@ -1,0 +1,163 @@
+### Identified Temporal Anomalies
+
+Based on the provided profile model, the following activity transitions show potentially irregular timing characteristics:
+
+1.  **Receive to Approve (R to P):** The average duration is approximately 25 hours, but the standard deviation (1 hour) is unusually small compared to the average. This indicates near-perfect timing conformity for a step that usually involves variable human evaluation.
+2.  **Assign to Close (A to C):** An average duration of only 2 hours suggests claims are being closed immediately after assignment, potentially skipping mandatory intermediate steps like Evaluation ('E') or Approval ('P').
+3.  **Evaluate to Notify (E to N):** An average transition time of 5 minutes (300 seconds) is extremely short, implying an automated transfer directly between these two steps without any intervening manual review or waiting period.
+4.  **Approve to Notify (P to N):** The process exhibits a high average lag of 7 days with a high standard deviation (2 days). This indicates significant inconsistency, ranging from near-immediate notification to substantial delays after a claim has been formally approved.
+
+---
+
+### Hypotheses for Anomalous Behavior
+
+**Regarding Tight Timing (R to P, E to N):**
+*   **Hypothesis A (Automation/Hardcoding):** Short, low-variance intervals (R to P, E to N) suggest automated scripts or system configurations are enforcing rigid timelines, potentially bypassing necessary quality gates or manual sign-offs required for high-value or complex claims.
+*   **Hypothesis B (Data Integrity Issue):** Timestamps for 'P' might be recorded immediately upon the 'E' completion if the system logic incorrectly maps approval to the evaluation finish event.
+
+**Regarding Premature Closure (A to C):**
+*   **Hypothesis C (Process Deviation):** Adjusters might be using the 'C' activity code for non-standard reasons, such as "Desk Reject" or "Duplicate Entry Removal," without following the standard evaluation path.
+*   **Hypothesis D (System Bypass):** Low-value claims might be flagged for immediate, automated closure upon assignment without needing full evaluation or approval steps.
+
+**Regarding Long/Variable Delays (P to N):**
+*   **Hypothesis E (Communication Backlog):** The 7-day delay suggests notifications are batched or queued. The high variability implies system instability or varying batch sizes in the notification service.
+*   **Hypothesis F (External Dependencies):** Notification might rely on a slow external service or require physical mail processing that introduces significant, unpredictable delays after digital approval is logged.
+
+---
+
+### Proposed SQL Verification Queries (PostgreSQL)
+
+The following queries use the `claim_events` table, utilizing CTEs and window functions to calculate elapsed time based on ordered events for each claim.
+
+**1. Verify Tight Timing for R to P (Anomaly 1)**
+
+This query identifies all claims where the time elapsed between the first 'R' and the first 'P' event is less than 18 hours (significantly deviating from the 25-hour average with only a 1-hour STDEV).
+
+```sql
+WITH RankedEvents AS (
+    SELECT
+        claim_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp) as rn
+    FROM
+        claim_events
+),
+ClaimTimestamps AS (
+    SELECT
+        claim_id,
+        MAX(CASE WHEN activity = 'R' THEN timestamp END) AS receive_ts,
+        MAX(CASE WHEN activity = 'P' THEN timestamp END) AS approve_ts
+    FROM
+        RankedEvents
+    WHERE
+        activity IN ('R', 'P')
+    GROUP BY
+        claim_id
+)
+SELECT
+    ct.claim_id,
+    c.claim_type,
+    EXTRACT(EPOCH FROM (ct.approve_ts - ct.receive_ts)) AS duration_seconds,
+    (ct.approve_ts - ct.receive_ts) AS duration_interval
+FROM
+    ClaimTimestamps ct
+JOIN
+    claims c ON ct.claim_id = c.claim_id
+WHERE
+    ct.receive_ts IS NOT NULL AND ct.approve_ts IS NOT NULL
+    -- Filtering for durations significantly shorter than the expected 90,000s (25 hours)
+    AND EXTRACT(EPOCH FROM (ct.approve_ts - ct.receive_ts)) < (90000 - 3 * 3600) -- Less than ~22 hours
+ORDER BY
+    duration_seconds;
+```
+
+**2. Verify Premature Closure (A to C skipping E) (Anomaly 2)**
+
+This query finds claims where 'C' occurred within 6 hours of 'A', but no 'E' event was logged in between those two specific timestamps.
+
+```sql
+WITH A_C_Pairs AS (
+    SELECT
+        claim_id,
+        timestamp AS assign_ts,
+        LEAD(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_ts,
+        LEAD(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_activity
+    FROM
+        claim_events
+    WHERE
+        activity IN ('A', 'C')
+),
+Quick_A_C AS (
+    SELECT
+        claim_id,
+        assign_ts,
+        next_ts
+    FROM
+        A_C_Pairs
+    WHERE
+        next_activity = 'C'
+        -- Check if the gap is near the 2-hour (7200s) model average
+        AND EXTRACT(EPOCH FROM (next_ts - assign_ts)) <= 10800 -- Allow up to 3 hours
+)
+SELECT
+    qac.claim_id,
+    qac.assign_ts,
+    qac.next_ts,
+    c.claim_type
+FROM
+    Quick_A_C qac
+JOIN
+    claims c ON qac.claim_id = c.claim_id
+WHERE
+    -- Ensure no 'E' event exists between the specific assign_ts and next_ts
+    NOT EXISTS (
+        SELECT 1
+        FROM claim_events ce_e
+        WHERE ce_e.claim_id = qac.claim_id
+          AND ce_e.activity = 'E'
+          AND ce_e.timestamp > qac.assign_ts
+          AND ce_e.timestamp < qac.next_ts
+    )
+ORDER BY
+    qac.assign_ts;
+```
+
+**3. Verify Long Delay P to N (Anomaly 4) correlated by Claim Type**
+
+This query calculates the P to N delay and groups results by `claim_type` to see if the 7-day lag is specific to certain claim categories (e.g., high-value claims).
+
+```sql
+WITH PN_Delays AS (
+    SELECT
+        ce1.claim_id,
+        c.claim_type,
+        ce1.timestamp AS approve_ts,
+        MAX(ce2.timestamp) FILTER (WHERE ce2.activity = 'N') AS notify_ts
+    FROM
+        claim_events ce1
+    JOIN
+        claims c ON ce1.claim_id = c.claim_id
+    LEFT JOIN
+        claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    WHERE
+        ce1.activity = 'P'
+    GROUP BY
+        ce1.claim_id, c.claim_type, ce1.timestamp
+)
+SELECT
+    claim_type,
+    COUNT(*) AS num_incidents,
+    AVG(EXTRACT(EPOCH FROM (notify_ts - approve_ts)) / 86400.0) AS avg_delay_days,
+    STDDEV(EXTRACT(EPOCH FROM (notify_ts - approve_ts)) / 86400.0) AS stdev_delay_days
+FROM
+    PN_Delays
+WHERE
+    notify_ts IS NOT NULL
+    -- Flagging cases significantly above the 7-day average (e.g., > 10 days)
+    AND EXTRACT(EPOCH FROM (notify_ts - approve_ts)) > (10 * 86400)
+GROUP BY
+    claim_type
+ORDER BY
+    avg_delay_days DESC;
+```

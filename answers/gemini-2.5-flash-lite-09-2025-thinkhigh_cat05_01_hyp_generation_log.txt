@@ -1,0 +1,191 @@
+This analysis focuses on comparing the observed event sequences against the **Assumed Normal Process Flow** to identify deviations, process bottlenecks, or potential policy violations.
+
+---
+
+## 1. Anomaly Identification and Hypothesis Generation
+
+Based on the provided sample data across cases 1001 to 1004, several significant process anomalies are present:
+
+### Anomaly Group 1: Sequencing Violations (Critical Process Breaks)
+
+**Observation:** In cases 1002 and 1003, core fulfillment steps (Ship Goods) occur before mandatory upstream verification steps (Credit Check, Stock Validation, or Shipment Confirmation).
+
+*   **Case 1002:** Shipment occurred (Event 10) before the Credit Check (Event 11) and Stock Validation (Event 12). **Logistics initiated shipping before checking credit or confirming stock availability.**
+*   **Case 1003:** Ship Goods (Event 17) occurred before Confirm Shipment (Event 19). Furthermore, the crucial **Validate Stock** step is entirely missing between Credit Check and Shipping.
+
+**Hypotheses:**
+1.  **System Bypass/Input Error:** The system lacks robust dependency enforcement, allowing users (likely in Logistics) to manually trigger shipping events without satisfying prerequisite checks in the workflow engine.
+2.  **Data Lag/Synchronization Issue:** The upstream checks (Credit/Stock) might have been completed, but the status update lagged, allowing the Logistics team to proceed based on old (or assumed) data.
+3.  **Missing Step Configuration:** For certain order types or resource roles, the 'Validate Stock' step has been mistakenly removed from the required sequence.
+
+### Anomaly Group 2: Financial Event Ordering (Policy Violation Risk)
+
+**Observation:** In Case 1004, the process flow is significantly inverted financially and operationally.
+
+*   **Case 1004:** Payment was Received (Event 22) before the Invoice was Issued (Event 23), and crucially, both occurred before the mandatory Credit Check (Missing) and Stock Validation (Missing).
+
+**Hypotheses:**
+1.  **Pre-Payment Orders:** These orders might be categorized as "Pre-paid" (perhaps linked to the `channel=online` in `additional_info`), where payment guarantees bypass standard credit requirements.
+2.  **Data Entry Error:** Finance incorrectly logged the payment event before finalizing the invoicing process.
+3.  **Missing Controls:** The system failed to prevent payment capture when critical steps like Credit Check were not completed, indicating a major gap in financial controls, especially if these are not explicitly prepaid orders.
+
+### Anomaly Group 3: Missing Key Activities
+
+**Observation:** Case 1003 is missing 'Validate Stock'. Case 1004 is missing both 'Perform Credit Check' and 'Validate Stock'.
+
+**Hypotheses:**
+1.  **Order Type Dependency:** The missing steps might be conditionally suppressed based on the `order_type` (from the `orders` table) or the value (`order_value`). For example, low-value orders might skip credit checks.
+2.  **Automation Failure:** If these steps are supposed to be automated upon registration, the automation failed for cases 1003 and 1004.
+
+---
+
+## 2. Investigative SQL Queries
+
+The following PostgreSQL queries are designed to empirically test the hypotheses derived above by querying the database schema provided.
+
+### Query 1: Identifying Cases with Major Sequence Violations (Focus on Logistics Bypass)
+
+This query identifies cases where shipping occurred before essential checks, testing Hypothesis 1 related to sequencing. We will look specifically for instances where 'Ship Goods' happens before 'Perform Credit Check' OR 'Validate Stock'.
+
+```sql
+WITH EventOrder AS (
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        -- Assign an expected numeric order for comparison
+        CASE activity
+            WHEN 'Register Order' THEN 1
+            WHEN 'Perform Credit Check' THEN 2
+            WHEN 'Validate Stock' THEN 3
+            WHEN 'Confirm Shipment' THEN 4
+            WHEN 'Ship Goods' THEN 5
+            WHEN 'Issue Invoice' THEN 6
+            WHEN 'Receive Payment' THEN 7
+            ELSE 99 -- Unknown activity
+        END AS expected_step
+    FROM
+        order_event_log
+),
+SequenceCheck AS (
+    SELECT
+        T1.case_id,
+        T1.activity AS successor_activity,
+        T1.timestamp AS successor_ts,
+        T2.activity AS predecessor_activity,
+        T2.timestamp AS predecessor_ts,
+        T1.expected_step AS successor_step,
+        T2.expected_step AS predecessor_step
+    FROM
+        EventOrder T1
+    JOIN
+        EventOrder T2 ON T1.case_id = T2.case_id
+    WHERE
+        -- Check if a later step occurred before an earlier expected step
+        T1.expected_step > T2.expected_step
+        AND T1.timestamp < T2.timestamp
+        -- Focus specifically on major violations: Ship before Check/Validate
+        AND T1.activity IN ('Ship Goods', 'Confirm Shipment')
+        AND T2.activity IN ('Perform Credit Check', 'Validate Stock')
+)
+SELECT DISTINCT
+    case_id,
+    successor_activity,
+    predecessor_activity,
+    successor_ts,
+    predecessor_ts
+FROM
+    SequenceCheck
+ORDER BY
+    case_id, successor_ts;
+```
+
+### Query 2: Investigating Missing Critical Steps by Order Type
+
+This query checks if orders of a specific type consistently skip the 'Perform Credit Check' step, testing Hypothesis 3 regarding conditional skipping.
+
+```sql
+SELECT
+    o.order_type,
+    el.case_id,
+    o.order_value,
+    COUNT(CASE WHEN el.activity = 'Perform Credit Check' THEN 1 END) AS credit_check_count,
+    COUNT(el.case_id) AS total_events
+FROM
+    orders o
+JOIN
+    order_event_log el ON o.case_id = el.case_id
+GROUP BY
+    o.order_type, el.case_id, o.order_value
+HAVING
+    COUNT(CASE WHEN el.activity = 'Perform Credit Check' THEN 1 END) = 0
+    AND o.order_type IS NOT NULL -- Only look at orders that should have a type defined
+ORDER BY
+    o.order_type, el.case_id;
+```
+
+### Query 3: Analyzing Financial Precedence (Payment Before Invoice/Credit)
+
+This query helps isolate cases where 'Receive Payment' occurs strictly before the 'Issue Invoice' or 'Perform Credit Check' events, testing Hypothesis 2.
+
+```sql
+WITH TimeMarkers AS (
+    SELECT
+        case_id,
+        MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS payment_ts,
+        MAX(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS invoice_ts,
+        MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) AS credit_check_ts
+    FROM
+        order_event_log
+    GROUP BY
+        case_id
+)
+SELECT
+    t.case_id,
+    t.payment_ts,
+    t.invoice_ts,
+    t.credit_check_ts,
+    CASE
+        WHEN t.payment_ts IS NOT NULL AND t.invoice_ts IS NOT NULL AND t.payment_ts < t.invoice_ts THEN 'Payment After Invoice'
+        WHEN t.payment_ts IS NOT NULL AND t.credit_check_ts IS NOT NULL AND t.payment_ts < t.credit_check_ts THEN 'Payment Before Credit Check'
+        WHEN t.payment_ts IS NOT NULL AND t.invoice_ts IS NULL THEN 'Payment Without Invoice'
+        ELSE 'Other Sequence'
+    END AS deviation_type
+FROM
+    TimeMarkers t
+WHERE
+    -- Check for payment occurring before invoice or credit check
+    (t.payment_ts < t.invoice_ts) OR
+    (t.payment_ts < t.credit_check_ts) OR
+    (t.payment_ts IS NOT NULL AND t.invoice_ts IS NULL)
+ORDER BY
+    t.case_id;
+```
+
+### Query 4: Resource Role Inspection for Out-of-Sequence Actions
+
+To investigate if specific roles are responsible for initiating unverified shipments (related to Hypothesis 1 for Case 1002), we check which resources handled the 'Ship Goods' step, and what their primary role is according to the `resources` table.
+
+```sql
+SELECT DISTINCT
+    oel.case_id,
+    oel.activity,
+    oel.resource,
+    r.role,
+    r.department,
+    oel.timestamp
+FROM
+    order_event_log oel
+JOIN
+    resources r ON oel.resource = r.resource_id
+WHERE
+    oel.activity IN ('Ship Goods', 'Confirm Shipment')
+    -- Look for Logistics performing actions that shouldn't precede Credit Check/Validation
+    AND r.department != 'Logistics'
+    -- Additionally, look for Logistics who triggered actions out of order (if we had predecessor context here)
+    -- For simplicity, we check if non-Logistics resources are confirming shipment early.
+    -- In Case 1002, WarehouseClerk_1 performed 'Ship Goods' (Event 10) before Credit Check (Event 11).
+    -- This query identifies if non-Logistics personnel (e.g., Sales) initiated shipping, which would be highly irregular.
+ORDER BY
+    oel.case_id, oel.timestamp;
+```
