@@ -1,0 +1,219 @@
+# Temporal Profile Analysis: Insurance Claim Process Anomalies
+
+## 1. Identified Anomalies
+
+### Anomaly A: Unusually Quick Assign-to-Close (A  C)
+- **Average Time:** 2 hours
+- **Issue:** Claims are closing on average only 2 hours after assignment, suggesting that evaluation, approval, and notification steps may be bypassed or occur out of sequence for a significant portion of claims.
+
+### Anomaly B: Extended Approve-to-Notify Delay (P  N)
+- **Average Time:** 7 days (604,800 seconds)
+- **Standard Deviation:** 2 days
+- **Issue:** A full week elapses between approval and customer notification, which is excessive and inconsistent with customer service expectations. The high variability suggests systemic inconsistency.
+
+### Anomaly C: Rigid Receive-to-Approve Timing (R  P)
+- **Average Time:** ~25 hours
+- **Standard Deviation:** 1 hour (very low)
+- **Issue:** The extremely tight standard deviation indicates artificially synchronized approval timing, possibly due to batch processing or scheduled automated approvals rather than case-by-case review.
+
+### Anomaly D: Instantaneous Evaluate-to-Notify (E  N)
+- **Average Time:** 5 minutes
+- **Issue:** Notification occurs almost immediately after evaluation, which doesn't allow adequate time for approval processes and suggests either skipped approval steps or a logging/timestamp error.
+
+## 2. Hypotheses for Root Causes
+
+### For Anomaly A (Quick A  C):
+- **Auto-rejection system:** Low-value or duplicate claims may be automatically closed shortly after assignment without full processing
+- **Data quality issue:** Close events may be logged prematurely or assignment timestamps recorded late
+- **Fast-track process:** Certain claim types (e.g., denials for policy violations) follow an abbreviated workflow
+
+### For Anomaly B (Long P  N):
+- **Manual notification bottleneck:** Notifications may require manual review or mailing, creating a backlog
+- **Resource shortage:** Insufficient staff to handle notification volume during peak periods
+- **System integration gap:** Approval system may not automatically trigger notification system, requiring manual intervention
+- **Batched communications:** Customer notifications may be processed in weekly batches for operational efficiency
+
+### For Anomaly C (Rigid R  P):
+- **Scheduled batch approval:** Claims may be processed in daily batches at fixed times
+- **Automated approval threshold:** Claims under certain amounts may receive automatic approval after a standard waiting period
+- **Shift-based processing:** Approvals may align with specific work shifts or business hours
+
+### For Anomaly D (Fast E  N):
+- **Automated notification triggers:** System may auto-generate notifications immediately upon evaluation completion
+- **Process step conflation:** Evaluation and preliminary notification may be combined in the workflow
+- **Timestamp logging error:** Events may be logged simultaneously despite occurring at different times
+- **Missing approval step:** Some claims bypass formal approval, moving directly from evaluation to notification
+
+## 3. SQL Verification Queries
+
+### Query 1: Identify Claims Closed Rapidly After Assignment
+```sql
+WITH assignment_closure AS (
+  SELECT 
+    ce_assign.claim_id,
+    ce_assign.timestamp AS assign_time,
+    ce_close.timestamp AS close_time,
+    EXTRACT(EPOCH FROM (ce_close.timestamp - ce_assign.timestamp)) AS seconds_diff,
+    c.claim_type,
+    c.claim_amount,
+    ce_assign.resource AS assigned_adjuster
+  FROM claim_events ce_assign
+  JOIN claim_events ce_close ON ce_assign.claim_id = ce_close.claim_id
+  JOIN claims c ON ce_assign.claim_id = c.claim_id
+  WHERE ce_assign.activity = 'A'
+    AND ce_close.activity = 'C'
+    AND ce_close.timestamp > ce_assign.timestamp
+)
+SELECT 
+  claim_id,
+  claim_type,
+  claim_amount,
+  assigned_adjuster,
+  seconds_diff / 3600.0 AS hours_to_close,
+  CASE 
+    WHEN seconds_diff < 3600 THEN 'Critical: < 1 hour'
+    WHEN seconds_diff < 7200 THEN 'Warning: < 2 hours'
+    ELSE 'Normal'
+  END AS anomaly_flag
+FROM assignment_closure
+WHERE seconds_diff < 10800  -- Less than 3 hours
+ORDER BY seconds_diff;
+```
+
+### Query 2: Analyze Approve-to-Notify Delays
+```sql
+WITH approval_notification AS (
+  SELECT 
+    ce_approve.claim_id,
+    ce_approve.timestamp AS approve_time,
+    ce_notify.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (ce_notify.timestamp - ce_approve.timestamp)) AS seconds_diff,
+    c.claim_type,
+    c.claim_amount,
+    ce_approve.resource,
+    a.region
+  FROM claim_events ce_approve
+  JOIN claim_events ce_notify ON ce_approve.claim_id = ce_notify.claim_id
+  JOIN claims c ON ce_approve.claim_id = c.claim_id
+  LEFT JOIN adjusters a ON ce_approve.resource = a.name
+  WHERE ce_approve.activity = 'P'
+    AND ce_notify.activity = 'N'
+    AND ce_notify.timestamp > ce_approve.timestamp
+)
+SELECT 
+  claim_id,
+  claim_type,
+  region,
+  seconds_diff / 86400.0 AS days_to_notify,
+  claim_amount,
+  resource,
+  CASE 
+    WHEN seconds_diff > 864000 THEN 'Critical: > 10 days'
+    WHEN seconds_diff > 604800 THEN 'Warning: > 7 days'
+    WHEN seconds_diff < 86400 THEN 'Unusually fast: < 1 day'
+    ELSE 'Normal'
+  END AS anomaly_flag
+FROM approval_notification
+WHERE seconds_diff > 604800 OR seconds_diff < 86400  -- Outside 1-7 day range
+ORDER BY seconds_diff DESC;
+```
+
+### Query 3: Check for Missing Intermediate Steps
+```sql
+WITH claim_activity_count AS (
+  SELECT 
+    claim_id,
+    COUNT(CASE WHEN activity = 'E' THEN 1 END) AS evaluate_count,
+    COUNT(CASE WHEN activity = 'P' THEN 1 END) AS approve_count,
+    COUNT(CASE WHEN activity = 'A' THEN 1 END) AS assign_count,
+    COUNT(CASE WHEN activity = 'C' THEN 1 END) AS close_count,
+    MIN(CASE WHEN activity = 'A' THEN timestamp END) AS first_assign,
+    MAX(CASE WHEN activity = 'C' THEN timestamp END) AS last_close
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT 
+  cac.claim_id,
+  c.claim_type,
+  c.claim_amount,
+  cac.assign_count,
+  cac.evaluate_count,
+  cac.approve_count,
+  cac.close_count,
+  EXTRACT(EPOCH FROM (cac.last_close - cac.first_assign)) / 3600.0 AS hours_assign_to_close,
+  CASE 
+    WHEN cac.evaluate_count = 0 THEN 'Missing Evaluation'
+    WHEN cac.approve_count = 0 THEN 'Missing Approval'
+    WHEN cac.assign_count = 0 THEN 'Missing Assignment'
+    ELSE 'Complete'
+  END AS workflow_completeness
+FROM claim_activity_count cac
+JOIN claims c ON cac.claim_id = c.claim_id
+WHERE cac.evaluate_count = 0 
+   OR cac.approve_count = 0
+   OR (cac.last_close IS NOT NULL AND cac.first_assign IS NOT NULL 
+       AND EXTRACT(EPOCH FROM (cac.last_close - cac.first_assign)) < 7200);
+```
+
+### Query 4: Detect Rigid Timing Patterns in Receive-to-Approve
+```sql
+WITH receive_approve AS (
+  SELECT 
+    ce_receive.claim_id,
+    ce_receive.timestamp AS receive_time,
+    ce_approve.timestamp AS approve_time,
+    EXTRACT(EPOCH FROM (ce_approve.timestamp - ce_receive.timestamp)) AS seconds_diff,
+    EXTRACT(HOUR FROM ce_approve.timestamp) AS approve_hour,
+    c.claim_amount
+  FROM claim_events ce_receive
+  JOIN claim_events ce_approve ON ce_receive.claim_id = ce_approve.claim_id
+  JOIN claims c ON ce_receive.claim_id = c.claim_id
+  WHERE ce_receive.activity = 'R'
+    AND ce_approve.activity = 'P'
+    AND ce_approve.timestamp > ce_receive.timestamp
+)
+SELECT 
+  approve_hour,
+  COUNT(*) AS approval_count,
+  AVG(seconds_diff) / 3600.0 AS avg_hours_to_approve,
+  STDDEV(seconds_diff) / 3600.0 AS stddev_hours,
+  MIN(seconds_diff) / 3600.0 AS min_hours,
+  MAX(seconds_diff) / 3600.0 AS max_hours
+FROM receive_approve
+GROUP BY approve_hour
+ORDER BY approval_count DESC;
+```
+
+### Query 5: Correlate Anomalies with Adjusters and Claim Types
+```sql
+WITH activity_pairs AS (
+  SELECT 
+    ce1.claim_id,
+    ce1.activity AS from_activity,
+    ce2.activity AS to_activity,
+    EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_diff,
+    ce1.resource,
+    c.claim_type,
+    c.claim_amount
+  FROM claim_events ce1
+  JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id AND ce2.timestamp > ce1.timestamp
+  JOIN claims c ON ce1.claim_id = c.claim_id
+  WHERE ce1.activity IN ('R', 'A', 'E', 'P')
+    AND ce2.activity IN ('A', 'E', 'P', 'N', 'C')
+)
+SELECT 
+  from_activity || '  ' || to_activity AS activity_transition,
+  claim_type,
+  resource,
+  COUNT(*) AS occurrence_count,
+  AVG(seconds_diff) / 3600.0 AS avg_hours,
+  STDDEV(seconds_diff) / 3600.0 AS stddev_hours,
+  MIN(seconds_diff) / 3600.0 AS min_hours,
+  MAX(seconds_diff) / 3600.0 AS max_hours
+FROM activity_pairs
+GROUP BY from_activity, to_activity, claim_type, resource
+HAVING COUNT(*) >= 5
+ORDER BY activity_transition, claim_type, avg_hours DESC;
+```
+
+These queries will help identify specific patterns, isolate problematic claims, and determine whether anomalies correlate with particular adjusters, regions, claim types, or time periods.

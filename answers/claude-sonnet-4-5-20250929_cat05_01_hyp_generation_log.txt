@@ -1,0 +1,380 @@
+# Process Mining Analysis: Anomaly Detection and Investigation
+
+Based on the provided event log data, I'll identify anomalies, hypothesize root causes, and propose SQL queries for investigation.
+
+---
+
+##  IDENTIFIED ANOMALIES
+
+### 1. **Sequence Violations (Out-of-Order Activities)**
+
+**Case 1002:** Ships goods and confirms shipment BEFORE credit check and stock validation
+- Normal flow broken: Credit check should precede shipment authorization
+- Risk: Shipping to customers who may not be creditworthy
+
+**Case 1003:** Ships goods BEFORE stock validation and shipment confirmation
+- Goods shipped without proper inventory verification
+- Confirmation happens AFTER shipping (reverse logic)
+
+**Case 1004:** Payment received BEFORE invoice is issued
+- Severe violation of financial controls
+- Missing critical validation steps (no credit check or stock validation recorded)
+
+---
+
+### 2. **Missing Critical Activities**
+
+**Case 1002:** Missing "Validate Stock" before initial shipment activities
+
+**Case 1004:** Missing "Perform Credit Check" and "Validate Stock" entirely
+- High-risk order (highest value: $3000) processed without standard controls
+
+---
+
+### 3. **Premature Activities**
+
+**Case 1002:** `additional_info` shows `attempted_early=Y` - indicates awareness of premature execution
+
+**Case 1003:** `additional_info` shows `late_confirmation=Y` - confirmation out of sequence
+
+---
+
+##  HYPOTHESIZED ROOT CAUSES
+
+1. **System/Access Control Issues**: Users may have excessive permissions allowing them to execute activities out of sequence
+2. **Priority Order Fast-Tracking**: Case 1002 is marked "priority" - may indicate rushed processing bypassing controls
+3. **Training Deficiencies**: Resources may not understand proper sequence requirements
+4. **Manual Workarounds**: Staff bypassing system controls to meet deadlines
+5. **Integration Failures**: Automated triggers may be failing between systems
+6. **Role Confusion**: Wrong departments executing activities (e.g., logistics confirming before finance validates)
+
+---
+
+##  INVESTIGATIVE SQL QUERIES
+
+### **Query 1: Identify All Cases with Out-of-Sequence Activities**
+
+```sql
+WITH activity_sequence AS (
+    SELECT 
+        case_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as actual_order
+    FROM order_event_log
+),
+expected_sequence AS (
+    SELECT activity, ROW_NUMBER() OVER (ORDER BY (CASE activity
+        WHEN 'Register Order' THEN 1
+        WHEN 'Perform Credit Check' THEN 2
+        WHEN 'Validate Stock' THEN 3
+        WHEN 'Confirm Shipment' THEN 4
+        WHEN 'Ship Goods' THEN 5
+        WHEN 'Issue Invoice' THEN 6
+        WHEN 'Receive Payment' THEN 7
+    END)) as expected_order
+    FROM (SELECT DISTINCT activity FROM order_event_log) activities
+)
+SELECT 
+    ase.case_id,
+    ase.activity,
+    ase.actual_order,
+    es.expected_order,
+    ase.timestamp,
+    CASE 
+        WHEN ase.actual_order < es.expected_order THEN 'Executed Too Early'
+        WHEN ase.actual_order > es.expected_order THEN 'Executed Too Late'
+    END as sequence_violation
+FROM activity_sequence ase
+JOIN expected_sequence es ON ase.activity = es.activity
+WHERE ase.actual_order != es.expected_order
+ORDER BY ase.case_id, ase.timestamp;
+```
+
+---
+
+### **Query 2: Detect Cases with Missing Critical Activities**
+
+```sql
+WITH required_activities AS (
+    SELECT unnest(ARRAY[
+        'Register Order',
+        'Perform Credit Check',
+        'Validate Stock',
+        'Confirm Shipment',
+        'Ship Goods',
+        'Issue Invoice',
+        'Receive Payment'
+    ]) AS activity
+),
+case_activities AS (
+    SELECT DISTINCT case_id, activity
+    FROM order_event_log
+)
+SELECT 
+    o.case_id,
+    o.order_type,
+    o.order_value,
+    ra.activity AS missing_activity,
+    COUNT(oel.event_id) AS total_events_in_case
+FROM orders o
+CROSS JOIN required_activities ra
+LEFT JOIN case_activities ca 
+    ON o.case_id = ca.case_id AND ra.activity = ca.activity
+LEFT JOIN order_event_log oel ON o.case_id = oel.case_id
+WHERE ca.activity IS NULL
+GROUP BY o.case_id, o.order_type, o.order_value, ra.activity
+ORDER BY o.order_value DESC, o.case_id, ra.activity;
+```
+
+---
+
+### **Query 3: Identify Payment Before Invoice Violations**
+
+```sql
+WITH payment_invoice_timing AS (
+    SELECT 
+        oel1.case_id,
+        oel1.timestamp AS payment_time,
+        oel1.resource AS payment_resource,
+        oel2.timestamp AS invoice_time,
+        oel2.resource AS invoice_resource,
+        EXTRACT(EPOCH FROM (oel2.timestamp - oel1.timestamp))/3600 AS hours_between
+    FROM order_event_log oel1
+    LEFT JOIN order_event_log oel2 
+        ON oel1.case_id = oel2.case_id 
+        AND oel2.activity = 'Issue Invoice'
+    WHERE oel1.activity = 'Receive Payment'
+)
+SELECT 
+    pit.case_id,
+    o.order_value,
+    o.order_type,
+    pit.payment_time,
+    pit.invoice_time,
+    pit.hours_between,
+    pit.payment_resource,
+    r1.role AS payment_role,
+    r1.department AS payment_dept,
+    pit.invoice_resource,
+    r2.role AS invoice_role
+FROM payment_invoice_timing pit
+JOIN orders o ON pit.case_id = o.case_id
+LEFT JOIN resources r1 ON pit.payment_resource = r1.resource_id
+LEFT JOIN resources r2 ON pit.invoice_resource = r2.resource_id
+WHERE pit.hours_between < 0 OR pit.invoice_time IS NULL
+ORDER BY pit.payment_time;
+```
+
+---
+
+### **Query 4: Analyze Shipment Before Credit Check Pattern**
+
+```sql
+WITH shipment_credit_analysis AS (
+    SELECT 
+        oel_ship.case_id,
+        oel_ship.timestamp AS ship_time,
+        oel_ship.resource AS ship_resource,
+        oel_credit.timestamp AS credit_check_time,
+        oel_credit.additional_info AS credit_info,
+        EXTRACT(EPOCH FROM (oel_credit.timestamp - oel_ship.timestamp))/60 AS minutes_diff,
+        o.order_type,
+        o.order_value
+    FROM order_event_log oel_ship
+    LEFT JOIN order_event_log oel_credit 
+        ON oel_ship.case_id = oel_credit.case_id 
+        AND oel_credit.activity = 'Perform Credit Check'
+    JOIN orders o ON oel_ship.case_id = o.case_id
+    WHERE oel_ship.activity = 'Ship Goods'
+)
+SELECT 
+    case_id,
+    order_type,
+    order_value,
+    ship_time,
+    credit_check_time,
+    minutes_diff,
+    ship_resource,
+    r.department AS shipping_department,
+    credit_info,
+    CASE 
+        WHEN credit_check_time IS NULL THEN 'NO CREDIT CHECK PERFORMED'
+        WHEN minutes_diff > 0 THEN 'Shipped Before Credit Check'
+        ELSE 'Normal Sequence'
+    END AS violation_type
+FROM shipment_credit_analysis sca
+LEFT JOIN resources r ON sca.ship_resource = r.resource_id
+WHERE credit_check_time IS NULL OR minutes_diff > 0
+ORDER BY order_value DESC;
+```
+
+---
+
+### **Query 5: Resource Behavior Analysis - Who Violates Sequence Most?**
+
+```sql
+WITH sequence_violations AS (
+    SELECT 
+        oel.case_id,
+        oel.resource,
+        oel.activity,
+        oel.timestamp,
+        LAG(oel.activity) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) AS previous_activity,
+        CASE 
+            WHEN oel.activity = 'Perform Credit Check' AND 
+                 LAG(oel.activity) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) NOT IN ('Register Order') 
+                 THEN 1
+            WHEN oel.activity = 'Ship Goods' AND 
+                 NOT EXISTS (
+                     SELECT 1 FROM order_event_log oel2 
+                     WHERE oel2.case_id = oel.case_id 
+                     AND oel2.activity IN ('Perform Credit Check', 'Validate Stock', 'Confirm Shipment')
+                     AND oel2.timestamp < oel.timestamp
+                 ) THEN 1
+            WHEN oel.activity = 'Receive Payment' AND 
+                 NOT EXISTS (
+                     SELECT 1 FROM order_event_log oel2 
+                     WHERE oel2.case_id = oel.case_id 
+                     AND oel2.activity = 'Issue Invoice'
+                     AND oel2.timestamp < oel.timestamp
+                 ) THEN 1
+            ELSE 0
+        END AS is_violation
+    FROM order_event_log oel
+)
+SELECT 
+    sv.resource,
+    r.role,
+    r.department,
+    COUNT(*) AS total_activities,
+    SUM(sv.is_violation) AS violation_count,
+    ROUND(100.0 * SUM(sv.is_violation) / COUNT(*), 2) AS violation_percentage,
+    STRING_AGG(DISTINCT sv.activity, ', ' ORDER BY sv.activity) AS activities_performed
+FROM sequence_violations sv
+JOIN resources r ON sv.resource = r.resource_id
+GROUP BY sv.resource, r.role, r.department
+HAVING SUM(sv.is_violation) > 0
+ORDER BY violation_count DESC, violation_percentage DESC;
+```
+
+---
+
+### **Query 6: Time-Based Pattern Analysis - When Do Violations Occur?**
+
+```sql
+WITH violation_cases AS (
+    SELECT DISTINCT case_id
+    FROM order_event_log oel1
+    WHERE 
+        (activity = 'Ship Goods' AND NOT EXISTS (
+            SELECT 1 FROM order_event_log oel2 
+            WHERE oel2.case_id = oel1.case_id 
+            AND oel2.activity = 'Perform Credit Check'
+            AND oel2.timestamp < oel1.timestamp
+        ))
+        OR (activity = 'Receive Payment' AND NOT EXISTS (
+            SELECT 1 FROM order_event_log oel2 
+            WHERE oel2.case_id = oel1.case_id 
+            AND oel2.activity = 'Issue Invoice'
+            AND oel2.timestamp < oel1.timestamp
+        ))
+)
+SELECT 
+    CASE 
+        WHEN EXTRACT(HOUR FROM oel.timestamp) BETWEEN 6 AND 11 THEN 'Morning (6-11am)'
+        WHEN EXTRACT(HOUR FROM oel.timestamp) BETWEEN 12 AND 17 THEN 'Afternoon (12-5pm)'
+        WHEN EXTRACT(HOUR FROM oel.timestamp) BETWEEN 18 AND 23 THEN 'Evening (6-11pm)'
+        ELSE 'Night (12-5am)'
+    END AS time_period,
+    EXTRACT(DOW FROM oel.timestamp) AS day_of_week,
+    COUNT(DISTINCT oel.case_id) AS violation_cases,
+    COUNT(*) AS total_events,
+    ROUND(AVG(o.order_value), 2) AS avg_order_value
+FROM order_event_log oel
+JOIN violation_cases vc ON oel.case_id = vc.case_id
+JOIN orders o ON oel.case_id = o.case_id
+GROUP BY time_period, day_of_week
+ORDER BY violation_cases DESC;
+```
+
+---
+
+### **Query 7: Priority vs Standard Order Compliance Comparison**
+
+```sql
+WITH order_compliance AS (
+    SELECT 
+        o.case_id,
+        o.order_type,
+        o.order_value,
+        COUNT(DISTINCT oel.activity) AS activities_completed,
+        CASE 
+            WHEN COUNT(DISTINCT CASE WHEN oel.activity = 'Perform Credit Check' THEN 1 END) = 0 THEN 1 
+            ELSE 0 
+        END AS missing_credit_check,
+        CASE 
+            WHEN COUNT(DISTINCT CASE WHEN oel.activity = 'Validate Stock' THEN 1 END) = 0 THEN 1 
+            ELSE 0 
+        END AS missing_stock_validation,
+        MAX(CASE WHEN oel.activity = 'Ship Goods' THEN oel.timestamp END) AS ship_timestamp,
+        MAX(CASE WHEN oel.activity = 'Perform Credit Check' THEN oel.timestamp END) AS credit_timestamp
+    FROM orders o
+    LEFT JOIN order_event_log oel ON o.case_id = oel.case_id
+    GROUP BY o.case_id, o.order_type, o.order_value
+)
+SELECT 
+    order_type,
+    COUNT(*) AS total_orders,
+    SUM(missing_credit_check) AS orders_missing_credit_check,
+    SUM(missing_stock_validation) AS orders_missing_stock_validation,
+    SUM(CASE WHEN ship_timestamp < credit_timestamp THEN 1 ELSE 0 END) AS shipped_before_credit_check,
+    ROUND(AVG(activities_completed), 2) AS avg_activities_per_order,
+    ROUND(AVG(order_value), 2) AS avg_order_value,
+    ROUND(100.0 * SUM(missing_credit_check + missing_stock_validation) / (COUNT(*) * 2), 2) AS compliance_violation_rate
+FROM order_compliance
+GROUP BY order_type
+ORDER BY compliance_violation_rate DESC;
+```
+
+---
+
+### **Query 8: Department Cross-Boundary Violations**
+
+```sql
+SELECT 
+    oel.case_id,
+    oel.activity,
+    oel.resource,
+    r.role,
+    r.department,
+    CASE 
+        WHEN oel.activity IN ('Register Order') AND r.department != 'Sales' THEN 'Wrong Dept'
+        WHEN oel.activity IN ('Perform Credit Check', 'Issue Invoice', 'Receive Payment') AND r.department != 'Finance' THEN 'Wrong Dept'
+        WHEN oel.activity IN ('Validate Stock', 'Confirm Shipment', 'Ship Goods') AND r.department != 'Logistics' THEN 'Wrong Dept'
+        ELSE 'Correct Dept'
+    END AS department_compliance,
+    oel.timestamp,
+    o.order_type,
+    o.order_value
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+JOIN orders o ON oel.case_id = o.case_id
+WHERE CASE 
+        WHEN oel.activity IN ('Register Order') AND r.department != 'Sales' THEN TRUE
+        WHEN oel.activity IN ('Perform Credit Check', 'Issue Invoice', 'Receive Payment') AND r.department != 'Finance' THEN TRUE
+        WHEN oel.activity IN ('Validate Stock', 'Confirm Shipment', 'Ship Goods') AND r.department != 'Logistics' THEN TRUE
+        ELSE FALSE
+    END
+ORDER BY oel.case_id, oel.timestamp;
+```
+
+---
+
+##  RECOMMENDED ACTIONS
+
+1. **Immediate**: Flag cases 1002, 1003, 1004 for review and potential reversal
+2. **System Controls**: Implement hard stops preventing activities out of sequence
+3. **Training**: Focus on resources identified in Query 5
+4. **Process Audit**: Use Query 7 to determine if "priority" status justifies control bypasses
+5. **Monitoring**: Schedule daily runs of Queries 1-3 to catch violations in real-time

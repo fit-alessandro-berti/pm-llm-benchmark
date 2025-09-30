@@ -1,0 +1,393 @@
+# Process Mining Analysis: Anomaly Detection Report
+
+## Executive Summary of Identified Anomalies
+
+After analyzing the event log data, I've identified several **critical process violations** and **control weaknesses** that require immediate investigation:
+
+---
+
+##  **Critical Anomalies Detected**
+
+### **1. Out-of-Sequence Activities (Control Bypass)**
+
+**Case 1002:**
+- **Ship Goods** (08:40) and **Confirm Shipment** (08:25) occurred **BEFORE** credit check (09:10) and stock validation (09:15)
+- Goods were shipped without financial or inventory verification
+- Only 20 minutes from order registration to shipment
+
+**Case 1003:**
+- **Ship Goods** (09:10) occurred **BEFORE** stock validation (missing entirely!)
+- **Confirm Shipment** (09:45) happened **AFTER** goods already shipped
+- Credit check performed but stock validation skipped
+
+**Case 1004:**
+- **Receive Payment** (09:05) recorded **BEFORE** invoice issued (09:20)
+- Payment received only 5 minutes after order registration
+- No credit check or stock validation performed at all
+
+### **2. Missing Mandatory Activities**
+
+- **Case 1003**: Missing "Validate Stock" activity
+- **Case 1004**: Missing both "Perform Credit Check" AND "Validate Stock"
+
+### **3. Suspicious Timing Patterns**
+
+- **Case 1002**: 5-minute turnaround from order to shipment confirmation
+- **Case 1004**: Payment before invoice (potential data entry error or fraud indicator)
+
+---
+
+##  **Hypotheses for Root Causes**
+
+### **Hypothesis 1: Priority Order Bypass**
+- Case 1002 is marked as "priority" - possibly rush orders skip controls
+- Staff may have informal procedures to expedite priority orders
+
+### **Hypothesis 2: System Integration Issues**
+- Timestamps may be incorrectly recorded due to system latency
+- Activities completed offline and logged later in wrong order
+
+### **Hypothesis 3: Resource/Department Behavior**
+- Certain resources (LogisticsMgr_2, WarehouseClerk_1) appear in anomalous cases
+- Department silos may lead to independent actions without coordination
+
+### **Hypothesis 4: Training or Policy Gaps**
+- Staff may not understand mandatory control sequence
+- Pressure to meet speed targets overrides compliance
+
+### **Hypothesis 5: Data Quality Issues**
+- Manual timestamp entry errors
+- System clock synchronization problems across departments
+
+### **Hypothesis 6: Fraud or Intentional Bypass**
+- Case 1004's payment-before-invoice pattern is highly suspicious
+- Could indicate fictitious orders or money laundering
+
+---
+
+##  **Investigative SQL Queries**
+
+### **Query 1: Identify All Cases with Activities Out of Expected Sequence**
+
+```sql
+WITH expected_sequence AS (
+  SELECT activity, ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) as expected_order
+  FROM (VALUES 
+    ('Register Order', 1),
+    ('Perform Credit Check', 2),
+    ('Validate Stock', 3),
+    ('Confirm Shipment', 4),
+    ('Ship Goods', 5),
+    ('Issue Invoice', 6),
+    ('Receive Payment', 7)
+  ) AS seq(activity, seq_num)
+),
+actual_sequence AS (
+  SELECT 
+    case_id,
+    activity,
+    timestamp,
+    resource,
+    ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as actual_order
+  FROM order_event_log
+)
+SELECT 
+  a.case_id,
+  a.activity,
+  a.timestamp,
+  a.resource,
+  a.actual_order as position_in_case,
+  e.expected_order as expected_position
+FROM actual_sequence a
+JOIN expected_sequence e ON a.activity = e.activity
+WHERE a.actual_order != e.expected_order
+ORDER BY a.case_id, a.timestamp;
+```
+
+### **Query 2: Find Cases Missing Mandatory Control Activities**
+
+```sql
+WITH mandatory_activities AS (
+  SELECT unnest(ARRAY['Perform Credit Check', 'Validate Stock']) AS activity
+),
+case_activities AS (
+  SELECT DISTINCT case_id, activity
+  FROM order_event_log
+)
+SELECT 
+  o.case_id,
+  o.customer_id,
+  o.order_type,
+  o.order_value,
+  ma.activity AS missing_activity
+FROM orders o
+CROSS JOIN mandatory_activities ma
+LEFT JOIN case_activities ca 
+  ON o.case_id = ca.case_id AND ma.activity = ca.activity
+WHERE ca.activity IS NULL
+ORDER BY o.case_id, ma.activity;
+```
+
+### **Query 3: Detect Invoice-Payment Sequence Violations**
+
+```sql
+WITH payment_invoice_timing AS (
+  SELECT 
+    case_id,
+    MAX(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) as invoice_time,
+    MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) as payment_time
+  FROM order_event_log
+  WHERE activity IN ('Issue Invoice', 'Receive Payment')
+  GROUP BY case_id
+)
+SELECT 
+  pit.case_id,
+  o.customer_id,
+  o.order_value,
+  pit.payment_time,
+  pit.invoice_time,
+  EXTRACT(EPOCH FROM (pit.payment_time - pit.invoice_time))/60 as minutes_difference
+FROM payment_invoice_timing pit
+JOIN orders o ON pit.case_id = o.case_id
+WHERE pit.payment_time < pit.invoice_time
+ORDER BY minutes_difference;
+```
+
+### **Query 4: Identify "Ship Before Check" Pattern**
+
+```sql
+WITH shipment_times AS (
+  SELECT case_id, timestamp as ship_time
+  FROM order_event_log
+  WHERE activity = 'Ship Goods'
+),
+check_times AS (
+  SELECT 
+    case_id,
+    MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) as credit_time,
+    MAX(CASE WHEN activity = 'Validate Stock' THEN timestamp END) as stock_time
+  FROM order_event_log
+  WHERE activity IN ('Perform Credit Check', 'Validate Stock')
+  GROUP BY case_id
+)
+SELECT 
+  s.case_id,
+  o.order_type,
+  o.order_value,
+  s.ship_time,
+  c.credit_time,
+  c.stock_time,
+  CASE 
+    WHEN c.credit_time IS NULL THEN 'Credit check missing'
+    WHEN s.ship_time < c.credit_time THEN 'Shipped before credit check'
+    ELSE 'Credit OK'
+  END as credit_issue,
+  CASE 
+    WHEN c.stock_time IS NULL THEN 'Stock validation missing'
+    WHEN s.ship_time < c.stock_time THEN 'Shipped before stock validation'
+    ELSE 'Stock OK'
+  END as stock_issue
+FROM shipment_times s
+JOIN orders o ON s.case_id = o.case_id
+LEFT JOIN check_times c ON s.case_id = c.case_id
+WHERE c.credit_time IS NULL 
+   OR c.stock_time IS NULL
+   OR s.ship_time < c.credit_time
+   OR s.ship_time < c.stock_time
+ORDER BY s.case_id;
+```
+
+### **Query 5: Analyze Resource Involvement in Anomalous Cases**
+
+```sql
+WITH anomalous_cases AS (
+  -- Cases with major violations
+  SELECT DISTINCT case_id, 'Missing controls' as anomaly_type
+  FROM order_event_log
+  WHERE case_id IN (
+    SELECT o.case_id 
+    FROM orders o
+    WHERE NOT EXISTS (
+      SELECT 1 FROM order_event_log oel 
+      WHERE oel.case_id = o.case_id 
+      AND oel.activity = 'Perform Credit Check'
+    )
+  )
+  UNION
+  SELECT DISTINCT case_id, 'Out of sequence' as anomaly_type
+  FROM (
+    SELECT case_id,
+           MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) as ship_time,
+           MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) as credit_time
+    FROM order_event_log
+    GROUP BY case_id
+  ) sub
+  WHERE ship_time < credit_time
+)
+SELECT 
+  r.resource_id,
+  r.role,
+  r.department,
+  COUNT(DISTINCT oel.case_id) as total_cases_involved,
+  COUNT(DISTINCT ac.case_id) as anomalous_cases_involved,
+  ROUND(100.0 * COUNT(DISTINCT ac.case_id) / NULLIF(COUNT(DISTINCT oel.case_id), 0), 2) as anomaly_rate_pct,
+  STRING_AGG(DISTINCT ac.anomaly_type, ', ') as anomaly_types
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+LEFT JOIN anomalous_cases ac ON oel.case_id = ac.case_id
+GROUP BY r.resource_id, r.role, r.department
+HAVING COUNT(DISTINCT ac.case_id) > 0
+ORDER BY anomaly_rate_pct DESC, anomalous_cases_involved DESC;
+```
+
+### **Query 6: Examine Throughput Time for Priority vs Standard Orders**
+
+```sql
+WITH case_timing AS (
+  SELECT 
+    oel.case_id,
+    o.order_type,
+    MIN(oel.timestamp) as start_time,
+    MAX(oel.timestamp) as end_time,
+    EXTRACT(EPOCH FROM (MAX(oel.timestamp) - MIN(oel.timestamp)))/3600 as duration_hours,
+    COUNT(*) as activity_count
+  FROM order_event_log oel
+  JOIN orders o ON oel.case_id = o.case_id
+  GROUP BY oel.case_id, o.order_type
+)
+SELECT 
+  order_type,
+  COUNT(*) as case_count,
+  ROUND(AVG(duration_hours)::numeric, 2) as avg_duration_hours,
+  ROUND(MIN(duration_hours)::numeric, 2) as min_duration_hours,
+  ROUND(MAX(duration_hours)::numeric, 2) as max_duration_hours,
+  ROUND(AVG(activity_count)::numeric, 1) as avg_activities_per_case
+FROM case_timing
+GROUP BY order_type
+ORDER BY order_type;
+```
+
+### **Query 7: Detect Abnormally Fast Processing Times**
+
+```sql
+WITH case_metrics AS (
+  SELECT 
+    oel.case_id,
+    o.order_type,
+    o.order_value,
+    MIN(oel.timestamp) as first_activity,
+    MAX(CASE WHEN oel.activity = 'Ship Goods' THEN oel.timestamp END) as ship_time,
+    EXTRACT(EPOCH FROM (
+      MAX(CASE WHEN oel.activity = 'Ship Goods' THEN oel.timestamp END) - 
+      MIN(oel.timestamp)
+    ))/60 as minutes_to_ship
+  FROM order_event_log oel
+  JOIN orders o ON oel.case_id = o.case_id
+  GROUP BY oel.case_id, o.order_type, o.order_value
+  HAVING MAX(CASE WHEN oel.activity = 'Ship Goods' THEN oel.timestamp END) IS NOT NULL
+)
+SELECT 
+  case_id,
+  order_type,
+  order_value,
+  first_activity,
+  ship_time,
+  ROUND(minutes_to_ship::numeric, 0) as minutes_to_ship
+FROM case_metrics
+WHERE minutes_to_ship < 60  -- Shipped within 1 hour
+ORDER BY minutes_to_ship;
+```
+
+### **Query 8: Activity Pair Analysis (Directly-Follows Graph)**
+
+```sql
+WITH activity_pairs AS (
+  SELECT 
+    case_id,
+    activity as from_activity,
+    LEAD(activity) OVER (PARTITION BY case_id ORDER BY timestamp) as to_activity,
+    LEAD(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) - timestamp as duration
+  FROM order_event_log
+)
+SELECT 
+  from_activity,
+  to_activity,
+  COUNT(*) as occurrence_count,
+  ROUND(AVG(EXTRACT(EPOCH FROM duration)/60)::numeric, 2) as avg_duration_minutes
+FROM activity_pairs
+WHERE to_activity IS NOT NULL
+GROUP BY from_activity, to_activity
+HAVING COUNT(*) >= 1
+ORDER BY occurrence_count DESC, from_activity, to_activity;
+```
+
+### **Query 9: Identify Cases with Complete Control Bypass**
+
+```sql
+WITH control_activities AS (
+  SELECT case_id,
+         SUM(CASE WHEN activity = 'Perform Credit Check' THEN 1 ELSE 0 END) as has_credit_check,
+         SUM(CASE WHEN activity = 'Validate Stock' THEN 1 ELSE 0 END) as has_stock_check,
+         SUM(CASE WHEN activity = 'Ship Goods' THEN 1 ELSE 0 END) as has_shipment
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT 
+  ca.case_id,
+  o.customer_id,
+  o.order_type,
+  o.order_value,
+  ca.has_credit_check,
+  ca.has_stock_check,
+  ca.has_shipment,
+  CASE 
+    WHEN ca.has_shipment > 0 AND (ca.has_credit_check = 0 OR ca.has_stock_check = 0) 
+    THEN 'HIGH RISK: Shipped without full controls'
+    ELSE 'Lower risk'
+  END as risk_assessment
+FROM control_activities ca
+JOIN orders o ON ca.case_id = o.case_id
+WHERE (ca.has_credit_check = 0 OR ca.has_stock_check = 0)
+ORDER BY 
+  CASE WHEN ca.has_shipment > 0 THEN 1 ELSE 2 END,
+  o.order_value DESC;
+```
+
+### **Query 10: Time-Based Pattern Analysis (Suspicious After-Hours Activity)**
+
+```sql
+SELECT 
+  case_id,
+  activity,
+  timestamp,
+  resource,
+  EXTRACT(DOW FROM timestamp) as day_of_week,
+  EXTRACT(HOUR FROM timestamp) as hour_of_day,
+  additional_info,
+  CASE 
+    WHEN EXTRACT(HOUR FROM timestamp) < 6 OR EXTRACT(HOUR FROM timestamp) > 20 
+    THEN 'After hours'
+    WHEN EXTRACT(DOW FROM timestamp) IN (0, 6) 
+    THEN 'Weekend'
+    ELSE 'Normal hours'
+  END as time_classification
+FROM order_event_log
+WHERE EXTRACT(HOUR FROM timestamp) < 6 
+   OR EXTRACT(HOUR FROM timestamp) > 20
+   OR EXTRACT(DOW FROM timestamp) IN (0, 6)
+ORDER BY timestamp;
+```
+
+---
+
+##  **Recommended Next Steps**
+
+1. **Immediate Action**: Review cases 1002, 1003, and 1004 with relevant department heads
+2. **Process Audit**: Interview resources involved (especially LogisticsMgr_2, WarehouseClerk_1)
+3. **System Review**: Check if timestamp recording is accurate and synchronized
+4. **Policy Enforcement**: Implement system controls to prevent shipping before validation
+5. **Training**: Conduct refresher training on mandatory control sequence
+6. **Monitoring**: Set up automated alerts for future out-of-sequence activities
+7. **Data Quality**: Verify Case 1004's payment-before-invoice isn't a data entry error
+
+Would you like me to elaborate on any specific anomaly or provide additional investigative queries?
