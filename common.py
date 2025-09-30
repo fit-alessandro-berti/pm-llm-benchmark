@@ -14,7 +14,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "Grok-4-fast" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "claude-sonnet-4-5-thinking-20250929" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "x-ai/grok-4-fast:free" if len(sys.argv) < 3 else sys.argv[2]
@@ -230,6 +230,7 @@ MODELS_DICT = {
             "claude-4-opus-20250514",
             "claude-4-sonnet-20250514",
             "claude-opus-4-1-20250805",
+            "claude-sonnet-4-5-20250929",
         }
     },
     "mistral": {
@@ -454,6 +455,11 @@ MODELS_DICT = {
             "claude-4-sonnet-thinking-20250514": {
                 "provider": "claude",
                 "base_model": "claude-4-sonnet-20250514",
+                "thinking_tokens": 32000,
+            },
+            "claude-sonnet-4-5-thinking-20250929": {
+                "provider": "claude",
+                "base_model": "claude-sonnet-4-5-20250929",
                 "thinking_tokens": 32000,
             },
             "claude-4-opus-thinking-20250514": {
