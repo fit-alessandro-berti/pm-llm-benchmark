@@ -322,7 +322,7 @@ MODELS_DICT = {
             "moonshotai/kimi-k2-0905", "qwen/qwen3-max",
             "openrouter/sonoma-dusk-alpha", "openrouter/sonoma-sky-alpha",
             "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking",
-            "openai/gpt-5-codex"
+            "openai/gpt-5-codex", "deepseek/deepseek-v3.2-exp"
         }
     },
     "manual": {
