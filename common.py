@@ -275,7 +275,8 @@ MODELS_DICT = {
             "gemma3:1b-it-q8_0",
             "granite3.3", "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b",
             "phi4-mini-reasoning", "phi4-reasoning", "phi4-reasoning:plus",
-            "qwen3:4b-instruct-2507-q8_0", "gemma3:270m", "qwen3:4b-thinking-2507-q8_0"
+            "qwen3:4b-instruct-2507-q8_0", "gemma3:270m", "qwen3:4b-thinking-2507-q8_0",
+            "granite4:micro", "granite4:micro-h", "granite4:tiny-h", "granite4:small-h"
         }
     },
     "qwen": {

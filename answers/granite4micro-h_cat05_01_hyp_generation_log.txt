@@ -1,0 +1,188 @@
+Below are a few targeted SQLanalysis questions you can ask an LLM that’s been trained with access to the underlying **PostgreSQL** schema (`order_event_log`, `orders`, `resources`).  
+These queries surface patterns and anomalies in the supplied event logs (cases10011004) without any prompting hints—allowing the model to explore on its own.
+
+---
+
+## 1 Find All Events Outside Normal Flow
+
+**Goal:** Identify events that deviate from the expected orderprocessing sequence (Register  Credit  Validate Stock  Ship  Issue Invoice  Receive Payment).
+
+### Sample Query
+```sql
+SELECT 
+    case_id,
+    event_id,
+    activity,
+    timestamp,
+    resource,
+    additional_info
+FROM order_event_log
+WHERE NOT EXISTS (
+        SELECT 1
+        FROM (
+                SELECT event_id
+                FROM (VALUES
+                        (1, 'Register Order'),
+                        (2, 'Perform Credit Check'),
+                        (3, 'Validate Stock'),
+                        (4, 'Confirm Shipment'),
+                        (5, 'Ship Goods'),
+                        (6, 'Issue Invoice'),
+                        (7, 'Receive Payment')
+                 ) AS v(event_id, activity)
+                WHERE v.event_id <> $1.activity
+            ) AS missing_event
+    );
+```
+
+**What to Look For:**  
+- Any `event_id` that isn’t in the expected list (e.g., a “Late Confirmation” or “Ship Goods” without preceding Credit Check).  
+
+---
+
+## 2 Detect Timing Discrepancies
+
+**Goal:** Spot events whose timestamps are unusually far from what would be expected given the chronological order.
+
+### Sample Query
+```sql
+WITH ordered_events AS (
+    SELECT 
+        *,
+        LAG(timestamp) OVER (PARTITION BY case_id ORDER BY event_id) AS prev_ts,
+        LEAD(timestamp) OVER (PARTITION BY case_id ORDER BY event_id) AS next_ts
+    FROM order_event_log
+)
+SELECT 
+    case_id,
+    activity,
+    timestamp,
+    prev_timestamp,
+    next_timestamp,
+    CASE 
+        WHEN prev_timestamp IS NOT NULL THEN (timestamp - prev_timestamp)::interval END AS delta_from_prev,
+        CASE 
+            WHEN next_timestamp IS NOT NULL THEN (next_timestamp - timestamp)::interval END AS delta_to_next
+FROM ordered_events;
+```
+
+**What to Look For:**  
+- **Negative or unusually large deltas** indicating gaps (e.g., “Shipment” at 09:45am when the Credit Check finished at 08:30am).  
+- **Missingevent flags** from the query above.
+
+---
+
+## 3 Correlate Resources & Departments
+
+**Goal:** Find cases where a resource is used that does not belong to its designated department (e.g., LogisticsMgr using FinanceTeam).
+
+### Sample Query
+```sql
+SELECT 
+    case_id,
+    activity,
+    resource,
+    department,
+    timestamp
+FROM order_event_log oe
+JOIN resources r ON oe.resource = r.resource_id
+WHERE r.department <> 'Logistics';
+```
+
+**What to Look For:**  
+- Entries where the `resource` role does not match the expected department (e.g., LogisticsMgr appearing in Finance team records).
+
+---
+
+## 4 CrossTable Checks with Orders & Resources
+
+**Goal:** Validate that every activity is anchored by a valid order and resource entry.
+
+### Sample Query
+```sql
+SELECT 
+    oe.case_id,
+    oe.event_id,
+    oe.activity,
+    oe.timestamp,
+    oe.resource,
+    o.customer_id,
+    o.order_type,
+    r.department
+FROM order_event_log oe
+JOIN orders o ON oe.case_id = o.case_id
+LEFT JOIN resources r ON oe.resource = r.resource_id;
+```
+
+**What to Look For:**  
+- **Missing joins**: rows where `oe.resource` has no matching entry in `resources`.  
+- **Orderid mismatches**: any row that references a nonexistent `customer_id` or `order_type`.
+
+---
+
+## 5 Aggregate Anomalies per Case
+
+**Goal:** Summarize how many “bad” events each case contains.
+
+### Sample Query
+```sql
+SELECT 
+    case_id,
+    COUNT(*) AS total_events,
+    SUM(CASE WHEN activity NOT IN ('Register Order','Perform Credit Check',
+                                 'Validate Stock','Confirm Shipment',
+                                 'Issue Invoice','Receive Payment')
+               THEN 1 ELSE 0 END) AS anomalies,
+    (SUM(CASE WHEN resource NOT IN (SELECT resource_id FROM resources)
+                THEN 1 ELSE 0 END) + 
+     SUM(CASE WHEN activity NOT IN (SELECT event_id FROM (VALUES
+                        (1,'Register Order'),
+                        (2,'Perform Credit Check'),
+                        (3,'Validate Stock'),
+                        (4,'Confirm Shipment'),
+                        (5,'Ship Goods'),
+                        (6,'Issue Invoice'),
+                        (7,'Receive Payment')
+                     ) v(event_id)
+                 )
+               THEN 1 ELSE 0 END)) AS total_anomalies
+FROM order_event_log
+GROUP BY case_id;
+```
+
+**What to Look For:**  
+- **`anomalies` column** >0 flags cases with at least one outofsequence or resourcemismatched event.  
+
+---
+
+##  How the Model Should Respond
+
+1. **Exploratory Query Generation** – The model should autonomously craft queries like those above (or variations thereof).  
+2. **Interpret Results** – After running a query, it must point out specific rows or patterns that indicate anomalies (e.g., “Case1002 shows an early shipment confirmation at 08:25am without a prior credit check”).  
+3. **Hypothesize Causes** – Based on the discovered gaps or mismatches, propose plausible reasons such as:
+   - System timeout causing a delayed shipment entry.
+   - A manual override where a Logistics manager entered data instead of Finance.
+   - Missing training data for “early confirmation” scenarios leading to policy violations.
+4. **Suggest FollowUp SQLs** – If needed, the model can iterate with additional queries (e.g., join `orders` to see which orders triggered these anomalies) without being told what to ask next.
+
+---
+
+### Example of a Full Interaction Flow
+
+| Step | LLM Query (run autonomously) | Model Output |
+|------|------------------------------|--------------|
+| 1   | “Give me all events for case1002 that don’t match the expected sequence.” | Returns rows for `Confirm Shipment` at 08:25am and `Ship Goods` at 08:40am. |
+| 2   | “What’s wrong with these timestamps?” | Highlights the negative delta (15min) between credit check and shipment, suggesting a delay or manual override. |
+| 3   | “Show me resources used for case1002.” | Reveals FinanceTeam_02 performed Credit Check despite being labeled as Cashier; LogisticsMgr_2 did Shipment instead of the scheduled LogisticsMgr_1. |
+| 4   | “Give me a summary per case of total events vs anomalies.” | Shows Case1002 has **anomalies = 3** (two timing issues + resource mismatch). |
+| 5   | “Why might this be happening?” | Proposes manual overrides, system delays, or training gaps. |
+
+---
+
+### What to Expect from the Model
+
+- **Autonomy:** No explicit query templates are given; the model independently decides which SQL pattern fits each anomaly.
+- **Depth of Analysis:** It should not only list problematic rows but also explain *why* they matter (e.g., “A mismatched resource may indicate a manual entry error”).
+- **Iterative Refinement:** After initial findings, it can ask for deeper joins or additional `WHERE` clauses to drill down further—driven by the results of the previous query.
+
+By letting the model generate and execute these queries on its own, you encourage autonomous exploration of the data without needing explicit hints. This approach also naturally surfaces any gaps in the current knowledge base (e.g., missing join conditions) while keeping all analysis grounded in the real schema.

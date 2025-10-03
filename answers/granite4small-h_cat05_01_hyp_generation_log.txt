@@ -1,0 +1,173 @@
+Below is a concise “playbook” you can give to an LLM when you want it to act as a processmining/anomaly detective on the **order_event_log** data.  
+The prompt should:
+
+1. Explain what we’re looking for (process deviations, rule violations, performance problems).  
+2. Ask the model to *hypothesize* why those anomalies might occur.  
+3. Produce concrete PostgreSQL queries that can be run directly against the tables you described.
+
+---
+
+## Prompt
+
+> **Task:**You are an analyst reviewing the `order_event_log` table (plus optionally `orders` and `resources`) for a retailfulfilment workflow. The normal flow is:
+>
+> 1 Register Order   
+> 2 Perform Credit Check   
+> 3 Validate Stock   
+> 4 Confirm Shipment   
+> 5 Ship Goods   
+> 6 Issue Invoice   
+> 7 Receive Payment
+>
+> **Your job is to:**
+>
+> - Detect any *anomalies* in the event stream (e.g., missing steps, outoforder activities, repeated events, unusually long/short time gaps).  
+> - For each anomaly you find, write a short hypothesis about what could have caused it. Possible causes include system bugs, policy violations, data entry errors, resource overload, or external factors.
+> - Write **SQL statements** (PostgreSQL) that let us investigate the hypotheses further. Queries should:
+>   * Pull relevant rows from `order_event_log` (and optionally join to `orders` / `resources`).  
+>   * Use window functions (`LAG`, `LEAD`) and aggregates to surface gaps, ordering problems, or timing outliers.
+>
+> **Deliverables:**A numbered list of findings. For each finding:
+> 1. A onesentence description of the anomaly (e.g., “Step3 is missing for case1002”).  
+> 2. A hypothesis why it might have happened.  
+> 3. One or more SQL queries that expose related data.
+>
+> **Guidelines:**  
+> - Focus on *process* anomalies, not businesslevel KPIs (unless they are a consequence of the process).  
+> - Keep hypotheses brief but plausible.  
+> - Prefer simple `SELECT … FROM order_event_log …` statements; add joins only when needed to support your argument.
+
+---
+
+## Example Output (what the model might return)
+
+Below is an illustration of what a good answer could look like. **Do NOT show this exact text** in the prompt – it’s just for reference so you can see the style.
+
+### Finding1  
+- **Anomaly:** Step3 “Validate Stock” never appears for `case_id = 1002`.  
+- **Hypothesis:** The stockvalidation service may have been down that day, or a shortcut was taken because inventory was known to be sufficient.  
+- **Investigation query**
+
+```sql
+-- List all activities for the case and show missing step positions
+SELECT *
+FROM (
+    SELECT activity,
+           ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS rn,
+           CASE WHEN activity = 'Validate Stock' THEN true ELSE false END AS has_validate_stock
+    FROM order_event_log
+    WHERE case_id = 1002
+) sub
+ORDER BY rn;
+```
+
+```sql
+-- Show any other cases that also lack Validate Stock (possible systemic issue)
+SELECT DISTINCT case_id
+FROM order_event_log
+WHERE activity <> 'Validate Stock'
+GROUP BY case_id
+HAVING COUNT(*) FILTER (WHERE activity = 'Validate Stock') = 0;
+```
+
+### Finding2  
+- **Anomaly:** `case_id = 1004` ships goods before a credit check (`Ship Goods` at timestamp09:25, but the only `Perform Credit Check` is at 09:10 after shipment).  
+- **Hypothesis:** The workflow engine may have executed steps in parallel and committed them out of order due to a race condition.  
+- **Investigation query**
+
+```sql
+-- Identify cases where Ship Goods occurs before any credit check for the same case
+WITH ordered AS (
+    SELECT *,
+           LAG(activity) OVER (PARTITION BY case_id ORDER BY timestamp) AS prev_act,
+           LEAD(activity) OVER (PARTITION BY case_id ORDER BY timestamp) AS next_act
+    FROM order_event_log
+)
+SELECT *
+FROM ordered
+WHERE activity = 'Ship Goods'
+  AND COALESCE(prev_act, '') <> 'Perform Credit Check';
+```
+
+### Finding3  
+- **Anomaly:** Two shipments for `case_id = 1002` are recorded (`Shipment tracking_id=TRK987` and another with a different ID). Only one shipment should be issued per order.  
+- **Hypothesis:** A duplicate entry was inserted because the “Ship Goods” step was retried after an intermittent failure, but no deduplication logic exists.  
+- **Investigation query**
+
+```sql
+-- Find cases that have more than one Ship Goods event
+SELECT case_id,
+       COUNT(*) AS shipment_count
+FROM order_event_log
+WHERE activity = 'Ship Goods'
+GROUP BY case_id
+HAVING COUNT(*) > 1;
+```
+
+### Finding4  
+- **Anomaly:** `case_id = 1003` has a “Confirm Shipment” step but the tracking ID (`TRK555`) appears later in the log, suggesting the confirmation was logged before shipment information was available.  
+- **Hypothesis:** The UI allowed staff to record a provisional confirmation; once the actual tracking data arrived (later event), it was backfilled into `additional_info`.  
+- **Investigation query**
+
+```sql
+-- Show order of Confirm Shipment vs. first appearance of a Tracking ID for each case
+WITH conf AS (
+    SELECT *
+    FROM order_event_log
+    WHERE activity = 'Confirm Shipment'
+),
+track AS (
+    SELECT *,
+           ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS rn
+    FROM order_event_log
+    WHERE additional_info LIKE '%tracking_id=%'
+)
+SELECT c.case_id,
+       c.timestamp   AS confirm_ts,
+       t.timestamp   AS track_ts,
+       EXTRACT(EPOCH FROM (t.timestamp - c.timestamp)) / 60 AS minutes_later
+FROM conf c
+JOIN (
+    SELECT case_id, MIN(timestamp) AS min_track_ts
+    FROM track
+    GROUP BY case_id
+) mt ON c.case_id = mt.case_id
+LEFT JOIN track t
+     ON c.case_id = t.case_id AND t.rn = 1;
+```
+
+### Finding5  
+- **Anomaly:** The time between “Receive Payment” and the preceding invoice (`Issue Invoice`) for `case_id = 1002` is unusually long (26hours), which may indicate payment processing delays or invoicing errors.  
+- **Hypothesis:** The finance system could be batching invoices; alternatively, there might have been a manual correction that delayed the invoice generation.  
+- **Investigation query**
+
+```sql
+-- Compute time gap between Invoice and Payment for each case (only when both exist)
+WITH ordered AS (
+    SELECT *,
+           LAG(activity) OVER (PARTITION BY case_id ORDER BY timestamp) AS prev_act,
+           LEAD(activity) OVER (PARTITION BY case_id ORDER BY timestamp) AS next_act
+    FROM order_event_log
+),
+inv_pay AS (
+    SELECT *
+    FROM ordered
+    WHERE activity = 'Issue Invoice'
+      AND COALESCE(next_act, '') = 'Receive Payment'
+)
+SELECT i.case_id,
+       i.timestamp   AS invoice_ts,
+       p.timestamp   AS payment_ts,
+       EXTRACT(EPOCH FROM (p.timestamp - i.timestamp)) / 3600 AS hours_between
+FROM inv_pay i
+JOIN ordered p ON i.case_id = p.case_id AND p.activity = 'Receive Payment';
+```
+
+---
+
+### How to use the prompt
+
+1. **Paste** the “Prompt” block into your chat with the LLM (e.g., ChatGPT, Claude).  
+2. The model will respond with a list of findings exactly as described above, each accompanied by SQL that you can run directly in PostgreSQL against the schema you supplied.  
+
+Feel free to adjust the wording (“focus on process anomalies”) or add domainspecific concerns (regulatory compliance, SLA breaches) if your use case requires it. The structure will stay the same and give you both diagnostic insight **and** readytorun queries.

@@ -1,0 +1,229 @@
+Below are a set of **SQLfocused investigative prompts** you can ask the LLM to generate.  
+Each prompt is phrased so that the model will write the exact query (or series of queries) needed to surface the information, anomalies, or insights described – all without any further direction from the user.
+
+---
+
+### 1 Anomalous **lateshipment** events  
+
+> **Prompt**:  
+> “Find every order whose *Confirm Shipment* event is marked as `late_confirmation = Y`. Show the case (order) ID, customer, shipment timestamp and whether a tracking identifier was provided. Also list any orders that have **no later Confirm Shipment** record at all.”
+
+```sql
+SELECT 
+    o.case_id,
+    o.customer_id,
+    el.timestamp AS confirm_shipment_ts,
+    CASE WHEN el.additional_info = 'late_confirmation=Y' THEN 1 ELSE 0 END AS is_late
+FROM order_event_log el
+JOIN orders o ON el.case_id = o.case_id
+WHERE lower(el.activity) IN ('confirm shipment', 'Confirm Shipment')
+  AND el.additional_info = 'late_confirmation=Y';
+```
+
+---
+
+### 2 **Creditcheck failures** (low credit score)
+
+> **Prompt**:  
+> “Identify all orders whose *Perform Credit Check* activity recorded a `credit_score` lower than700. Return the case ID, customer, and the exact creditscore value.”
+
+```sql
+SELECT 
+    el.case_id,
+    o.customer_id,
+    el.additional_info AS credit_score
+FROM order_event_log el
+JOIN orders o ON el.case_id = o.case_id
+WHERE lower(el.activity) = 'perform credit check'
+  AND CAST(REPLACE(el.additional_info, 'credit_score=', '') AS INTEGER) < 700;
+```
+
+---
+
+### 3 **Missing Stock validation** (stock not checked)
+
+> **Prompt**:  
+> “List any orders where the *Validate Stock* activity is missing or explicitly indicates `stock_checked = N`. Show case ID and customer.”
+
+```sql
+SELECT 
+    el.case_id,
+    o.customer_id
+FROM order_event_log el
+JOIN orders o ON el.case_id = o.case_id
+WHERE lower(el.activity) = 'validate stock'
+  AND (el.additional_info IS NULL OR LOWER(el.additional_info) LIKE '%stock_checked=N%');
+```
+
+---
+
+### 4 **Duplicate or outoforder event IDs**
+
+> **Prompt**:  
+> “Check the `event_id` column for any gaps in sequence and also detect rows where an activity appears more than once (i.e., same activity on different timestamps). Return all such case IDs.”
+
+```sql
+SELECT 
+    el.case_id,
+    el.activity
+FROM order_event_log el
+WHERE NOT EXISTS (
+        SELECT 1
+        FROM generate_series(
+            MIN(event_id), MAX(event_id)
+          ) AS g(event_id)
+        WHERE g.event_id = el.event_id
+      )
+   OR (el.activity, el.timestamp) IN (
+        SELECT activity, timestamp
+        FROM order_event_log
+        GROUP BY activity, timestamp
+        HAVING COUNT(*) > 1
+      );
+```
+
+---
+
+### 5 **Payments after shipment but before invoice**
+
+> **Prompt**:  
+> “Find orders where the *Receive Payment* event occurs **after** the *Confirm Shipment* and *Issue Invoice* events. Return case ID, payment timestamp, and whether the payment was received on the same day as the shipment.”
+
+```sql
+SELECT 
+    el.case_id,
+    o.customer_id,
+    CASE WHEN p.timestamp > s.timestamp AND p.timestamp > i.timestamp THEN 1 ELSE 0 END AS is_payment_after_ship_and_invoice
+FROM order_event_log el
+JOIN orders o ON el.case_id = o.case_id
+LEFT JOIN order_event_log p ON lower(p.activity) = 'receive payment'   -- payment event
+LEFT JOIN order_event_log s ON lower(s.activity) = 'confirm shipment'
+LEFT JOIN order_event_log i ON lower(i.activity) = 'issue invoice'
+WHERE el.case_id IN (
+        SELECT case_id FROM order_event_log WHERE lower(activity) = 'receive payment'
+      );
+```
+
+---
+
+### 6 **Inconsistent resource assignments**
+
+> **Prompt**:  
+> “Identify any event records whose `resource` value does not match a record in the `resources` table (i.e., an unknown role/department). Return the case, activity and the problematic resource string.”
+
+```sql
+SELECT 
+    el.case_id,
+    lower(el.activity) AS activity,
+    el.resource AS resource_in_log
+FROM order_event_log el
+WHERE NOT EXISTS (
+        SELECT 1
+        FROM resources r
+        WHERE r.resource_id = el.resource
+      );
+```
+
+---
+
+### 7 **Order value anomalies**
+
+> **Prompt**:  
+> “List orders where the `order_value` in the `orders` table differs from the sum of monetary amounts provided as additional info (e.g., payment amount). Return case ID, expected order value and observed payment.”
+
+```sql
+SELECT 
+    o.case_id,
+    o.order_value AS expected_order_value,
+    p.amount AS received_payment
+FROM orders o
+JOIN order_event_log p ON lower(p.activity) = 'receive payment'
+WHERE CAST(REPLACE(p.additional_info, 'amount=', '') AS NUMERIC) IS NOT NULL;
+```
+
+---
+
+### 8 **Outliers in creditscore distribution**
+
+> **Prompt**:  
+> “Calculate the average, median and standard deviation of `credit_score` values for all *Perform Credit Check* events. Then list any scores that are more than three standard deviations away from the mean (potential outliers).”
+
+```sql
+-- 1 Compute stats
+WITH stats AS (
+    SELECT 
+        AVG(CAST(REPLACE(additional_info, 'credit_score=', '') AS INTEGER))   AS avg_score,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER OVER ())                  AS median_score,
+        STDDEV_POP(CAST(REPLACE(additional_info, 'credit_score=', '') AS INTEGER)) AS stddev
+    FROM order_event_log
+    WHERE lower(activity) = 'perform credit check'
+)
+
+-- 2 Pull outlier scores
+SELECT 
+    el.case_id,
+    o.customer_id,
+    CAST(REPLACE(el.additional_info, 'credit_score=', '') AS INTEGER) AS score
+FROM order_event_log el
+JOIN orders o ON el.case_id = o.case_id
+CROSS JOIN stats s
+WHERE CAST(REPLACE(el.additional_info, 'credit_score=', '') AS INTEGER)
+      > (s.avg_score + 3 * s.stddev)
+   OR CAST(REPLACE(el.additional_info, 'credit_score=', '') AS INTEGER) < (s.avg_score - 3 * s.stddev);
+```
+
+*(The `PERCENTILE_CONT` and `STDDEV_POP` functions are available in PostgreSQL13+; adjust syntax if your version differs.)*
+
+---
+
+### 9 **Orders with no invoice**
+
+> **Prompt**:  
+> “Find all orders that never had an *Issue Invoice* event recorded. Return case ID, customer and order type.”
+
+```sql
+SELECT 
+    o.case_id,
+    o.customer_id,
+    o.order_type
+FROM orders o
+WHERE NOT EXISTS (
+        SELECT 1 FROM order_event_log el
+        WHERE el.case_id = o.case_id
+          AND lower(el.activity) = 'issue invoice'
+      );
+```
+
+---
+
+###  **Late payment after shipment**
+
+> **Prompt**:  
+> “List any payments recorded after the *Confirm Shipment* event but before a separate *Invoice* event (if any). Return case ID, payment timestamp and whether an invoice was issued.”
+
+```sql
+SELECT 
+    p.case_id,
+    o.customer_id,
+    CASE WHEN i.timestamp IS NULL THEN 1 ELSE 0 END AS is_payment_before_invoice
+FROM order_event_log p
+JOIN orders o ON p.case_id = o.case_id
+LEFT JOIN order_event_log i ON lower(i.activity) = 'issue invoice'
+WHERE lower(p.activity) = 'receive payment'
+  AND p.timestamp > (
+        SELECT MIN(ts)
+        FROM order_event_log el2
+        WHERE lower(el2.activity) = 'confirm shipment'
+          AND el2.case_id = p.case_id
+      );
+```
+
+---
+
+###  How to Use These Prompts
+
+1. **Copy** the query you need into your PostgreSQL client (psql, pgAdmin, DBeaver, etc.).  
+2. **Run** it against the database that contains the four tables (`order_event_log`, `orders`, `resources`).  
+3. **Interpret** the results – they will reveal where anomalies or policy violations may be occurring.
+
+Feel free to mixandmatch multiple queries (e.g., combine the lateshipment list with a costanalysis query) to build richer diagnostic dashboards. The key is that each prompt forces the model to write *specific* SQL, steering it away from generic advice and toward concrete data investigation.

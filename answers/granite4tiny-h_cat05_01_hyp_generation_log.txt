@@ -1,0 +1,145 @@
+Below are **three “anomalyspotting” investigations** you can run against the`order_event_log` (plus a quick look at related reference data).  
+Each section includes:
+
+1. **A naturallanguage description of what looks odd in the sample rows**  
+2. **Sample SQL statements that could be used to explore each case**, with placeholders (`?`) you can replace once you have more context.  
+
+Feel free to copypaste, tweak thresholds, or add additional filters (e.g., by `case_id`, date ranges, resource roles) as your analysis evolves.
+
+---
+
+## 1 Anomaly Investigation–**“Unusually Long Lead Time Between Critical Steps”**
+
+### What looks suspicious?
+- **Step2  Step3**: Credit check (event2) happens at08:30 on20240201 for case1001, but the next step (stock validation) occurs only at09:00.  
+- **Step5  Step6** (shipment confirmation  invoice issue) also shows a ~15minute gap that is tighter than most typical processing windows.
+
+### Why it might happen?
+| Hypothesis | What to look for |
+|------------|------------------|
+| **System bottleneck / manual delay** – maybe the WarehouseClerk_2 was on a break. | Check timestamps of other “Validate Stock” events; see if similar gaps exist elsewhere. |
+| **Policy enforcement** – perhaps Finance required an extra signoff that added 15min. | Look at `additional_info` for finance rows (e.g., “credit_score=…” or “confirmation_needed=Y”). |
+| **Data entry error** – timestamp recorded incorrectly by the resource. | Verify if other timestamps on the same case are consistent; compare with order metadata from the `orders` table. |
+
+### Example SQL to spot “large gaps”
+
+```sql
+-- Find consecutive events where the time between them is > 10 minutes (adjust threshold as needed)
+WITH ordered_events AS (
+    SELECT
+        event_id,
+        activity,
+        timestamp,
+        LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) AS prev_ts
+    FROM order_event_log
+),
+gap_analysis AS (
+    SELECT
+        *,
+        EXTRACT(EPOCH FROM (timestamp - prev_ts)) / 60.0 AS mins_gap
+    FROM ordered_events
+    WHERE prev_ts IS NOT NULL
+)
+SELECT *
+FROM gap_analysis
+WHERE mins_gap > 10          -- change threshold to suit business expectations
+ORDER BY mins_gap DESC;
+```
+
+**What you’ll see:**  
+Rows flagged above the 10minute mark will be highlighted for deeper manual review.
+
+---
+
+## 2 Anomaly Investigation–**“Discrepancies Between Expected and Actual Activity Order”**
+
+### What looks odd?
+- **Case1004** shows a “Receive Payment” (event22) before the expected “Confirm Shipment” (event24).  
+- In most business flows, shipment confirmation precedes invoicing/payment.
+
+### Why it might happen?
+| Hypothesis | Supporting clues |
+|------------|------------------|
+| **Postprocessing correction** – a manual “reverseorder” edit was applied after the fact. | The invoice (`event_id23`) and payment (`event_id22`) timestamps are only 1h apart, which is plausible if finance cleared it quickly; still out of order relative to logistics. |
+| **System error** – events were logged outofsequence due to a timestamp overflow or missynchronisation. | Look at `additional_info` for “shipment_scheduled=N” (case1004) and see if other cases show similar flags. |
+
+### Example SQL to flag reversed activity order
+
+```sql
+SELECT
+    case_id,
+    event_id,
+    activity,
+    timestamp
+FROM (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY event_id) AS rn_by_eventid,
+        CASE
+            WHEN activity = 'Confirm Shipment' THEN 1
+            WHEN activity = 'Receive Payment' THEN 2
+            ELSE 3
+        END AS expected_rn
+    FROM order_event_log
+) t
+WHERE (expected_rn = 1 AND event_id > LAG(event_id) OVER (PARTITION BY case_id ORDER BY timestamp))
+   OR (expected_rn = 2 AND event_id < LAG(event_id) OVER (PARTITION BY case_id ORDER BY timestamp));
+```
+
+**Result:** Any rows where the logical sequence (`expected_rn`) is violated will be listed, prompting a manual audit.
+
+---
+
+## 3 Anomaly Investigation–**“Unexpected Resource Assignment”**
+
+### What looks odd?
+- **Case1002** uses **LogisticsMgr_2** (role: “Logistics Manager”) for **both Confirm Shipment** and Ship Goods** events. While logically possible, it blurs responsibility and may indicate a handoff delay.
+
+### Why it might happen?
+| Hypothesis | What to check |
+|------------|----------------|
+| **Role overlap / consolidation** – the LogisticsMgr role actually performs both tasks for small orders. | Look at `resources` table: does “LogisticsMgr_2” appear with multiple departments or has a flag indicating multitasking? |
+| **Temporary staffing shortage** – perhaps no other staff were available. | Crossreference timestamps across cases; are there similar pattern bursts (multiple consecutive events for same manager)? |
+
+### Example SQL to list resources that performed >1 distinct activity within <30min
+
+```sql
+SELECT
+    resource,
+    MIN(timestamp) AS first_ts,
+    MAX(timestamp) AS last_ts,
+    COUNT(DISTINCT activity) AS distinct_activities
+FROM order_event_log
+GROUP BY resource
+HAVING COUNT(DISTINCT activity) > 1
+   AND (MAX(timestamp) - MIN(timestamp)) < INTERVAL '30 min';
+```
+
+**Result:** Any rows returned suggest a need for role clarification or process reengineering.
+
+---
+
+## Quick “Next Steps” Checklist
+
+| Step | Action | SQL Template |
+|------|--------|--------------|
+| **A. Gap detection** | Identify any consecutive activity pair with gap>*threshold*. | `SELECT … FROM ordered_events … WHERE mins_gap > ?` |
+| **B. Sequence sanity check** | Verify that the logical order of activities matches expected sequencing per case. | Use the “discrepancy” query above (adjust thresholds). |
+| **C. Resource consistency audit** | Find resources performing multiple distinct activities in a short window. | `SELECT … GROUP BY resource HAVING COUNT(DISTINCT activity) > 1 AND …` |
+| **D. Crossreference with `orders` & `resources`** | Pull additional context (customer type, role department, etc.) for flagged rows. | `JOIN orders ON order_event_log.case_id = orders.case_id JOIN resources …` |
+
+Once you run these queries and see which rows surface as anomalies, you can:
+
+1. **Investigate the root cause** (system error, manual edit, staffing shortage, policy gap).  
+2. **Document findings** in a changerequest ticket or processreview meeting.  
+3. **Implement corrective actions** (e.g., add validation checks before “Receive Payment”, reassign roles, improve staff coverage).
+
+---
+
+### TL;DR
+
+- **Long gaps**  `LAG(timestamp) … WHERE mins_gap > 10`  
+- **Reverse activity order**  sequencecheck query with expected_rn vs. event_id ordering  
+- **Overlapping activities by a single resource**  aggregate by `resource` and flag when distinct activities>1 within a short interval  
+
+These queries give you concrete, reproducible ways to surface the three sample anomalies (and many more) directly in PostgreSQL without needing extra tables or external data. Happy hunting!
