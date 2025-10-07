@@ -17,7 +17,7 @@ from typing import Dict, Any
 ANSWERING_MODEL_NAME = "claude-sonnet-4-5-thinking-20250929" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
-EVALUATING_MODEL_NAME = "x-ai/grok-4-fast:free" if len(sys.argv) < 3 else sys.argv[2]
+EVALUATING_MODEL_NAME = "x-ai/grok-4-fast" if len(sys.argv) < 3 else sys.argv[2]
 
 
 class RateLimiter:
@@ -211,7 +211,7 @@ MODELS_DICT = {
             "o3-mini-2025-01-31", "gpt-4.1-2025-04-14", "gpt-4.1-mini-2025-04-14",
             "gpt-4.1-nano-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13",
             "o3-pro-2025-06-10", "gpt-5-nano-2025-08-07", "gpt-5-mini-2025-08-07",
-            "gpt-5-2025-08-07"
+            "gpt-5-2025-08-07", "gpt-5-pro-2025-10-06"
         }
     },
     "google": {

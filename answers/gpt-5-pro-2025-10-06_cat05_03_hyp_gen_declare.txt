@@ -1,0 +1,163 @@
+Anomalies in the constraint set
+- Noncoexistence of E with C combined with existence of C: Because C is mandated to occur, E becomes impossible in any conformant trace. This makes evaluation structurally forbidden and undermines the intended process.
+- Responded-existence EA becomes vacuous: Since E cannot occur, the rule “if E then A exists” is never activated. It offers no real control.
+- Precedence CR is redundant with init R: If R must be the first event, then “C must be preceded by R” adds no additional restriction.
+- Ordering and dependency are too weak or missing:
+  - A is not required to precede E (responded-existence does not enforce order), allowing E before A if E were allowed.
+  - No requirement that E precede P, P precede N, and N precede C.
+  - P and N are not required to exist at all.
+- End-state not enforced and cardinalities are unclear:
+  - C is not required to be the last event.
+  - Multiple Cs are not disallowed.
+  - R is not constrained to occur exactly once.
+- The model allows undesired fast-track paths such as RC with all middle steps skipped.
+
+Hypotheses about root causes
+- Misused templates: Noncoexistence may have been chosen instead of precedence or response (e.g., intending “no C before E” but encoding “no C with E”).
+- Confusion between responded-existence and response/precedence: The designer may have intended “A before E” but picked a template that does not enforce order.
+- Incremental policy change: A fast-track or “no-evaluation” path for small claims may have been introduced, but other constraints were not updated consistently.
+- Discovery artifacts: If the model was discovered from noisy/incomplete logs, missing E events could have pushed the miner toward noncoexistence(E,C) to maximize fitness.
+- Technical limitations: Event labels or resources may be inconsistent (e.g., evaluation logged under different activity codes), leading to constraints that fit incomplete data rather than business rules.
+- Performance pressure: Stakeholders may have favored rapid closure, tolerating models that permit skipping evaluation, approval, or notification.
+
+SQL checks to verify anomalies and their operational impact
+
+A. Core contradictions and skips
+1) Claims closed without any evaluation
+SELECT ce.claim_id
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING SUM(CASE WHEN ce.activity = 'C' THEN 1 ELSE 0 END) > 0
+   AND SUM(CASE WHEN ce.activity = 'E' THEN 1 ELSE 0 END) = 0;
+
+2) Claims where E and C coexist (violates noncoexistence)
+SELECT ce.claim_id
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING SUM(CASE WHEN ce.activity = 'E' THEN 1 ELSE 0 END) > 0
+   AND SUM(CASE WHEN ce.activity = 'C' THEN 1 ELSE 0 END) > 0;
+
+3) Direct fast-track closures (only R and C, no A/E/P/N)
+SELECT ce.claim_id
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING SUM(CASE WHEN ce.activity IN ('A','E','P','N') THEN 1 ELSE 0 END) = 0
+   AND SUM(CASE WHEN ce.activity = 'R' THEN 1 ELSE 0 END) > 0
+   AND SUM(CASE WHEN ce.activity = 'C' THEN 1 ELSE 0 END) > 0;
+
+B. Ordering and completeness of key steps
+4) First event is not R (violates init)
+WITH ordered AS (
+  SELECT claim_id, activity,
+         ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp, event_id) AS rn
+  FROM claim_events
+)
+SELECT claim_id
+FROM ordered
+WHERE rn = 1 AND activity <> 'R';
+
+5) Last event is not C (C not enforced as terminal)
+WITH last_evt AS (
+  SELECT claim_id, activity,
+         ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp DESC, event_id DESC) AS rn
+  FROM claim_events
+)
+SELECT claim_id
+FROM last_evt
+WHERE rn = 1 AND activity <> 'C';
+
+6) Multiple closings
+SELECT claim_id, COUNT(*) AS close_events
+FROM claim_events
+WHERE activity = 'C'
+GROUP BY claim_id
+HAVING COUNT(*) > 1;
+
+7) E occurs but A is absent (violates responded-existence intent)
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING SUM(CASE WHEN activity = 'E' THEN 1 ELSE 0 END) > 0
+   AND SUM(CASE WHEN activity = 'A' THEN 1 ELSE 0 END) = 0;
+
+8) E precedes first A or A is missing (order too weak)
+SELECT claim_id,
+       MIN(CASE WHEN activity = 'A' THEN timestamp END) AS first_a,
+       MIN(CASE WHEN activity = 'E' THEN timestamp END) AS first_e
+FROM claim_events
+GROUP BY claim_id
+HAVING MIN(CASE WHEN activity = 'E' THEN timestamp END) IS NOT NULL
+   AND (MIN(CASE WHEN activity = 'A' THEN timestamp END) IS NULL
+        OR MIN(CASE WHEN activity = 'E' THEN timestamp END) < MIN(CASE WHEN activity = 'A' THEN timestamp END));
+
+9) Approvals without evaluation
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING SUM(CASE WHEN activity = 'P' THEN 1 ELSE 0 END) > 0
+   AND SUM(CASE WHEN activity = 'E' THEN 1 ELSE 0 END) = 0;
+
+10) Notifications without approval
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING SUM(CASE WHEN activity = 'N' THEN 1 ELSE 0 END) > 0
+   AND SUM(CASE WHEN activity = 'P' THEN 1 ELSE 0 END) = 0;
+
+C. Adjuster-related checks
+11) Evaluation performed by a resource not recognized as an adjuster (by name or numeric ID in resource)
+SELECT ce.claim_id, ce.event_id, ce.resource
+FROM claim_events ce
+LEFT JOIN adjusters a
+  ON a.name = ce.resource
+     OR (ce.resource ~ '^\d+$' AND a.adjuster_id = ce.resource::int)
+WHERE ce.activity = 'E'
+  AND a.adjuster_id IS NULL;
+
+12) Evaluation performed by someone other than the assigned adjuster (requires the A event to encode an assigned adjuster ID in additional_info, e.g., 'adjuster_id=123')
+WITH assignments AS (
+  SELECT ce.claim_id, ce.timestamp, ce.event_id,
+         substring(ce.additional_info FROM 'adjuster_id=(\d+)')::int AS assigned_adjuster_id
+  FROM claim_events ce
+  WHERE ce.activity = 'A' AND ce.additional_info ~ 'adjuster_id=\d+'
+),
+evals AS (
+  SELECT ce.claim_id, ce.event_id, ce.timestamp, ce.resource,
+         CASE WHEN ce.resource ~ '^\d+$' THEN ce.resource::int END AS evaluator_id
+  FROM claim_events ce
+  WHERE ce.activity = 'E'
+),
+latest_assignment_per_eval AS (
+  SELECT e.claim_id, e.event_id, e.timestamp,
+         (SELECT a.assigned_adjuster_id
+            FROM assignments a
+           WHERE a.claim_id = e.claim_id
+             AND a.timestamp <= e.timestamp
+           ORDER BY a.timestamp DESC, a.event_id DESC
+           LIMIT 1) AS assigned_adjuster_id,
+         e.evaluator_id, e.resource
+  FROM evals e
+)
+SELECT la.claim_id, la.event_id, la.assigned_adjuster_id, la.evaluator_id, la.resource
+FROM latest_assignment_per_eval la
+WHERE la.assigned_adjuster_id IS NOT NULL
+  AND (la.evaluator_id IS NULL OR la.evaluator_id <> la.assigned_adjuster_id);
+
+13) Evaluator specialization mismatches the claim type (heuristic mapping)
+SELECT ce.claim_id, ce.event_id, ce.resource, a.specialization, c.claim_type
+FROM claim_events ce
+JOIN claims c ON c.claim_id = ce.claim_id
+LEFT JOIN adjusters a
+  ON a.name = ce.resource
+     OR (ce.resource ~ '^\d+$' AND a.adjuster_id = ce.resource::int)
+WHERE ce.activity = 'E'
+  AND a.adjuster_id IS NOT NULL
+  AND (
+        (c.claim_type LIKE 'home%' AND a.specialization <> 'home') OR
+        (c.claim_type LIKE 'auto%' AND a.specialization <> 'auto')
+      );
+
+Notes for execution
+- If additional_info uses a different key for the assigned adjuster, adapt the regex in query 12.
+- If resource consistently holds adjuster_id (or name), simplify joins accordingly.
+- For deterministic ordering when timestamps tie, event_id is included in ORDER BY clauses.

@@ -1,0 +1,240 @@
+Below is a concise, actionable breakdown.
+
+1) What is anomalous in the POWL model
+
+- Loop between E and P with the order LOOP(E, P):
+  - Approve (P) acts like a redo, so P can happen repeatedly.
+  - The loop can exit only after an E, so the last step in the loop is E, not P.
+  - It is possible to have no P at all (exit right after an E), hence Notify/Close can happen without any approval.
+- XOR(N, skip):
+  - Customer notification is optional and can be skipped entirely.
+- Partial order choices:
+  - Edges are RA, Aloop, loopxor, and AC. There is no xorC edge.
+  - Because C only depends on A, closing can occur before loop/xor complete (e.g., before evaluation, approval, or notification).
+  - It is therefore possible to see E or P occur after C in the event log (post-closure activity), or N happen after C, or N never happen at all.
+
+2) Plausible hypotheses for why these anomalies exist
+
+- Business rule changes only partially implemented:
+  - Example: fast-track or low-value claims allowed to skip approval and/or notification, but the model wasn’t cleanly split to handle this variant.
+- Process rework and reversals:
+  - Multiple rounds of evaluation and approval intended for rework, but modeled as EP loop in a way that makes final P optional.
+- Miscommunication during modeling:
+  - Modeler assumed “redo” after evaluation should be labeled “approve,” producing multiple P’s and preventing P from being the final step.
+- Tooling limitations or technical errors:
+  - Partial order used to allow “flexibility,” inadvertently enabling closure after assignment without ensuring upstream steps are done.
+  - XOR with silent transition used as a shortcut to model “optional notification,” but no compensating control to guard misuse.
+- System integration quirks:
+  - Automated systems may emit repeated P events on status updates; notification might be emitted in external channels not captured as N events.
+
+3) How to verify using the database (PostgreSQL queries)
+
+Notes:
+- Use ce."timestamp" to avoid ambiguity (column name matches a type).
+- If multiple events share the same timestamp, add event_id to ORDER BY as a tie-breaker where relevant.
+
+Core anomaly checks
+
+A. Claims closed before evaluation and/or approval
+Identify claims where C occurred before any E and/or any P.
+
+SQL:
+with ctime as (
+  select claim_id, min("timestamp") as c_time
+  from claim_events
+  where activity = 'C'
+  group by claim_id
+)
+select c.claim_id, c.c_time,
+       exists (select 1 from claim_events e
+               where e.claim_id = c.claim_id and e.activity = 'E' and e."timestamp" <= c.c_time) as has_e_before_close,
+       exists (select 1 from claim_events p
+               where p.claim_id = c.claim_id and p.activity = 'P' and p."timestamp" <= c.c_time) as has_p_before_close
+from ctime c
+where not exists (select 1 from claim_events e
+                  where e.claim_id = c.claim_id and e.activity = 'E' and e."timestamp" <= c.c_time)
+   or not exists (select 1 from claim_events p
+                  where p.claim_id = c.claim_id and p.activity = 'P' and p."timestamp" <= c.c_time)
+order by c.c_time;
+
+B. Approvals occurring multiple times
+SQL:
+select claim_id, count(*) as approvals
+from claim_events
+where activity = 'P'
+group by claim_id
+having count(*) > 1
+order by approvals desc, claim_id;
+
+C. Evaluate repeated with no approval at all (loop exit without P)
+SQL:
+select claim_id,
+       count(*) filter (where activity = 'E') as e_cnt,
+       count(*) filter (where activity = 'P') as p_cnt
+from claim_events
+group by claim_id
+having count(*) filter (where activity = 'P') = 0
+   and count(*) filter (where activity = 'E') > 0
+order by e_cnt desc;
+
+D. Last of {E,P} is E (evidence that P is not the final decision step)
+SQL:
+with last_ep as (
+  select claim_id,
+         max("timestamp") filter (where activity = 'E') as last_e,
+         max("timestamp") filter (where activity = 'P') as last_p
+  from claim_events
+  group by claim_id
+)
+select claim_id, last_e, last_p
+from last_ep
+where last_e is not null and (last_p is null or last_e > last_p)
+order by claim_id;
+
+E. Notification skipped before closing (N missing or occurs after C)
+SQL:
+with ctime as (
+  select claim_id, min("timestamp") as c_time
+  from claim_events
+  where activity = 'C'
+  group by claim_id
+)
+select c.claim_id, c.c_time
+from ctime c
+left join claim_events n
+  on n.claim_id = c.claim_id
+ and n.activity = 'N'
+ and n."timestamp" <= c.c_time
+where n.event_id is null
+order by c.c_time;
+
+F. Activities after closure (E/P/N after C)
+SQL:
+with ctime as (
+  select claim_id, min("timestamp") as c_time
+  from claim_events
+  where activity = 'C'
+  group by claim_id
+)
+select distinct e.claim_id, c.c_time, e.activity, e."timestamp" as activity_time
+from ctime c
+join claim_events e
+  on e.claim_id = c.claim_id
+ and e.activity in ('E', 'P', 'N')
+ and e."timestamp" > c.c_time
+order by e.claim_id, e."timestamp";
+
+G. Claims closed without notification at all (overall rate)
+SQL:
+with closed as (
+  select distinct claim_id
+  from claim_events
+  where activity = 'C'
+)
+select
+  count(*) as total_closed,
+  sum(case when exists (select 1 from claim_events n where n.claim_id = cl.claim_id and n.activity = 'N') then 1 else 0 end) as with_any_notification,
+  sum(case when not exists (select 1 from claim_events n where n.claim_id = cl.claim_id and n.activity = 'N') then 1 else 0 end) as without_any_notification
+from closed cl;
+
+Ordering and prerequisite sanity checks
+
+H. Evaluate before Assign (should never happen per model; checks data quality)
+SQL:
+with times as (
+  select claim_id,
+         min("timestamp") filter (where activity = 'A') as a_time,
+         min("timestamp") filter (where activity = 'E') as e_first_time
+  from claim_events
+  group by claim_id
+)
+select claim_id, a_time, e_first_time
+from times
+where e_first_time is not null and (a_time is null or e_first_time < a_time)
+order by e_first_time;
+
+I. Close before Assign (should not happen even in this model)
+SQL:
+with atime as (
+  select claim_id, min("timestamp") as a_time
+  from claim_events
+  where activity = 'A'
+  group by claim_id
+),
+ctime as (
+  select claim_id, min("timestamp") as c_time
+  from claim_events
+  where activity = 'C'
+  group by claim_id
+)
+select c.claim_id, a.a_time, c.c_time
+from ctime c
+left join atime a on a.claim_id = c.claim_id
+where a.a_time is null or c.c_time < a.a_time
+order by c.c_time;
+
+Adjuster-related checks (uses adjusters table)
+
+J. Multiple adjuster assignments for the same claim
+SQL:
+select claim_id, count(*) as assign_count
+from claim_events
+where activity = 'A'
+group by claim_id
+having count(*) > 1
+order by assign_count desc;
+
+K. Assignment to unknown adjuster names (resource not in adjusters)
+SQL:
+select ce.claim_id, ce."timestamp" as a_time, ce.resource as adjuster_name
+from claim_events ce
+left join adjusters ad on ad.name = ce.resource
+where ce.activity = 'A' and ad.adjuster_id is null
+order by ce."timestamp";
+
+L. Specialization mismatch: adjuster specialization vs claim_type
+Assumes mapping: claim_type like '%home%'  'home'; '%auto%'  'auto'.
+
+SQL:
+with assignments as (
+  select ce.claim_id, ce."timestamp" as a_time, ce.resource as adjuster_name
+  from claim_events ce
+  where ce.activity = 'A'
+),
+expected as (
+  select claim_id,
+         case
+           when claim_type ilike '%home%' then 'home'
+           when claim_type ilike '%auto%' then 'auto'
+           else null
+         end as expected_spec
+  from claims
+)
+select a.claim_id, a.adjuster_name, ad.specialization, e.expected_spec
+from assignments a
+join expected e on e.claim_id = a.claim_id
+left join adjusters ad on ad.name = a.adjuster_name
+where ad.specialization is distinct from e.expected_spec
+   or ad.specialization is null
+order by a.claim_id, a.a_time;
+
+Optional: quick variant extraction for manual inspection
+
+M. Reconstruct the activity sequence per claim to spot out-of-order patterns
+SQL:
+select claim_id,
+       string_agg(activity, '->' order by "timestamp", event_id) as trace
+from claim_events
+group by claim_id;
+
+What the results will tell you
+
+- A/E/P vs C timing: If many claims appear in A/F/I with C before E/P or activities after C, the partial-order anomaly is happening in practice and not just in the model.
+- P multiplicity and last EP step: If B and D flag many cases, it supports the “P used as redo” loop semantics in the model or repeated auto-approvals in the system.
+- Notification behavior: E/G show whether N is routinely skipped or happens late, consistent with XOR(N, skip).
+- Adjuster checks: J/K/L can surface operational data issues that often co-occur with partial-order flexibilities (e.g., reassignments, unknown resources, or wrong specialization).
+
+If you confirm these patterns in the data, consider tightening the model:
+- Model “Evaluate” in a loop by itself (repeat E) followed by a single P, then N, then C.
+- Add an explicit xorC order, or better, loopxorC edges only.
+- Remove AC or guard it with a “withdrawal/cancel” path that is clearly modeled and monitored.

@@ -1,0 +1,420 @@
+Anomalies observed in the temporal profile
+- R  P: Mean  25 hours with very small STDEV (1 hour). Unusually rigid timing suggests a scheduled batch or timer-based approval rather than natural variation.
+- P  N: Very long mean (7 days) with high variability (±2 days). Indicates inconsistent notification handling and potential backlogs.
+- A  C: Short mean (2 hours). Closing soon after assignment without E/P suggests premature closures, duplicates, or cancellations bypassing core steps.
+- E  N: Extremely short mean (5 minutes). Likely automated notification immediately after evaluation, possibly skipping the P step or using combined transactions.
+- E  C: Mean  1 hour with large variability (50 minutes). Mixed handling—some claims closed immediately after evaluation while others take much longer—points to inconsistent rules or case stratification.
+- N  C: Small STDEV (5 minutes) around 30 minutes. Suggests an automated auto-close timer after notifying the customer.
+
+Hypotheses to explain anomalies
+- R  P low variation
+  - Approvals released in scheduled batches or an SLA-driven gate (e.g., daily at a fixed time).
+  - Time zone normalization or job alignment to a fixed offset.
+  - Manager approval queue with fixed review window.
+- P  N long and unstable
+  - Manual outbound notifications or manual QA checks before send.
+  - Backlog on a notification queue, outages, or vendor/API delays.
+  - Staff availability (weekends/holidays) or region-dependent processes.
+- A  C fast closures
+  - Early screening rejects, duplicate claims, customer withdrawal, or missing documents.
+  - Auto-close rules for trivial or invalid submissions.
+  - Mislogged steps (E/P missing though they happened).
+- E  N ultra-fast
+  - Notification auto-triggered by evaluation completion in the same workflow transaction.
+  - P step bypassed or logged later than N.
+- E  C variability
+  - Some claims decided at E due to clear-cut rules; others require further negotiation or documentation.
+  - Mixed automation/manual handling paths.
+- N  C tight timing
+  - Auto-close timer executed by a scheduled job shortly after notification.
+
+SQL verification and exploration (PostgreSQL)
+Note: These queries assume claim_events.resource for E/A/P is the adjuster name, matching adjusters.name. Adjust if your data uses IDs.
+
+1) Helper CTE to get first occurrence timestamp per activity in each claim
+Use this CTE in subsequent queries.
+
+```
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'R' THEN timestamp END) AS ts_R,
+    MIN(CASE WHEN activity = 'A' THEN timestamp END) AS ts_A,
+    MIN(CASE WHEN activity = 'E' THEN timestamp END) AS ts_E,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS ts_P,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS ts_N,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS ts_C
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT * FROM first_events LIMIT 10;
+```
+
+2) Outlier detection using the given temporal profile (z-score with a zeta threshold)
+Find claims where the time between two activities deviates from the profile by more than a chosen zeta.
+
+```
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'R' THEN timestamp END) AS ts_R,
+    MIN(CASE WHEN activity = 'A' THEN timestamp END) AS ts_A,
+    MIN(CASE WHEN activity = 'E' THEN timestamp END) AS ts_E,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS ts_P,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS ts_N,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS ts_C
+  FROM claim_events
+  GROUP BY claim_id
+),
+fe_unpivot AS (
+  SELECT claim_id, 'R' AS act, ts_R AS ts FROM first_events
+  UNION ALL SELECT claim_id, 'A', ts_A FROM first_events
+  UNION ALL SELECT claim_id, 'E', ts_E FROM first_events
+  UNION ALL SELECT claim_id, 'P', ts_P FROM first_events
+  UNION ALL SELECT claim_id, 'N', ts_N FROM first_events
+  UNION ALL SELECT claim_id, 'C', ts_C FROM first_events
+),
+pairs AS (
+  SELECT * FROM (VALUES
+    ('R','A',3600::double precision,600::double precision),
+    ('R','E',86400,28800),
+    ('R','P',90000,3600),
+    ('A','C',7200,3600),
+    ('E','N',300,60),
+    ('E','C',3600,3000),
+    ('P','N',604800,172800),
+    ('N','C',1800,300)
+  ) AS t(a1,a2,avg_s,stdev_s)
+),
+params AS (SELECT 2.5::double precision AS zeta),
+durations AS (
+  SELECT
+    x.claim_id, p.a1, p.a2, x.ts AS t1, y.ts AS t2,
+    EXTRACT(EPOCH FROM (y.ts - x.ts))::double precision AS diff_s,
+    p.avg_s, p.stdev_s,
+    (EXTRACT(EPOCH FROM (y.ts - x.ts))::double precision - p.avg_s) / NULLIF(p.stdev_s,0) AS zscore
+  FROM pairs p
+  JOIN fe_unpivot x ON x.act = p.a1
+  JOIN fe_unpivot y ON y.claim_id = x.claim_id AND y.act = p.a2
+  WHERE x.ts IS NOT NULL AND y.ts IS NOT NULL AND y.ts > x.ts
+)
+SELECT d.claim_id, d.a1 AS from_act, d.a2 AS to_act,
+       d.diff_s::int AS diff_seconds, d.avg_s::int AS prof_avg_s, d.stdev_s::int AS prof_stdev_s,
+       ROUND(d.zscore::numeric, 2) AS zscore
+FROM durations d, params
+WHERE ABS(d.zscore) > params.zeta
+ORDER BY ABS(d.zscore) DESC, d.claim_id;
+```
+
+3) Recompute actual dataset stats for each pair (to validate the profile)
+```
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'R' THEN timestamp END) AS ts_R,
+    MIN(CASE WHEN activity = 'A' THEN timestamp END) AS ts_A,
+    MIN(CASE WHEN activity = 'E' THEN timestamp END) AS ts_E,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS ts_P,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS ts_N,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS ts_C
+  FROM claim_events
+  GROUP BY claim_id
+),
+fe_unpivot AS (
+  SELECT claim_id, 'R' AS act, ts_R AS ts FROM first_events
+  UNION ALL SELECT claim_id, 'A', ts_A FROM first_events
+  UNION ALL SELECT claim_id, 'E', ts_E FROM first_events
+  UNION ALL SELECT claim_id, 'P', ts_P FROM first_events
+  UNION ALL SELECT claim_id, 'N', ts_N FROM first_events
+  UNION ALL SELECT claim_id, 'C', ts_C FROM first_events
+),
+pairs AS (
+  SELECT * FROM (VALUES
+    ('R','A'),('R','E'),('R','P'),('A','C'),('E','N'),('E','C'),('P','N'),('N','C')
+  ) AS t(a1,a2)
+),
+durations AS (
+  SELECT
+    x.claim_id, p.a1, p.a2,
+    EXTRACT(EPOCH FROM (y.ts - x.ts))::double precision AS diff_s
+  FROM pairs p
+  JOIN fe_unpivot x ON x.act = p.a1
+  JOIN fe_unpivot y ON y.claim_id = x.claim_id AND y.act = p.a2
+  WHERE x.ts IS NOT NULL AND y.ts IS NOT NULL AND y.ts > x.ts
+)
+SELECT a1, a2,
+       COUNT(*) AS n,
+       ROUND(AVG(diff_s)::numeric, 1) AS avg_s,
+       ROUND(stddev_samp(diff_s)::numeric, 1) AS stdev_s
+FROM durations
+GROUP BY a1, a2
+ORDER BY a1, a2;
+```
+
+4) Claims closed shortly after assignment and skipping E/P
+Premature closures, likely tied to the A  C anomaly.
+
+```
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'A' THEN timestamp END) AS ts_A,
+    MIN(CASE WHEN activity = 'E' THEN timestamp END) AS ts_E,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS ts_P,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS ts_C
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT fe.claim_id,
+       fe.ts_A, fe.ts_E, fe.ts_P, fe.ts_C,
+       (fe.ts_C - fe.ts_A) AS a_to_c
+FROM first_events fe
+WHERE fe.ts_A IS NOT NULL AND fe.ts_C IS NOT NULL
+  AND fe.ts_C > fe.ts_A
+  AND fe.ts_C - fe.ts_A <= INTERVAL '2 hours'
+  AND (fe.ts_E IS NULL OR fe.ts_E > fe.ts_C)
+  AND (fe.ts_P IS NULL OR fe.ts_P > fe.ts_C)
+ORDER BY a_to_c ASC;
+```
+
+5) P  N excessively long (e.g., > mean + 2×STDEV  11 days)
+```
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS ts_P,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS ts_N
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT fe.claim_id, fe.ts_P, fe.ts_N, (fe.ts_N - fe.ts_P) AS p_to_n
+FROM first_events fe
+WHERE fe.ts_P IS NOT NULL AND fe.ts_N IS NOT NULL
+  AND fe.ts_N > fe.ts_P
+  AND fe.ts_N - fe.ts_P > INTERVAL '11 days'
+ORDER BY p_to_n DESC
+LIMIT 100;
+```
+
+6) E  N too fast (e.g., <= 2 minutes)
+```
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'E' THEN timestamp END) AS ts_E,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS ts_N
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT fe.claim_id, fe.ts_E, fe.ts_N, (fe.ts_N - fe.ts_E) AS e_to_n
+FROM first_events fe
+WHERE fe.ts_E IS NOT NULL AND fe.ts_N IS NOT NULL
+  AND fe.ts_N > fe.ts_E
+  AND fe.ts_N - fe.ts_E <= INTERVAL '2 minutes'
+ORDER BY e_to_n ASC;
+```
+
+7) Sequence violations (e.g., notification before approval, or close before approval)
+```
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'E' THEN timestamp END) AS ts_E,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS ts_P,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS ts_N,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS ts_C
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       ts_E, ts_P, ts_N, ts_C
+FROM first_events
+WHERE
+  (ts_N IS NOT NULL AND (ts_P IS NULL OR ts_P > ts_N))  -- notify before/no approval
+  OR
+  (ts_C IS NOT NULL AND (ts_P IS NULL OR ts_P > ts_C))  -- close before/no approval
+ORDER BY claim_id;
+```
+
+8) Check for rigid scheduling in R  P (distribution)
+Look for spikes around ~24–26 hours.
+
+```
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'R' THEN timestamp END) AS ts_R,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS ts_P
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  ROUND(EXTRACT(EPOCH FROM (fe.ts_P - fe.ts_R)) / 3600.0, 1) AS hours_from_receive,
+  COUNT(*) AS n
+FROM first_events fe
+WHERE fe.ts_R IS NOT NULL AND fe.ts_P IS NOT NULL AND fe.ts_P > fe.ts_R
+GROUP BY 1
+ORDER BY 1;
+```
+
+9) Correlate P  N outliers with claim_type and adjuster region
+```
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS ts_P,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS ts_N
+  FROM claim_events
+  GROUP BY claim_id
+),
+p_to_n_outliers AS (
+  SELECT fe.claim_id, (fe.ts_N - fe.ts_P) AS p_to_n
+  FROM first_events fe
+  WHERE fe.ts_P IS NOT NULL AND fe.ts_N IS NOT NULL
+    AND fe.ts_N > fe.ts_P
+    AND fe.ts_N - fe.ts_P > INTERVAL '11 days'
+),
+eval_actor AS (
+  SELECT DISTINCT ON (claim_id)
+         claim_id, resource AS evaluator_name
+  FROM claim_events
+  WHERE activity = 'E'
+  ORDER BY claim_id, timestamp
+)
+SELECT c.claim_type,
+       a.region,
+       COUNT(*) AS outlier_count,
+       ROUND(AVG(EXTRACT(EPOCH FROM p.p_to_n))/86400.0, 2) AS avg_delay_days
+FROM p_to_n_outliers p
+JOIN claims c ON c.claim_id = p.claim_id
+LEFT JOIN eval_actor ea ON ea.claim_id = p.claim_id
+LEFT JOIN adjusters a ON a.name = ea.evaluator_name
+GROUP BY c.claim_type, a.region
+ORDER BY outlier_count DESC, c.claim_type, a.region NULLS LAST;
+```
+
+10) Correlate early A  C closures with claim_type and closer resource’s region
+```
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'A' THEN timestamp END) AS ts_A,
+    MIN(CASE WHEN activity = 'E' THEN timestamp END) AS ts_E,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS ts_P,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS ts_C
+  FROM claim_events
+  GROUP BY claim_id
+),
+early_close AS (
+  SELECT fe.claim_id
+  FROM first_events fe
+  WHERE fe.ts_A IS NOT NULL AND fe.ts_C IS NOT NULL
+    AND fe.ts_C > fe.ts_A
+    AND fe.ts_C - fe.ts_A <= INTERVAL '2 hours'
+    AND (fe.ts_E IS NULL OR fe.ts_E > fe.ts_C)
+    AND (fe.ts_P IS NULL OR fe.ts_P > fe.ts_C)
+),
+closer AS (
+  SELECT DISTINCT ON (claim_id)
+         claim_id, resource AS closer_name
+  FROM claim_events
+  WHERE activity = 'C'
+  ORDER BY claim_id, timestamp
+)
+SELECT c.claim_type,
+       aj.region,
+       COUNT(*) AS early_close_count
+FROM early_close ec
+JOIN claims c ON c.claim_id = ec.claim_id
+LEFT JOIN closer cl ON cl.claim_id = ec.claim_id
+LEFT JOIN adjusters aj ON aj.name = cl.closer_name
+GROUP BY c.claim_type, aj.region
+ORDER BY early_close_count DESC, c.claim_type, aj.region NULLS LAST;
+```
+
+11) Which resources look automated (very short E  N times across many claims)
+```
+WITH e_to_n AS (
+  SELECT ce.claim_id,
+         MIN(CASE WHEN activity = 'E' THEN timestamp END) AS ts_E,
+         MIN(CASE WHEN activity = 'N' THEN timestamp END) AS ts_N
+  FROM claim_events ce
+  GROUP BY ce.claim_id
+),
+notify_actor AS (
+  SELECT DISTINCT ON (claim_id)
+         claim_id, resource AS notifier
+  FROM claim_events
+  WHERE activity = 'N'
+  ORDER BY claim_id, timestamp
+)
+SELECT na.notifier,
+       COUNT(*) AS total,
+       SUM(CASE WHEN e.ts_N IS NOT NULL AND e.ts_E IS NOT NULL AND e.ts_N > e.ts_E
+                   AND e.ts_N - e.ts_E <= INTERVAL '2 minutes' THEN 1 ELSE 0 END) AS fast_count
+FROM e_to_n e
+JOIN notify_actor na ON na.claim_id = e.claim_id
+GROUP BY na.notifier
+HAVING SUM(CASE WHEN e.ts_N IS NOT NULL AND e.ts_E IS NOT NULL AND e.ts_N > e.ts_E
+                   AND e.ts_N - e.ts_E <= INTERVAL '2 minutes' THEN 1 ELSE 0 END) >= 10
+ORDER BY fast_count DESC, total DESC;
+```
+
+12) Pair-level outlier counts by claim_type (across all anomalous pairs)
+```
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'R' THEN timestamp END) AS ts_R,
+    MIN(CASE WHEN activity = 'A' THEN timestamp END) AS ts_A,
+    MIN(CASE WHEN activity = 'E' THEN timestamp END) AS ts_E,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS ts_P,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS ts_N,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS ts_C
+  FROM claim_events
+  GROUP BY claim_id
+),
+fe_unpivot AS (
+  SELECT claim_id, 'R' AS act, ts_R AS ts FROM first_events
+  UNION ALL SELECT claim_id, 'A', ts_A FROM first_events
+  UNION ALL SELECT claim_id, 'E', ts_E FROM first_events
+  UNION ALL SELECT claim_id, 'P', ts_P FROM first_events
+  UNION ALL SELECT claim_id, 'N', ts_N FROM first_events
+  UNION ALL SELECT claim_id, 'C', ts_C FROM first_events
+),
+pairs AS (
+  SELECT * FROM (VALUES
+    ('R','A',3600::double precision,600::double precision),
+    ('R','E',86400,28800),
+    ('R','P',90000,3600),
+    ('A','C',7200,3600),
+    ('E','N',300,60),
+    ('E','C',3600,3000),
+    ('P','N',604800,172800),
+    ('N','C',1800,300)
+  ) AS t(a1,a2,avg_s,stdev_s)
+),
+params AS (SELECT 2.5::double precision AS zeta),
+durations AS (
+  SELECT
+    x.claim_id, p.a1, p.a2,
+    EXTRACT(EPOCH FROM (y.ts - x.ts))::double precision AS diff_s,
+    (EXTRACT(EPOCH FROM (y.ts - x.ts))::double precision - p.avg_s) / NULLIF(p.stdev_s,0) AS zscore
+  FROM pairs p
+  JOIN fe_unpivot x ON x.act = p.a1
+  JOIN fe_unpivot y ON y.claim_id = x.claim_id AND y.act = p.a2
+  WHERE x.ts IS NOT NULL AND y.ts IS NOT NULL AND y.ts > x.ts
+)
+SELECT d.a1, d.a2, c.claim_type, COUNT(*) AS outlier_count
+FROM durations d, params
+JOIN claims c ON c.claim_id = d.claim_id
+WHERE ABS(d.zscore) > params.zeta
+GROUP BY d.a1, d.a2, c.claim_type
+ORDER BY outlier_count DESC, d.a1, d.a2, c.claim_type;
+```
+
+How to use the results
+- If R  P clusters tightly around a specific delay, investigate batch jobs, SLAs, and time zones.
+- If P  N outliers correlate with specific regions or claim types, check staffing, queue depths, and external notification systems for those segments.
+- Early A  C closures concentrated in certain regions or claim types likely indicate screening rules or duplicate detection; verify business rules and event logging completeness.
+- Very fast E  N consistently tied to a “system” notifier suggests automated notification; verify whether P is required before N and correct the order if needed.
