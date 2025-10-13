@@ -1,0 +1,165 @@
+### Identified Anomalies and Undesirable Behaviors
+
+Based on the provided event log data for the four orders (case_ids 1001–1004), I've analyzed the sequences against the assumed normal process flow: (1) Register Order (Sales), (2) Perform Credit Check (Finance), (3) Validate Stock (Warehouse), (4) Confirm Shipment (Logistics), (5) Ship Goods (Logistics), (6) Issue Invoice (Finance), (7) Receive Payment (Finance). The analysis considers timestamps, activity ordering, resource roles/departments (via the `resources` table), and additional context. Below, I outline key anomalies, grouped by type, with references to specific cases.
+
+#### 1. **Out-of-Sequence Activities (Violations of Expected Process Order)**
+   These indicate deviations from the linear flow, potentially skipping critical steps like credit checks or stock validation, which could lead to risks such as shipping unverified orders or billing without confirmation.
+   - **Case 1002**: "Confirm Shipment" and "Ship Goods" occur immediately after "Register Order" (timestamps: 08:20  08:25  08:40), before "Perform Credit Check" (09:10) or "Validate Stock" (09:15). This skips finance and warehouse checks, proceeding to logistics prematurely. "Issue Invoice" and "Receive Payment" follow later but out of order relative to logistics.
+   - **Case 1003**: "Ship Goods" happens right after "Perform Credit Check" (09:00  09:10), skipping "Validate Stock" entirely. "Confirm Shipment" is delayed until after "Issue Invoice" (09:30  09:45), inverting the logistics sequence.
+   - **Case 1004**: "Receive Payment" and "Issue Invoice" occur early (09:05  09:20), before any logistics activities ("Confirm Shipment" at 09:25, "Ship Goods" at 09:50). No credit check or stock validation is recorded at all, and payment precedes invoicing.
+
+#### 2. **Missing Critical Activities**
+   Essential steps are absent, which could expose the business to financial or operational risks (e.g., shipping without stock confirmation).
+   - **Case 1003**: No "Validate Stock" event, despite "Ship Goods" occurring.
+   - **Case 1004**: Missing "Perform Credit Check" and "Validate Stock" entirely. The process jumps from registration to payment/invoicing, then partial logistics.
+
+#### 3. **Timestamp Inconsistencies and Unrealistic Durations**
+   Timestamps reveal implausibly short intervals for complex activities, suggesting data entry errors or rushed processes.
+   - **Case 1002**: Only 5 minutes between "Register Order" and "Confirm Shipment" (08:20–08:25), and 15 minutes to "Ship Goods" (08:40)—too fast for logistics setup without prior checks.
+   - **Case 1003**: 10 minutes from credit check to shipping (09:00–09:10), skipping stock validation.
+   - **Case 1004**: Payment received just 5 minutes after order registration (09:00–09:05), which is unrealistic for processing and verification.
+
+#### 4. **Resource and Department Mismatches**
+   Resources performing activities don't align with expected roles/departments, potentially indicating unauthorized access or workflow errors.
+   - **Case 1002**: Logistics resources (e.g., LogisticsMgr_2 for "Confirm Shipment") act immediately after a Sales resource, without Finance involvement—suggesting cross-departmental overreach.
+   - **Case 1004**: Finance resources (FinanceTeam_02 for "Receive Payment", FinanceTeam_01 for "Issue Invoice") handle activities right after Sales, bypassing Logistics entirely. Later, WarehouseClerk_4 ships without confirmation from a Logistics Manager.
+   - Across cases: No involvement from Credit Analysts in cases without credit checks (1002 starts it late; 1004 skips it), and Warehouse Staff handle shipping without prior validation by their own role.
+
+#### 5. **Other Contextual Red Flags**
+   - **Additional Info Insights**: In case 1002, "attempted_early=Y" for shipment suggests intentional bypassing. Case 1004's "shipment_scheduled=N" for confirmation, yet "Ship Goods" proceeds anyway, indicating possible override. High order values (e.g., 3000.00 in 1004) with skipped credit checks amplify risk.
+   - **Order Type Correlation**: Priority orders (e.g., 1002) show more severe sequencing issues, possibly due to expedited handling, while standard orders (1001, 1003, 1004) have missing steps.
+
+These anomalies affect 3 out of 4 cases (1002–1004), with case 1001 being the only clean example. Overall, they point to process inefficiencies, potentially impacting 75% of orders.
+
+### Hypothesized Causes
+
+These deviations could stem from various root causes, inferred from patterns in the data:
+- **System or Data Logging Errors**: Timestamps and missing events might result from incomplete logging (e.g., a database glitch skipping "Validate Stock" in case 1003) or batch inserts out of order. Early payments in 1004 could be backdated entries from a payment gateway integration failure.
+- **Policy or Workflow Violations**: Premature logistics in 1002 and 1003 suggest employees (e.g., LogisticsMgr_2) bypassing rules for speed, possibly to meet priority order SLAs. Skipped credit checks in high-value orders (1004) might indicate manual overrides by finance staff to avoid delays, violating risk policies.
+- **Human or Training Issues**: Resource mismatches (e.g., finance acting too early) could reflect untrained staff accessing unauthorized systems or role confusion during peak times (all on 2024-02-01 morning). The "attempted_early=Y" flag hints at habitual shortcuts.
+- **External Factors**: For priority orders like 1002, customer pressure or system prompts might encourage skipping steps. In 1004, the unrealistically quick payment could tie to fraudulent activity, such as insider collusion given the high value and early finance involvement.
+- **Process Design Flaws**: The workflow might not enforce gates (e.g., no database triggers to require credit checks before shipping), allowing incomplete cases to proceed.
+
+To differentiate these, further investigation via SQL queries is needed to quantify patterns, correlate with order details, and check resource behaviors.
+
+### Proposed SQL Queries for Investigation
+
+Here are targeted PostgreSQL queries to test the hypotheses. They focus on the `order_event_log` table, joining with `orders` and `resources` where relevant to add context (e.g., order value, resource roles). Each query includes a brief rationale and expected output for anomaly detection.
+
+1. **Detect Out-of-Sequence Activities (Test for Policy Violations or Logging Errors)**  
+   This query identifies cases where activities occur before prerequisites (e.g., shipping before credit check). It uses window functions to check event order per case_id.  
+   ```sql
+   WITH ordered_events AS (
+     SELECT 
+       case_id, activity, timestamp, 
+       ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as seq_num
+     FROM order_event_log
+   )
+   SELECT 
+     o.case_id, o.order_value, o.order_type,
+     oe.activity, oe.timestamp,
+     CASE 
+       WHEN oe.activity IN ('Confirm Shipment', 'Ship Goods') 
+            AND NOT EXISTS (SELECT 1 FROM ordered_events prev 
+                            WHERE prev.case_id = oe.case_id 
+                            AND prev.activity = 'Perform Credit Check' 
+                            AND prev.seq_num < oe.seq_num)
+       THEN 'Shipping before Credit Check'
+       WHEN oe.activity = 'Ship Goods' 
+            AND NOT EXISTS (SELECT 1 FROM ordered_events prev 
+                            WHERE prev.case_id = oe.case_id 
+                            AND prev.activity = 'Validate Stock' 
+                            AND prev.seq_num < oe.seq_num)
+       THEN 'Shipping before Stock Validation'
+       ELSE 'OK'
+     END as anomaly_flag
+   FROM ordered_events oe
+   JOIN orders o ON oe.case_id = o.case_id
+   WHERE anomaly_flag != 'OK'
+   ORDER BY oe.case_id, oe.timestamp;
+   ```  
+   *Rationale*: Flags sequencing issues in 1002, 1003, 1004. Output would show affected activities and order details to check if high-value/priority orders correlate with violations.
+
+2. **Identify Missing Activities (Test for Logging Errors or Skips)**  
+   This checks for cases lacking required steps, joining to orders for context.  
+   ```sql
+   SELECT 
+     o.case_id, o.customer_id, o.order_type, o.order_value,
+     COUNT(CASE WHEN el.activity = 'Perform Credit Check' THEN 1 END) as credit_check_count,
+     COUNT(CASE WHEN el.activity = 'Validate Stock' THEN 1 END) as stock_validation_count,
+     COUNT(CASE WHEN el.activity IN ('Confirm Shipment', 'Ship Goods') THEN 1 END) as logistics_count,
+     COUNT(*) as total_events
+   FROM orders o
+   LEFT JOIN order_event_log el ON o.case_id = el.case_id
+   GROUP BY o.case_id, o.customer_id, o.order_type, o.order_value
+   HAVING COUNT(CASE WHEN el.activity = 'Perform Credit Check' THEN 1 END) = 0
+       OR COUNT(CASE WHEN el.activity = 'Validate Stock' THEN 1 END) = 0
+   ORDER BY o.case_id;
+   ```  
+   *Rationale*: Highlights missing steps in 1003 and 1004. Low counts for specific activities would support logging errors; correlation with order_type could indicate training gaps for priority cases.
+
+3. **Analyze Timestamp Durations and Inconsistencies (Test for Data Errors or Rushed Processes)**  
+   This calculates time deltas between key events to flag short intervals.  
+   ```sql
+   WITH event_pairs AS (
+     SELECT 
+       case_id, 
+       LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) as prev_timestamp,
+       timestamp,
+       activity,
+       timestamp - LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) as time_diff
+     FROM order_event_log
+   )
+   SELECT 
+     case_id, activity, prev_timestamp, timestamp, time_diff,
+     o.order_value, o.order_type,
+     r.department, r.role
+   FROM event_pairs ep
+   JOIN orders o ON ep.case_id = o.case_id
+   JOIN order_event_log el ON ep.case_id = el.case_id AND ep.timestamp = el.timestamp
+   JOIN resources r ON el.resource = r.resource_id
+   WHERE time_diff < INTERVAL '10 minutes'  -- Flag unrealistically short gaps
+      OR time_diff IS NULL  -- For first events, but extend to check overall flow
+   ORDER BY case_id, timestamp;
+   ```  
+   *Rationale*: Captures quick transitions in 1002 and 1004 (e.g., 5-min gaps). Short diffs in logistics after sales would suggest rushed human actions; join to resources tests for department mismatches.
+
+4. **Examine Resource Misuse by Role/Department (Test for Unauthorized Access or Training Issues)**  
+   This groups events by resource department and flags non-standard performers for activities.  
+   ```sql
+   SELECT 
+     el.case_id, el.activity, el.resource, el.timestamp,
+     r.role, r.department,
+     o.order_type, o.order_value,
+     COUNT(*) OVER (PARTITION BY el.case_id, r.department) as dept_events_per_case
+   FROM order_event_log el
+   JOIN resources r ON el.resource = r.resource_id
+   JOIN orders o ON el.case_id = o.case_id
+   WHERE (el.activity LIKE '%Shipment%' AND r.department != 'Logistics')
+       OR (el.activity LIKE '%Credit Check%' AND r.department != 'Finance')
+       OR (el.activity LIKE '%Stock%' AND r.department != 'Logistics')
+       OR (el.activity IN ('Issue Invoice', 'Receive Payment') AND r.department != 'Finance' AND el.timestamp < 
+           (SELECT MIN(el2.timestamp) FROM order_event_log el2 
+            WHERE el2.case_id = el.case_id AND el2.activity LIKE '%Shipment%'))
+   ORDER BY el.case_id, el.timestamp;
+   ```  
+   *Rationale*: Detects mismatches like finance acting pre-logistics in 1004. Grouping by department per case would quantify overreach (e.g., Logistics dominating early in 1002), supporting policy violation hypotheses.
+
+5. **Correlate Anomalies with Order Value and Additional Info (Test for Fraud or External Factors)**  
+   This scans for patterns in high-value cases with red flags in `additional_info`.  
+   ```sql
+   SELECT 
+     case_id, order_value, order_type,
+     STRING_AGG(additional_info, ' | ') as all_additional_info,
+     COUNT(CASE WHEN additional_info LIKE '%early%' OR additional_info LIKE '%late%' THEN 1 END) as flag_count
+   FROM order_event_log el
+   JOIN orders o ON el.case_id = o.case_id
+   WHERE o.order_value > 1500  -- Focus on high-value orders
+   GROUP BY case_id, order_value, order_type
+   HAVING COUNT(DISTINCT activity) < 7  -- Fewer than full process steps
+       OR flag_count > 0
+   ORDER BY order_value DESC;
+   ```  
+   *Rationale*: Targets 1004 (high value, skips, "shipment_scheduled=N") and 1002 ("attempted_early=Y"). Aggregated info would reveal if anomalies cluster with certain channels or reasons, pointing to fraud (e.g., quick payments) or system prompts.
+
+Running these queries would provide quantitative evidence to validate hypotheses, such as aggregating anomaly rates across cases or drilling into specific resources. If patterns emerge (e.g., certain departments bypassing steps), it could guide process audits or system fixes.

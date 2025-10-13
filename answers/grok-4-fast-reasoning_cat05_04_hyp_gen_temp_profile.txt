@@ -1,0 +1,164 @@
+### 1. Identified Anomalies in the Temporal Profile Model
+
+The temporal profile model reveals several irregularities in the timing between claim processing activities, which deviate from what would be expected in a standard insurance claim workflow (Receive  Assign  Evaluate  Approve  Notify  Close). Key anomalies include:
+
+- **R to P (Receive to Approve)**: Average time of 90,000 seconds (~25 hours) with an unusually low standard deviation of 3,600 seconds (1 hour). This suggests highly consistent timing that borders on rigidity, potentially indicating automated or scripted processing rather than variable human involvement.
+  
+- **P to N (Approve to Notify)**: Average time of 604,800 seconds (7 days) with a high standard deviation of 172,800 seconds (2 days). The extended average delay combined with significant variability points to inconsistent processing, possibly due to backlogs or external factors affecting notifications.
+
+- **A to C (Assign to Close)**: Average time of 7,200 seconds (2 hours) with a standard deviation of 3,600 seconds (1 hour). This short interval implies rapid closure after assignment, which may bypass intermediate steps like evaluation or approval, raising concerns about incomplete processing.
+
+- **E to N (Evaluate to Notify)**: Average time of 300 seconds (5 minutes) with a low standard deviation of 60 seconds (1 minute). Such a brief and consistent transition suggests potential automation or skipping of review steps, which could compromise due diligence in claim evaluation.
+
+These patterns indicate potential disruptions in the sequential flow, such as skipped activities, artificial timing constraints, or resource inefficiencies, rather than a smooth, predictable process.
+
+### 2. Hypotheses on Why These Anomalies Might Exist
+
+Based on the observed timing irregularities, several hypotheses could explain the deviations:
+
+- **Automated or Batch Processing in Rigid Steps**: The low standard deviation in R to P and E to N might result from automated systems that trigger approvals or notifications on fixed schedules (e.g., nightly batch jobs), leading to unnaturally consistent timings that ignore real-world variability like adjuster availability or claim complexity.
+
+- **Resource Bottlenecks and Backlogs**: The long average and high variability in P to N could stem from bottlenecks in notification workflows, such as limited customer service staff, high-volume periods, or integration issues with external communication systems, causing some claims to wait days while others are processed quickly.
+
+- **Ad-Hoc or Incomplete Workflows**: The short A to C interval may indicate claims being prematurely closed due to low-risk classifications, manual overrides by adjusters, or errors in event logging (e.g., missing intermediate activities like E or P), allowing certain claims to skip steps and close unusually fast.
+
+- **Inconsistent Human or Systemic Interventions**: Variations across pairs could arise from differing adjuster expertise, regional differences in processing speeds, or manual data entry delays, leading to systemic inconsistencies—e.g., quick evaluations in simple cases but prolonged approvals in complex ones due to incomplete documentation.
+
+These hypotheses point to a mix of technical, operational, and human factors disrupting the intended process order and timing.
+
+### 3. Proposed Verification Approaches Using SQL Queries
+
+To verify these anomalies, I propose the following PostgreSQL queries on the `claim_events` table (joined with `claims` and `adjusters` where relevant). These focus on identifying outlier claims, correlating anomalies with attributes like claim type, adjuster, or region, and checking for patterns like skipped steps or excessive delays. Thresholds are derived from the temporal profile (e.g., using a simple Z-score approximation: deviation > 2 * STDEV from AVG indicates an outlier; adjust ZETA factor as needed).
+
+#### Query 1: Identify Claims with Anomalous R to P Timing (Outside Expected Range)
+This query finds claims where the time from Receive (R) to Approve (P) exceeds 2 standard deviations from the average, potentially flagging rigid or delayed approvals. It correlates with claim type and adjuster region.
+
+```sql
+WITH ra_times AS (
+    SELECT 
+        ce1.claim_id,
+        ce2.timestamp - ce1.timestamp AS time_diff_seconds,
+        c.claim_type,
+        a.region
+    FROM claim_events ce1
+    JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    JOIN claims c ON ce1.claim_id = c.claim_id
+    LEFT JOIN adjusters a ON ce2.resource::integer = a.adjuster_id  -- Assuming resource stores adjuster_id as string
+    WHERE ce1.activity = 'R' 
+      AND ce2.activity = 'P'
+      AND ce1.timestamp < ce2.timestamp
+)
+SELECT 
+    claim_id,
+    time_diff_seconds / 3600.0 AS hours_diff,
+    claim_type,
+    region,
+    CASE 
+        WHEN ABS(time_diff_seconds - 90000) > (2 * 3600) THEN 'Outlier'
+        ELSE 'Normal'
+    END AS anomaly_flag
+FROM ra_times
+WHERE ABS(time_diff_seconds - 90000) > (2 * 3600)  -- >2 STDEV
+ORDER BY time_diff_seconds DESC
+LIMIT 50;
+```
+
+#### Query 2: Detect Claims with Long P to N Delays and Correlate with Adjuster Specialization
+This verifies the P to N anomaly by finding claims with delays >2 STDEV, checking for patterns in adjuster specialization (e.g., overburdened specialists causing backlogs).
+
+```sql
+WITH pn_times AS (
+    SELECT 
+        ce1.claim_id,
+        ce2.timestamp - ce1.timestamp AS time_diff_seconds,
+        c.customer_id,
+        a.specialization
+    FROM claim_events ce1
+    JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    JOIN claims c ON ce1.claim_id = c.claim_id
+    LEFT JOIN adjusters a ON ce1.resource::integer = a.adjuster_id
+    WHERE ce1.activity = 'P' 
+      AND ce2.activity = 'N'
+      AND ce1.timestamp < ce2.timestamp
+)
+SELECT 
+    claim_id,
+    time_diff_seconds / 86400.0 AS days_diff,
+    customer_id,
+    specialization,
+    COUNT(*) OVER (PARTITION BY specialization) AS claims_per_specialization
+FROM pn_times
+WHERE time_diff_seconds > (604800 + (2 * 172800))  -- > AVG + 2 STDEV (excessive delays)
+ORDER BY time_diff_seconds DESC
+LIMIT 50;
+```
+
+#### Query 3: Find Claims Closed Quickly After Assignment (A to C Anomaly) and Check for Skipped Steps
+This identifies rapid A to C closures and verifies if intermediate activities (E, P, N) are missing, correlating with resource (adjuster).
+
+```sql
+WITH ac_times AS (
+    SELECT 
+        ce1.claim_id,
+        ce2.timestamp - ce1.timestamp AS time_diff_seconds,
+        ce1.resource AS assign_resource,
+        -- Check for missing intermediates
+        NOT EXISTS (
+            SELECT 1 FROM claim_events ce_int 
+            WHERE ce_int.claim_id = ce1.claim_id 
+              AND ce_int.activity IN ('E', 'P', 'N')
+              AND ce1.timestamp < ce_int.timestamp < ce2.timestamp
+        ) AS skipped_steps
+    FROM claim_events ce1
+    JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    WHERE ce1.activity = 'A' 
+      AND ce2.activity = 'C'
+      AND ce1.timestamp < ce2.timestamp
+)
+SELECT 
+    claim_id,
+    time_diff_seconds / 3600.0 AS hours_diff,
+    assign_resource,
+    skipped_steps,
+    CASE 
+        WHEN time_diff_seconds < (7200 - (2 * 3600)) THEN 'Premature Close'
+        ELSE 'Normal'
+    END AS anomaly_flag
+FROM ac_times
+WHERE time_diff_seconds < (7200 - (2 * 3600))  -- < AVG - 2 STDEV (too quick)
+   OR skipped_steps = true
+ORDER BY time_diff_seconds ASC
+LIMIT 50;
+```
+
+#### Query 4: Verify E to N Quick Transitions and Correlate with Claim Amount/Region
+This flags claims with E to N times <2 STDEV below average, checking if high-value claims or specific regions show automation patterns.
+
+```sql
+WITH en_times AS (
+    SELECT 
+        ce1.claim_id,
+        ce2.timestamp - ce1.timestamp AS time_diff_seconds,
+        c.claim_amount,
+        a.region
+    FROM claim_events ce1
+    JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    JOIN claims c ON ce1.claim_id = c.claim_id
+    LEFT JOIN adjusters a ON ce1.resource::integer = a.adjuster_id
+    WHERE ce1.activity = 'E' 
+      AND ce2.activity = 'N'
+      AND ce1.timestamp < ce2.timestamp
+)
+SELECT 
+    claim_id,
+    time_diff_seconds / 60.0 AS minutes_diff,
+    claim_amount,
+    region,
+    AVG(time_diff_seconds) OVER (PARTITION BY region) AS avg_by_region
+FROM en_times
+WHERE time_diff_seconds < (300 - (2 * 60))  -- < AVG - 2 STDEV (too rapid)
+ORDER BY time_diff_seconds ASC
+LIMIT 50;
+```
+
+These queries can be run iteratively to drill down into anomalies, with results analyzed for patterns (e.g., via aggregation or visualization tools). If needed, extend with date filters on `submission_date` to focus on recent claims.

@@ -246,7 +246,8 @@ MODELS_DICT = {
         "api_url": "https://api.x.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "grok-2-1212", "grok-3", "grok-4-0709", "grok-code-fast-1"
+            "grok-2-1212", "grok-3", "grok-4-0709", "grok-code-fast-1",
+            "grok-4-fast-reasoning", "grok-4-fast-non-reasoning"
         }
     },
     "deepinfra": {

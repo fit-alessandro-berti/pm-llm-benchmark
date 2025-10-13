@@ -1,0 +1,159 @@
+### Identified Anomalies in the Temporal Profile Model
+
+Based on the provided temporal profile, several anomalies stand out in the average time intervals and standard deviations between activities. These suggest deviations from a typical insurance claim handling process, where steps like evaluation and approval should involve reasonable human review times, and notifications should follow promptly after approvals without excessive delays.
+
+- **R to P (Receive to Approve)**: Average of ~25 hours (90,000 seconds) with an unusually low standard deviation (3,600 seconds, or 1 hour). This tight variance implies approvals happen on a highly predictable, almost scripted schedule, which is atypical for a process involving variable factors like claim complexity or adjuster availability.
+  
+- **P to N (Approve to Notify)**: Average of 7 days (604,800 seconds) with a high standard deviation (172,800 seconds, or 2 days). This long delay and wide variability indicate inconsistent notification handling, potentially pointing to backlogs or oversight rather than a streamlined process.
+
+- **A to C (Assign to Close)**: Average of 2 hours (7,200 seconds) with moderate standard deviation (3,600 seconds). Such a short overall duration from assignment to closure is suspicious, as it likely bypasses or rushes intermediate steps like evaluation and approval, suggesting premature or automated closures.
+
+- **E to N (Evaluate to Notify)**: Average of just 5 minutes (300 seconds) with a very low standard deviation (60 seconds). This rapid transition is unrealistic for business processes requiring documentation or review post-evaluation, hinting at skipped steps or automated scripting that doesn't align with manual workflows.
+
+Other pairs, like R to A (1 hour average) and N to C (30 minutes average), appear more reasonable and consistent with expected quick initial and final steps.
+
+### Hypotheses on Why These Anomalies Might Exist
+
+These anomalies could stem from operational, technical, or procedural issues in the claim handling system. Here are plausible explanations:
+
+- **Automated or Batched Processing**: The low standard deviation in R to P and E to N might result from automated scripts or batch jobs that process approvals and notifications at fixed intervals (e.g., nightly runs), bypassing human intervention and creating artificially uniform timings. This could occur in high-volume systems to efficiency, but it risks overlooking claim-specific details.
+
+- **Resource Bottlenecks and Backlogs**: The extended P to N delay with high variability may indicate staffing shortages or queue overloads, where approved claims wait in a notification pipeline. For instance, limited customer service resources could cause some notifications to be sent immediately while others pile up for days, especially during peak periods.
+
+- **Ad-Hoc Interventions or Errors**: The short A to C interval might reflect manual overrides or system errors allowing claims to close right after assignment, perhaps for low-value or fraudulent cases expedited without full review. This could be exacerbated by inconsistent training among adjusters or legacy system glitches that skip validation steps.
+
+- **Data Entry or Integration Issues**: Systemic delays in manual data entry (e.g., for evaluations) could inflate averages like P to N, while integration problems between systems (e.g., claim management and notification tools) might cause rapid but erroneous transitions in E to N, leading to incomplete records or compliance risks.
+
+Overall, these patterns suggest a mix of automation efficiencies and human/systemic inefficiencies, potentially indicating fraud vulnerabilities (e.g., rushed closures) or process optimizations that need auditing.
+
+### Proposed Verification Approaches Using SQL Queries
+
+To verify these anomalies, we can query the `claim_events` table to calculate actual time differences, flag outliers based on the profile's averages and standard deviations (using a Z-score threshold, e.g., |Z| > 2 for significance), and correlate with factors like adjusters, claim types, or regions. I'll assume a ZETA factor of 2 for deviation thresholds (i.e., time outside mean ± 2*STDEV). Queries are written for PostgreSQL and focus on key anomalous pairs; they join with `claims` and `adjusters` where relevant for context. Convert seconds to intervals as needed (e.g., via `timestamp` diffs).
+
+1. **Verify R to P Anomalies (Suspiciously Low STDEV)**: Identify claims where time from Receive to Approve deviates significantly, and check if tied to specific claim types or regions.
+   ```sql
+   WITH ra_times AS (
+       SELECT 
+           ce1.claim_id,
+           ce2.timestamp - ce1.timestamp AS time_diff,
+           EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_diff
+       FROM claim_events ce1
+       JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+       JOIN claims c ON ce1.claim_id = c.claim_id
+       WHERE ce1.activity = 'R' AND ce2.activity = 'P' 
+         AND ce1.timestamp < ce2.timestamp  -- Ensure sequence
+   ),
+   z_scores AS (
+       SELECT 
+           claim_id, seconds_diff,
+           (seconds_diff - 90000) / 3600.0 AS z_score  -- Mean=90000s, STDEV=3600s
+       FROM ra_times
+   )
+   SELECT 
+       claim_id, seconds_diff, z_score,
+       c.claim_type, c.submission_date
+   FROM z_scores z
+   JOIN claims c ON z.claim_id = c.claim_id
+   WHERE ABS(z_score) > 2  -- Flag outliers
+   ORDER BY ABS(z_score) DESC;
+   ```
+   This query flags claims with R-to-P times outside ~21-29 hours, helping spot if anomalies cluster in certain claim types (e.g., auto_insurance).
+
+2. **Verify P to N Anomalies (Long Delay with High STDEV)**: Find claims with excessive approval-to-notification gaps and correlate with adjusters or regions.
+   ```sql
+   WITH pn_times AS (
+       SELECT 
+           ce1.claim_id,
+           ce2.timestamp - ce1.timestamp AS time_diff,
+           EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_diff,
+           a.adjuster_id, a.region  -- Assuming 'resource' in claim_events links to adjuster_id
+       FROM claim_events ce1
+       JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+       JOIN claim_events ce_assign ON ce1.claim_id = ce_assign.claim_id AND ce_assign.activity = 'A'
+       JOIN adjusters a ON ce_assign.resource::INTEGER = a.adjuster_id  -- Parse resource if needed
+       WHERE ce1.activity = 'P' AND ce2.activity = 'N' 
+         AND ce1.timestamp < ce2.timestamp
+   ),
+   z_scores AS (
+       SELECT 
+           claim_id, seconds_diff, adjuster_id, region,
+           (seconds_diff - 604800) / 172800.0 AS z_score  -- Mean=604800s, STDEV=172800s
+       FROM pn_times
+   )
+   SELECT 
+       claim_id, seconds_diff / 86400.0 AS days_diff, z_score, region,
+       COUNT(*) OVER (PARTITION BY region) AS anomalies_per_region
+   FROM z_scores
+   WHERE z_score > 2  -- Focus on positive outliers (delays > ~11 days)
+   ORDER BY z_score DESC;
+   ```
+   This highlights delayed notifications and checks if they disproportionately affect certain regions or adjusters, revealing bottlenecks.
+
+3. **Verify A to C Anomalies (Quick Closure Post-Assignment)**: Detect claims closed too soon after assignment, filtering for those missing intermediate steps like E or P.
+   ```sql
+   WITH ac_times AS (
+       SELECT 
+           ce1.claim_id,
+           ce2.timestamp - ce1.timestamp AS time_diff,
+           EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_diff
+       FROM claim_events ce1
+       JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+       WHERE ce1.activity = 'A' AND ce2.activity = 'C' 
+         AND ce1.timestamp < ce2.timestamp
+   ),
+   missing_steps AS (
+       SELECT 
+           claim_id,
+           CASE 
+               WHEN NOT EXISTS (SELECT 1 FROM claim_events e WHERE e.claim_id = ac.claim_id AND e.activity IN ('E', 'P')) 
+               THEN 'Missing E/P' 
+               ELSE 'Has Steps' 
+           END AS step_status
+       FROM ac_times ac
+   ),
+   z_scores AS (
+       SELECT 
+           ac.claim_id, ac.seconds_diff, ms.step_status,
+           (ac.seconds_diff - 7200) / 3600.0 AS z_score  -- Mean=7200s, STDEV=3600s
+       FROM ac_times ac
+       JOIN missing_steps ms ON ac.claim_id = ms.claim_id
+   )
+   SELECT 
+       claim_id, seconds_diff / 3600.0 AS hours_diff, z_score, step_status,
+       COUNT(*) OVER (PARTITION BY step_status) AS count_by_status
+   FROM z_scores
+   WHERE seconds_diff < 3600  -- Specifically flag closures under 1 hour (below mean - STDEV)
+   ORDER BY seconds_diff ASC;
+   ```
+   This identifies rushed closures and verifies if they often skip evaluation/approval, potentially indicating procedural shortcuts.
+
+4. **Verify E to N Anomalies (Too-Rapid Transition)**: Check for quick evaluate-to-notify times and link to resources or customer segments.
+   ```sql
+   WITH en_times AS (
+       SELECT 
+           ce1.claim_id,
+           ce2.timestamp - ce1.timestamp AS time_diff,
+           EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_diff,
+           c.customer_id, ce1.resource  -- Resource performing evaluation
+       FROM claim_events ce1
+       JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+       JOIN claims c ON ce1.claim_id = c.claim_id
+       WHERE ce1.activity = 'E' AND ce2.activity = 'N' 
+         AND ce1.timestamp < ce2.timestamp
+   ),
+   z_scores AS (
+       SELECT 
+           claim_id, seconds_diff, customer_id, resource,
+           (seconds_diff - 300) / 60.0 AS z_score  -- Mean=300s, STDEV=60s
+       FROM en_times
+   )
+   SELECT 
+       claim_id, seconds_diff / 60.0 AS minutes_diff, z_score, resource,
+       COUNT(DISTINCT customer_id) OVER (PARTITION BY resource) AS affected_customers_per_resource
+   FROM z_scores
+   WHERE z_score < -2  -- Negative outliers (faster than ~3 minutes)
+   ORDER BY z_score ASC;
+   ```
+   This pinpoints overly quick transitions and correlates with specific resources (e.g., automated tools) or customer groups, to assess if it's systemic.
+
+These queries can be run individually or combined into a dashboard. To compute profile stats dynamically, aggregate `seconds_diff` with `AVG()` and `STDDEV()` over historical data for comparison. If anomalies persist, further investigation (e.g., auditing `additional_info`) may be needed.
