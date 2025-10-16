@@ -1,0 +1,369 @@
+# Process Mining Analysis: Anomaly Detection & Investigation
+
+## Executive Summary
+
+Based on the provided event log, I've identified several significant anomalies that deviate from the assumed normal process flow. Below is a comprehensive analysis with hypotheses and diagnostic SQL queries.
+
+---
+
+## Identified Anomalies
+
+### **Anomaly 1: Skipped Activities (Case 1003)**
+**Issue:** Case 1003 is missing "Validate Stock" activity entirely.
+
+**Process Deviation:**
+- Expected sequence includes "Validate Stock" before "Ship Goods"
+- Case 1003 jumps directly from "Perform Credit Check"  "Ship Goods"
+
+**Hypotheses:**
+1. Manual override due to time pressure (priority handling)
+2. System malfunction causing event logging failure
+3. Stock validation performed verbally but not logged
+4. Policy violation for high-value or repeat customers
+
+**SQL Investigation:**
+
+```sql
+-- Find all cases missing "Validate Stock" activity
+SELECT DISTINCT oel.case_id, o.order_type, o.order_value, o.customer_id
+FROM order_event_log oel
+JOIN orders o ON oel.case_id = o.case_id
+WHERE oel.case_id NOT IN (
+    SELECT DISTINCT case_id 
+    FROM order_event_log 
+    WHERE activity = 'Validate Stock'
+)
+GROUP BY oel.case_id, o.order_type, o.order_value, o.customer_id
+ORDER BY o.order_value DESC;
+```
+
+```sql
+-- Compare time gaps in cases with vs without "Validate Stock"
+SELECT 
+    oel.case_id,
+    MAX(CASE WHEN oel.activity = 'Register Order' THEN oel.timestamp END) as register_time,
+    MAX(CASE WHEN oel.activity = 'Perform Credit Check' THEN oel.timestamp END) as credit_check_time,
+    MAX(CASE WHEN oel.activity = 'Ship Goods' THEN oel.timestamp END) as ship_time,
+    EXTRACT(MINUTE FROM 
+        MAX(CASE WHEN oel.activity = 'Ship Goods' THEN oel.timestamp END) -
+        MAX(CASE WHEN oel.activity = 'Perform Credit Check' THEN oel.timestamp END)
+    ) as minutes_credit_to_ship
+FROM order_event_log oel
+GROUP BY oel.case_id
+HAVING MAX(CASE WHEN oel.activity = 'Validate Stock' THEN 1 END) IS NULL
+ORDER BY minutes_credit_to_ship;
+```
+
+---
+
+### **Anomaly 2: Out-of-Sequence Activities (Case 1002)**
+**Issue:** Multiple activities occur in wrong order relative to the standard flow.
+
+**Process Deviations:**
+- "Confirm Shipment" occurs BEFORE "Perform Credit Check" and "Validate Stock"
+- Standard flow: Credit Check  Validate Stock  Confirm Shipment
+- Actual flow: Register  Confirm Shipment  Ship Goods  Credit Check  Validate Stock
+
+**Hypotheses:**
+1. High-priority customer requiring expedited processing
+2. Concurrent parallel processing instead of sequential
+3. Logistics team initiated shipment before approval completion
+4. Resource scheduling conflict forcing early commitment
+5. System bug in timestamp recording
+
+**SQL Investigation:**
+
+```sql
+-- Identify cases where activities occur out of expected sequence
+WITH expected_sequence AS (
+    SELECT 1 as seq_order, 'Register Order' as activity
+    UNION ALL SELECT 2, 'Perform Credit Check'
+    UNION ALL SELECT 3, 'Validate Stock'
+    UNION ALL SELECT 4, 'Confirm Shipment'
+    UNION ALL SELECT 5, 'Ship Goods'
+    UNION ALL SELECT 6, 'Issue Invoice'
+    UNION ALL SELECT 7, 'Receive Payment'
+),
+actual_sequence AS (
+    SELECT 
+        oel.case_id,
+        oel.activity,
+        oel.timestamp,
+        ROW_NUMBER() OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) as actual_position,
+        es.seq_order
+    FROM order_event_log oel
+    LEFT JOIN expected_sequence es ON oel.activity = es.activity
+)
+SELECT 
+    case_id,
+    activity,
+    actual_position,
+    seq_order,
+    CASE WHEN actual_position != seq_order THEN 'OUT_OF_ORDER' ELSE 'OK' END as status
+FROM actual_sequence
+WHERE seq_order IS NOT NULL
+ORDER BY case_id, actual_position;
+```
+
+```sql
+-- Find cases where "Confirm Shipment" precedes "Validate Stock"
+SELECT 
+    oel1.case_id,
+    oel1.activity as activity_1,
+    oel1.timestamp as time_1,
+    oel2.activity as activity_2,
+    oel2.timestamp as time_2,
+    EXTRACT(MINUTE FROM oel1.timestamp - oel2.timestamp) as minutes_between,
+    o.order_type
+FROM order_event_log oel1
+JOIN order_event_log oel2 ON oel1.case_id = oel2.case_id
+JOIN orders o ON oel1.case_id = o.case_id
+WHERE oel1.activity = 'Confirm Shipment'
+  AND oel2.activity IN ('Validate Stock', 'Perform Credit Check')
+  AND oel1.timestamp < oel2.timestamp
+ORDER BY oel1.case_id, oel1.timestamp;
+```
+
+---
+
+### **Anomaly 3: Payment Before Delivery Fulfillment (Case 1004)**
+**Issue:** Case 1004 receives payment BEFORE core fulfillment activities are logged.
+
+**Process Deviation:**
+- Activity sequence: Register Order  Receive Payment  Issue Invoice  Confirm Shipment  Ship Goods
+- Payment collected at 09:05, but shipment only confirmed at 09:25 and shipped at 09:50
+- Missing: Credit Check, Validate Stock (never logged for this case)
+
+**Hypotheses:**
+1. Prepayment order type (not reflected in order_type field)
+2. Payment received via different channel/system (manual entry lag)
+3. Serious process control violation
+4. Cash-on-delivery documentation error
+5. System time synchronization issue
+
+**SQL Investigation:**
+
+```sql
+-- Find cases where payment received before shipment confirmation
+SELECT 
+    oel1.case_id,
+    MAX(CASE WHEN oel1.activity = 'Receive Payment' THEN oel1.timestamp END) as payment_time,
+    MAX(CASE WHEN oel1.activity = 'Confirm Shipment' THEN oel1.timestamp END) as confirm_ship_time,
+    MAX(CASE WHEN oel1.activity = 'Ship Goods' THEN oel1.timestamp END) as ship_time,
+    o.order_value,
+    o.order_type
+FROM order_event_log oel1
+JOIN orders o ON oel1.case_id = o.case_id
+GROUP BY oel1.case_id, o.order_value, o.order_type
+HAVING MAX(CASE WHEN oel1.activity = 'Receive Payment' THEN oel1.timestamp END) < 
+       MAX(CASE WHEN oel1.activity = 'Ship Goods' THEN oel1.timestamp END)
+  AND MAX(CASE WHEN oel1.activity = 'Receive Payment' THEN oel1.timestamp END) < 
+      MAX(CASE WHEN oel1.activity = 'Confirm Shipment' THEN oel1.timestamp END)
+ORDER BY payment_time;
+```
+
+```sql
+-- Identify cases missing credit check or stock validation
+SELECT 
+    o.case_id,
+    o.customer_id,
+    o.order_type,
+    o.order_value,
+    COUNT(DISTINCT oel.activity) as total_activities,
+    MAX(CASE WHEN oel.activity = 'Perform Credit Check' THEN 1 ELSE 0 END) as has_credit_check,
+    MAX(CASE WHEN oel.activity = 'Validate Stock' THEN 1 ELSE 0 END) as has_stock_validation
+FROM orders o
+LEFT JOIN order_event_log oel ON o.case_id = oel.case_id
+GROUP BY o.case_id, o.customer_id, o.order_type, o.order_value
+HAVING MAX(CASE WHEN oel.activity = 'Perform Credit Check' THEN 1 ELSE 0 END) = 0
+    OR MAX(CASE WHEN oel.activity = 'Validate Stock' THEN 1 ELSE 0 END) = 0
+ORDER BY o.order_value DESC;
+```
+
+---
+
+### **Anomaly 4: Activity Ordering Violation (Case 1003)**
+**Issue:** Invoice issued before shipment confirmed.
+
+**Process Deviation:**
+- Standard flow: Confirm Shipment  Ship Goods  Issue Invoice
+- Case 1003: Ship Goods (09:10)  Issue Invoice (09:30)  Confirm Shipment (09:45)
+- Invoice created while shipment was unconfirmed
+
+**Hypotheses:**
+1. Automated invoice generation triggered by shipping event
+2. Finance team operating independently from logistics
+3. System workflow configuration error
+4. Manual process override for rush orders
+
+**SQL Investigation:**
+
+```sql
+-- Find cases where Invoice issued before Confirm Shipment
+SELECT 
+    oel1.case_id,
+    oel1.activity,
+    oel1.timestamp as activity_time,
+    oel2.activity,
+    oel2.timestamp as compare_time,
+    EXTRACT(MINUTE FROM oel1.timestamp - oel2.timestamp) as minutes_diff
+FROM order_event_log oel1
+JOIN order_event_log oel2 ON oel1.case_id = oel2.case_id
+WHERE oel1.activity = 'Issue Invoice'
+  AND oel2.activity = 'Confirm Shipment'
+  AND oel1.timestamp < oel2.timestamp
+ORDER BY oel1.case_id, oel1.timestamp;
+```
+
+---
+
+### **Anomaly 5: Incomplete Process (Case 1004)**
+**Issue:** Case 1004 is missing final confirmations and shows no credit check or stock validation.
+
+**Process Deviation:**
+- No "Perform Credit Check" logged
+- No "Validate Stock" logged
+- Process ends at "Ship Goods" with no record of completion/delivery confirmation
+
+**Hypotheses:**
+1. High-value order ($3000) requiring special handling
+2. VIP customer bypass of standard controls
+3. Incomplete event logging (in-progress order)
+4. Third-party fulfillment without integration
+5. Data entry errors or missing records
+
+**SQL Investigation:**
+
+```sql
+-- Find incomplete cases (missing final activities)
+WITH expected_activities AS (
+    SELECT DISTINCT 'Register Order' as activity
+    UNION ALL SELECT 'Perform Credit Check'
+    UNION ALL SELECT 'Validate Stock'
+    UNION ALL SELECT 'Confirm Shipment'
+    UNION ALL SELECT 'Ship Goods'
+    UNION ALL SELECT 'Issue Invoice'
+    UNION ALL SELECT 'Receive Payment'
+)
+SELECT 
+    o.case_id,
+    o.order_value,
+    o.order_type,
+    COUNT(DISTINCT oel.activity) as activities_logged,
+    STRING_AGG(DISTINCT oel.activity, ', ' ORDER BY oel.activity) as logged_activities,
+    STRING_AGG(DISTINCT ea.activity, ', ' ORDER BY ea.activity) FILTER (WHERE NOT EXISTS (
+        SELECT 1 FROM order_event_log oel2 
+        WHERE oel2.case_id = o.case_id AND oel2.activity = ea.activity
+    )) as missing_activities
+FROM orders o
+LEFT JOIN order_event_log oel ON o.case_id = oel.case_id
+CROSS JOIN expected_activities ea
+GROUP BY o.case_id, o.order_value, o.order_type
+HAVING COUNT(DISTINCT oel.activity) < 7
+ORDER BY o.order_value DESC;
+```
+
+---
+
+### **Anomaly 6: Low Credit Score Processing (Case 1002)**
+**Issue:** Order with low credit score (650) processed without additional review.
+
+**Process Deviation:**
+- Credit score 650 vs. normal scores (720, 810)
+- Order still proceeds through standard flow without exception handling
+- No evidence of additional validation or manager approval
+
+**Hypotheses:**
+1. Threshold for automatic rejection is below 650
+2. Manual override occurred but not logged
+3. Customer has existing credit arrangement
+4. System risk management bypassed
+
+**SQL Investigation:**
+
+```sql
+-- Analyze credit scores by case and identify low-score orders
+SELECT 
+    oel.case_id,
+    o.order_value,
+    o.customer_id,
+    oel.additional_info,
+    CAST(SUBSTRING(oel.additional_info FROM 'credit_score=(\d+)') AS INTEGER) as credit_score,
+    COUNT(oel.event_id) as total_events,
+    MAX(CASE WHEN oel.activity = 'Receive Payment' THEN 1 ELSE 0 END) as payment_received
+FROM order_event_log oel
+JOIN orders o ON oel.case_id = o.case_id
+WHERE oel.activity = 'Perform Credit Check'
+  AND oel.additional_info LIKE '%credit_score=%'
+GROUP BY oel.case_id, o.order_value, o.customer_id, oel.additional_info
+ORDER BY credit_score ASC;
+```
+
+```sql
+-- Flag orders with credit issues and their outcomes
+SELECT 
+    oel.case_id,
+    CAST(SUBSTRING(oel.additional_info FROM 'credit_score=(\d+)') AS INTEGER) as credit_score,
+    o.order_value,
+    o.order_type,
+    CASE 
+        WHEN CAST(SUBSTRING(oel.additional_info FROM 'credit_score=(\d+)') AS INTEGER) < 700 THEN 'HIGH_RISK'
+        WHEN CAST(SUBSTRING(oel.additional_info FROM 'credit_score=(\d+)') AS INTEGER) < 750 THEN 'MEDIUM_RISK'
+        ELSE 'LOW_RISK'
+    END as risk_category,
+    COUNT(DISTINCT oel2.activity) as activities_completed
+FROM order_event_log oel
+JOIN orders o ON oel.case_id = o.case_id
+JOIN order_event_log oel2 ON oel.case_id = oel2.case_id
+WHERE oel.activity = 'Perform Credit Check'
+GROUP BY oel.case_id, oel.additional_info, o.order_value, o.order_type
+ORDER BY credit_score ASC;
+```
+
+---
+
+## Summary Table of Anomalies
+
+| Case ID | Anomaly Type | Severity | Impact |
+|---------|--------------|----------|--------|
+| 1002 | Out-of-sequence activities | **HIGH** | Shipment before approval |
+| 1003 | Skipped validation + Late confirmation | **MEDIUM** | No stock validation logged |
+| 1004 | Payment before fulfillment + Missing controls | **CRITICAL** | No credit check or stock validation |
+| 1002 | Low credit score (650) | **MEDIUM** | Risk management concern |
+| 1003 | Invoice before confirmation | **MEDIUM** | Document ordering issue |
+
+---
+
+## Recommended Follow-up Queries
+
+```sql
+-- Overall process compliance score
+SELECT 
+    oel.case_id,
+    COUNT(DISTINCT oel.activity) as events_recorded,
+    o.order_value,
+    MAX(CASE WHEN oel.activity = 'Receive Payment' THEN 1 ELSE 0 END) as completed,
+    ROUND(COUNT(DISTINCT oel.activity)::NUMERIC / 7 * 100, 2) as process_coverage_pct
+FROM order_event_log oel
+JOIN orders o ON oel.case_id = o.case_id
+GROUP BY oel.case_id, o.order_value
+ORDER BY process_coverage_pct ASC, o.order_value DESC;
+```
+
+```sql
+-- Resource involvement analysis for anomalous cases
+SELECT 
+    oel.case_id,
+    oel.activity,
+    oel.resource,
+    r.role,
+    r.department,
+    COUNT(*) as times_involved
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+WHERE oel.case_id IN (1002, 1003, 1004)
+GROUP BY oel.case_id, oel.activity, oel.resource, r.role, r.department
+ORDER BY oel.case_id, oel.activity;
+```
+
+These queries and analyses provide a foundation for investigating why the process deviations occurred and whether systemic changes are needed.

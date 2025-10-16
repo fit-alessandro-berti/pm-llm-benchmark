@@ -1,0 +1,305 @@
+# Analysis of Temporal Profile Anomalies in Insurance Claim Processing
+
+## 1. Identified Anomalies
+
+### Critical Anomalies:
+
+**A. RP (Receive to Approve): Suspiciously Low Variance**
+- Average: ~25 hours with STDEV of only 1 hour
+- Issue: Claims are being approved with almost clockwork regularity, suggesting either rigid automated approval or artificial timestamp manipulation.
+
+**B. PN (Approve to Notify): Extreme Delay with High Volatility**
+- Average: 7 days with STDEV of 2 days
+- Issue: A week-long lag post-approval before customer notification is operationally unusual and indicates systemic bottlenecks or inconsistent handling.
+
+**C. EN (Evaluate to Notify): Unrealistically Rapid**
+- Average: 5 minutes with STDEV of 1 minute
+- Issue: Notification within 5 minutes of evaluation suggests either concurrent execution (not sequential) or skipping of intermediate approval steps entirely.
+
+**D. AC (Assign to Close): Premature Closure Pattern**
+- Average: 2 hours with STDEV of 1 hour
+- Issue: Claims closing only 2 hours after assignment without consistent intermediate steps suggests incomplete process execution or data quality issues.
+
+---
+
+## 2. Hypotheses on Root Causes
+
+### Hypothesis Group 1: Process Integrity Issues
+- **Hypothesis 1a:** Some claims are following a shortened, unauthorized path that bypasses the Evaluate and/or Approve steps entirely, jumping directly from Assign to Close.
+- **Hypothesis 1b:** The PN delay reflects a manual notification queue that becomes congested during peak claim approval periods, creating a systematic bottleneck.
+
+### Hypothesis Group 2: Data & System Issues
+- **Hypothesis 2a:** Timestamps are being backdated or batch-inserted, causing artificial clustering around specific times (explaining low STDEV on RP).
+- **Hypothesis 2b:** Automated workflows are incorrectly logging evaluation and notification as simultaneous events rather than sequential ones (explaining the EN 5-minute pattern).
+- **Hypothesis 2c:** Legacy or emergency closure procedures create rapid AC transitions for specific claim types or adjusters without proper documentation.
+
+### Hypothesis Group 3: Resource Constraints
+- **Hypothesis 3a:** Certain adjusters or regions lack notification resources, causing systematic PN delays for their claims.
+- **Hypothesis 3b:** High-volume claim types (e.g., auto_insurance) bypass full evaluation when assigned to overloaded adjusters, leading to compressed timelines.
+
+---
+
+## 3. Verification Queries
+
+### Query Set 1: Identify Claims with Anomalous RP Timing
+
+```sql
+-- Find claims where Receive to Approve happens within unexpected tight windows
+WITH activity_pairs AS (
+    SELECT 
+        ce1.claim_id,
+        ce1.activity AS activity_1,
+        ce1.timestamp AS time_1,
+        ce2.activity AS activity_2,
+        ce2.timestamp AS time_2,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS time_diff_seconds,
+        c.claim_type,
+        c.claim_amount,
+        c.customer_id
+    FROM claim_events ce1
+    JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id 
+        AND ce2.timestamp > ce1.timestamp
+    JOIN claims c ON ce1.claim_id = c.claim_id
+    WHERE ce1.activity = 'R' AND ce2.activity = 'P'
+)
+SELECT 
+    claim_id,
+    claim_type,
+    claim_amount,
+    time_diff_seconds / 3600.0 AS hours_r_to_p,
+    ABS(time_diff_seconds - 90000) / 3600.0 AS deviation_from_expected_hours,
+    CASE 
+        WHEN time_diff_seconds < 3600 THEN 'EXTREMELY_FAST'
+        WHEN time_diff_seconds BETWEEN 3600 AND 7200 THEN 'SUSPICIOUSLY_FAST'
+        WHEN time_diff_seconds BETWEEN 75600 AND 104400 THEN 'NORMAL_RANGE'
+        ELSE 'DELAYED'
+    END AS classification
+FROM activity_pairs
+WHERE time_diff_seconds < 7200 OR time_diff_seconds > 100000
+ORDER BY time_diff_seconds ASC;
+```
+
+### Query Set 2: Examine EN Rapid Transitions
+
+```sql
+-- Identify claims where Evaluate and Notify occur within suspiciously short windows
+WITH en_pairs AS (
+    SELECT 
+        ce1.claim_id,
+        ce1.timestamp AS evaluate_time,
+        ce2.timestamp AS notify_time,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS time_diff_seconds,
+        c.claim_type,
+        a.adjuster_id,
+        a.name AS adjuster_name,
+        a.specialization
+    FROM claim_events ce1
+    JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+        AND ce2.timestamp > ce1.timestamp
+    JOIN claims c ON ce1.claim_id = c.claim_id
+    LEFT JOIN adjusters a ON ce1.resource = a.name
+    WHERE ce1.activity = 'E' AND ce2.activity = 'N'
+)
+SELECT 
+    claim_id,
+    claim_type,
+    adjuster_name,
+    specialization,
+    time_diff_seconds AS seconds_e_to_n,
+    time_diff_seconds / 60.0 AS minutes_e_to_n,
+    CASE 
+        WHEN time_diff_seconds < 60 THEN 'CONCURRENT'
+        WHEN time_diff_seconds BETWEEN 60 AND 300 THEN 'SUSPICIOUSLY_FAST'
+        WHEN time_diff_seconds BETWEEN 300 AND 1800 THEN 'ACCEPTABLE'
+        ELSE 'NORMAL'
+    END AS classification
+FROM en_pairs
+WHERE time_diff_seconds < 600  -- Under 10 minutes
+ORDER BY time_diff_seconds ASC;
+```
+
+### Query Set 3: Detect Premature AC Closures (Skipped Steps)
+
+```sql
+-- Find claims closed within 2 hours of assignment without proper intermediate steps
+WITH assign_close_pairs AS (
+    SELECT 
+        ce1.claim_id,
+        ce1.timestamp AS assign_time,
+        ce2.timestamp AS close_time,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS time_diff_seconds,
+        c.claim_type,
+        c.claim_amount,
+        c.submission_date
+    FROM claim_events ce1
+    JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+        AND ce2.timestamp > ce1.timestamp
+    JOIN claims c ON ce1.claim_id = c.claim_id
+    WHERE ce1.activity = 'A' AND ce2.activity = 'C'
+)
+SELECT 
+    ac.claim_id,
+    ac.claim_type,
+    ac.claim_amount,
+    ac.time_diff_seconds / 3600.0 AS hours_a_to_c,
+    -- Check for missing intermediate steps
+    (SELECT COUNT(DISTINCT activity) FROM claim_events 
+     WHERE claim_id = ac.claim_id 
+     AND activity IN ('E', 'P', 'N')) AS intermediate_steps_count,
+    CASE 
+        WHEN ac.time_diff_seconds < 3600 THEN 'CRITICAL_FAST'
+        WHEN ac.time_diff_seconds BETWEEN 3600 AND 7200 THEN 'ANOMALOUS'
+        ELSE 'NORMAL'
+    END AS closure_classification
+FROM assign_close_pairs ac
+WHERE ac.time_diff_seconds < 7200
+ORDER BY ac.time_diff_seconds ASC;
+```
+
+### Query Set 4: Analyze PN Backlog (Approval to Notification Delays)
+
+```sql
+-- Identify the PN bottleneck and correlate with resources
+WITH pn_pairs AS (
+    SELECT 
+        ce1.claim_id,
+        ce1.timestamp AS approve_time,
+        ce2.timestamp AS notify_time,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS time_diff_seconds,
+        ce1.resource AS approver_resource,
+        ce2.resource AS notifier_resource,
+        c.claim_type,
+        a.region,
+        a.name AS adjuster_name
+    FROM claim_events ce1
+    JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+        AND ce2.timestamp > ce1.timestamp
+    JOIN claims c ON ce1.claim_id = c.claim_id
+    LEFT JOIN adjusters a ON ce1.resource = a.name
+    WHERE ce1.activity = 'P' AND ce2.activity = 'N'
+)
+SELECT 
+    region,
+    adjuster_name,
+    claim_type,
+    COUNT(*) AS claim_count,
+    AVG(time_diff_seconds) / 86400.0 AS avg_days_p_to_n,
+    STDDEV_POP(time_diff_seconds) / 86400.0 AS stdev_days_p_to_n,
+    MIN(time_diff_seconds) / 3600.0 AS min_hours_p_to_n,
+    MAX(time_diff_seconds) / 3600.0 AS max_hours_p_to_n,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY time_diff_seconds) / 86400.0 AS p95_days
+FROM pn_pairs
+GROUP BY region, adjuster_name, claim_type
+HAVING COUNT(*) > 5
+ORDER BY avg_days_p_to_n DESC;
+```
+
+### Query Set 5: Check for Batch Timestamp Insertion (RAE clustering)
+
+```sql
+-- Detect artificial clustering in activity timestamps suggesting batch processing
+WITH consecutive_activities AS (
+    SELECT 
+        claim_id,
+        activity,
+        timestamp,
+        LAG(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS prev_activity,
+        LAG(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp) AS prev_timestamp,
+        EXTRACT(EPOCH FROM (timestamp - LAG(timestamp) 
+            OVER (PARTITION BY claim_id ORDER BY timestamp))) AS seconds_since_prev
+    FROM claim_events
+)
+SELECT 
+    claim_id,
+    prev_activity,
+    activity,
+    seconds_since_prev,
+    CASE 
+        WHEN seconds_since_prev = 0 THEN 'SIMULTANEOUS'
+        WHEN seconds_since_prev < 5 THEN 'BATCH_PROCESSED'
+        WHEN seconds_since_prev BETWEEN 5 AND 60 THEN 'SUSPICIOUSLY_TIGHT'
+        ELSE 'NORMAL'
+    END AS timing_pattern
+FROM consecutive_activities
+WHERE seconds_since_prev IS NOT NULL 
+    AND seconds_since_prev < 120
+ORDER BY claim_id, prev_timestamp;
+```
+
+### Query Set 6: Correlate Anomalies with Specific Adjusters or Claim Types
+
+```sql
+-- Identify which adjusters/claim types produce the most anomalous patterns
+WITH all_patterns AS (
+    SELECT 
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        a.adjuster_id,
+        a.name AS adjuster_name,
+        a.region,
+        COUNT(DISTINCT ce.activity) AS total_activities,
+        -- Check if RP happens without intermediate E and P
+        MAX(CASE WHEN ce.activity = 'R' THEN ce.timestamp END) AS receive_time,
+        MAX(CASE WHEN ce.activity = 'P' THEN ce.timestamp END) AS approve_time,
+        MAX(CASE WHEN ce.activity = 'E' THEN ce.timestamp END) AS evaluate_time
+    FROM claims c
+    LEFT JOIN claim_events ce ON c.claim_id = ce.claim_id
+    LEFT JOIN adjusters a ON a.name IN (
+        SELECT DISTINCT resource FROM claim_events WHERE claim_id = c.claim_id
+    )
+    GROUP BY c.claim_id, c.claim_type, c.claim_amount, a.adjuster_id, a.name, a.region
+)
+SELECT 
+    adjuster_name,
+    region,
+    claim_type,
+    COUNT(*) AS total_claims,
+    AVG(CAST(total_activities AS FLOAT)) AS avg_activity_count,
+    SUM(CASE WHEN evaluate_time IS NULL AND approve_time IS NOT NULL THEN 1 ELSE 0 END) 
+        AS claims_approved_without_evaluation,
+    SUM(CASE WHEN total_activities < 4 THEN 1 ELSE 0 END) AS incomplete_process_claims,
+    AVG(claim_amount) AS avg_claim_amount
+FROM all_patterns
+WHERE adjuster_name IS NOT NULL
+GROUP BY adjuster_name, region, claim_type
+HAVING COUNT(*) > 5
+ORDER BY claims_approved_without_evaluation DESC, incomplete_process_claims DESC;
+```
+
+### Query Set 7: Timeline Audit for Potential Data Manipulation
+
+```sql
+-- Check for timestamp inconsistencies or evidence of backdating
+SELECT 
+    ce.claim_id,
+    c.submission_date,
+    ce.activity,
+    ce.timestamp,
+    DATE(ce.timestamp) AS activity_date,
+    CASE 
+        WHEN ce.timestamp < c.submission_date::timestamp 
+            THEN 'IMPOSSIBLE_TIMESTAMP'
+        WHEN EXTRACT(HOUR FROM ce.timestamp) IN (0, 1, 2) 
+            AND ce.activity IN ('R', 'A') 
+            THEN 'EARLY_MORNING_ACTIVITY'
+        ELSE 'NORMAL'
+    END AS data_quality_flag,
+    EXTRACT(EPOCH FROM (ce.timestamp - c.submission_date::timestamp)) / 3600.0 
+        AS hours_since_submission
+FROM claim_events ce
+JOIN claims c ON ce.claim_id = c.claim_id
+WHERE ce.timestamp < c.submission_date::timestamp
+    OR (EXTRACT(HOUR FROM ce.timestamp) IN (0, 1, 2) AND ce.activity IN ('R', 'A'))
+ORDER BY ce.claim_id, ce.timestamp;
+```
+
+---
+
+## 4. Recommended Investigation Sequence
+
+1. **Execute Query Set 1 & 7** to determine if RP timing anomalies stem from data quality issues or systemic policy.
+2. **Execute Query Set 3** to identify which claims lack proper intermediate steps.
+3. **Execute Query Set 4** to pinpoint resource-specific bottlenecks in PN transitions.
+4. **Execute Query Set 5** to detect batch processing patterns that might explain clustering.
+5. **Execute Query Set 6** to determine if anomalies correlate with specific personnel or claim categories, enabling targeted interventions.
