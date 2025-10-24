@@ -1,0 +1,195 @@
+---
+
+### Analysis and Identification of Anomalies/Desirable Patterns in Event Logs
+
+The provided event logs for **order processing activities** reveal several key observations relevant to identifying undesirable or suspicious behaviors:
+
+---
+
+### 1. **Late Shipment Confirmation (Case 1001, Timestamp: 2024-02-01 09:45:00)**  
+- Event: *Confirm Shipment* recorded **13 minutes late** relative to the first credit check on case 1001.  
+- Resource: *LogisticsMgr_1* confirms shipment **09:45:00**, while the CreditCheck event was at 09:00:00.  
+- Likely Explanation: Possible process delays due to resource unavailability, system bottlenecks, or escalation needed — but absence of early proactive notification.  
+- **Anomaly Signal:** Preferable early confirmation triggers automatic alerts; late confirmation represents potential delay risk.
+
+---
+
+### 2. **Late Credit Check Confirmation (Case 1002, Timestamp: 2024-02-01 09:10:00)**  
+- Credit check completed **37 minutes after order registration** (08:23 + 37 = 09:10).  
+- Although within typical window (e.g., <1 hour), the pattern repeats across cases (1001, 1002, 1003), suggesting systemic delay.  
+- **Anomaly Signal:** Consistent late credit initiations may indicate underwhelming compliance with credit policies or operational lag in risk review.
+
+---
+
+### 3. **Dubious Invoice Timing (Case 1003: Receive Payment = 2024-02-02 10:00:00)**  
+- Invoice issued only **2 days after warehouse shipment confirmation** (09:45:00 Feb 1), but this is acceptable. However, the flow could benefit from stricter sequencing:  
+- Issue Invoice follows credit check and shipment confirmation, aligning well.  
+- **Anomaly Signal:** Payment receipt preceding full processing (e.g., stock validation complete, finances cleared) risks revenue recognition errors or fraud exposure if invoices issued prematurely.
+
+---
+
+### 4. **Early Shipment Attempt Failed (Case 1003, Timestamp: 2024-02-01 09:40:00)**  
+- Shipment scheduled **on repeated early attempt** (`attempted_early=Y`), but confirmed only at 09:45.  
+- Resource *LogisticsMgr_2* failed or refused early shipment, requiring manual intervention.  
+- **Anomaly Signal:** Frequent retries flag timing issues or system delays — check workflow logic triggering early shipment permission.
+
+---
+
+### 5. **Lack of Resource Role Mapping in Events Beyond Logistics and Credit**  
+- No `WarehouseClerk`, `FinanceTeam`, or `SalesRep` actions model logging clear role context tied to *resource_id* (e.g., tracking staff). This limits traceability of role-specific delays or errors.  
+- **Hypothesis:** Missing structured role assignment in `order_event_log` hides efficiency bottlenecks per functional team.
+
+---
+
+### 6. **Discrepancy Between Order Value and Process Length**  
+- High-value orders (e.g., case 1002, $2000.00; case 1004, $3000.00) follow similar late confirmations.  
+- Long confirmation delays on premium orders risk revenue leakage if fraudulent activity masks late processing flags.  
+- **Anomaly Signal:** Value thresholds should correlate with processing time controls — long high-value cases deserve prioritization.
+
+---
+
+## Recommended Investigative SQL Queries (to root cause anomalies)
+
+These queries test hypotheses around timing delays, role context, and control thresholds.
+
+---
+
+**1. Identify Late Confirmations by Activity Type**
+
+```sql
+SELECT 
+    event_id,
+    activity,
+    timestamp,
+    resource,
+    case_id,
+    CASE 
+        WHEN activity = 'Confirm Shipment' AND timeline->'CONFIRM_SHIPMENT' > INTERVAL '1 hour' THEN 'High Delay'
+        WHEN activity = 'Perform Credit Check' AND timeline->'PERFORM_CREDIT_CHECK' > INTERVAL '1 hour' THEN 'Late Credit Initialization'
+        WHEN activity = 'Receive Payment' AND timeline->'RECEIVE_PAYMENT' > timeline->'ORDER_PROCESSING_START' + INTERVAL '6 hours' THEN 'Postponed Payment Ref'
+    END AS delay_hours,
+    CASE 
+        WHEN activity = 'Confirm Shipment' AND timeline->'CONFIRM_SHIPMENT' <= timeline->'ORDER_PROCESSING_START' + INTERVAL '6 hours' THEN 'On-time'
+        ELSE 'Delayed'
+    END AS confirmation_status
+FROM order_event_log
+-- Define timeline wrapper (assume all events stored as single record; or join with event window)
+WITH event_window AS (
+    SELECT
+      event_id,
+      (
+        event_id = order_events.event_id
+      ) AS is_start,  -- naive check; replace with time window joins
+      event_id,
+      activity,
+      timestamp,
+      CASE 
+          WHEN activity = 'Register Order' THEN 'ORDER_PROCESSING_START'
+          WHEN activity = 'Perform Credit Check' THEN 'PERFORM_CREDIT_CHECK'
+          WHEN activity = 'Confirm Shipment' THEN 'CONFIRM_SHIPMENT'
+          WHEN activity = 'Ship Goods' THEN 'SHIP_GOODS'
+          WHEN activity = 'Issue Invoice' THEN 'ISSUE_INVOICE'
+          WHEN activity = 'Receive Payment' THEN 'RECEIVE_PAYMENT'
+          ELSE 'UNKNOWN'
+      END AS activity_category
+FROM order_event_log order_events
+-- Join with event timeline using partitioning or self-join
+JOIN order_event_log AS base
+  ON base.event_id = order_events.event_id
+WHERE 
+  CASE 
+    WHEN activity_category = 'Confirm Shipment' AND 
+         base.timestamp > (
+             base.event_window.ORDER_PROCESSING_START + INTERVAL '6 hours'
+         ) THEN 'late_shipment'
+    WHEN activity_category = 'Perform Credit Check' AND 
+         base.timestamp > (
+             base.event_window.ORDER_PROCESSING_START + INTERVAL '1 hour'
+         ) THEN 'late_credit_check'
+    WHEN activity_category = 'Receive Payment' AND 
+         base.timestamp > (
+             base.event_window.ORDER_PROCESSING_START + INTERVAL '6 hours'
+         ) THEN 'late_payment'
+  OR TRUE
+ORDER BY timestamp;
+```
+
+---
+
+**2. Count Late Events Per Team (Resource Role)**
+
+```sql
+SELECT 
+  resource,
+  role,
+  COUNT(*) AS late_count,
+ mysqli.fetchall() OR »;
+
+EXPLAIN ANALYZE
+SELECT
+  r.resource,
+  r.role,
+  COUNT(e.event_id) AS late_events
+FROM order_event_log e
+LEFT JOIN resources r ON e.resource = r.resource_id
+WHERE LAG(timestamp) OVER (PARTITION BY r.resource_id ORDER BY timestamp) < e.timestamp
+  AND (LAG(timestamp) - e.timestamp) > INTERVAL '1 hour'
+GROUP BY r.resource_id, r.role
+ORDER BY late_events DESC;
+```
+
+*(Note: PostgreSQL `LAG()` captures temporal gaps; use with caution on large datasets.)*
+
+---
+
+**3. Check Role-Field Association Across Events**
+
+```sql
+SELECT e.activity, r.role, e.timestamp
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE e.activity NOT IN ('Register Order', 'Order Processing')
+ORDER BY e.timestamp;
+```
+
+*Goal: Identify events lacking a clear `role` to spot untracked human inputs or system gaps.*
+
+---
+
+**4. High-Value Order Flow with Late Timing**
+
+```sql
+WITH high_value_orders AS (
+  SELECT event_id, timestamp, case_id
+  FROM order_event_log
+  WHERE order_value > 1000.00
+  ORDER BY timestamp
+)
+SELECT
+  h.event_id,
+  h.timestamp,
+  r.resource,
+  r.role,
+  ho.order_value,
+  EXTRACT(HOUR FROM h.timestamp, 'hee') AS hours_since_start
+FROM high_value_orders h
+JOIN resources r ON h.resource = r.resource_id
+JOIN order_event_log e ON h.event_id = e.event_id
+WHERE h.order_value > 1000.00
+-- Estimate start via Register Order
+SELECT abs(extract(epoch from e.timestamp) - extract(epoch from e REGISTER_ORDER.timestamp)) / (60*60) AS hours_since_start
+FROM order_event_log e
+ORDER BY hours_since_start DESC;
+```
+
+*verify if delays correlate with high revenue flows.*
+
+---
+
+### Conclusion
+
+These queries target root causes of delays, policy non-compliance, and untracked role actions. They expose latency in credit, shipment, and invoicing — core risk points in order fulfillment. Improving timeline tracking via `event_window` window functions and enriching tables with explicit roles will strengthen anomaly detection and process authority visibility.
+
+---
+
+*Note: Adjust time window logic and join strategies based on actual schema (e.g., temporal partitioning, event clustering).*

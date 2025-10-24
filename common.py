@@ -326,7 +326,8 @@ MODELS_DICT = {
             "openrouter/sonoma-dusk-alpha", "openrouter/sonoma-sky-alpha",
             "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking",
             "openai/gpt-5-codex", "deepseek/deepseek-v3.2-exp",
-            "z-ai/glm-4.6", "baidu/ernie-4.5-21b-a3b-thinking"
+            "z-ai/glm-4.6", "baidu/ernie-4.5-21b-a3b-thinking",
+            "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b"
         }
     },
     "manual": {

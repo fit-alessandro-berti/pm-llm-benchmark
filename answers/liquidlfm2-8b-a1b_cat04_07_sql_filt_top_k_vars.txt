@@ -1,0 +1,175 @@
+```sql
+-- Step 1: Rank each event within its case by timestamp to extract sorted activity sequences
+WITH ordered_events AS (
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS rn
+    FROM event_log
+),
+
+-- Step 2: Extract each unique ordered sequence of activities per case (variant) by deduplicating by rn
+-- This groups events into distinct process variants
+variant_methods AS (
+    SELECT
+        case_id,
+        STRUCT(activities::text) AS sequence  -- Serialize activities into a text sequence per case
+    FROM ordered_events
+    GROUP BY case_id, activities
+)
+
+-- Step 3: Count occurrences of each variant to identify top K variants
+-- Note: We compute total variant frequency by counting distinct case_ids per variant in variant_methods
+WITH variant_counts AS (
+    SELECT
+        sequence,
+        COUNT(DISTINCT case_id) AS variant_size
+    FROM variant_methods
+    GROUP BY sequence
+)
+
+-- Determine frequency count of each variant (how many cases match the variant)
+-- Then get the top K variants by frequency (rank by variant_size descending)
+
+-rename variant_counts AS variant_freq,
+-- Assume K = 5, adjust as needed; here it's dynamic at K rows
+-- Alternatively, fix K as 5 explicitly with heuristic or parameter;
+-- Here, we inline top K as first 5 distinct sequences by size (customize as desired)
+-- For illustration, take top 5 largest variants (or top 3 if fewer found, this uses first 5)
+WITH top_K_variants AS (
+    SELECT sequence, variant_size, row_number OVER (ORDER BY variant_size DESC) AS rank_var
+    FROM variant_counts
+    WHERE variant_size IN (
+        SELECT MAX(variant_size) FROM variant_counts
+        UNION
+        SELECT MAX(variant_size) FROM variant_counts
+        UNION
+        SELECT MAX(variant_size) FROM variant_counts
+    )  -- Fallback: pick top 3 if few variants
+    -- Or force K=5 with rank_var <= 5:
+    SELECT
+        sequence,
+        variant_size,
+        row_number OVER (
+            ORDER BY variant_size DESC
+            LIMIT 5
+        ) AS rn_top
+    FROM variant_counts
+),
+
+-- Step 4: Filter only cases belonging to top K variants' first rn_top entries per variant
+-- We use a dynamic CTE joining top variants and their event rows, then join back to get full events
+
+-- Final output: events from cases matching top K variants, limited to their ordered sequences
+
+SELECT
+    el.case_id,
+    el.activity,
+    el.timestamp
+FROM event_log el
+JOIN variant_methods evm ON el.case_id = evm.case_id
+JOIN top_K_variants tkv ON el.case_id = (
+    SELECT sequence
+    FROM variant_methods
+    WHERE (SELECT variant_size FROM variant_counts WHERE variant_methods.sequence = tkv.sequence) = tkv.variant_size
+    ORDER BY variant_methods.variant_size DESC
+    LIMIT 1
+) AND el.rn = (
+    SELECT rn_top
+    FROM top_K_variants
+    WHERE el.case_id = variant_methods.case_id
+)
+
+-- To ensure only one sequence per top variant per case:
+-- Final version uses window rank per sequence + case-wise filter:
+
+WITH ranked_top_variants AS (
+    SELECT
+        evm.sequence,
+        evm.variant_size,
+        COUNT(DISTINCT evm.case_id) OVER (PARTITION BY evm.sequence ORDER BY evm.variant_size DESC, evm.rn) AS rank_variant
+    FROM variant_methods evm
+    JOIN variant_counts vc ON evm.sequence = vc.sequence
+),
+
+-- Filter to top K variants (top K by frequency), ranked by size, then by rank_variant (arbitrary tiebreaker)
+-- Then select events from cases where case_id's first rn_top entry matches one of these variants
+
+SELECT
+    el.case_id,
+    el.activity,
+    el.timestamp
+FROM event_log el
+JOIN ranked_top_variants rtv ON el.case_id = (
+    SELECT sequence
+    FROM variant_methods
+    WHERE (
+        SELECT variant_size
+        FROM variant_counts
+        WHERE variant_methods.sequence = tkv.sequence
+    )
+    ORDER BY variant_counts.variant_size DESC
+    LIMIT 1
+) AND el.rn = (
+    SELECT rn_top
+    FROM top_K_variants
+    WHERE rank_variant <= (
+        SELECT MAX(rank_variant) FROM ranked_top_variants ORDER BY variant_size DESC LIMIT 1
+    )
+)
+
+-- To enforce only top K variants are included, use a bounded CTE or window rank filtering:
+
+WITH ranked_top AS (
+    SELECT
+        evm.sequence,
+        rtv.variant_size,
+        rtv.rank_variant,
+        COUNT(DISTINCT evm.case_id) OVER (PARTITION BY evm.sequence ORDER BY rtv.variant_size DESC, rtv.rank_variant) AS total_cases
+    FROM variant_methods evm
+    JOIN variant_counts vc ON evm.sequence = vc.sequence
+    JOIN top_K_variants tkv ON (
+        SELECT variant_size
+        FROM variant_counts
+        WHERE variant_methods.sequence = tkv.sequence
+    ) = tkv.variant_size
+)
+
+-- Final filtered list: cases in top K variants, ordered by frequency, limited to each variant’s frequency
+
+SELECT
+    el.case_id,
+    el.activity,
+    el.timestamp
+FROM event_log el
+JOIN ranked_top rt ON el.case_id = (
+    SELECT sequence
+    FROM variant_methods
+    WHERE (
+        SELECT variant_size
+        FROM variant_counts
+        WHERE variant_methods.sequence = tkv.sequence
+    )
+    ORDER BY variant_counts.variant_size DESC
+    LIMIT 1
+) AND el.rn = (
+    SELECT rn_top
+    FROM top_K_variants
+    WHERE rank_variant <= (
+        SELECT MAX(rank_variant) FROM ranked_top ORDER BY variant_size DESC LIMIT 1
+    )
+ORDER BY el.timestamp;
+```
+
+---
+
+### Explanation Summary:
+
+- Step 1: Use `ROW_NUMBER()` to order events within each case by time  enables extraction of ordered activity sequences.
+- Step 2: Group events by case and serialize activity into a `STRUCT('activities::text')` so sequences unique per variant are identifiable.
+- Step 3: Count how many distinct cases match each sequence (i.e., variant frequency).
+- Step 4: Select top K variants by frequency (customizable K), then filter event log to only cases belonging to these top variants.
+- Final output includes only events from these filtered cases, preserving the process variant identity per their top K sequence.
+
+> **Note:** For reproducibility in DuckDB, ensure `activity` strings are concatenated safely (e.g., using `activities::text` to avoid ordering bias). Adjust `K=5` to a dynamic top-K subquery if needed based on unique variant count.

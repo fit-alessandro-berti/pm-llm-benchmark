@@ -1,0 +1,190 @@
+### Analysis of the Anomalies in the POWL Model
+
+#### 1. **Anomalies Identified:**
+
+- **Looping Between Evaluation and Approval:**  
+  The `(E, P)` structure in the `loop` transition (a user-defined loop effectively turning into a `WHILE` loop in POWL) allows claims to be repeatedly evaluated and approved, potentially causing redundant processing.
+
+- **XOR Skipping Customer Notification:**  
+  The `(N, skip)` XOR can bypass customer notification (`N`), meaning the customer might not always be informed regardless of wait conditions or delays in other process steps.
+
+- **Premature Closure of Claims:**  
+  The partial order structure allows the `C` (Close Claim) event to occur before both `P` (Approve Claim) and `E2` (Evaluate Claim 2, if looping continues), which may reflect a permissive closure that lacks complete validation.
+
+---
+
+### Hypotheses on Why These Anomalies Might Exist
+
+- **Changing Business Rules Partially Implemented:**  
+  The lack of strict deadlines for evaluation or approval stages may lead to optional or deferred processing steps, creating partial order ambiguities in the executed process. For example, allowing approval without a second checks/judgment step, enabling concurrent or repeated approvals.
+
+- **Miscommunication Between Departments:**  
+  Incomplete flow diagrams or inconsistent splitting of responsibilities can lead to unintended edge cases. For instance, the adjuster responsible for evaluation might implicitly exercise authority over approval if part of the team is unclear, causing the omission of `N`.
+
+- **Technical Errors in Workflow System:**  
+  The workflow system tool (e.g., ProcessModeler) might have bugs where certain transitions are not enforced distictly due to missing ordering constraints on edges. An untested feature that relaxes strict sequencing could permit the observed anomalies.
+
+- **Inadequate Constraints or Controls in Process Modeler’s Tool:**  
+  Differences in how different users or modules interpret the means of defining partial orders might allow overlaps in execution order. For instance, someone legitimately assigning overlapping responsibilities due to flawed constraint enforcement.
+
+---
+
+### Proposed Database Queries to Verify These Hypotheses
+
+Below are suggested queries leveraging the `claims`, `adjusters`, and `claim_events` tables to uncover actual patterns in the workflow execution:
+
+---
+
+#### 1. **Identify Claims Closed Without Proper Evaluation or Approval**
+
+Claims that have been closed (`C`) **without** a proper `E2` evaluation or pending `P` (approvals) might indicate skipping on the XOR branch.
+
+```sql
+WITH admission_events AS (
+  SELECT * FROM claim_events
+  WHERE activity = 'E'  -- Evaluate claims
+  AND event_id IN (
+    SELECT claim_event_id FROM claim_events
+    WHERE claim_id IN (
+      SELECT claim_id FROM claims WHERE claim_id NOT IN (
+        SELECT claim_id FROM claim_events WHERE activity = 'E' AND additional_info LIKE '%Approved%'
+      )  -- Claims not marked approved in an evaluation
+      -- OR claims closed C but without P event or event_id < 2 (relative to approval chain)
+      -- Simplified: detect closed claims without explicit approval
+      SELECT c.claim_id FROM claims c
+      JOIN claim_events ce ON c.claim_id = CE.CLAIM_ID
+      WHERE ce.activity = 'C'
+        AND ce.timestamp BETWEEN (SELECT MIN(ce.timestamp) FROM claim_events WHERE activity = 'E' AND additional_info LIKE '%Approved%') AND
+        ce.timestamp BETWEEN (SELECT MAX(ce.timestamp) FROM claim_events WHERE activity = 'E' AND additional_info LIKE '%Approved%') - 1
+    )
+  )
+),
+approval_events AS (
+  SELECT * FROM claim_events
+  WHERE activity = 'P'  -- Approve Claim
+),
+approval_approval_events AS (
+  SELECT a.claim_id, AVG(MA.adjuster_id) AS avg_adjuster_id
+  FROM approval_events a
+  JOIN claim_events ma ON a.claim_id = ma.CLAIM_ID
+  WHERE ma.activity = 'E'
+    AND ma.timestamp != ''
+    AND ma.timestamp + INTERVAL '1 hour' > CURRENT_TIMESTAMP -- Approval hasn't been confirmed yet
+  GROUP BY a.claim_id
+)
+SELECT c.claim_id
+FROM admission_events a
+JOIN approval_approval_events ala ON a.claim_id = ala.claim_id
+JOIN approval_events pa ON ala.additional_info LIKE '%Approved Approval%'
+WHERE a.timestamp > ala.timestamp
+AND a.claim_id NOT IN (
+  SELECT pa.claim_id
+  FROM approval_events pa
+  WHERE pa.additional_info LIKE '%Approved%'
+)
+AND ala.adjuster_id IN (
+  SELECT a2.adjuster_id
+  FROM claim_events a2
+  WHERE activity = 'E'
+  AND additional_info LIKE '%Reviewed by%'
+) -- Adjusters comparing reviews
+AND (
+  pa.timestamp IS NULL OR
+  (pa.additional_info LIKE '%Approved %PARAM01'::varchar - '%Final Approval %') -- Skip notification by predefined marker
+)::decimal
+LIMIT 20 OFFSET 40;
+```
+
+**Interpretation:**  
+This finds deemed-closed claims (`C` events) that lack a traceable approval check (`E2`) or show signs that approvals were informal or skipped through abbreviated stationery in event log.
+
+---
+
+#### 2. **Detect Cases Where Approval May Have Occurred Multiple Times or Prematurely**
+
+Claims with multiple `P` (approval) events that don't logically form a sequence of evaluations might signal re-auctorizations.
+
+```sql
+SELECT 
+  C.claim_id,
+  COUNT(DISTINCT E.event_id) AS evaluation_calls,
+  MAX(E.timestamp) AS max_eval_time,
+  MAX(P.timestamp) AS latest_approval_time,
+  AVG(P.timestamp - E.timestamp) OVER (P.event_id IN P WITH ORDER BY P.timestamp) as avg_time_diff
+FROM claims C
+JOIN claim_events e ON C.claim_id = e.CLAIM_ID AND e.activity = 'E'
+JOIN claim_events p ON C.claim_id = p.CLAIM_ID AND p.activity = 'P'
+WHERE C.close_time IS NOT NULL  -- Claim has been closed
+GROUP BY C.claim_id
+HAVING MAX(E.timestamp) AND latest_approval_time IS NOT NULL 
+  AND AVG(TIME_LAG(p.timestamp, e.timestamp)) > 3600  -- Approval too fast relative to evaluation
+ORDER BY MAX(E.timestamp) DESC;
+```
+
+**Interpretation:**  
+Differences in timestamps between last evaluation and approval that exceed typical hour for a case long might indicate multiple (`however unlikely`) approval steps or repeated approvals by the same adjuster.
+
+---
+
+#### 3. **Check if Customer Notification (`N`) Is Skipped Frequently**
+
+Flags skipped indications, such as missing event `A` or appointment logic, may cause omission of notification.
+
+```sql
+SELECT 
+  C.claim_id,
+  COUNT(DISTINCT a.activity) AS assert_email_events,
+  COUNT(DISTINCT c.notification_event) AS missed_email_events,
+  (COUNT(DISTINCT c.notification_event) - 1) * 100.0 / COUNT(DISTINCT c.notification_event) AS notification_skip_percentage
+FROM claims C
+JOIN claim_events c ON C.claim_id = c.CLAIM_ID
+JOIN claims ce ON ce.claim_id = C.claim_id
+WHERE C.notification_flag IS NULL  -- Or explicitly see 'notification_delayed' messages (if preserved)
+GROUP BY C.claim_id
+ORDER BY notification_skip_percentage DESC;
+```
+
+Additionally, detect explicit attempts to bypass the notification process:
+
+```sql
+SELECT 
+  pest.claim_id,
+  ADSTRING(case_study_url || ' ?', '') AS payload,
+  CASE
+    WHEN has_process_skill(case_study_url) = 'yes' THEN 'skipped_with_automation'
+    WHEN payload LIKE '%Notify: delay:yes%' THEN 'skipped_with_message: delay'
+    ELSE 'regular_notification'
+  END AS note_on_skip
+FROM claim_events pest
+WHERE pest.claim_id IN (
+  SELECT CLAIM_ID FROM claims WHERE CLOSE_DATE IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 
+    FROM claim_events ce_c
+    WHERE ce_c.CLAIM_ID = claims.CLAIM_ID 
+      AND ce_c.activity = 'N'
+      AND interpolate_identifier('note_phase_urls', 'notify_skip_process.20241001', true) != null
+  )
+) 
+AND INTERPOLATE_TERTIARY(
+    INNER ALL()
+    INTERPRETER(CASE WHEN seek_for_skipped_notify = 'not_skim', limit=0 LOCAL GET_TERCIARY_VALUE('nnotify_skips.plan_v2.based_on_anomaly'), count = 0) THEN "skipped_by_process"
+          ELSE "due_to_late_delay",
+      (SELECT COUNT(*) FROM claim_events WHERE activity IN ('N', 'delayed')) / (SELECT COUNT(*) FROM claim_events WHERE activity = 'N')
+    ) = 0)
+ORDER BY note_on_skip_premium;
+```
+
+**Improvement Idea:** Use a BETA table or schema to store and track common notification triggers like 'demandeur_retrait' or 'automatique_retard' and filter outbound logic.
+
+---
+
+### Summary
+
+These queries would reveal:
+
+- Claims closed strictly after initial approval (`C` without `E2`),
+- Approval events that are too rapid (~1 hour), suggesting possible duplicates or automated hasty approvals,
+- Frequent or unexplained omission of customer notification events (`N`), possibly due to missed steps or manual exemptions.
+
+Such patterns individually point toward the earlier hypothesized anomalies—changes in control implementation, miscommunication/automation errors, and workflow loopholes. Combined, they can lead to actionable insights for refining process design and monitoring controls.

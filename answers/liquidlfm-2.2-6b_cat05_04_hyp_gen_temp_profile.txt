@@ -1,0 +1,149 @@
+### Identified Anomalies in Temporal Profile Model
+
+- **(R, P) – Receive to Approve (Average ~25 hours, STDEV = 600 seconds):** This minimal and tightly clustered time interval suggests an unusually rigid approval workflow. The extremely low standard deviation indicates suspiciously predictable timing, potentially signaling artificial workflow enforcement or failed automation that compresses all processing into a fixed window, undermining natural variability.  
+  
+- **(P, N) – Approve to Notify (Average ~7 days, STDEV = 172,800 seconds):** The long average delay and high variability strongly imply inconsistency or distress within the notification process. This could stem from resource shortages, manual filing issues, or delayed external notifications (e.g., integration lags), indicating poor coordination between claim approval and customer communication.
+
+- **(A, C) – Assign to Close (Average ~2 hours):** Given that this step typically precedes evaluations and approvals, this unusually fast closure suggests potential premature claim closure. It might reflect rushed handling or allow data validation gaps before final adjudication, risking inaccurate claims.  
+  
+- **(E, N) – Evaluate to Notify (Average ~5 minutes):** The rapid shift from evaluation to notification is unusually quick, raising concerns that intermediation steps like approval or additional corrective actions are bypassed inconsistently. This could indicate automation misconfigurations or workflow shortcuts leading to inadequate claim review.
+
+---
+
+### Hypotheses on Anomalies
+
+- The tight clustering between **Receive (R)** and **Approve (P)** shows that approval is not negotiated or delayed — it occurs almost mechanically after claim receipt. This might arise from policy automation misapplied or manual pressure to process claims faster than business rules allow.  
+  
+- The delay and variability in **Approve (P) to Notify (N)** reflect a systemic backlog or external obstructions in customer communication systems, possibly compounded by inconsistent agent behavior across classrooms or regions.  
+  
+- **Assign to Close (A to C)** in just 2 hours implies premature claim closure. This suggests either early approval confirmation without proper internal validation or flawed integration where assignation triggers closure before all processes are completed.  
+  
+- The breach in process flow between **Evaluate (E) and Notify (N)** — skipping stages inconsistently — indicates either inconsistent workflow adherence or faulty workflow logic, risking unreviewed claims receiving timely notifications, which may violate ACLs.
+
+---
+
+### Verification Using SQL Queries
+
+**1. Detect claims with Receive (R) followed by Approve (P) within an unusually short window (e.g., < 24 hours):**
+
+```sql
+SELECT 
+  c.submission_date AS claim_proc_start,
+  a.timestamp AS approval_time,
+  a.timestamp - c.submission_date AS time_between_r_and_p
+FROM claims c
+JOIN claim_events e ON c.claim_id = e.claim_id 
+JOIN claim_events a ON e.event_id = a.event_id 
+WHERE e.activity = 'A' AND a.activity = 'P'
+  AND (a.timestamp - c.submission_date <= INTERVAL '24 hours') AND a.timestamp >= c.submission_date + INTERVAL '30 days'
+ORDER BY time_between_r_and_p;
+```
+
+*Hypothesis Check: Quick approval after receive could indicate rigid automation or bypassing of usual checkpoints.*
+
+---
+
+**2. Flag Approve (P) to Notify (N) where notification delay exceeds (2 days + 2 hours) with high variability:**
+
+```sql
+WITH approver_to_notify_stats AS (
+  SELECT 
+    event.timestamp AS time,
+    EXTRACT(EPOCH FROM (event.timestamp - p.timestamp)) AS delay_seconds
+  FROM claims p
+  JOIN claim_events e ON p.claim_id = e.claim_id 
+  JOIN claim_events a ON e.event_id = a.event_id 
+  WHERE e.activity = 'P' AND a.activity = 'N'
+  GROUP BY event.timestamp,
+            EXTRACT(EPOCH FROM (event.timestamp - p.timestamp))
+)
+SELECT 
+  event2.timestamp AS notification_time,
+  collect_list(EXTRACT(EPOCH FROM (event_timestamp_2 - p.timestamp))) AS total_delay_seconds
+FROM approver_to_notify_stats.event2
+LEFT JOIN data_labels.dl ON dl.adjuster_region = e.resource.region
+JOIN data_labels.dl2 ON dl2.claim_type = p.claim_type
+WHERE EXTRACT(EPOCH FROM (event2.timestamp - p.timestamp)) > INTERVAL '2 days 5 minutes'
+AND total_delay_seconds > EXTRACT(EPOCH FROM (MAX(delay_seconds) * 1.5)) -- 1.5x max delay threshold
+ORDER BY notification_time;
+```
+
+*Hypothesis Check: Long and variable delays in approval-to-notification tracing back to defined delay thresholds suggest procedural inconsistencies and backlog presence.*
+
+---
+
+**3. Identify claims assigned quickly that are then closed urgently without intermediate steps:**
+
+```sql
+SELECT 
+  c.claim_id,
+  c.submission_date,
+  a.timestamp AS assign_time,
+  n.timestamp AS close_time,
+  cs.activity AS close_activity,
+  jc.specialization,
+  jr.region AS adjuster_region,
+  CR.name AS adjuster_name
+FROM claims c
+JOIN claim_events a ON c.claim_id = a.claim_id AND a.activity = 'A'
+JOIN claims p ON a.event_id = p.event_id AND p.activity = 'P'
+JOIN claim_events n ON p.event_id = n.event_id AND n.activity = 'C'
+JOIN adjusters jc ON p.resource = jc.adjuster_id
+WHERE n.activity = 'C' AND a.timestamp >= c.submission_date + INTERVAL '1 day'
+  AND close_activity NOT IN ('R', 'A', 'E') -- skip initial steps
+ORDER BY close_time;
+```
+
+*Hypothesis Check: Urgent claim closures after just one day from assignment without evaluations or appraisals point to premature processing likely due to system error or policy enforcement issue.*
+
+---
+
+**4. Find claims where Evaluate (E)  Notify (N) ratio deviates significantly above average or skips ‘Approve’ steps:**
+
+```sql
+WITH avg_eval_notify AS (
+  SELECT 
+    e.activity, pd.activity, AVG(EPOCH_PERCENTAGE(duration)) AS avg_percent
+  FROM (
+    SELECT 
+      e.event_id,
+      p.event_id,
+      e.timestamp AS event_time,
+      p.timestamp AS send_time,
+      duration: DATEDIFF(dt2, dt1) / (INTERVAL '1 day'::TIMESTAMPTYPE),
+      EPOCH_PERCENTAGE(duration, INTERVAL '1 day') AS epoch_percent
+    FROM claim_events e
+    JOIN claim_events p ON e.event_id = p.event_id
+    WHERE 
+      e.activity = 'E' AND p.activity = 'N'
+  ) AS ef
+  GROUP BY 
+    e.activity, pd.activity
+),
+notify_records AS (
+  SELECT 
+    p.timestamp as timestamp,
+    EXTRACT(EPOCH FROM p.duration) as duration_seconds
+  FROM claims p
+    JOIN claim_events n ON p.claim_id = n.claim_id AND n.activity = 'N'
+)
+SELECT 
+  bec.activity,
+  avg(eval_notify.avg_percent, however_avg) AS stability_index,
+  SUM(CASE 
+    WHEN eb.activity = 'E' AND eb.activity IS NOT NULL THEN n.duration_seconds
+    WHEN eb.activity = 'A' AND eb.activity IS NOT NULL THEN eb.duration_seconds
+    ELSE NULL
+  END) AS steps_n_seen
+FROM avg_eval_notify bec
+LEFT JOIN notify_records n ON eb.claim_id = n.claim_id
+WHERE eb.activity IS NOT NULL AND eb.activity BETWEEN 'E' AND 'T'-- exclude 'T' approval (pending)
+ORDER BY bec.stability_index, steps_n_seen
+LIMIT 20;
+```
+
+*Hypothesis Check: Frequent long gaps or skipped approval stages between evaluation and notification suggest incomplete validation or inconsistent integration with send systems.*
+
+---
+
+These queries enable granular inspection into workflow timing irregularities, help correlate them with contextual business metadata like regions and adjuster specializations, and facilitate root-cause tracing for process optimization.
