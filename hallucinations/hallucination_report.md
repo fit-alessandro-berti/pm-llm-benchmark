@@ -53,6 +53,7 @@
 | openaigpt-5-codex | 122 | 7 | 23 | 3 | 6 | 13 | 0 | 54 | 2 | 0 | 4 | 6 | 4 |
 | gemini-2.5-flash-nothink | 123 | 3 | 23 | 2 | 2 | 9 | 0 | 54 | 6 | 0 | 1 | 11 | 6 |
 | deepseekdeepseek-r1-distill-qwen-14b | 126 | 5 | 43 | 3 | 3 | 7 | 2 | 48 | 2 | 0 | 2 | 8 | 0 |
+| openrouterpolaris-alpha | 127 | 16 | 19 | 3 | 7 | 5 | 0 | 55 | 6 | 1 | 5 | 8 | 2 |
 | z-aiglm-4.6 | 128 | 7 | 28 | 3 | 6 | 7 | 0 | 58 | 8 | 0 | 2 | 3 | 3 |
 | gpt-5-chat-latest-2025-08-22 | 129 | 8 | 28 | 1 | 2 | 13 | 0 | 54 | 7 | 1 | 2 | 7 | 3 |
 | nvidiallama-3.3-nemotron-super-49b-v1-thinkenab | 129 | 7 | 27 | 2 | 4 | 19 | 0 | 44 | 5 | 0 | 5 | 2 | 4 |
