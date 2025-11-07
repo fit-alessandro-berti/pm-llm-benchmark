@@ -328,7 +328,8 @@ MODELS_DICT = {
             "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking",
             "openai/gpt-5-codex", "deepseek/deepseek-v3.2-exp",
             "z-ai/glm-4.6", "baidu/ernie-4.5-21b-a3b-thinking",
-            "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b", "minimax/minimax-m2:free"
+            "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b", "minimax/minimax-m2:free",
+            "openrouter/polaris-alpha"
         }
     },
     "manual": {
@@ -607,7 +608,7 @@ def get_ordered_references_llms(base_path="."):
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium", "grok-4", "horizon", "gpt-5", "sonoma"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium", "grok-4", "horizon", "gpt-5", "sonoma", "polaris-alpha"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
