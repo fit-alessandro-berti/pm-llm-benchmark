@@ -1,0 +1,189 @@
+## 1. Anomaly Identification in the POWL Model
+
+### Primary Anomalies:
+
+1. **Defective Loop Structure `(E, P)`**
+   - The loop includes both "Evaluate" and "Approve" without clear termination condition
+   - Creates possibility of infinite evaluation-approval cycles
+   - No mechanism to break out of the loop when approval is not possible
+
+2. **Incomplete XOR Choice `xor`**
+   - Only includes "Notify Customer" or "Skip" as options
+   - Missing the natural third path: "Re-evaluate" (returning to E)
+   - No proper feedback loop for rejected or incomplete claims
+
+3. **Dangerous Partial Ordering**
+   - `root.order.add_edge(A, C)` allows premature closure
+   - No constraints between `loop` and `C` beyond the weak edge `loop->xor`
+   - Enables "Close Claim" to occur when either:
+     - Only evaluated but not approved
+     - Loop was skipped entirely
+     - Customer notification was skipped
+
+---
+
+## 2. Hypotheses for Anomaly Origins
+
+### **Business Rule Evolution Hypothesis**
+- Original process: All claims must go through complete evaluation  approval  notification
+- Later rule changes allowed exceptions (expedited claims, supervisor overrides)
+- Partial implementation: Anomaly operators added without removing original constraints
+- **Evidence**: Loop structure exists but no edge back to R or termination condition
+
+### **Cross-Department Communication Gap**
+- Claims department expects approval before notification
+- Customer service expects notification always happens
+- Anomaly XOR implements "customer service shortcut" without claims enforcement
+- **Evidence**: No validation that approved claim actually reached customer
+
+### **System Implementation Error**
+- Tool limitations in POWL modeling (SimCorp) prevented proper constraint representation
+- Unable to express "requires" relationships (e.g., C  E, P)
+- Fell back to weakest possible partial order
+- **Evidence**: Manual audit shows "unavoidable" anomalies in system logs
+
+### **Process Mining Results Misinterpreted**
+- Anomaly model discovered during mining may not represent actual business rules
+- Analyst used flawed Czech algorithm for partial order extraction
+- Added anomaly detection as false positives
+- **Evidence**: Anomalies mainly affect edge cases not in training data
+
+---
+
+## 3. Database Verification Queries
+
+### **A. Premature Claim Closure Detection**
+```sql
+WITH closed_claims AS (
+  SELECT claim_id, MAX(timestamp) as close_time
+  FROM claim_events 
+  WHERE activity = 'C' -- Close Claim
+    AND claim_id NOT IN (
+      SELECT claim_id 
+      FROM claim_events 
+      WHERE activity IN ('E', 'P') -- Evaluate or Approve
+      AND timestamp < close_time
+    )
+  GROUP BY claim_id
+)
+SELECT c.*, e.event_id, e.timestamp, e.activity, e.resource_name
+FROM claims c
+JOIN claim_events e ON c.claim_id = e.claim_id
+JOIN closed_claims cc ON c.claim_id = cc.claim_id
+WHERE e.activity IN ('R', 'A', 'E', 
+                     'P', 'N') -- All before closure
+  AND e.timestamp < cc.close_time
+ORDER BY c.claim_id, e.timestamp;
+```
+
+### **B. Claims Without Approval but Closed**
+```sql
+SELECT c.claim_id, c.customer_id, c.claim_type, c.claim_amount
+FROM claims c
+LEFT JOIN claim_events ce ON c.claim_id = ce.claim_id AND ce.activity = 'P' -- Approval
+WHERE c.claim_id IN (
+  -- Any claim that has been closed
+  SELECT claim_id FROM claim_events WHERE activity = 'C'
+)
+  AND ce.event_id IS NULL; -- No approval found
+```
+
+### **C. Multiple Approval Activities**
+```sql
+SELECT claim_id, COUNT(*) as approval_count, 
+       STRING_AGG(event_id::text, ', ' ORDER BY timestamp) as event_ids
+FROM claim_events 
+WHERE activity = 'P' -- Approval
+  AND claim_id IN (
+    SELECT DISTINCT claim_id FROM claims
+  )
+GROUP BY claim_id
+HAVING COUNT(*) > 1
+ORDER BY approval_count DESC;
+```
+
+### **D. Skipped Customer Notification Analysis**
+```sql
+WITH claim_sequences AS (
+  SELECT claim_id,
+         collect_list(
+           struct(
+             event_id,
+             activity,
+             timestamp,
+             resource
+           )
+         ) as events
+  FROM claim_events 
+  WHERE claim_id IN (
+    SELECT claim_id FROM claims
+  )
+  GROUP BY claim_id
+),
+invalid_sequences AS (
+  SELECT claim_id, array_sort(events).events as sorted_events
+  FROM claim_sequences
+  WHERE sorted_events IS NOT NULL
+  AND NOT (
+    -- Check if all required activities exist
+    EXISTS (SELECT 1 FROM UNNEST(sorted_events) e WHERE e.activity = 'P') -- Approved
+    AND EXISTS (SELECT 1 FROM UNNEST(sorted_events) e WHERE e.activity = 'N') -- Notified
+  )
+)
+SELECT cs.claim_id, 
+       apd.events[0].activity as first_activity,
+       apd.events[0].timestamp as first_time,
+       apd.events[-1].activity as last_activity,
+       apd.events[-1].timestamp as last_time
+FROM invalid_sequences cs, UNNEST(cs.sorted_events) apd(events)
+WHERE claim_id IS NOT NULL;
+```
+
+### **E. Loop Execution Pattern Analysis**
+```sql
+WITH claim_paths AS (
+  SELECT claim_id, collect_list(activity ORDER BY timestamp) as path
+  FROM claim_events ce
+  WHERE claim_id IN (SELECT claim_id FROM claims WHERE claim_type = 'auto_insurance')
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       CASE 
+         WHEN 'E' IN path AND 'P' IN path THEN 'Both present'
+         WHEN 'E' NOT IN path THEN 'Missing Evaluation'
+         WHEN 'P' NOT IN path THEN 'Missing Approval'
+         ELSE 'Null path'
+       END as anomaly_type
+FROM claim_paths 
+WHERE activity_count > 0;
+```
+
+### **F. Potential Red Flags Discovery**
+```sql
+-- Claims with approval before evaluation (reverse chronological order)
+SELECT c.claim_id, c.customer_id, c.claim_amount, c.claim_type
+FROM claims c
+WHERE NOT EXISTS (
+  SELECT 1 FROM claim_events ce 
+  WHERE ce.claim_id = c.claim_id 
+  AND ce.activity = 'E'
+) 
+AND EXISTS (
+  SELECT 1 FROM claim_events ce 
+  WHERE ce.claim_id = c.claim_id 
+  AND ce.activity = 'P'
+) 
+AND NOT EXISTS (
+  SELECT 1 FROM claim_events ce 
+  WHERE ce.claim_id = c.claim_id 
+  AND ce.activity = 'R' 
+  AND ce.timestamp <= (
+    SELECT MAX(timestamp) 
+    FROM claim_events ce2 
+    WHERE ce2.claim_id = c.claim_id 
+    AND ce2.activity = 'P'
+  )
+);
+```
+
+These queries provide a comprehensive audit trail to validate whether the POWL anomalies exist in actual execution, enabling data-driven investigation of process implementation issues.

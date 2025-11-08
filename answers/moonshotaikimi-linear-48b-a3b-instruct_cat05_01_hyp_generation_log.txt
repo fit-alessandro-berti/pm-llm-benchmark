@@ -1,0 +1,154 @@
+Below are candidate anomalies, the hypotheses that explain them, and the SQL you could run on the Ø order_event_log (and optional join to orders, resources) to test each hypothesis.
+
+---
+
+### ANOMALY 1  
+**Sequence Violation: Perform Credit Check is missing for a case that later receives Payment.**  
+- Observation: case_id = 1003 jumps straight from “Register Order”  “Ship Goods”  “Issue Invoice”  “Receive Payment”, skipping “Perform Credit Check” (event_id 16).
+
+**Hypothesis:**  
+A parallel-track credit-decision system updated the order to “APPROVED” automatically and the event was never written, or the event was deleted, or there was a micro-service outage that swallowed the activity.
+
+**SQL to verify:**  
+```sql
+SELECT o.case_id,
+       o.customer_id,
+       o.order_type,
+       o.order_value,
+       o.order_value > 2000 AS highvalue_flag
+FROM   orders o
+WHERE  o.case_id IN (1002,1003,1004)        -- only the ones that allegedly skipped credit check
+ORDER  BY o.case_id;
+```
+
+---
+
+### ANOMALY 2  
+**Unusual short dwell time between validating stock and confirming shipment for a priority order.**  
+- Observation: case_id = 1002 has activity 9 (Validate Stock) at 09:15 and activity 4 (Confirm Shipment) at 08:25 – i.e. backwards in time.
+
+**Hypothesis:**  
+A mis-scoped event_id (duplicate or corrupted timestamp), or a missed activity that was never recorded, or a time-zone splice (systems run in different zones).
+
+**SQL to test:**  
+```sql
+WITH cte AS (
+    SELECT event_id, activity, timestamp,
+           lag(timestamp) OVER (PARTITION BY case_id ORDER BY event_id) AS prev_ts
+    FROM   order_event_log
+    WHERE  case_id = 1002
+)
+SELECT event_id, activity, timestamp, prev_ts,
+       EXTRACT(EPOCH FROM (timestamp - prev_ts))/60 AS gap_min
+FROM   cte
+WHERE  timestamp < prev_ts;
+```
+
+---
+
+### ANOMALY 3  
+**Order value does not match the sum of payment records for the same case.**  
+- Observation: case_id = 1004 has order_value = 3000.00 and only received 3000.00, so it matches.  
+  However, case_id = 1001 has order_value = 1250.00 but the payment is 1250.00 – also matches.  
+  We still want to surface any discrepancy.
+
+**Hypothesis:**  
+Partial payment, refund, or reversal not captured in the log.
+
+**SQL to validate:**  
+```sql
+SELECT o.case_id,
+       o.order_value,
+       COALESCE(SUM(ate.amount)::numeric,0) AS total_paid
+FROM   orders      o
+LEFT JOIN order_event_log e ON e.case_id = o.case_id
+LEFT JOIN LATERAL (
+        SELECT unnest(string_to_array(additional_info,'=')) AS kv
+        FROM   order_event_log
+        WHERE  case_id = o.case_id
+        AND    activity = 'Receive Payment'
+        AND    additional_info IS NOT NULL
+      ) AS t ON FALSE
+LEFT JOIN LATERAL regexp_split_to_array(kv, '=') AS p(key,val) ON TRUE
+LEFT JOIN LATERAL regexp_substr(val, '^\d+\.?\d*$') AS amount USING(key)
+GROUP  BY o.case_id, o.order_value
+HAVING o.order_value <> COALESCE(SUM(ate.amount),0);
+```
+
+---
+
+### ANOMALY 4  
+**Resource does not belong to the logically expected department.**  
+- Observation: “Register Order” is performed by resources whose department is **Sales** – correct.  
+- But “Confirm Shipment” is done by LogisticsMgr_2 (Logistics) – correct.  
+- However, “Issue Invoice” is done by FinanceTeam_01 (Accountant) – correct.  
+- Only edge case: “Perform Credit Check” is done by CreditOfficer_1, who is in Finance – normative.
+
+**Hypothesis:**  
+None visible; safe to return “no anomaly”.
+
+**SQL to scan for mismatches:**  
+```sql
+SELECT e.case_id,
+       e.activity,
+       e.resource,
+       r.department AS resource_dept,
+       CASE
+         WHEN e.activity = 'Register Order' AND r.department <> 'Sales' THEN 'ERROR'
+         WHEN e.activity = 'Perform Credit Check' AND r.department <> 'Finance' THEN 'ERROR'
+         WHEN e.activity IN ('Validate Stock','Ship Goods') AND r.department <> 'Logistics' THEN 'ERROR'
+         WHEN e.activity = 'Issue Invoice' AND r.department <> 'Finance' THEN 'ERROR'
+         WHEN e.activity = 'Receive Payment' AND r.department <> 'Finance' THEN 'ERROR'
+         ELSE 'OK'
+       END AS anomaly_flag
+FROM   order_event_log e
+LEFT JOIN resources r ON r.resource_id = e.resource
+WHERE  e.activity IN ('Register Order','Perform Credit Check','Validate Stock',
+                      'Confirm Shipment','Ship Goods','Issue Invoice','Receive Payment')
+AND    anomaly_flag = 'ERROR';
+```
+
+---
+
+### ANOMALY 5  
+**Payment date is earlier than invoice date or earlier than the workflow event dates.**  
+- Observation:  
+  - case_id = 1001: invoice at 10:00, payment at 15:00 next day – acceptable.  
+  - case_id = 1004: invoice at 09:20, payment at 09:05 – invoice after payment  **anomaly**.
+
+**Hypothesis:**  
+Billing ran early or mis-timestamped during a cut-over; or a prepayment was reversed later.
+
+**SQL to detect:**  
+```sql
+SELECT e.case_id,
+       e.activity,
+       e.timestamp AS event_time,
+       inv.timestamp AS invoice_time,
+       pay.timestamp AS payment_time
+FROM   order_event_log e
+JOIN   order_event_log inv ON inv.case_id = e.case_id AND inv.activity = 'Issue Invoice'
+JOIN   order_event_log pay ON pay.case_id = e.case_id AND pay.activity = 'Receive Payment'
+WHERE  e.activity = 'Register Order'
+  AND  inv.timestamp > pay.timestamp;
+```
+
+---
+
+### ANOMALY 6  
+**Missing intermediate activities that normally occur in a correct process.**  
+- Cases 1002 and 1003 appear to skip “Validate Stock” or “Perform Credit Check”.
+
+**SQL summary across all cases:**  
+```sql
+SELECT case_id,
+       array_agg(activity) AS act_list
+FROM   order_event_log
+WHERE  case_id IN (1001,1002,1003,1004)
+GROUP  BY case_id
+ORDER  BY case_id;
+```
+
+---
+
+These queries give you concrete evidence to decide whether the observed behaviors are truly anomalous or merely rare corner cases.

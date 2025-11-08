@@ -329,7 +329,8 @@ MODELS_DICT = {
             "openai/gpt-5-codex", "deepseek/deepseek-v3.2-exp",
             "z-ai/glm-4.6", "baidu/ernie-4.5-21b-a3b-thinking",
             "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b", "minimax/minimax-m2:free",
-            "openrouter/polaris-alpha", "moonshotai/kimi-k2-thinking"
+            "openrouter/polaris-alpha", "moonshotai/kimi-k2-thinking",
+            "moonshotai/kimi-linear-48b-a3b-instruct"
         }
     },
     "manual": {
