@@ -22,6 +22,7 @@
 | nvidiallama-3.1-nemotron-ultra-253b-v1-thinkenab | 89 | 7 | 21 | 1 | 0 | 17 | 0 | 29 | 6 | 0 | 0 | 3 | 4 |
 | nvidianemotron-nano-9b-v2-thinking | 89 | 2 | 15 | 2 | 11 | 17 | 0 | 29 | 2 | 0 | 1 | 9 | 0 |
 | qwen-qwq-32b-nostepbystep | 90 | 2 | 13 | 0 | 0 | 26 | 0 | 29 | 6 | 0 | 4 | 2 | 4 |
+| moonshotaikimi-k2-thinking | 92 | 3 | 17 | 1 | 7 | 18 | 0 | 33 | 4 | 0 | 3 | 1 | 1 |
 | gemini-2.5-pro-thinkhigh | 93 | 1 | 22 | 0 | 2 | 6 | 0 | 44 | 1 | 0 | 1 | 7 | 5 |
 | magistral-medium-2506 | 95 | 1 | 11 | 4 | 2 | 9 | 0 | 43 | 7 | 0 | 3 | 8 | 1 |
 | gpt-oss-120b | 97 | 4 | 7 | 1 | 8 | 9 | 0 | 43 | 12 | 0 | 6 | 2 | 0 |
