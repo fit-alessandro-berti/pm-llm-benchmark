@@ -367,11 +367,6 @@ MODELS_DICT = {
                 "base_model": "gpt-5.1-2025-11-13",
                 "reasoning_effort": "high"
             },
-            "gpt-5.1-2025-11-13-NONE": {
-                "provider": "openai",
-                "base_model": "gpt-5.1-2025-11-13",
-                "reasoning_effort": "none"
-            },
             "o3-pro-2025-06-10-HIGH": {
                 "provider": "openai",
                 "base_model": "o3-pro-2025-06-10",
