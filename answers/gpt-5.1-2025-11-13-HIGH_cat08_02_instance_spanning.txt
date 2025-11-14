@@ -1,0 +1,572 @@
+---
+
+## 1. Identifying instancespanning constraints and their impact
+
+### 1.1 Overall analytical approach
+
+Using the threemonth event log, the first step is to reconstruct a multiperspective process model:
+
+- **Control-flow**: discover the core flow (Order Received  Picking  Packing  QC  Shipping Label Generation) via an inductive miner/Petri net/BPMN.
+- **Time/performance**:
+  - Activity duration = `complete_ts – start_ts`
+  - Inter-activity waiting for each case c and activity A:
+    - `wait(c, A) = start_ts(c, A) – complete_ts(c, previous_activity)`
+- **Resource**: reconstruct timelines for:
+  - Resource pools: standard packing, cold-packing, QC, pickers, system.
+  - Resource calendars (shifts, breaks).
+- **Data perspective**: tag each case with attributes: `Order Type`, `Destination Region`, `Requires Cold Packing`, `Hazardous Material`.
+
+Instancespanning constraints (ISCs) manifest as **systematic patterns of waiting and concurrency** that involve *multiple* cases at once. For each constraint, we (1) formalize it, (2) detect it from the log, and (3) quantify its impact.
+
+---
+
+### 1.2 Shared Cold-Packing stations (limited cold capacity)
+
+**Constraint (formal)**  
+At most 5 cold-packing stations can run “Packing” in parallel:
+- Global capacity: `|{cases c : c.RequiresCold = TRUE  c.Packing is ACTIVE at time t}|  5`.
+
+**Detection & metrics (process mining)**
+
+1. **Concurrency and utilization**
+   - From start/complete of Packing events where `RequiresColdPacking = TRUE` AND `Resource in {Cold Stations}`, build:
+     - Time series of **# cold-packing tasks in progress**.
+     - **Utilization** of cold stations:
+       - `Util_cold = busy_time / available_time` per station; also as a pool.
+     - **Bottleneck index**:
+       - `% of time all 5 cold stations are busy`.
+
+2. **Queue and waiting measures**
+   - For each cold order:
+     - `wait_to_cold_pack = start_ts(Packing) – complete_ts(Item Picking)`.
+   - Segment these waits by:
+     - Time-of-day / day-of-week.
+     - Order Type (Express vs Standard).
+   - When `wait_to_cold_pack` is high while cold stations are at or near full utilization, that waiting is **betweeninstance** and caused by cold capacity competition.
+
+3. **Impact metrics**
+   - `Avg/median/p90 wait_to_cold_pack` for cold Express vs cold Standard orders.
+   - Contribution of cold-packing waiting to endtoend SLA:
+     - Correlate `wait_to_cold_pack` with total cycle time and % of orders missing delivery targets.
+   - **Counterfactual estimate** (data-only, before simulation):
+     - Compare waiting when cold utilization < 80% vs  90% to approximate how much delay is due to capacity saturation.
+
+---
+
+### 1.3 Shipping batches (batching before Shipping Label Generation)
+
+**Constraint (formal)**  
+Orders going to the same region are grouped in batches before Shipping Label Generation, e.g.:
+
+- For each batch B and region R:
+  - `B = {c1, …, ck}` where all `ci.DestinationRegion = R`.
+  - `ShippingLabelGen` for all `ci` in B occurs at (roughly) the same timestamp or with a batch id (e.g., `System (Batch B1)`).
+
+**Detection & metrics**
+
+1. **Identify batches**
+   - Use the `Resource`/batch identifier (`System (Batch B1)`) or cluster Shipping Label events by:
+     - Same region + very close timestamps (e.g., within 1–2 minutes) to infer implicit batches.
+
+2. **Waiting for batch formation**
+   - For each case c:
+     - `wait_for_batch(c) = start_ts(Shipping Label Gen) – complete_ts(Quality Check)`.
+   - For each batch B:
+     - `batch_formation_time(B) = max_cB complete_ts(QC, c) – min_cB complete_ts(QC, c)`  
+       (distance between first and last order ready for shipping).
+
+3. **Impact metrics**
+   - `Avg/median/p90 wait_for_batch` per region and order type.
+   - Distribution of `batch_formation_time` and batch sizes.
+   - Percentage of orders whose **only long wait** is between QC and Shipping Label — strong signal of batch-induced delay.
+   - Correlate `wait_for_batch` with ontime shipment KPI; especially for Express orders (if they are also batched).
+
+---
+
+### 1.4 Priority handling of Express orders
+
+**Constraint (formal)**  
+Express orders pre-empt or bypass Standard orders at shared resources (Packing, QC, possibly Cold stations). Two behaviors:
+
+- **Non-preemptive priority**: Express always taken from head of queue before Standard.
+- **Preemptive priority**: ongoing Standard task may be interrupted to process Express.
+
+**Detection & metrics**
+
+1. **Queue discipline reconstruction**
+   - For each shared resource (e.g., Station S7, C2, QC Staff A/B):
+     - Build chronological list of tasks executed, with start/end times and order type.
+   - Detect priority behavior:
+     - Express tasks starting when there are earlier-arrived Standard tasks waiting  **priority queueing**.
+     - If an activity for a Standard order has multiple segments (e.g., Packing start, then SUSPEND, then RESUME in the log) aligning with Express arrivals  **preemption**.
+
+2. **Delay imposed on Standard orders**
+   - For each Standard order and activity A at a shared resource:
+     - `wait_due_priority(A) = actual_start(A) – earliest_time_if_FIFO(A)`  
+     - To estimate `earliest_time_if_FIFO`, reconstruct queue ignoring priority: assume FIFO based on arrival times and observed service time distributions.
+   - Aggregate:
+     - Average delay inflicted on Standard orders at Packing and QC due to Express overtaking.
+
+3. **Express performance**
+   - `wait_to_packing_express` vs `wait_to_packing_standard`.
+   - % Express orders meeting strict SLA vs Standard.
+
+---
+
+### 1.5 Hazardous Materials concurrency limit
+
+**Constraint (formal)**  
+Across the entire facility, at any time:
+
+- `|{c : c.Hazardous = TRUE  c.activity  {Packing, Quality Check} is ACTIVE at time t}|  10`.
+
+**Detection & metrics**
+
+1. **Hazardous concurrency profile**
+   - For all events where `HazardousMaterial = TRUE` and `Activity  {Packing, Quality Check}`:
+     - Build a time series of **hazardous_in_process(t)** counting active tasks.
+   - Identify:
+     - Time intervals where `hazardous_in_process(t) = 10` (constraint binding).
+
+2. **Waiting due to hazardous limit**
+   - For each hazardous order, define:
+     - `ready_for_packing_ts` (or QC): when the previous relevant activity completed and all *caseinternal* prerequisites are satisfied.
+     - `start_packing_ts`.
+   - If during `(ready_for_packing_ts, start_packing_ts)` the global hazardous count is at 10 most of the time, classify the waiting as **limit-induced**.
+   - Metric:
+     - `wait_due_hazard_limit = portion_of_wait_when_concurrency=10 × wait`.
+
+3. **Impact metrics**
+   - Fraction of time `hazardous_in_process = 10`.
+   - Average/median/p90 **additional waiting** for hazardous orders vs nonhazardous at Packing/QC.
+   - Throughput comparison:
+     - Hazardous orders per day vs theoretical throughput if hazard limit were absent (approximation using simulation later).
+
+---
+
+### 1.6 Separating within-instance vs between-instance waiting
+
+For each inter-activity waiting period for case c moving from activity X to activity Y:
+
+1. **Compute raw waiting**  
+   `W(c, Y) = start_ts(c, Y) – complete_ts(c, X)`.
+
+2. **Check resource and constraint availability over [complete_ts(X), start_ts(Y)]**:
+
+   - For the required resource pool (e.g., cold packing stations):
+     - Was there at least one idle resource with the right skills and equipment?
+   - For global constraints (hazard limit):
+     - Was the hazardous concurrency < 10?
+   - For batching:
+     - For Shipping Label, was there any policy-imposed delay (e.g., waiting for batch size) given other orders’ readiness?
+
+3. **Classification:**
+   - **Between-instance waiting (ISC-driven)** if, for most of the interval:
+     - Required resource group fully busy OR
+     - Hazardous limit reached OR
+     - Batch policy not yet satisfied.
+   - **Within-instance waiting** if:
+     - Resource capacity and hazard quota were available, but the case didn’t start (manual hold, missing materials, internal checks, etc.).
+
+4. **Metrics**
+   - For each activity:
+     - `avg_between_instance_wait`, `avg_within_instance_wait`.
+   - For each constraint:
+     - Fraction of total waiting attributable to that constraint.
+
+This decomposition is crucial to avoid blaming a slow worker (withininstance) for delays actually caused by systemwide constraints.
+
+---
+
+## 2. Analyzing interactions between constraints
+
+The constraints do not act in isolation; they interact in ways that can amplify or neutralize bottlenecks. Process mining can surface these interactions via **multiperspective correlations**.
+
+### 2.1 Express orders + Cold-Packing
+
+- **Interaction**:
+  - Express orders that require cold packing will jump the queue at the limited cold stations.
+  - When cold stations are saturated, each incoming Express job may either:
+    - Preempt a Standard cold order (interrupt and extend its service time), or
+    - Be placed ahead of waiting Standard jobs.
+- **Impact**:
+  - Standard cold orders can experience **very long tails in waiting time**, especially during express peaks.
+  - High preemption frequency increases **setup/handling overhead** and can reduce effective capacity of cold stations.
+- **Analysis**:
+  - Slice cold-packing waiting and service times by order type and load.
+  - Study correlation between express arrival rate and Standard cold orders’ waiting time.
+  - Plot times when cold stations are fully busy **and** Express volume is high.
+
+### 2.2 Express + Batching
+
+- If Express orders are subject to the same regional batching as Standard:
+  - An Express order might finish QC quickly, then **sit idle waiting for batch completion**, undermining the express promise.
+- Conversely, if Express orders trigger smaller/frequent batches:
+  - Shipping costs might rise; Standard orders might sometimes be delayed if the system waits for Express to join a batch.
+- Analysis:
+  - Compare `wait_for_batch` for Express vs Standard by region.
+  - Check whether Express orders often have low process times up to QC but long delays before Shipping Label.
+
+### 2.3 Batching + Hazardous limit
+
+- If many hazardous orders are destined for the same region and are batched:
+  - The Packing/QC of those orders may be done in **waves** aligned with shipping schedules, keeping hazardous slots occupied for longer periods.
+  - If hazardous QC is slow and batching encourages early start of many hazardous orders, the global cap of 10 becomes a sustained bottleneck.
+- Analysis:
+  - For hazardous orders, relate batch size/formation time to the periods where `hazardous_in_process = 10`.
+  - See whether larger regional hazardous batches correspond to longer periods where new hazardous orders must wait.
+
+### 2.4 Hazardous + Cold-Packing
+
+- Some orders may be both hazardous and require cold packing.
+- They simultaneously consume:
+  - A scarce cold-packing station.
+  - One of the 10 hazardous slots.
+- Even if cold stations are increased, hazardous limit can still cap throughput; or vice versa.
+- Analysis:
+  - Compare the performance of four groups:
+    - Non-hazardous & non-cold
+    - Non-hazardous & cold
+    - Hazardous & non-cold
+    - Hazardous & cold
+  - Determine which combination drives the highest waiting and where constraints bind.
+
+### 2.5 Why understanding interactions matters
+
+- An intervention focused only on cold capacity might **not improve overall throughput** if hazardous slots remain the binding constraint.
+- Relaxing batch policies for Express might divert Express delays to Packing/QC if capacity is not adjusted simultaneously.
+- Data-driven insight on interactions prevents **local optimizations** that merely move the bottleneck instead of improving endtoend performance.
+
+---
+
+## 3. Constraintaware optimization strategies
+
+Below are four concrete strategies (you only need to implement at least three) designed to tackle ISCs and their interactions.
+
+---
+
+### Strategy 1 – Dynamic, constraintaware scheduling for Packing & QC
+
+**Addresses:**  
+Shared cold-packing; Priority handling; Hazardous limit.
+
+**Core idea**  
+Implement explicit, datadriven scheduling rules at packing and QC that balance express priorities with fair and compliant resource usage.
+
+**Specific changes**
+
+1. **Priority bands instead of “absolute” priority**
+   - Create priority levels:
+     - Level 1: Express & SLAat-risk (predicted to miss due dates without fast processing).
+     - Level 2: Express & safe.
+     - Level 3: Standard & SLAat-risk.
+     - Level 4: Standard & safe.
+   - Within each resource pool (standard packing, cold packing, QC), always select from the highest non-empty level but use **non-preemptive priority** by default.
+   - Allow preemption **only if** the remaining time of the current task exceeds a threshold (e.g., 75th percentile of its typical remaining time).
+
+2. **Hazardous release control**
+   - Separate the queue for hazardous orders before they enter Packing/QC.
+   - Introduce a controller that:
+     - Releases new hazardous jobs into Packing/QC only if current hazardous_in_process < 10.
+     - Within hazardous jobs, still respects priority bands (Express hazardous vs Standard hazardous).
+
+3. **Cold-packing queue design**
+   - Maintain separate queues at cold stations:
+     - Express cold
+     - Standard cold
+   - Always serve Express cold first, but **limit the maximum consecutive Express jobs** (e.g., serve at most k Express in a row, then at least 1 Standard) to avoid extreme starvation in Standard.
+
+**Use of event log/data**
+
+- From the log:
+  - Estimate service time distributions per activity and order type.
+  - Train a predictive model (e.g., gradient boosting) to estimate **remaining time to ship** per order and classify them into SLAatrisk vs safe.
+  - Quantify the historical fraction of time hazardous_in_process = 10 and cold station utilization to set reasonable thresholds.
+
+**Expected outcomes**
+
+- Express orders maintain or improve SLA performance with **controlled preemption**.
+- Standard orders suffer less extreme waiting, reducing variance and tail cycle times.
+- Hazardous concurrency respected while minimizing time orders spend in the constrained Packing/QC activities.
+- Measurable reduction in:
+  - Average waiting time at Packing and QC.
+  - Share of waiting attributable to resource contention, especially during peaks.
+
+---
+
+### Strategy 2 – Redesign shipping label batching with dynamic rules and express decoupling
+
+**Addresses:**  
+Shipping batch delays; Priority handling; Indirectly reduces congestion at upstream steps by speeding case completion.
+
+**Specific changes**
+
+1. **Dynamic batch triggers by region**
+   - For each region R, use historical arrivals to define:
+     - Minimum batch size `N_R`.
+     - Maximum waiting time `T_max_R` (time from QC completion of the first order in batch to label generation).
+   - New rule:
+     - Trigger Shipping Label Generation when either:
+       - `k  N_R` pending orders for R, or
+       - `time_since_first_ready  T_max_R`, whichever occurs first.
+
+2. **Express orders: micro-batches or bypass**
+   - Policy option A:
+     - Express orders bypass batching: generate shipping labels immediately upon QC completion.
+   - Policy option B:
+     - Express orders form **micro-batches** with:
+       - Smaller `N_R_express`.
+       - Much smaller `T_max_R_express`.
+   - Choose based on cost vs SLA tradeoff.
+
+3. **Virtual batching**
+   - Decouple label generation from physical consolidation:
+     - Generate labels as above (to stop counting order flow time).
+     - Physically consolidate parcels later according to truck/route planning.
+   - Technically, this might create an additional internal logistics step, but from a **process performance perspective**, the main customerrelevant processing is complete.
+
+**Use of event log/data**
+
+- For each region:
+  - Analyze historical volume and arrival patterns to choose appropriate `N_R` and `T_max_R`.
+  - Estimate cost tradeoffs: more frequent small batches (especially for Express) vs shipping cost saved by large batches.
+- Compare baseline `wait_for_batch` distributions with simulated results under new rules.
+
+**Expected outcomes**
+
+- Significant reduction in `wait_for_batch`, especially for Express.
+- More predictable lead times to shipment across regions.
+- Slight increase in shipping cost for Express (if bypass policy chosen), offset by higher SLA adherence.
+
+---
+
+### Strategy 3 – Targeted redesign of hazardous material handling
+
+**Addresses:**  
+Hazardous material concurrency limit and its downstream effects.
+
+**Specific changes**
+
+1. **Shorten hazardous time in constrained activities**
+   - Pull as much preparatory work as possible outside Packing/QC:
+     - Documentation checks, special labelling preparation, packaging material staging.
+   - When a hazardous order enters Packing/QC it should:
+     - Be processed as quickly as possible without intermediate delays.
+     - Exit the constrained area promptly, freeing a slot.
+
+2. **Hazardous-only minicell or time windows**
+   - Create a dedicated “hazardous minicell” with:
+     - Preassigned packers and QC staff.
+     - A stable subprocess tuned for speed and compliance.
+   - Schedule **hazardous waves**:
+     - For example, during periods of lower standard/cold demand, push a batch of hazardous orders through Packing and QC in a synchronized wave, maximizing utilization of the 10 permitted slots.
+
+3. **Strategic splitting (if regulation allows)**
+   - If the regulation allows splitting the hazardous limit by area:
+     - Create two physically and organizationally separate hazardous areas (each with its own max X orders, X+Y  10), distributing load while respecting the global cap.
+
+**Use of event log/data**
+
+- Analyze peractivity service times for hazardous vs nonhazardous orders.
+- Identify:
+  - Where hazardous orders spend the most time in Packing and QC.
+  - How often hazardous_in_process hits 10 and for how long.
+- Use this to:
+  - Identify steps where prework can be moved earlier.
+  - Design wave sizes and schedules.
+
+**Expected outcomes**
+
+- Reduced `wait_due_hazard_limit` (less time orders wait outside Packing/QC for a hazard slot).
+- More predictable throughput of hazardous orders without violating the 10order limit.
+- Less interference with nonhazardous orders competing for the same physical stations.
+
+---
+
+### Strategy 4 – Predictive capacity adjustment and flexible cold-packing capability
+
+**Addresses:**  
+Cold-packing bottlenecks; interactions with Express and Hazardous orders.
+
+**Specific changes**
+
+1. **Forecasting**
+   - Build time-series forecasts (e.g., per hour/day) for:
+     - Number of orders by type (Express/Standard).
+     - Proportion needing cold packing.
+     - Proportion hazardous.
+   - Include seasonality (day-of-week, promotion periods, peak seasons).
+
+2. **Flexible cold-packing configuration**
+   - Make some standard stations convertible to cold:
+     - Add removable cold infrastructure (e.g., temporary cold boxes).
+     - Cross-train staff.
+   - During forecasted peaks of cold demand:
+     - Increase the number of cold-capable stations from 5 to 6–7 (if physical constraints allow).
+   - During low cold demand:
+     - Revert to standard, improving flexibility.
+
+3. **Staffing alignment**
+   - Schedule more experienced packers/QC staff during predicted peaks of express and hazardous orders where delays are most critical.
+
+**Use of event log/data**
+
+- Use historical logs to:
+  - Derive arrival patterns by hour/day, by region, and by order attributes.
+  - Identify historical peak periods and associate them with SLA violations.
+- Calibrate forecasts and evaluate how many extra cold-capable stations (and when) would have prevented cold-related waiting spikes.
+
+**Expected outcomes**
+
+- Reduced average and peak waiting for cold packing, especially during known peak periods.
+- Better SLA performance with minimal permanent investment.
+- Improved resource utilization by aligning capacity to demand patterns.
+
+---
+
+## 4. Simulation and validation
+
+Before implementing these changes, discrete-event simulation (DES) informed by the process mining results should be used to test and validate strategies.
+
+### 4.1 Building the simulation model
+
+1. **Process model**
+   - Use the discovered Petri net/BPMN as the basis:
+     - Activities: Order Received, Picking, Packing, QC, Shipping Label Generation.
+     - Optional additional steps added for pre-/post-processing based on redesign.
+
+2. **Arrival processes**
+   - For each order segment (by type/region/cold/hazardous), fit inter-arrival distributions from the log, capturing:
+     - Daily/weekly seasonality.
+     - Peak periods (e.g., Black Friday).
+
+3. **Service time distributions**
+   - For each activity and order segment:
+     - Fit distributions (e.g., lognormal or gamma) for activity durations from start/complete timestamps.
+
+4. **Resource pools and calendars**
+   - Define:
+     - Standard packing stations and their capacity.
+     - Cold-packing stations (initially 5).
+     - QC staff.
+     - Pickers.
+   - Include shift patterns and breaks from the log or HR data.
+
+5. **Embedding instance-spanning constraints**
+   - **Cold-packing capacity**:
+     - Cold resource pool with capacity 5, adjustable in scenarios.
+   - **Hazardous limit**:
+     - Global counter: a new hazardous Packing/QC activity can start only if `hazardous_in_process < 10`.
+   - **Priority rules**:
+     - Queue disciplines implementing Strategies 1 (priority bands, controlled preemption).
+   - **Batching policies**:
+     - For Shipping Label Gen, implement baseline and redesigned rules (`N_R`, `T_max_R`, express bypass/micro-batch).
+   - **Preemption**:
+     - For preemptive priority scenarios: model service interruptions with a resume rule plus context switch overhead (short delay).
+
+### 4.2 Scenario experiments
+
+Simulate:
+
+- **Baseline**: current policies calibrated to replicate observed KPIs (through cycle time, lead times, SLA performance, resource utilization).
+- **Scenario A**: dynamic scheduling + hazardous release control (Strategy 1).
+- **Scenario B**: redesigned batching + express decoupling (Strategy 2).
+- **Scenario C**: hazardous waves + pre-work (Strategy 3).
+- **Scenario D**: combination of Strategies 1–3 with capacity adjustments (Strategy 4).
+
+### 4.3 KPIs and validation focus
+
+Track in simulation:
+
+- **Endtoend metrics**:
+  - Average, median, p90 case completion time by order type (Express/Standard, cold/non-cold, hazardous/non-hazardous).
+  - SLA adherence: % of Express orders shipped within target time.
+
+- **Constraint-specific metrics**:
+  - Cold-packing:
+    - Utilization distribution; average queue length; `wait_to_cold_pack`.
+  - Hazardous:
+    - Time distribution of `hazardous_in_process`; fraction time at limit (10).
+    - Average `wait_due_hazard_limit`.
+  - Batching:
+    - `wait_for_batch` per region and order type; average batch sizes.
+  - Priority:
+    - Number of preemptions; delay imposed on Standard orders.
+
+- **Validation**:
+  - Confirm the simulated baseline reproduces historical KPIs within acceptable error (e.g., ±5–10%).
+  - Compare scenarios to baseline across KPIs, ensuring regulatory constraints (max 10 hazardous; limited cold capacity) are never violated.
+
+---
+
+## 5. Monitoring postimplementation
+
+To ensure ongoing control and continuous improvement, configure process mining dashboards that specifically track instancespanning constraints and their effectiveness.
+
+### 5.1 Key metrics to monitor
+
+1. **Endtoend performance**
+   - Total cycle time from Order Received to Shipping Label Gen.
+   - SLA adherence for Express and Standard (by region, cold/hazardous flags).
+   - Distribution (median, p90, p95) rather than just averages.
+
+2. **Cold-packing constraint metrics**
+   - Cold-packing utilization per station and as a pool.
+   - Average/median/p90 `wait_to_cold_pack` by order type.
+   - Time series of cold queue length.
+   - Fraction of time all cold stations are busy (bottleneck measure).
+
+3. **Batching performance**
+   - `wait_for_batch` per region and per order type; tracked before/after change.
+   - Batch size and formation time distributions.
+   - For Express:
+     - Proportion of Express orders with near-zero `wait_for_batch` (if bypass/micro-batch implemented).
+
+4. **Priority handling effects**
+   - Waiting times of Standard vs Express at Packing and QC.
+   - For logs capturing suspensions:
+     - Number and duration of preemptions.
+   - Fairness indicators:
+     - Long-tail waiting for Standard orders; any indication of starvation.
+
+5. **Hazardous constraint metrics**
+   - Time series of `hazardous_in_process`.
+   - Frequency and duration of periods where the limit of 10 is reached.
+   - Average `wait_due_hazard_limit` for hazardous orders.
+   - Confirmation that the limit is NEVER exceeded (conformance checking).
+
+### 5.2 Dashboards and alerts
+
+Use a process mining platform (e.g., Celonis, Minit, QPR, ProM-based) to build:
+
+1. **Bottleneck and queue dashboard**
+   - Interactive bottleneck view highlighting the currently most delaying activity.
+   - Separate views for:
+     - Cold packing.
+     - Hazardous packing/QC.
+     - Shipping Label Gen.
+
+2. **Constraint health dashboard**
+   - Tiles showing:
+     - Current cold station utilization.
+     - Current hazardous_in_process.
+     - Current queues at critical resources.
+   - Alerts:
+     - If hazardous_in_process approaches 10 frequently or for long periods.
+     - If cold queue or `wait_to_cold_pack` breaches threshold.
+     - If `wait_for_batch` for Express exceeds acceptable threshold.
+
+3. **Before/after comparison**
+   - Side-by-side KPI comparisons:
+     - Prechange vs postchange cycle times, waiting times, utilization.
+   - Trend analysis over weeks to ensure improvements persist and to detect new bottlenecks.
+
+4. **Compliance and conformance**
+   - Automated checks that:
+     - Hazardous limit (10) is never violated.
+     - Express orders follow the intended fast path (e.g., bypass batching if implemented).
+   - Deviations flagged for root cause analysis.
+
+---
+
+By rigorously identifying the instancespanning constraints from the event log, quantifying their impact, modeling their interactions, and then validating changes via simulation before deployment, the fulfillment center can systematically reduce endtoend lead times and improve SLA adherence while remaining compliant and costeffective.
