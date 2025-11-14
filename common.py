@@ -17,7 +17,7 @@ from typing import Dict, Any
 ANSWERING_MODEL_NAME = "claude-sonnet-4-5-thinking-20250929" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
-EVALUATING_MODEL_NAME = "x-ai/grok-4-fast" if len(sys.argv) < 3 else sys.argv[2]
+EVALUATING_MODEL_NAME = "grok-4-fast-reasoning" if len(sys.argv) < 3 else sys.argv[2]
 
 
 class RateLimiter:
@@ -167,12 +167,12 @@ class Shared:
     MODEL_NAME = None
     ALIAS_MODEL_NAME = None
     MAX_REQUESTED_TOKENS = 32000
-    API_URL = "https://openrouter.ai/api/v1/"
+    API_URL = "https://api.x.ai/v1/"
+    # API_URL = "https://openrouter.ai/api/v1/"
     # API_URL = "https://generativelanguage.googleapis.com/v1beta/"
     # API_URL = "https://api.openai.com/v1/"
     # API_URL = "http://137.226.117.70:11434/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
-    # API_URL = "https://api.x.ai/v1/"
     # API_URL = "https://api.mistral.ai/v1/"
     # API_URL = "https://api.anthropic.com/v1/"
     # API_URL = "https://api.groq.com/openai/v1/"
@@ -211,7 +211,7 @@ MODELS_DICT = {
             "o3-mini-2025-01-31", "gpt-4.1-2025-04-14", "gpt-4.1-mini-2025-04-14",
             "gpt-4.1-nano-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13",
             "o3-pro-2025-06-10", "gpt-5-nano-2025-08-07", "gpt-5-mini-2025-08-07",
-            "gpt-5-2025-08-07", "gpt-5-pro-2025-10-06"
+            "gpt-5-2025-08-07", "gpt-5-pro-2025-10-06", "gpt-5.1-2025-11-13"
         }
     },
     "google": {
@@ -239,7 +239,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
-            "codestral-2501", "mistral-large-2411", "mistral-small-2501", "mistral-small-2503", "mistral-small-2506",
+            "mistral-large-2411", "mistral-small-2506",
             "open-mixtral-8x22b", "mistral-medium-2505", "devstral-medium-2507", "mistral-medium-2508"
         }
     },
@@ -258,10 +258,8 @@ MODELS_DICT = {
             "meta-llama/Llama-3.3-70B-Instruct",
             "nvidia/Llama-3.1-Nemotron-70B-Instruct",
             "microsoft/phi-4", "microsoft/WizardLM-2-8x22B",
-            "microsoft/Phi-4-multimodal-instruct", "microsoft/phi-4", "Qwen/Qwen2.5-Coder-32B-Instruct",
-            "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
-            "Qwen/Qwen3-30B-A3B", "Qwen/Qwen3-32B", "Qwen/Qwen3-14B", "Qwen/Qwen3-235B-A22B",
+            "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
+            "Qwen/Qwen3-32B", "Qwen/Qwen3-14B",
             "deepseek-ai/DeepSeek-R1-0528", "deepseek-ai/DeepSeek-V3.1"
         }
     },
@@ -277,7 +275,7 @@ MODELS_DICT = {
             "gemma3:1b-it-q8_0",
             "granite3.3", "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b",
             "phi4-mini-reasoning", "phi4-reasoning", "phi4-reasoning:plus",
-            "qwen3:4b-instruct-2507-q8_0", "gemma3:270m", "qwen3:4b-thinking-2507-q8_0",
+            "qwen3:4b-instruct-2507-q8_0", "qwen3:4b-thinking-2507-q8_0",
             "granite4:micro", "granite4:micro-h", "granite4:tiny-h", "granite4:small-h",
             "ibm/granite4:350m-h", "ibm/granite4:1b-h"
         }
@@ -285,10 +283,7 @@ MODELS_DICT = {
     "qwen": {
         "api_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/",
         "api_key": "sk-",
-        "models": {
-            "qwen2.5-72b-instruct", "qwen2.5-32b-instruct",
-            "qwen2.5-14b-instruct-1m", "qwen2.5-7b-instruct-1m", "qwen2.5-omni-7b",
-        }
+        "models": {}
     },
     "nvidia": {
         "api_url": "https://integrate.api.nvidia.com/v1/",
@@ -315,16 +310,11 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick",
-            "deepseek/deepseek-r1-distill-qwen-14b",
-            "deepseek/deepseek-r1-distill-llama-8b", "deepseek/deepseek-r1-distill-qwen-1.5b",
             "inception/mercury", "baidu/ernie-4.5-300b-a47b",
-            "openrouter/cypher-alpha:free", "moonshotai/kimi-k2",
-            "thudm/glm-4.1v-9b-thinking", "qwen/qwen3-235b-a22b-07-25", "qwen/qwen3-coder",
+            "qwen/qwen3-235b-a22b-07-25", "qwen/qwen3-coder",
             "z-ai/glm-4.5", "z-ai/glm-4.5-air", "qwen/qwen3-30b-a3b-instruct-2507",
-            "openrouter/horizon-alpha", "openrouter/horizon-beta",
             "ai21/jamba-large-1.7", "ai21/jamba-mini-1.7",
             "moonshotai/kimi-k2-0905", "qwen/qwen3-max",
-            "openrouter/sonoma-dusk-alpha", "openrouter/sonoma-sky-alpha",
             "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking",
             "openai/gpt-5-codex", "deepseek/deepseek-v3.2-exp",
             "z-ai/glm-4.6", "baidu/ernie-4.5-21b-a3b-thinking",
@@ -372,6 +362,11 @@ MODELS_DICT = {
                 "base_model": "gpt-5-2025-08-07",
                 "reasoning_effort": "high"
             },
+            "gpt-5.1-2025-11-13-HIGH": {
+                "provider": "openai",
+                "base_model": "gpt-5.1-2025-11-13",
+                "reasoning_effort": "high"
+            },
             "o3-pro-2025-06-10-HIGH": {
                 "provider": "openai",
                 "base_model": "o3-pro-2025-06-10",
@@ -416,20 +411,6 @@ MODELS_DICT = {
             "gpt-5-chat-latest-2025-08-22": {
                 "provider": "openai",
                 "base_model": "gpt-5-chat-latest"
-            },
-            #"deepseek/deepseek-r1-distill-qwen-7b": {
-            #    "provider": "ollama_local",
-            #    "base_model": "deepseek-r1:7b"
-            #},
-            "Qwen-3-30B-A3B-nothink": {
-                "provider": "deepinfra",
-                "base_model": "Qwen/Qwen3-30B-A3B",
-                "added_to_prompt": " /no_think"
-            },
-            "Qwen-3-235B-A22B-nothink": {
-                "provider": "deepinfra",
-                "base_model": "Qwen/Qwen3-235B-A22B",
-                "added_to_prompt": " /no_think"
             },
             "Qwen-3-32B-nothink": {
                 "provider": "deepinfra",
@@ -568,11 +549,6 @@ MODELS_DICT = {
                 "provider": "nvidia",
                 "base_model": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
                 "system_prompt": "detailed thinking on"
-            },
-            "cogito:14b-v1-preview-qwen-fp16": {
-                "provider": "ollama_local",
-                "base_model": "cogito:14b-v1-preview-qwen-fp16",
-                "system_prompt": "Enable deep thinking subroutine."
             }
         }
     }

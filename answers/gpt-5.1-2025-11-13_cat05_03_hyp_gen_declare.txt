@@ -1,0 +1,355 @@
+Below is an analysis of the constraints, potential causes for their anomalies, and concrete SQL queries to empirically test what happens in the actual event data.
+
+---
+
+## 1. Anomalies in the DECLARE Model
+
+Given model (simplified):
+
+- `init`:  
+  - `R` must be the start activity.
+- `existence`:  
+  - `C` must occur in every trace.
+- `responded_existence`:  
+  - If `E` occurs, then `A` must also occur (somewhere in the trace).
+- `precedence`:  
+  - `C` may occur only if `R` has occurred before.
+- `noncoexistence`:  
+  - `E` and `C` cannot both appear in the same trace.
+
+### 1.1 Logical contradictions
+
+1. **Contradiction between “must close” and “cannot evaluate if close happens”**
+
+   - `existence(C)` means every trace must contain `C`.
+   - `noncoexistence(E, C)` means if a trace has `C`, it cannot have `E`.
+   - Combined, this implies **no trace is allowed to contain `E` at all**.
+   - That is clearly at odds with an intended process where claims are supposed to be evaluated before being closed.
+
+2. **Evaluation becomes forbidden in practice**
+
+   - If the intended process requires an evaluation step (`E`) in at least some claims, the above combination makes the model infeasible.
+   - Either:
+     - No trace is compliant and contains `E`, or  
+     - The existence constraint on `C` is routinely violated in practice.
+
+### 1.2 Undermining business logic / completeness issues
+
+1. **Closing without evaluation is allowed (and in fact forced if evaluation is used)**
+
+   - There is no constraint requiring `E` to occur in traces that have `C`.
+   - Given `existence(C)` and `noncoexistence(E, C)`, the “valid” execution path becomes trivially: `R … C` with no evaluation.
+   - This undermines typical claims handling logic where evaluation should precede closure.
+
+2. **Weakness of the responded-existence relation for E  A**
+
+   - `responded_existence(E  A)` only says: if `E` occurs in the trace, `A` must also be present somewhere (before or after).
+   - It does **not** enforce that:
+     - `A` happens before `E`.
+     - There is a clear 1–1 link between the assigning adjuster and the evaluator.
+   - So traces like `R, E, C, A` are allowed by this model, which breaks the idea that an adjuster should be assigned before evaluating.
+
+3. **Precedence constraint is too weak for the overall process**
+
+   - `precedence(C  R)` only says that `R` must occur before `C`.
+   - There is no ordering enforced for `A`, `E`, `P`, `N` relative to `C` (other than the noncoexistence of `E` with `C`).
+   - Many “weird” flows become valid under the model, e.g. `R, P, N, C` with no `A` or `E`.
+
+4. **Missing constraints w.r.t. intended process**
+
+   Given the business flow R  A  E  P  N  C, the model is missing:
+
+   - `precedence(A  R)` (implied by init, but still not explicit).
+   - `precedence(E  A)`, `precedence(P  E)`, `precedence(N  P)`, `precedence(C  N)` or some equivalent ordering constraints.
+   - Any cardinality rules (e.g., exactly one `C`, at most one `E`).
+
+---
+
+## 2. Hypotheses for Why Such Anomalies Exist
+
+1. **Misinterpretation of business requirements**
+
+   - The modeler might have misunderstood “if a claim is evaluated, then it must not be closed without re-evaluation” and expressed it as a strict `noncoexistence(E, C)`, instead of a more nuanced constraint (e.g., `E` must precede `C` or `C` requires prior `E`).
+
+2. **Conflicting rules accumulated over time**
+
+   - Earlier models might have enforced evaluation before closure.
+   - Later policy changes (e.g., allowing straight-through processing for small claims without full evaluation) may have introduced `existence(C)` or relaxed evaluation rules without removing old constraints, creating contradictions.
+
+3. **Automated discovery errors**
+
+   - If this DECLARE model was discovered from event logs using a mining algorithm:
+     - Data quality issues (missing or mis-logged `E` events) could make the miner “learn” that `E` and `C` rarely co-occur  generating a `noncoexistence(E, C)` constraint.
+     - A high support / confidence cutoff may have turned a “typical” pattern into a rigid rule.
+
+4. **Over-optimization for speed**
+
+   - Pressure to reduce cycle time could lead to rules that implicitly bypass evaluation in many cases.
+   - Someone might have tried to express “we can sometimes close without evaluation” and ended up encoding it as “closing and evaluation cannot co-occur,” which is much stronger than intended.
+
+5. **Ambiguous semantics of DECLARE relations**
+
+   - `responded_existence` and `noncoexistence` can be unintuitive.
+   - The modeler could have confused “responds” with “precedes” or thought “noncoexistence” means “not in this specific path before closure” instead of “never in the same trace”.
+
+---
+
+## 3. SQL-Based Verification Strategies
+
+Below are concrete SQL queries to check whether the anomalies actually appear in the event data.
+
+### 3.1 Claims closed without evaluation
+
+Identify claims that were closed (`C`) but never had an evaluation (`E`):
+
+```sql
+SELECT c.claim_id
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id
+GROUP BY c.claim_id
+HAVING
+    SUM(CASE WHEN ce.activity = 'C' THEN 1 ELSE 0 END) > 0
+    AND SUM(CASE WHEN ce.activity = 'E' THEN 1 ELSE 0 END) = 0;
+```
+
+Count and percentage:
+
+```sql
+WITH per_claim AS (
+    SELECT claim_id,
+           MAX(CASE WHEN activity = 'C' THEN 1 ELSE 0 END) AS has_close,
+           MAX(CASE WHEN activity = 'E' THEN 1 ELSE 0 END) AS has_eval
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    COUNT(*) FILTER (WHERE has_close = 1 AND has_eval = 0) AS claims_closed_without_eval,
+    COUNT(*) FILTER (WHERE has_close = 1) AS total_closed_claims,
+    1.0 * COUNT(*) FILTER (WHERE has_close = 1 AND has_eval = 0)
+        / NULLIF(COUNT(*) FILTER (WHERE has_close = 1), 0) AS ratio_closed_without_eval
+FROM per_claim;
+```
+
+### 3.2 Claims where evaluation and closing coexist
+
+Check whether the `noncoexistence(E, C)` rule is violated in reality:
+
+```sql
+SELECT c.claim_id
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id
+GROUP BY c.claim_id
+HAVING
+    SUM(CASE WHEN ce.activity = 'C' THEN 1 ELSE 0 END) > 0
+    AND SUM(CASE WHEN ce.activity = 'E' THEN 1 ELSE 0 END) > 0;
+```
+
+Count and ratio:
+
+```sql
+WITH per_claim AS (
+    SELECT claim_id,
+           MAX(CASE WHEN activity = 'C' THEN 1 ELSE 0 END) AS has_close,
+           MAX(CASE WHEN activity = 'E' THEN 1 ELSE 0 END) AS has_eval
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    COUNT(*) FILTER (WHERE has_close = 1 AND has_eval = 1) AS claims_with_eval_and_close,
+    COUNT(*) AS total_claims,
+    1.0 * COUNT(*) FILTER (WHERE has_close = 1 AND has_eval = 1) / NULLIF(COUNT(*), 0) AS ratio
+FROM per_claim;
+```
+
+If this ratio is non-trivial, the `noncoexistence(E, C)` constraint does not reflect reality.
+
+### 3.3 Check if evaluation typically precedes closing
+
+Even though the model forbids co-occurrence, test whether, when both exist, `E` tends to come before `C`:
+
+```sql
+WITH e_times AS (
+    SELECT claim_id, MIN(timestamp) AS first_eval_time
+    FROM claim_events
+    WHERE activity = 'E'
+    GROUP BY claim_id
+),
+c_times AS (
+    SELECT claim_id, MIN(timestamp) AS first_close_time
+    FROM claim_events
+    WHERE activity = 'C'
+    GROUP BY claim_id
+)
+SELECT
+    COUNT(*) AS claims_with_eval_and_close,
+    COUNT(*) FILTER (WHERE e.first_eval_time < c.first_close_time) AS eval_before_close,
+    1.0 * COUNT(*) FILTER (WHERE e.first_eval_time < c.first_close_time)
+        / NULLIF(COUNT(*), 0) AS ratio_eval_before_close
+FROM e_times e
+JOIN c_times c ON e.claim_id = c.claim_id;
+```
+
+This can justify replacing `noncoexistence(E, C)` with a precedence-type constraint.
+
+### 3.4 Check if evaluation always co-occurs with assignment (E  A)
+
+Test whether all evaluated claims also have an assignment activity:
+
+```sql
+WITH per_claim AS (
+    SELECT claim_id,
+           MAX(CASE WHEN activity = 'E' THEN 1 ELSE 0 END) AS has_eval,
+           MAX(CASE WHEN activity = 'A' THEN 1 ELSE 0 END) AS has_assign
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    COUNT(*) FILTER (WHERE has_eval = 1 AND has_assign = 0) AS eval_without_assign,
+    COUNT(*) FILTER (WHERE has_eval = 1) AS total_eval_claims,
+    1.0 * COUNT(*) FILTER (WHERE has_eval = 1 AND has_assign = 0)
+        / NULLIF(COUNT(*) FILTER (WHERE has_eval = 1), 0) AS ratio_eval_without_assign
+FROM per_claim;
+```
+
+If `eval_without_assign` is > 0, the `responded_existence(E  A)` rule is not satisfied in data.
+
+To check whether `A` actually precedes `E` (a stronger and more sensible rule):
+
+```sql
+WITH e_times AS (
+    SELECT claim_id, MIN(timestamp) AS first_eval_time
+    FROM claim_events
+    WHERE activity = 'E'
+    GROUP BY claim_id
+),
+a_times AS (
+    SELECT claim_id, MIN(timestamp) AS first_assign_time
+    FROM claim_events
+    WHERE activity = 'A'
+    GROUP BY claim_id
+)
+SELECT
+    COUNT(*) AS eval_with_assign,
+    COUNT(*) FILTER (WHERE a.first_assign_time <= e.first_eval_time) AS assign_before_eval,
+    1.0 * COUNT(*) FILTER (WHERE a.first_assign_time <= e.first_eval_time)
+        / NULLIF(COUNT(*), 0) AS ratio_assign_before_eval
+FROM e_times e
+JOIN a_times a ON e.claim_id = a.claim_id;
+```
+
+### 3.5 Verify that claims always start with R
+
+Check if every claim’s first event is `R`:
+
+```sql
+WITH first_events AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) AS first_time
+    FROM claim_events
+    GROUP BY claim_id
+),
+first_activities AS (
+    SELECT
+        fe.claim_id,
+        ce.activity AS first_activity
+    FROM first_events fe
+    JOIN claim_events ce
+      ON ce.claim_id = fe.claim_id
+     AND ce.timestamp = fe.first_time
+)
+SELECT
+    COUNT(*) FILTER (WHERE first_activity = 'R') AS claims_starting_with_R,
+    COUNT(*) AS total_claims,
+    1.0 * COUNT(*) FILTER (WHERE first_activity = 'R') / NULLIF(COUNT(*), 0) AS ratio_starting_with_R
+FROM first_activities;
+```
+
+List claims that do not start with `R`:
+
+```sql
+SELECT claim_id, first_activity
+FROM (
+    SELECT
+        fe.claim_id,
+        ce.activity AS first_activity
+    FROM (
+        SELECT claim_id, MIN(timestamp) AS first_time
+        FROM claim_events
+        GROUP BY claim_id
+    ) fe
+    JOIN claim_events ce
+      ON ce.claim_id = fe.claim_id
+     AND ce.timestamp = fe.first_time
+) t
+WHERE first_activity <> 'R';
+```
+
+### 3.6 Verify that all closed claims have at least one R (C  R precedence)
+
+Check whether any claim has `C` but no `R`:
+
+```sql
+WITH per_claim AS (
+    SELECT claim_id,
+           MAX(CASE WHEN activity = 'C' THEN 1 ELSE 0 END) AS has_close,
+           MAX(CASE WHEN activity = 'R' THEN 1 ELSE 0 END) AS has_receive
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    COUNT(*) FILTER (WHERE has_close = 1 AND has_receive = 0) AS close_without_receive,
+    COUNT(*) FILTER (WHERE has_close = 1) AS total_closed_claims
+FROM per_claim;
+```
+
+Check if `R` actually precedes `C` when both exist:
+
+```sql
+WITH r_times AS (
+    SELECT claim_id, MIN(timestamp) AS first_receive_time
+    FROM claim_events
+    WHERE activity = 'R'
+    GROUP BY claim_id
+),
+c_times AS (
+    SELECT claim_id, MIN(timestamp) AS first_close_time
+    FROM claim_events
+    WHERE activity = 'C'
+    GROUP BY claim_id
+)
+SELECT
+    COUNT(*) AS claims_with_receive_and_close,
+    COUNT(*) FILTER (WHERE r.first_receive_time <= c.first_close_time) AS receive_before_close,
+    1.0 * COUNT(*) FILTER (WHERE r.first_receive_time <= c.first_close_time)
+        / NULLIF(COUNT(*), 0) AS ratio_receive_before_close
+FROM r_times r
+JOIN c_times c ON r.claim_id = c.claim_id;
+```
+
+### 3.7 Optional: Link to adjusters’ specialization
+
+To see whether evaluations are typically done by assigned adjusters with matching specialization (e.g., “auto” vs “home”), you can check consistency between `claims`, `adjusters`, and evaluation events (if the `resource` in `claim_events` stores adjuster identifiers):
+
+Example: evaluation for auto claims done by auto-specialized adjusters:
+
+```sql
+SELECT ce.claim_id,
+       ce.resource AS adjuster_id,
+       a.specialization,
+       cl.claim_type
+FROM claim_events ce
+JOIN claims cl ON cl.claim_id = ce.claim_id
+JOIN adjusters a ON a.adjuster_id::text = ce.resource  -- adjust if types differ
+WHERE ce.activity = 'E'
+  AND (
+       (cl.claim_type LIKE '%auto%' AND a.specialization <> 'auto')
+    OR (cl.claim_type LIKE '%home%' AND a.specialization <> 'home')
+  );
+```
+
+Any rows returned indicate misalignment between evaluation and adjuster specialization.
+
+---
+
+Using these queries, you can see whether the declared constraints match real behavior, quantify the anomalies, and then refine the DECLARE model: likely replacing `noncoexistence(E, C)` with a suitable precedence or response constraint and strengthening the relations among R, A, E, P, N, and C.

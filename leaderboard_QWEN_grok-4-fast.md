@@ -1,6 +1,6 @@
 A score in the range **27-34** is considered **sufficient**; a score in the range **34-38** is considered **fair**; a score in the range **38-44** is considered **good**; and a score **>44** is considered **excellent**.
 
-## QWEN Leaderboard (1-shot; x-ai/grok-4-fast used as a judge)
+## QWEN Leaderboard (1-shot; grok-4-fast-reasoning used as a judge)
 
 | Model                         | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | OPT                  | :nerd_face: VI       |
 |:------------------------------|:---------|:-------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
