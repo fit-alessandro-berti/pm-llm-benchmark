@@ -1,0 +1,395 @@
+Here’s an analysis of the sample log plus concrete SQL you can run on the full tables to investigate.
+
+---
+
+## 1. Anomalies / Undesirable Behaviors in the Sample
+
+**Normal reference flow**
+
+1. Register Order  
+2. Perform Credit Check  
+3. Validate Stock  
+4. Confirm Shipment  
+5. Ship Goods  
+6. Issue Invoice  
+7. Receive Payment  
+
+### Case 1001
+
+- Sequence: Register  Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Issue Invoice  Receive Payment
+- This closely matches the normal flow.
+- No obvious control-flow anomalies in the sample.
+
+---
+
+### Case 1002
+
+Events:  
+Register  Confirm Shipment  Ship Goods  Credit Check  Validate Stock  Issue Invoice  Receive Payment
+
+Anomalies:
+
+1. **Shipment steps before risk/stock checks**
+   - `Confirm Shipment` and `Ship Goods` occur **before**:
+     - `Perform Credit Check`
+     - `Validate Stock`
+   - This violates the intended control-flow (steps 2–3 should precede 4–5).
+
+2. **Potential policy override / early shipment**
+   - `additional_info` on Confirm Shipment: `attempted_early=Y`
+   - Suggests intentional early shipment attempt.
+
+---
+
+### Case 1003
+
+Events:  
+Register  Credit Check  Ship Goods  Issue Invoice  Confirm Shipment  Receive Payment
+
+Anomalies:
+
+1. **Missing `Validate Stock`**
+   - No `Validate Stock` event in this case.
+
+2. **Shipment before confirmation**
+   - `Ship Goods` occurs **before** `Confirm Shipment`.
+   - Normal flow requires confirmation first.
+
+3. **Late confirmation / backdated administrative step**
+   - `Confirm Shipment` after `Ship Goods` with `late_confirmation=Y`.
+   - Indicates confirmation may be used to “regularize” an already executed shipment.
+
+---
+
+### Case 1004
+
+Events:  
+Register  Receive Payment  Issue Invoice  Confirm Shipment (scheduled=N)  Ship Goods
+
+Anomalies:
+
+1. **Payment before Invoice**
+   - `Receive Payment` occurs **before** `Issue Invoice`.
+   - Usually invoice precedes payment.
+
+2. **Missing checks**
+   - No `Perform Credit Check`.
+   - No `Validate Stock`.
+
+3. **Shipment despite “not scheduled”**
+   - `Confirm Shipment` with `shipment_scheduled=N`.
+   - Yet `Ship Goods` still occurs.
+   - Indicates conflicting shipment status vs actual fulfillment.
+
+4. **Very early payment**
+   - Payment only 5 minutes after registration.
+   - May be prepayment, but if not policy, could be logging or allocation error.
+
+---
+
+## 2. Hypotheses About Root Causes
+
+1. **Weak or missing control-flow enforcement**
+   - Systems allow logistics to ship before credit/stock checks are completed.
+   - Manual “override” modes not logged explicitly (other than flags like `attempted_early=Y`).
+
+2. **Parallel or poorly synchronized sub-processes**
+   - Shipment, invoicing, and payment may be handled in different systems.
+   - Logs are integrated but not sequenced correctly, leading to:
+     - Confirmation after shipment (`late_confirmation=Y`).
+     - Payment recorded before invoice (integration lag or backdated invoice).
+
+3. **Policy exceptions (e.g., priority / VIP / prepayment orders)**
+   - Priority orders might intentionally bypass certain checks or perform them later.
+   - Prepayment orders (like case 1004) may allow payment before invoice.
+   - But if this is not systematically documented, it appears as an anomaly.
+
+4. **Data entry / logging errors**
+   - Wrong timestamps (time zone, batch import).
+   - Wrong event type selection (e.g., using “Confirm Shipment” even when scheduling=N).
+   - Payments manually allocated to wrong case_id.
+
+5. **Training / process compliance issues**
+   - Staff may not follow the defined sequence (esp. in Logistics and Finance).
+   - Flags such as `attempted_early=Y` and `late_confirmation=Y` may be signs of frequent non-compliance.
+
+---
+
+## 3. SQL Queries to Investigate Further
+
+Below are PostgreSQL queries using `order_event_log`, `orders`, and `resources`.
+
+### 3.1. Get the Trace Per Case (Baseline View)
+
+```sql
+SELECT
+    case_id,
+    event_id,
+    activity,
+    timestamp,
+    resource,
+    additional_info
+FROM order_event_log
+ORDER BY case_id, timestamp, event_id;
+```
+
+Use this as a sanity check and for spot-inspection.
+
+---
+
+### 3.2. Build a Per-Case Activity Timeline (Convenient CTE)
+
+This CTE will be reused in several queries:
+
+```sql
+WITH events AS (
+    SELECT
+        case_id,
+        MIN(CASE WHEN activity = 'Register Order'        THEN timestamp END) AS t_register,
+        MIN(CASE WHEN activity = 'Perform Credit Check'  THEN timestamp END) AS t_credit,
+        MIN(CASE WHEN activity = 'Validate Stock'        THEN timestamp END) AS t_stock,
+        MIN(CASE WHEN activity = 'Confirm Shipment'      THEN timestamp END) AS t_confirm,
+        MIN(CASE WHEN activity = 'Ship Goods'            THEN timestamp END) AS t_ship,
+        MIN(CASE WHEN activity = 'Issue Invoice'         THEN timestamp END) AS t_invoice,
+        MIN(CASE WHEN activity = 'Receive Payment'       THEN timestamp END) AS t_payment
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT * FROM events;
+```
+
+---
+
+### 3.3. Cases Missing Required Activities
+
+```sql
+WITH per_case AS (
+    SELECT
+        case_id,
+        BOOL_OR(activity = 'Register Order')       AS has_register,
+        BOOL_OR(activity = 'Perform Credit Check') AS has_credit,
+        BOOL_OR(activity = 'Validate Stock')       AS has_stock,
+        BOOL_OR(activity = 'Confirm Shipment')     AS has_confirm,
+        BOOL_OR(activity = 'Ship Goods')           AS has_ship,
+        BOOL_OR(activity = 'Issue Invoice')        AS has_invoice,
+        BOOL_OR(activity = 'Receive Payment')      AS has_payment
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT *
+FROM per_case
+WHERE NOT (has_register AND has_credit AND has_stock
+           AND has_confirm AND has_ship AND has_invoice AND has_payment);
+```
+
+- Investigate which types of orders (join with `orders`) systematically miss certain steps.
+
+---
+
+### 3.4. Out-of-Order Activities vs Expected Flow
+
+Use the `events` CTE:
+
+```sql
+WITH events AS (
+    SELECT
+        case_id,
+        MIN(CASE WHEN activity = 'Register Order'        THEN timestamp END) AS t_register,
+        MIN(CASE WHEN activity = 'Perform Credit Check'  THEN timestamp END) AS t_credit,
+        MIN(CASE WHEN activity = 'Validate Stock'        THEN timestamp END) AS t_stock,
+        MIN(CASE WHEN activity = 'Confirm Shipment'      THEN timestamp END) AS t_confirm,
+        MIN(CASE WHEN activity = 'Ship Goods'            THEN timestamp END) AS t_ship,
+        MIN(CASE WHEN activity = 'Issue Invoice'         THEN timestamp END) AS t_invoice,
+        MIN(CASE WHEN activity = 'Receive Payment'       THEN timestamp END) AS t_payment
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    case_id,
+    t_register,
+    t_credit,
+    t_stock,
+    t_confirm,
+    t_ship,
+    t_invoice,
+    t_payment,
+    /* Flags for specific violations */
+    (t_ship    IS NOT NULL AND t_credit  IS NOT NULL AND t_ship    < t_credit)  AS ship_before_credit,
+    (t_ship    IS NOT NULL AND t_stock   IS NOT NULL AND t_ship    < t_stock)   AS ship_before_stock,
+    (t_ship    IS NOT NULL AND t_confirm IS NOT NULL AND t_ship    < t_confirm) AS ship_before_confirm,
+    (t_payment IS NOT NULL AND t_invoice IS NOT NULL AND t_payment < t_invoice) AS payment_before_invoice
+FROM events
+WHERE
+      (t_ship    IS NOT NULL AND t_credit  IS NOT NULL AND t_ship    < t_credit)
+   OR (t_ship    IS NOT NULL AND t_stock   IS NOT NULL AND t_ship    < t_stock)
+   OR (t_ship    IS NOT NULL AND t_confirm IS NOT NULL AND t_ship    < t_confirm)
+   OR (t_payment IS NOT NULL AND t_invoice IS NOT NULL AND t_payment < t_invoice);
+```
+
+- This will surface cases like 1002, 1003, 1004.
+
+---
+
+### 3.5. Shipments with “Not Scheduled” Confirmation
+
+```sql
+SELECT DISTINCT c.case_id
+FROM order_event_log AS c
+JOIN order_event_log AS s
+  ON s.case_id = c.case_id
+ AND s.activity = 'Ship Goods'
+WHERE c.activity = 'Confirm Shipment'
+  AND c.additional_info ILIKE '%shipment_scheduled=N%';
+```
+
+- Inspect how often goods are shipped despite `shipment_scheduled=N`.
+
+---
+
+### 3.6. Early / Late Flags from `additional_info`
+
+```sql
+SELECT
+    activity,
+    additional_info,
+    COUNT(*) AS cnt
+FROM order_event_log
+WHERE additional_info ILIKE '%attempted_early=Y%'
+   OR additional_info ILIKE '%late_confirmation=Y%'
+GROUP BY activity, additional_info
+ORDER BY cnt DESC;
+```
+
+To list affected cases:
+
+```sql
+SELECT
+    case_id,
+    activity,
+    timestamp,
+    resource,
+    additional_info
+FROM order_event_log
+WHERE additional_info ILIKE '%attempted_early=Y%'
+   OR additional_info ILIKE '%late_confirmation=Y%'
+ORDER BY case_id, timestamp;
+```
+
+---
+
+### 3.7. Repeated Activities (Possible Rework / Loops)
+
+```sql
+SELECT
+    case_id,
+    activity,
+    COUNT(*) AS occurrences
+FROM order_event_log
+GROUP BY case_id, activity
+HAVING COUNT(*) > 1
+ORDER BY occurrences DESC;
+```
+
+- Indicates rework (e.g., multiple credit checks or stock validations).
+
+---
+
+### 3.8. Role / Department vs Activity (Resource Compliance)
+
+Aggregate mapping:
+
+```sql
+SELECT
+    oel.activity,
+    r.role,
+    r.department,
+    COUNT(*) AS cnt
+FROM order_event_log AS oel
+LEFT JOIN resources AS r
+  ON r.resource_id = oel.resource
+GROUP BY oel.activity, r.role, r.department
+ORDER BY oel.activity, cnt DESC;
+```
+
+Flag suspicious combinations (e.g., non-Finance doing finance activities):
+
+```sql
+SELECT
+    oel.case_id,
+    oel.activity,
+    oel.resource,
+    r.role,
+    r.department,
+    oel.timestamp
+FROM order_event_log AS oel
+LEFT JOIN resources AS r
+  ON r.resource_id = oel.resource
+WHERE
+    (oel.activity IN ('Perform Credit Check', 'Issue Invoice', 'Receive Payment')
+     AND (r.department IS NULL OR r.department <> 'Finance'))
+ OR (oel.activity = 'Register Order'
+     AND (r.department IS NULL OR r.department <> 'Sales'))
+ OR (oel.activity IN ('Validate Stock', 'Confirm Shipment', 'Ship Goods')
+     AND (r.department IS NULL OR r.department <> 'Logistics'))
+ORDER BY oel.case_id, oel.timestamp;
+```
+
+---
+
+### 3.9. Relationship Between Order Type and Control-Flow Violations
+
+Example: do “priority” orders skip checks more often?
+
+```sql
+WITH per_case AS (
+    SELECT
+        case_id,
+        BOOL_OR(activity = 'Perform Credit Check') AS has_credit,
+        BOOL_OR(activity = 'Validate Stock')       AS has_stock
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    o.order_type,
+    COUNT(*) AS total_orders,
+    COUNT(*) FILTER (WHERE NOT has_credit) AS missing_credit_check,
+    COUNT(*) FILTER (WHERE NOT has_stock)  AS missing_stock_check
+FROM per_case pc
+JOIN orders o ON o.case_id = pc.case_id
+GROUP BY o.order_type
+ORDER BY o.order_type;
+```
+
+---
+
+### 3.10. Payment Amount vs Order Value (Potential Misallocations)
+
+Assuming `additional_info` has `amount=...` for `Receive Payment`:
+
+```sql
+WITH payments AS (
+    SELECT
+        case_id,
+        -- Extract numeric part after 'amount='; adjust regex if needed
+        CAST(REGEXP_REPLACE(additional_info, '.*amount=([0-9.]+).*', '\1') AS DECIMAL(18,2)) AS paid_amount
+    FROM order_event_log
+    WHERE activity = 'Receive Payment'
+      AND additional_info LIKE '%amount=%'
+)
+SELECT
+    o.case_id,
+    o.order_value,
+    p.paid_amount,
+    (p.paid_amount - o.order_value) AS diff
+FROM orders o
+JOIN payments p ON p.case_id = o.case_id
+WHERE p.paid_amount <> o.order_value;
+```
+
+- Helps detect misallocated payments or incorrect amounts (especially in unusual process paths).
+
+---
+
+If you’d like, I can next:  
+- Turn these patterns into a set of “conformance rules” that you can maintain as views, or  
+- Focus only on one anomaly type (e.g., “shipment before credit check”) and build KPI-style metrics and dashboards around it.

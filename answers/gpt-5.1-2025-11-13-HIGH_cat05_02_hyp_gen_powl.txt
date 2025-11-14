@@ -1,0 +1,497 @@
+### 1. Anomalies in the given POWL model
+
+Relative to the intended flow  
+`R  A  E  P  N  C`, the POWL model introduces several deviations.
+
+#### 1.1 Loop between Evaluate (E) and Approve (P)
+
+`loop = OperatorPOWL(operator=Operator.LOOP, children=[E, P])`
+
+Described semantics: perform `E` once, then either:
+- exit the loop, or  
+- execute `P` then `E` again, repeating `P–E` cycles.
+
+Implications:
+
+- **Multiple approvals and evaluations**:  
+  Sequences like `E`, `E–P–E`, `E–P–E–P–E`, … are allowed, so:
+  - A claim can be approved multiple times (multiple `P` events).
+  - It can be evaluated multiple times (multiple `E` events).
+
+- **Approval not strictly “final”**:  
+  Because `E` always follows `P` inside the loop, there is always an evaluation after the last approval in the loop; that is unusual for “final approval”.
+
+- **Possible exit without any approval**:  
+  Because you can exit after the first `E`, you can have claims with:
+  - `E` but no `P`.
+
+This conflicts with the “single evaluation  single approval” intuition of the ideal model.
+
+#### 1.2 XOR that may skip Notify (N)
+
+`xor = OperatorPOWL(operator=Operator.XOR, children=[N, skip])`
+
+Implications:
+
+- **Notification is optional**:
+  - Path 1: `N` executed.
+  - Path 2: `skip` (silent transition) executed and `N` never occurs.
+
+- **No guarantee that customers are notified** after approval, even though the ideal flow includes `N` as a mandatory step.
+
+#### 1.3 Partial order that allows premature/parallel closure (C)
+
+Partial order:
+
+```python
+root = StrictPartialOrder(nodes=[R, A, loop, xor, C])
+root.order.add_edge(R, A)       # R < A
+root.order.add_edge(A, loop)    # A < loop
+root.order.add_edge(loop, xor)  # loop < xor
+root.order.add_edge(A, C)       # A < C
+# no edge xor -> C
+# no edge loop -> C
+```
+
+From this:
+
+- Enforced:
+  - `R` must happen before `A`.
+  - `A` before `loop`.
+  - `loop` before `xor`.
+  - `A` before `C`.
+
+- **Not enforced**:
+  - No requirement that `C` happens after `loop` (i.e., after `E/P` iterations).
+  - No requirement that `C` happens after `xor` (after `N`/skip).
+
+So linearizations like:
+
+- `R  A  C  loop  xor`  
+- `R  A  loop  C  xor`  
+
+are allowed by the partial order.
+
+Implications:
+
+- **Claim can be closed before any evaluation (E)**.
+- **Claim can be closed before any approval (P)**.
+- **Claim can be closed before notification (N)** or with notification after closure.
+- **Evaluation, approval and notification can occur after a claim is closed**, because there is no ordering between `C` and `loop`/`xor` except that `A` precedes `C`.
+
+This is a major deviation from the ideal sequence.
+
+---
+
+### 2. Hypotheses for why these anomalies might exist
+
+Below, each anomaly is paired with plausible explanations.
+
+#### 2.1 E–P loop anomalies
+
+**Observed behavior:**
+- Multiple evaluations and approvals per claim.
+- Possible evaluations after approval.
+- Possible evaluation-only claims with no approval.
+
+**Possible explanations:**
+
+1. **Business-rule reality is iterative**  
+   - Claims are sometimes re-evaluated after new evidence or negotiation.
+   - Approvals might be conditional, requiring further evaluation (e.g., re-approval after modification).
+   - The modeler represented this by a simple loop rather than separate “re-open” or “appeal” subprocesses.
+
+2. **Partial implementation of an escalation/review concept**
+   - Idea: first-level evaluation, second-level approval, then possibly revisiting evaluation.
+   - Only one generic `E` and `P` were modeled instead of distinct “initial evaluation”, “review evaluation”, “final approval”.
+
+3. **Tool limitation / modeling shortcut**
+   - The LOOP operator was used as a quick way to capture “repetition” without careful thought about how many repeats are valid or when the loop must stop.
+
+4. **Miscommunication between business and modeler**
+   - Business may have said “Sometimes we revisit evaluation and approval” and the modeler encoded an unconstrained loop instead of specifying stricter rules (e.g., at most one re-evaluation).
+
+#### 2.2 Optional Notification (N via XOR with skip)
+
+**Observed behavior:**
+- Notification can be skipped entirely.
+
+**Possible explanations:**
+
+1. **Offline or external notifications**
+   - Some customers may be notified outside the system (phone calls, letters) so no `N` event exists. The `skip` branch represents this but makes “no notification” look acceptable.
+
+2. **Notification only required in some cases**
+   - E.g., only approved claims trigger a formal notification; rejected or withdrawn claims may not.
+   - Modeler used a single XOR to represent all these scenarios instead of modeling conditional notification paths explicitly.
+
+3. **Historic backlog / migration**
+   - During a transition to a new system, older claims may not have notification events; XOR was used to allow those traces.
+
+4. **Technical/errors**
+   - Notification step may fail or time out in the workflow system; `skip` branch used to let the process continue rather than block.
+
+#### 2.3 Early/parallel closure (C) via weak partial order
+
+**Observed behavior:**
+- C only constrained to be after A. It can occur:
+  - Before E/P.
+  - Before N or the XOR branch.
+  - In parallel with the loop.
+
+**Possible explanations:**
+
+1. **Missing explicit “reject/withdraw” path**
+   - In reality, some claims are closed immediately after assignment (e.g., duplicates, obvious ineligibility, customer withdrawal).
+   - Instead of modeling distinct activities like “Reject claim” or “Withdrawn by customer”, the modeler reused `C` (close claim) after `A`.
+
+2. **Simplistic over-approximation**
+   - Modeler wanted a process model flexible enough to replay all past logs (including ad-hoc exceptions) and therefore relaxed constraints so the model wouldn’t “reject” real traces.
+
+3. **System auto-closure**
+   - Claims might auto-close (e.g., after SLA timeout or missing documents) without a full evaluation or approval. This got modeled as `C` without properly constraining other steps.
+
+4. **Miscommunication / incomplete redesign**
+   - Business redesign introduced an early closure rule, but the conditions weren’t fully modeled (e.g., “only if no evaluation has started”). So the model allows closure even when E/P/N exist or are still in progress.
+
+---
+
+### 3. How to verify these hypotheses using the database
+
+Below are concrete PostgreSQL query ideas using:
+
+- `claim_events(claim_id, activity, timestamp, resource, additional_info)`  
+- `claims(claim_id, customer_id, claim_amount, claim_type, submission_date)`  
+- `adjusters(adjuster_id, name, specialization, region)`
+
+Assume activities use codes `R, A, E, P, N, C` as in the model. If your column is really called `"timestamp"`, you may need to quote it: `ce."timestamp"`.
+
+#### 3.0 Reusable per-claim event summary
+
+First define a per-claim summary you can reuse:
+
+```sql
+WITH per_claim AS (
+    SELECT
+        claim_id,
+        MIN(CASE WHEN activity = 'R' THEN "timestamp" END) AS t_R,
+        MIN(CASE WHEN activity = 'A' THEN "timestamp" END) AS t_A,
+        MIN(CASE WHEN activity = 'E' THEN "timestamp" END) AS t_E_first,
+        MAX(CASE WHEN activity = 'E' THEN "timestamp" END) AS t_E_last,
+        MIN(CASE WHEN activity = 'P' THEN "timestamp" END) AS t_P_first,
+        MAX(CASE WHEN activity = 'P' THEN "timestamp" END) AS t_P_last,
+        MIN(CASE WHEN activity = 'N' THEN "timestamp" END) AS t_N,
+        MIN(CASE WHEN activity = 'C' THEN "timestamp" END) AS t_C,
+        COUNT(*) FILTER (WHERE activity = 'E') AS cnt_E,
+        COUNT(*) FILTER (WHERE activity = 'P') AS cnt_P
+    FROM claim_events
+    GROUP BY claim_id
+)
+```
+
+You can prepend this CTE to many of the queries below.
+
+---
+
+#### 3.1 Claims closed without proper evaluation and/or approval
+
+**a) Closed with no evaluation or approval at all**
+
+```sql
+WITH per_claim AS ( ... )
+SELECT
+    claim_id,
+    t_C
+FROM per_claim
+WHERE t_C IS NOT NULL
+  AND t_E_first IS NULL
+  AND t_P_first IS NULL;
+```
+
+This finds claims that were closed (`C` exists) but never had `E` or `P` events.
+
+**b) Closed before evaluation and/or approval**
+
+```sql
+WITH per_claim AS ( ... )
+SELECT
+    claim_id,
+    t_C,
+    t_E_first,
+    t_P_first
+FROM per_claim
+WHERE t_C IS NOT NULL
+  AND (
+        t_E_first IS NULL OR t_E_first > t_C
+     OR t_P_first IS NULL OR t_P_first > t_C
+  );
+```
+
+This identifies claims where closure happened before the first evaluation and/or approval, indicating premature closure enabled by the weak partial order.
+
+You can further break this down:
+
+- Closed before any evaluation:
+
+```sql
+WITH per_claim AS ( ... )
+SELECT claim_id, t_C, t_E_first
+FROM per_claim
+WHERE t_C IS NOT NULL
+  AND (t_E_first IS NULL OR t_E_first > t_C);
+```
+
+- Closed before any approval:
+
+```sql
+WITH per_claim AS ( ... )
+SELECT claim_id, t_C, t_P_first
+FROM per_claim
+WHERE t_C IS NOT NULL
+  AND (t_P_first IS NULL OR t_P_first > t_C);
+```
+
+---
+
+#### 3.2 Claims where evaluation/approval happen after closure
+
+To see if E or P events happen after closing (possible due to the partial order):
+
+```sql
+WITH per_claim AS ( ... )
+SELECT
+    ce.claim_id,
+    ce.activity,
+    ce."timestamp" AS event_time,
+    pc.t_C
+FROM claim_events ce
+JOIN per_claim pc USING (claim_id)
+WHERE pc.t_C IS NOT NULL
+  AND ce.activity IN ('E','P','N')
+  AND ce."timestamp" > pc.t_C
+ORDER BY ce.claim_id, ce."timestamp";
+```
+
+This will show “post-closure” evaluations, approvals, or notifications.
+
+---
+
+#### 3.3 Multiple approvals or heavy looping in E–P
+
+**a) Claims approved multiple times**
+
+```sql
+WITH per_claim AS ( ... )
+SELECT
+    claim_id,
+    cnt_P
+FROM per_claim
+WHERE cnt_P > 1
+ORDER BY cnt_P DESC;
+```
+
+This tests the “multiple approvals” aspect of the loop.
+
+**b) Distribution of evaluation/approval counts**
+
+```sql
+WITH per_claim AS ( ... )
+SELECT
+    cnt_E,
+    cnt_P,
+    COUNT(*) AS num_claims
+FROM per_claim
+GROUP BY cnt_E, cnt_P
+ORDER BY cnt_E, cnt_P;
+```
+
+If you see many claims with `cnt_P > 1` or very high `cnt_E`, that supports the hypothesis that the loop is heavily used (and may represent rework or a modeling problem).
+
+**c) Inspect the actual sequences for some claims**
+
+```sql
+SELECT
+    claim_id,
+    STRING_AGG(activity, '->' ORDER BY "timestamp") AS trace
+FROM claim_events
+GROUP BY claim_id
+LIMIT 50;  -- increase as needed
+```
+
+You can manually inspect patterns like `R->A->E->P->E->P->N->C` or `R->A->E->C`, etc.
+
+---
+
+#### 3.4 Notification (N) skipped or misplaced
+
+**a) Approved claims without any notification**
+
+```sql
+WITH per_claim AS ( ... )
+SELECT
+    COUNT(*) AS approved_claims,
+    COUNT(*) FILTER (WHERE t_N IS NULL) AS approved_without_notification
+FROM per_claim
+WHERE t_P_first IS NOT NULL;
+```
+
+To see percentages by claim type:
+
+```sql
+WITH per_claim AS ( ... )
+SELECT
+    c.claim_type,
+    COUNT(*) FILTER (WHERE pc.t_P_first IS NOT NULL)              AS approved_claims,
+    COUNT(*) FILTER (WHERE pc.t_P_first IS NOT NULL AND pc.t_N IS NULL) AS approved_without_notif
+FROM per_claim pc
+JOIN claims c USING (claim_id)
+GROUP BY c.claim_type;
+```
+
+**b) Notification happening before approval or after closure**
+
+```sql
+WITH per_claim AS ( ... )
+SELECT
+    claim_id,
+    t_P_first,
+    t_N,
+    t_C,
+    CASE
+        WHEN t_N IS NULL THEN 'no_notification'
+        WHEN t_P_first IS NOT NULL AND t_N < t_P_first THEN 'notification_before_approval'
+        WHEN t_C IS NOT NULL AND t_N > t_C THEN 'notification_after_closure'
+        ELSE 'notification_between_P_and_C'
+    END AS notif_category
+FROM per_claim;
+```
+
+You can group by `notif_category` for counts:
+
+```sql
+WITH per_claim AS ( ... )
+SELECT
+    CASE
+        WHEN t_N IS NULL THEN 'no_notification'
+        WHEN t_P_first IS NOT NULL AND t_N < t_P_first THEN 'notification_before_approval'
+        WHEN t_C IS NOT NULL AND t_N > t_C THEN 'notification_after_closure'
+        ELSE 'notification_between_P_and_C'
+    END AS notif_category,
+    COUNT(*) AS num_claims
+FROM per_claim
+GROUP BY notif_category;
+```
+
+This directly tests whether the XOR skip and weak ordering around `C` are reflected in real data.
+
+---
+
+#### 3.5 Time and segment analysis (to test “business change” or “miscommunication” hypotheses)
+
+To see if anomalies correlate with time (e.g., after a process change date):
+
+```sql
+WITH per_claim AS ( ... )
+SELECT
+    date_trunc('month', t_C) AS month,
+    COUNT(*) AS closed_claims,
+    COUNT(*) FILTER (
+        WHERE (t_E_first IS NULL OR t_E_first > t_C)
+           OR (t_P_first IS NULL OR t_P_first > t_C)
+    ) AS closed_without_proper_E_or_P
+FROM per_claim
+WHERE t_C IS NOT NULL
+GROUP BY date_trunc('month', t_C)
+ORDER BY month;
+```
+
+To see whether notification skipping is concentrated in certain products or regions (possible miscommunication):
+
+```sql
+WITH per_claim AS ( ... ),
+assigner AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        resource
+    FROM claim_events
+    WHERE activity = 'A'
+    ORDER BY claim_id, "timestamp"
+)
+SELECT
+    c.claim_type,
+    a.region,
+    COUNT(*) AS total_closed,
+    COUNT(*) FILTER (WHERE pc.t_N IS NULL) AS closed_without_notification
+FROM per_claim pc
+JOIN claims c USING (claim_id)
+LEFT JOIN assigner asg USING (claim_id)
+LEFT JOIN adjusters a ON a.name = asg.resource
+WHERE pc.t_C IS NOT NULL
+GROUP BY c.claim_type, a.region
+ORDER BY c.claim_type, a.region;
+```
+
+If a specific region or claim type has a much higher rate of missing `N`, that supports a hypothesis of local practice or miscommunication rather than a global design choice.
+
+---
+
+#### 3.6 Resource/adjuster checks (supporting “tool or data” issues)
+
+To check whether E/P are performed by valid adjusters:
+
+```sql
+SELECT
+    ce.claim_id,
+    ce.activity,
+    ce.resource
+FROM claim_events ce
+LEFT JOIN adjusters a ON ce.resource = a.name
+WHERE ce.activity IN ('E', 'P')
+  AND a.adjuster_id IS NULL;
+```
+
+A high number of E/P events by unknown resources points to integration/data issues rather than intentional process behavior.
+
+To see if specific adjusters are associated with many anomalous cases (e.g., early closure without E/P):
+
+```sql
+WITH per_claim AS ( ... ),
+assigner AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        resource
+    FROM claim_events
+    WHERE activity = 'A'
+    ORDER BY claim_id, "timestamp"
+)
+SELECT
+    a.adjuster_id,
+    a.name,
+    COUNT(*) AS assigned_claims,
+    COUNT(*) FILTER (
+        WHERE pc.t_C IS NOT NULL
+          AND (pc.t_E_first IS NULL OR pc.t_E_first > pc.t_C)
+          AND (pc.t_P_first IS NULL OR pc.t_P_first > pc.t_C)
+    ) AS early_closed_without_E_or_P
+FROM per_claim pc
+JOIN assigner asg USING (claim_id)
+JOIN adjusters a ON a.name = asg.resource
+GROUP BY a.adjuster_id, a.name
+ORDER BY early_closed_without_E_or_P DESC;
+```
+
+If a few adjusters dominate the anomalies, that suggests local practices or training issues.
+
+---
+
+### Summary
+
+- The POWL model allows: repeated E/P, optional N, and closure C that is only constrained to follow A.  
+- These anomalies may stem from attempts to capture rework, early rejection/withdrawal, offline activities, or simply from modeling shortcuts and miscommunication.
+- By aggregating and sequencing events in `claim_events`, and combining with `claims` and `adjusters`, you can:
+  - Detect premature closure, missing evaluations/approvals,
+  - Identify multiple approvals (loops),
+  - Measure how often notification is skipped or misordered,
+  - Correlate anomalies with time, claim types, and regions/adjusters.
+  
+These analyses will show which “anomalous” paths the system actually uses and help distinguish intentional flexibility from model or implementation defects.
