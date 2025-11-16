@@ -617,7 +617,7 @@ def is_large_reasoning_model(m_name):
     for p in patterns:
         if p in m_name:
             if (not "qwen3" in m_name) or ("qwen3" in m_name and not ("nstruct" in m_name or "coder" in m_name or "max" in m_name)):
-                if not "chat" in m_name:
+                if not ("chat" in m_name or "none" in m_name):
                     return True
 
     return False
