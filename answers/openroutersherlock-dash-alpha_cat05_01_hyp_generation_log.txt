@@ -1,0 +1,131 @@
+### Identified Anomalies and Undesirable Behaviors
+
+After analyzing the event logs for the four cases (1001-1004), I've identified several clear deviations from the assumed normal process flow (Register Order  Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Issue Invoice  Receive Payment). These anomalies suggest process violations, potential fraud, system errors, or resource misuse. Here's a summary:
+
+| Case ID | Anomalies Observed |
+|---------|--------------------|
+| **1001** | Normal flow – no anomalies. All steps sequential, correct order, timestamps increasing. |
+| **1002** | - Skipped Credit Check and Validate Stock initially; done *after* Confirm Shipment and Ship Goods.<br>- Shipment/logistics steps (Confirm Shipment, Ship Goods) executed immediately after Register Order (~5-20 min), bypassing prerequisites. |
+| **1003** | - Ship Goods executed *before* Validate Stock and Confirm Shipment (missing prerequisites).<br>- Confirm Shipment logged *after* Ship Goods (out-of-order, possibly backdated). |
+| **1004** | - Receive Payment *before* Register Order, Issue Invoice, or any logistics (payment ~5 min after registration, before invoicing).<br>- Issue Invoice *before* any shipment steps.<br>- Shipment scheduled="N" but Ship Goods still executed. |
+
+**Key Patterns Across Anomalies:**
+- **Out-of-sequence activities**: Logistics/shipment steps (e.g., Ship Goods) before prerequisites like Credit Check or Validate Stock (Cases 1002, 1003).
+- **Premature financial actions**: Payment/Invoice before order fulfillment (Case 1004).
+- **Priority order abuse?** Case 1002 (priority order) shows rushed shipment bypassing checks.
+- **Resource overlaps**: Same resources (e.g., FinanceTeam_02) handling anomalous payments across cases.
+
+### Hypothesized Causes
+1. **Policy/Process Violations**: Manual overrides by resources (e.g., LogisticsMgr rushing shipments for priority orders, Finance issuing early payments/invoices). Possible insider abuse or sales pressure to close deals quickly.
+2. **System/Logging Errors**: Timestamp inaccuracies, duplicate/backdated entries, or concurrent processing bugs allowing out-of-order logging.
+3. **Fraud Indicators**: Early payments (Case 1004) could indicate kickbacks or fake transactions; skipping credit checks might enable high-risk customers.
+4. **Training/Resource Issues**: Cross-department actions (e.g., Logistics skipping Finance checks) suggest poor role training or inadequate access controls.
+5. **Order Type Influence**: Priority orders (1002) more prone to skips, possibly due to SLA pressures.
+
+### Proposed SQL Queries to Investigate Hypotheses
+These queries target the `order_event_log` (primary), joining with `orders` and `resources` where relevant. They focus on quantifying anomalies, correlating with order details/resources, and flagging suspects for deeper review.
+
+#### 1. Detect Out-of-Sequence Activities (Tests process violations/system errors)
+```sql
+WITH expected_order AS (
+  SELECT case_id, activity,
+         ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as actual_seq,
+         -- Define ideal sequence rank
+         CASE activity
+           WHEN 'Register Order' THEN 1
+           WHEN 'Perform Credit Check' THEN 2
+           WHEN 'Validate Stock' THEN 3
+           WHEN 'Confirm Shipment' THEN 4
+           WHEN 'Ship Goods' THEN 5
+           WHEN 'Issue Invoice' THEN 6
+           WHEN 'Receive Payment' THEN 7
+         END as expected_seq
+  FROM order_event_log
+)
+SELECT case_id, activity, actual_seq, expected_seq,
+       CASE WHEN expected_seq IS NULL OR actual_seq != expected_seq THEN 'ANOMALY' ELSE 'OK' END as status
+FROM expected_order
+WHERE expected_seq IS NOT NULL  -- Only check known activities
+ORDER BY case_id, actual_seq;
+```
+**Why?** Flags non-sequential execution (e.g., Ship Goods as seq=2 in 1002/1003).
+
+#### 2. Find Activities Before Prerequisites (e.g., Ship Goods without prior Credit Check)
+```sql
+SELECT DISTINCT o.case_id, o.activity as premature_activity, o.timestamp,
+       'Missing prior: ' || STRING_AGG(DISTINCT m.activity, ', ') as missing_prereqs
+FROM order_event_log o
+LEFT JOIN order_event_log m ON o.case_id = m.case_id 
+  AND m.timestamp < o.timestamp
+  AND m.activity IN ('Register Order', 'Perform Credit Check', 'Validate Stock')  -- Adjust prereqs per activity
+WHERE o.activity IN ('Confirm Shipment', 'Ship Goods', 'Issue Invoice', 'Receive Payment')
+  AND NOT EXISTS (
+    SELECT 1 FROM order_event_log p 
+    WHERE p.case_id = o.case_id AND p.timestamp < o.timestamp 
+    AND p.activity = CASE o.activity 
+      WHEN 'Confirm Shipment' THEN 'Validate Stock'
+      WHEN 'Ship Goods' THEN 'Confirm Shipment'
+      WHEN 'Issue Invoice' THEN 'Ship Goods'
+      WHEN 'Receive Payment' THEN 'Issue Invoice'
+    END
+  )
+GROUP BY o.case_id, o.activity, o.timestamp
+ORDER BY o.case_id;
+```
+**Why?** Pinpoints skips (e.g., 1002/1003 shipping without checks).
+
+#### 3. Flag Early Payments/Invoices by Order Value and Type (Tests fraud/policy violations)
+```sql
+SELECT el.case_id, o.order_type, o.order_value,
+       el.activity, el.timestamp,
+       EXTRACT(EPOCH FROM (el.timestamp - FIRST_VALUE(el.timestamp) OVER (PARTITION BY el.case_id))) / 60 as mins_after_registration,
+       r.role, r.department
+FROM order_event_log el
+JOIN orders o ON el.case_id = o.case_id
+JOIN resources r ON el.resource = r.resource_id
+WHERE el.activity IN ('Receive Payment', 'Issue Invoice')
+  AND EXTRACT(EPOCH FROM (el.timestamp - FIRST_VALUE(el.timestamp) OVER (PARTITION BY el.case_id))) / 60 < 30  -- <30 mins after start
+ORDER BY mins_after_registration;
+```
+**Why?** Highlights Case 1004's suspicious early payment; correlates with high-value/priority orders.
+
+#### 4. Resource Misuse: Cross-Department or Frequent Anomalous Actions
+```sql
+SELECT r.resource_id, r.role, r.department,
+       COUNT(DISTINCT case_id) as cases_handled,
+       COUNT(*) FILTER (WHERE actual_seq != expected_seq) as anomalous_events,
+       STRING_AGG(DISTINCT activity, ', ') as activities_performed
+FROM order_event_log el
+JOIN resources r ON el.resource = r.resource_id
+JOIN (
+  -- Subquery for anomalous sequences (reuse logic from Query 1)
+  SELECT case_id, activity, actual_seq, expected_seq
+  FROM (SELECT case_id, activity, ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as actual_seq,
+               CASE activity WHEN ... END as expected_seq  -- Same CASE as Query 1
+        FROM order_event_log) sub
+  WHERE actual_seq != expected_seq
+) anom ON el.case_id = anom.case_id AND el.activity = anom.activity
+GROUP BY r.resource_id, r.role, r.department
+HAVING COUNT(DISTINCT case_id) > 1 OR anomalous_events > 0
+ORDER BY anomalous_events DESC;
+```
+**Why?** Identifies resources like FinanceTeam_02 (early payments) or LogisticsMgr (rushed shipments).
+
+#### 5. Overall Anomaly Summary by Case (High-level dashboard query)
+```sql
+SELECT case_id,
+       COUNT(*) as total_events,
+       COUNT(DISTINCT activity) as unique_activities,
+       AVG(EXTRACT(EPOCH FROM (timestamp - LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp)))) / 60 as avg_min_between_events,
+       COUNT(*) FILTER (WHERE timestamp < LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp)) as backdated_events,
+       o.order_type, o.order_value
+FROM order_event_log el
+JOIN orders o ON el.case_id = o.case_id
+GROUP BY case_id, o.order_type, o.order_value
+HAVING COUNT(*) < 7 OR  -- Incomplete flows
+       COUNT(*) FILTER (WHERE timestamp < LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp)) > 0  -- Backdating
+ORDER BY case_id;
+```
+**Why?** Quick overview; flags incomplete (e.g., 1004) or backdated logs (e.g., 1003).
+
+Run these in sequence: Start with #5 for overview, drill into #1-4 for details. If anomalies correlate with specific resources/customers, extend to aggregate by `customer_id` or `department`. This should confirm hypotheses like fraud in high-value cases or Logistics rushing priority orders.
