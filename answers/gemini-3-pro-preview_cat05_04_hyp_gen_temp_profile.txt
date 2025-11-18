@@ -1,0 +1,109 @@
+Based on the provided temporal profile model and database schema, here is an analysis of the anomalies, potential hypotheses regarding their root causes, and SQL verification approaches.
+
+### 1. Identified Anomalies
+
+By analyzing the average times and standard deviations in the `temporal_profile`, the following irregularities stand out:
+
+*   **The "Clockwork" Approval (R  P):** The transition from *Receive* to *Approve* takes an average of 90,000 seconds (25 hours) with a remarkably low standard deviation of 3,600 seconds (1 hour). In a human-driven process, variance is typically much higher. This suggests a rigid, non-organic delay.
+*   **The Notification Black Hole (P  N):** The gap between *Approve* and *Notify* is massive—averaging ~7 days—with a high standard deviation (~2 days). This indicates that after the hard work of approval is done, the claim sits idle for a week before the customer is told, which is poor customer experience.
+*   **The "Skipped Steps" Closure (A  C):** The average time from *Assign* to *Close* is only 7,200 seconds (2 hours). However, the profile says *Receive* to *Evaluate* takes ~24 hours. It is mathematically impossible for the average process to go R  A  E  ...  C if A  C is only 2 hours. This implies a subset of claims is bypassing Evaluation and Approval entirely.
+*   **The Instant Notification (E  N):** The time between *Evaluate* and *Notify* is ~5 minutes. This is suspiciously fast if an *Approve* (P) step is supposed to happen in between. It suggests the 'P' step is either being skipped or is happening instantaneously via automation.
+
+### 2. Hypotheses
+
+Based on these anomalies, here are the likely root causes:
+
+*   **H1: Automated Batch Processing (R  P):** The 25-hour average with low variance suggests a system cron job running once a day (plus 1 hour processing time) that auto-approves specific low-value claims. These claims are not being touched by humans.
+*   **H2: Weekly Correspondence Batches (P  N):** The 7-day delay suggests that notifications aren't sent digitally in real-time. Instead, the company might be printing physical letters once a week, or a legacy system only exports notification data in weekly batches.
+*   **H3: Administrative Closures/Triage (A  C):** The rapid closure after assignment suggests "fast-fail" logic. Adjusters might be opening a claim, realizing it is a duplicate or out-of-policy, and closing it immediately without performing a formal evaluation.
+*   **H4: Missing "Approve" Logs (E  N):** If Evaluation leads to Notification in 5 minutes, the "Approve" step might be a system status change rather than a logged human activity, or the "Evaluate" activity effectively serves as approval for certain claim types, rendering the 'P' event redundant.
+
+### 3. Verification Approaches (SQL Queries)
+
+The following PostgreSQL queries targets the `claim_events` and related tables to verify these hypotheses.
+
+#### Verify H1: Automated Batch Processing (R  P)
+*Objective: Determine if the "Receive to Approve" duration is uniform across all claims or specific to a "System" resource, indicating automation.*
+
+```sql
+SELECT
+    ce1.resource AS receiver_resource,
+    ce2.resource AS approver_resource,
+    AVG(EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp))) AS avg_duration_seconds,
+    STDDEV(EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp))) AS stddev_seconds,
+    COUNT(*) AS claim_count
+FROM claim_events ce1
+JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+WHERE ce1.activity = 'R' 
+  AND ce2.activity = 'P'
+  AND ce2.timestamp > ce1.timestamp
+GROUP BY ce1.resource, ce2.resource
+ORDER BY stddev_seconds ASC;
+```
+
+#### Verify H2: Weekly Correspondence Batches (P  N)
+*Objective: Check if the 7-day delay correlates with specific claim types or if notifications tend to happen on a specific day of the week (e.g., every Friday).*
+
+```sql
+SELECT
+    TO_CHAR(ce_notify.timestamp, 'Day') AS notification_day_of_week,
+    c.claim_type,
+    AVG(EXTRACT(EPOCH FROM (ce_notify.timestamp - ce_approve.timestamp))) / 86400.0 AS avg_days_delay,
+    COUNT(*) AS count_events
+FROM claim_events ce_approve
+JOIN claim_events ce_notify ON ce_approve.claim_id = ce_notify.claim_id
+JOIN claims c ON ce_approve.claim_id = c.claim_id
+WHERE ce_approve.activity = 'P' 
+  AND ce_notify.activity = 'N'
+GROUP BY TO_CHAR(ce_notify.timestamp, 'Day'), c.claim_type
+ORDER BY avg_days_delay DESC;
+```
+
+#### Verify H3: Administrative Closures (A  C)
+*Objective: Identify claims that go from Assign to Close in under 4 hours and check if they are missing the Evaluate (E) or Approve (P) steps.*
+
+```sql
+WITH FastClosures AS (
+    SELECT
+        ce_assign.claim_id,
+        ce_assign.resource AS adjuster_name,
+        (ce_close.timestamp - ce_assign.timestamp) AS duration
+    FROM claim_events ce_assign
+    JOIN claim_events ce_close ON ce_assign.claim_id = ce_close.claim_id
+    WHERE ce_assign.activity = 'A' 
+      AND ce_close.activity = 'C'
+      AND (ce_close.timestamp - ce_assign.timestamp) < INTERVAL '4 hours'
+)
+SELECT
+    fc.adjuster_name,
+    COUNT(fc.claim_id) AS rapid_closure_count,
+    -- Check what percentage of these fast claims are missing an evaluation step
+    COUNT(CASE WHEN NOT EXISTS (
+        SELECT 1 FROM claim_events ce 
+        WHERE ce.claim_id = fc.claim_id AND ce.activity = 'E'
+    ) THEN 1 END) * 100.0 / COUNT(*) AS pct_missing_evaluation
+FROM FastClosures fc
+GROUP BY fc.adjuster_name;
+```
+
+#### Verify H4: Missing 'P' or Rapid E  N
+*Objective: Look at the "Evaluate to Notify" transition. Specifically, check if an 'Approve' (P) event actually exists between them for these rapid cases.*
+
+```sql
+SELECT
+    ce_eval.claim_id,
+    ce_eval.timestamp AS eval_time,
+    ce_notify.timestamp AS notify_time,
+    -- Boolean check: Did an 'Approve' event happen between E and N?
+    EXISTS (
+        SELECT 1 FROM claim_events ce_mid 
+        WHERE ce_mid.claim_id = ce_eval.claim_id 
+          AND ce_mid.activity = 'P'
+          AND ce_mid.timestamp BETWEEN ce_eval.timestamp AND ce_notify.timestamp
+    ) AS has_intermediate_approval
+FROM claim_events ce_eval
+JOIN claim_events ce_notify ON ce_eval.claim_id = ce_notify.claim_id
+WHERE ce_eval.activity = 'E' 
+  AND ce_notify.activity = 'N'
+  AND (ce_notify.timestamp - ce_eval.timestamp) < INTERVAL '10 minutes';
+```

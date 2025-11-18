@@ -211,7 +211,7 @@ MODELS_DICT = {
             "o3-mini-2025-01-31", "gpt-4.1-2025-04-14", "gpt-4.1-mini-2025-04-14",
             "gpt-4.1-nano-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13",
             "o3-pro-2025-06-10", "gpt-5-nano-2025-08-07", "gpt-5-mini-2025-08-07",
-            "gpt-5-2025-08-07", "gpt-5-pro-2025-10-06", "gpt-5.1-2025-11-13"
+            "gpt-5-2025-08-07", "gpt-5-pro-2025-10-06"
         }
     },
     "google": {
@@ -219,7 +219,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gemini-1.5-pro-002", "gemini-2.0-flash", "gemini-2.0-flash-lite",
-            "gemma-3n-e4b-it",
+            "gemma-3n-e4b-it", "gemini-3-pro-preview"
         }
     },
     "claude": {
@@ -319,7 +319,7 @@ MODELS_DICT = {
             "openai/gpt-5-codex", "deepseek/deepseek-v3.2-exp",
             "z-ai/glm-4.6", "baidu/ernie-4.5-21b-a3b-thinking",
             "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b", "minimax/minimax-m2:free",
-            "openrouter/polaris-alpha", "moonshotai/kimi-k2-thinking",
+            "moonshotai/kimi-k2-thinking",
             "moonshotai/kimi-linear-48b-a3b-instruct", "openrouter/sherlock-dash-alpha",
             "openrouter/sherlock-think-alpha"
         }
@@ -486,16 +486,6 @@ MODELS_DICT = {
                 "system_prompt": "You are a helpful and harmless assistant. You should think step-by-step.",
                 "temperature": 0.6
             },
-            "grok-3-mini-high": {
-                "provider": "grok",
-                "base_model": "grok-3-mini-fast",
-                "reasoning_effort": "high"
-            },
-            "grok-3-mini-low": {
-                "provider": "grok",
-                "base_model": "grok-3-mini-fast",
-                "reasoning_effort": "low"
-            },
             "gemini-2.5-flash-09-2025-nothink": {
                 "provider": "google",
                 "base_model": "gemini-2.5-flash-preview-09-2025",
@@ -612,7 +602,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "gemini-3", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous"]
 
     for p in patterns:
         if p in m_name:
