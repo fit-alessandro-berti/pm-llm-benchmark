@@ -104,7 +104,7 @@ def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True
                 changed = True
 
     overall_table.write_evaluation(".", extra=True)
-    
+
     return changed
 
 
