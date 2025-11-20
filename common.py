@@ -320,8 +320,7 @@ MODELS_DICT = {
             "z-ai/glm-4.6", "baidu/ernie-4.5-21b-a3b-thinking",
             "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b", "minimax/minimax-m2:free",
             "moonshotai/kimi-k2-thinking",
-            "moonshotai/kimi-linear-48b-a3b-instruct", "openrouter/sherlock-dash-alpha",
-            "openrouter/sherlock-think-alpha"
+            "moonshotai/kimi-linear-48b-a3b-instruct"
         }
     },
     "manual": {
