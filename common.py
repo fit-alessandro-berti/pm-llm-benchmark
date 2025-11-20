@@ -26,10 +26,13 @@ class RateLimiter:
     def __init__(self, requests_per_minute=60, requests_per_hour=1000, 
                  tokens_per_minute=90000, tokens_per_hour=2000000,
                  max_concurrent=10):
+        # Keep hour-level limits at least as large as the minute-level limits to avoid
+        # unintentionally throttling long runs (e.g., 900k tokens/min vs 2M tokens/hour
+        # caps you at ~500 requests/hr with 4k estimates).
         self.requests_per_minute = requests_per_minute
-        self.requests_per_hour = requests_per_hour
+        self.requests_per_hour = max(requests_per_hour, requests_per_minute * 60)
         self.tokens_per_minute = tokens_per_minute
-        self.tokens_per_hour = tokens_per_hour
+        self.tokens_per_hour = max(tokens_per_hour, tokens_per_minute * 60)
         self.max_concurrent = max_concurrent
 
         self.lock = threading.Lock()
