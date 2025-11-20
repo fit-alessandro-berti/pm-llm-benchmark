@@ -1,0 +1,143 @@
+### Identified Anomalies and Undesirable Behaviors
+
+After analyzing the event logs across cases 1001–1004 against the assumed normal process flow (Register Order  Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Issue Invoice  Receive Payment), several clear deviations emerge. Case 1001 follows the ideal flow perfectly. The others exhibit significant issues:
+
+1. **Out-of-Sequence Events (Most Prevalent Issue)**:
+   - **Case 1002**: Confirm Shipment and Ship Goods occur *before* Credit Check and Validate Stock. Credit Check and Validate Stock happen late (after shipment).
+   - **Case 1003**: Ship Goods occurs *before* Validate Stock and Confirm Shipment. Confirm Shipment is logged *after* Ship Goods (reversed order).
+   - **Case 1004**: Receive Payment occurs immediately *after* Register Order (before *all* other steps). Issue Invoice follows payment (reversed).
+
+2. **Skipped Activities**:
+   - **Case 1002**: Credit Check and Validate Stock are delayed but eventually done; however, shipment proceeds without them initially.
+   - **Case 1003**: Validate Stock is entirely missing.
+   - **Case 1004**: No Credit Check, no Validate Stock, no Confirm Shipment (only logged as "scheduled=N", implying failure or skip).
+
+3. **Premature Financial/ Logistics Actions**:
+   - Payments received before invoices (Case 1004) or before shipment completion (Cases 1002–1003).
+   - Shipments initiated without credit approval or stock validation (Cases 1002–1004).
+   - Invoices issued before full shipment confirmation (Case 1003).
+
+4. **Resource/Department Mismatches**:
+   - Logistics/Warehouse resources performing actions too early (e.g., LogisticsMgr_2 in Case 1002 right after registration).
+   - Finance handling payments/invoices out of sequence (e.g., FinanceTeam_02 receiving payment pre-invoice in Case 1004).
+
+5. **Other Patterns**:
+   - Higher-value orders (e.g., 1004 at 3000.00, 1002 at 2000.00) show more severe skips.
+   - "Priority" order_type (1002) correlates with early shipments.
+   - Additional_info hints at issues: low credit_scores (650 in 1002), "late_confirmation=Y" (1003), "shipment_scheduled=N" (1004).
+
+These suggest process control failures, risking financial loss (e.g., shipping unpaid/uncredited orders), inventory errors, or customer disputes.
+
+### Hypothesized Causes
+- **System/Technical Errors**: Timestamp inaccuracies or logging bugs (e.g., events recorded out-of-order due to async processing or batch inserts). Parallel workflows might bypass sequence checks.
+- **Policy/Process Violations**: Staff bypassing steps for "priority" orders (e.g., Case 1002) or high-value rushes. Possible collusion or incentives to ship fast (e.g., sales pressure).
+- **Training/Role Issues**: Resources from Logistics/Warehouse acting prematurely without Finance/Sales approval. Junior staff (e.g., WarehouseClerk_*) skipping protocols.
+- **Business Rule Gaps**: No enforcement for credit thresholds (e.g., scores <700 trigger skips?). Manual overrides for online/call_center channels.
+- **Data Quality Problems**: Incomplete logs (missing Validate Stock in 1003) or premature closures.
+
+### Proposed SQL Queries for Further Investigation
+These queries target the `order_event_log` (primary), joining with `orders` and `resources` where relevant. They focus on quantifying deviations, correlating with order attributes/resources, and spotting patterns without assuming fixes.
+
+1. **Detect Out-of-Sequence Events per Case** (Flag non-chronological activities within cases):
+   ```sql
+   WITH expected_order AS (
+     SELECT case_id, activity,
+            ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) as actual_seq,
+            -- Define ideal sequence rank
+            CASE activity
+              WHEN 'Register Order' THEN 1
+              WHEN 'Perform Credit Check' THEN 2
+              WHEN 'Validate Stock' THEN 3
+              WHEN 'Confirm Shipment' THEN 4
+              WHEN 'Ship Goods' THEN 5
+              WHEN 'Issue Invoice' THEN 6
+              WHEN 'Receive Payment' THEN 7
+            END as ideal_seq
+     FROM order_event_log
+   )
+   SELECT case_id, activity, actual_seq, ideal_seq,
+          CASE WHEN actual_seq != ideal_seq THEN 'Out-of-Sequence' ELSE 'OK' END as anomaly_flag
+   FROM expected_order
+   WHERE ideal_seq IS NOT NULL
+   ORDER BY case_id, timestamp;
+   ```
+
+2. **Identify Skipped Activities per Case** (Check for missing steps in the flow):
+   ```sql
+   SELECT DISTINCT oel.case_id,
+          COUNT(*) FILTER (WHERE activity = 'Register Order') > 0 as has_register,
+          COUNT(*) FILTER (WHERE activity = 'Perform Credit Check') > 0 as has_credit_check,
+          COUNT(*) FILTER (WHERE activity = 'Validate Stock') > 0 as has_stock_check,
+          COUNT(*) FILTER (WHERE activity = 'Confirm Shipment') > 0 as has_confirm_ship,
+          COUNT(*) FILTER (WHERE activity = 'Ship Goods') > 0 as has_ship,
+          COUNT(*) FILTER (WHERE activity = 'Issue Invoice') > 0 as has_invoice,
+          COUNT(*) FILTER (WHERE activity = 'Receive Payment') > 0 as has_payment
+   FROM order_event_log oel
+   GROUP BY oel.case_id
+   HAVING COUNT(DISTINCT activity) < 7 OR 
+          COUNT(*) FILTER (WHERE activity = 'Perform Credit Check') = 0 OR
+          COUNT(*) FILTER (WHERE activity = 'Validate Stock') = 0;
+   ```
+
+3. **Find Premature Shipments/Payments** (Events before prerequisites, e.g., ship before credit/stock):
+   ```sql
+   SELECT oel1.case_id, oel1.activity as early_activity, oel1.timestamp as early_ts,
+          oel2.activity as missing_prereq, oel2.timestamp as prereq_ts
+   FROM order_event_log oel1
+   LEFT JOIN order_event_log oel2 ON oel1.case_id = oel2.case_id 
+     AND (
+       (oel1.activity IN ('Confirm Shipment', 'Ship Goods') AND oel2.activity IN ('Perform Credit Check', 'Validate Stock'))
+       OR (oel1.activity IN ('Ship Goods', 'Issue Invoice', 'Receive Payment') AND oel2.activity = 'Confirm Shipment')
+       OR (oel1.activity = 'Receive Payment' AND oel2.activity = 'Issue Invoice')
+     )
+   WHERE oel1.timestamp < COALESCE(oel2.timestamp, '2999-12-31'::timestamp)
+     AND oel1.activity IN ('Confirm Shipment', 'Ship Goods', 'Issue Invoice', 'Receive Payment')
+   ORDER BY oel1.case_id, oel1.timestamp;
+   ```
+
+4. **Correlate Anomalies with Order Value/Type and Resources** (High-value/priority skips? Wrong departments?):
+   ```sql
+   SELECT o.case_id, o.order_type, o.order_value,
+          r.department, r.role,
+          COUNT(*) as event_count,
+          STRING_AGG(oel.activity, ' -> ' ORDER BY oel.timestamp) as activity_sequence
+   FROM order_event_log oel
+   JOIN orders o ON oel.case_id = o.case_id
+   JOIN resources r ON oel.resource = r.resource_id
+   WHERE oel.case_id IN (1002, 1003, 1004)  -- Focus on anomalous cases
+   GROUP BY o.case_id, o.order_type, o.order_value, r.department, r.role
+   HAVING COUNT(DISTINCT oel.activity) < 7 OR 
+          AVG(EXTRACT(EPOCH FROM (LAG(oel.timestamp) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) - oel.timestamp))) < 0  -- Negative lags for out-of-order
+   ORDER BY o.order_value DESC;
+   ```
+
+5. **Check Credit Scores and Early Actions** (Low scores linked to skips? Parse additional_info):
+   ```sql
+   SELECT case_id, activity, timestamp, resource, additional_info,
+          REGEXP_REPLACE(additional_info, '.*credit_score=(\d+).*', '\1')::INT as credit_score
+   FROM order_event_log
+   WHERE additional_info LIKE '%credit_score%'
+   ORDER BY case_id, timestamp;
+   -- Follow-up: Manual review or extend to flag cases where credit_score < 700 but shipment occurred first.
+   ```
+
+6. **Resource Misuse Summary** (Departments performing non-standard activities):
+   ```sql
+   SELECT r.department, r.role, oel.activity,
+          COUNT(*) as occurrences,
+          AVG(EXTRACT(EPOCH FROM age(oel.timestamp, 
+             (SELECT MIN(timestamp) FROM order_event_log oel2 WHERE oel2.case_id = oel.case_id AND oel2.activity = 'Register Order')))) / 3600 as avg_hours_after_start
+   FROM order_event_log oel
+   JOIN resources r ON oel.resource = r.resource_id
+   WHERE oel.activity NOT IN (SELECT activity FROM order_event_log WHERE case_id = 1001)  -- Exclude normal case
+     OR r.department NOT LIKE '%' || CASE oel.activity
+       WHEN 'Register Order' THEN 'Sales'
+       WHEN 'Perform Credit Check' THEN 'Finance'
+       ELSE '%'
+     END
+   GROUP BY r.department, r.role, oel.activity
+   HAVING COUNT(*) > 1
+   ORDER BY occurrences DESC;
+   ```
+
+Run these iteratively: Start with #1–2 for overview, then #3–6 for root causes. They scale to larger datasets and can be parameterized (e.g., filter by date ranges).

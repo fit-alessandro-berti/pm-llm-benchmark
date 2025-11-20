@@ -265,7 +265,8 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "grok-2-1212", "grok-3", "grok-4-0709", "grok-code-fast-1",
-            "grok-4-fast-reasoning", "grok-4-fast-non-reasoning"
+            "grok-4-fast-reasoning", "grok-4-fast-non-reasoning",
+            "grok-4-1-fast-reasoning", "grok-4-1-fast-non-reasoning",
         }
     },
     "deepinfra": {

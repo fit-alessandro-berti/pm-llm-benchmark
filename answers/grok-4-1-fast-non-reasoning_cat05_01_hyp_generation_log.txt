@@ -1,0 +1,150 @@
+### Process Mining Analysis: Anomalies in Order Processing Event Log
+
+I've analyzed the provided event log data from the `order_event_log` table, cross-referenced with the `orders` and `resources` schemas. Below, I identify key **anomalies and deviations** from the assumed normal process flow (Register Order  Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Issue Invoice  Receive Payment). These are grouped by category, with **hypotheses** for root causes and **proposed SQL queries** to investigate further.
+
+#### 1. **Out-of-Sequence Activities (Most Critical Anomalies)**
+   Several cases show activities executed in wrong order, skipping prerequisites or interleaving incorrectly. This violates logical dependencies (e.g., shipping before credit approval risks financial loss).
+
+   | Case ID | Anomalous Sequence | Normal Expectation |
+   |---------|--------------------|--------------------|
+   | 1002    | Register  Confirm Shipment  Ship Goods  **Credit Check** (after shipping)  Validate Stock  Invoice  Payment | Credit Check before any shipping/logistics |
+   | 1003    | Register  Credit Check  **Ship Goods** (skips Validate Stock/Confirm)  Invoice  **Confirm Shipment** (after shipping)  Payment | Full pre-shipment validation before Ship Goods |
+   | 1004    | Register  **Payment** (immediate, before anything else)  Invoice  Confirm  Ship Goods (**no Credit Check or Stock validation**) | Credit Check/Stock before payment/shipping |
+
+   **Hypotheses**:
+   - **System error/bug**: Workflow engine allows parallel execution or skips gates due to misconfigured triggers.
+   - **Policy violation**: Staff bypassing checks (e.g., high-value orders rushed for VIP customers).
+   - **Data entry error**: Events logged out-of-order or with wrong timestamps.
+   - **Manual override**: Emergency processing for priority orders (case 1002 is 'priority').
+
+   **SQL Queries to Investigate**:
+   ```sql
+   -- Find all cases with non-chronological activity order (events not in expected sequence)
+   WITH expected_order AS (
+     SELECT case_id, activity,
+            ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp, event_id) as seq_pos
+     FROM order_event_log
+   ),
+   deviations AS (
+     SELECT e1.case_id, e1.activity as prev_act, e2.activity as next_act,
+            e1.timestamp as prev_time, e2.timestamp as next_time
+     FROM expected_order e1
+     JOIN expected_order e2 ON e1.case_id = e2.case_id AND e1.seq_pos + 1 = e2.seq_pos
+     WHERE (e1.activity = 'Register Order' AND e2.activity NOT ILIKE '%Credit%')
+        OR (e1.activity ILIKE '%Credit%' AND e2.activity NOT ILIKE '%Stock%')
+        OR (e1.activity ILIKE '%Ship%' AND e1.activity != 'Confirm Shipment')
+   )
+   SELECT * FROM deviations ORDER BY prev_time;
+   ```
+   ```sql
+   -- Check cases missing prerequisite activities before shipping/payment
+   SELECT DISTINCT oel.case_id, o.order_value, o.order_type,
+          STRING_AGG(oel.activity, '  ' ORDER BY timestamp) as full_sequence
+   FROM order_event_log oel
+   JOIN orders o ON oel.case_id = o.case_id
+   WHERE oel.case_id IN (
+     SELECT case_id FROM order_event_log
+     WHERE activity IN ('Ship Goods', 'Receive Payment')
+     GROUP BY case_id
+     HAVING NOT BOOL_OR(activity ILIKE '%Credit%')
+        AND NOT BOOL_OR(activity = 'Validate Stock')
+   )
+   GROUP BY oel.case_id, o.order_value, o.order_type
+   ORDER BY o.order_value DESC;
+   ```
+
+#### 2. **Missing Critical Activities**
+   - Case 1002: Validate Stock *after* shipping (event 12, post-event 10).
+   - Case 1003: No Validate Stock at all.
+   - Case 1004: No Credit Check or Validate Stock.
+
+   **Hypotheses**:
+   - **Automation failure**: Stock/Credit systems down, leading to skips.
+   - **Resource shortage**: Overloaded Finance/Warehouse staff (multiple cases handled by same resources).
+   - **Fraud/rush jobs**: High-value case 1004 (3000.00) paid immediately—possible insider job or test data.
+
+   **SQL Queries**:
+   ```sql
+   -- Identify cases missing key activities
+   SELECT case_id, COUNT(*) as total_events,
+          COUNT(CASE WHEN activity = 'Register Order' THEN 1 END) as has_register,
+          COUNT(CASE WHEN activity ILIKE '%Credit%' THEN 1 END) as has_credit,
+          COUNT(CASE WHEN activity = 'Validate Stock' THEN 1 END) as has_stock,
+          COUNT(CASE WHEN activity = 'Receive Payment' THEN 1 END) as has_payment
+   FROM order_event_log
+   GROUP BY case_id
+   HAVING COUNT(CASE WHEN activity ILIKE '%Credit%' THEN 1 END) = 0
+       OR COUNT(CASE WHEN activity = 'Validate Stock' THEN 1 END) = 0
+   ORDER BY case_id;
+   ```
+   ```sql
+   -- Correlate missing checks with high-value orders or specific resources
+   SELECT o.case_id, o.order_value, r.department,
+          COUNT(DISTINCT oel.activity) as unique_activities
+   FROM orders o
+   LEFT JOIN order_event_log oel ON o.case_id = oel.case_id
+   LEFT JOIN resources r ON oel.resource = r.resource_id
+   WHERE o.case_id IN (1002, 1003, 1004)
+   GROUP BY o.case_id, o.order_value, r.department
+   ORDER BY o.order_value DESC;
+   ```
+
+#### 3. **Unusual Timing Patterns**
+   - Case 1004: Payment just 5 mins after Register (09:00  09:05)—impossibly fast.
+   - Case 1002: Logistics activities *before* Credit Check (8:20-8:40 vs. 9:10).
+   - All anomalies cluster on 2024-02-01 morning—possible batch processing issue.
+
+   **Hypotheses**:
+   - **Timestamp bugs**: Clock sync issues or backdated logs.
+   - **Bulk processing**: Weekend catch-up or system migration.
+   - **Training data artifact**: Synthetic data for ML training with injected anomalies.
+
+   **SQL Queries**:
+   ```sql
+   -- Detect unrealistically short intervals between key events
+   SELECT case_id, activity, timestamp,
+          LAG(activity) OVER (PARTITION BY case_id ORDER BY timestamp) as prev_activity,
+          timestamp - LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) as time_diff
+   FROM order_event_log
+   WHERE timestamp - LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) < INTERVAL '10 minutes'
+      OR activity = 'Receive Payment'
+   ORDER BY case_id, timestamp;
+   ```
+   ```sql
+   -- Time-based clustering of anomalies
+   SELECT DATE(timestamp) as event_date,
+          EXTRACT(HOUR FROM timestamp) as hour,
+          COUNT(DISTINCT case_id) as anomalous_cases
+   FROM order_event_log
+   WHERE case_id IN (1002, 1003, 1004)
+   GROUP BY 1, 2
+   ORDER BY event_date, hour;
+   ```
+
+#### 4. **Resource and Department Violations**
+   - Logistics resources (Confirm Shipment/Ship Goods) acting before Finance (Credit Check).
+   - Heavy reuse: FinanceTeam_02 handles payments across cases; WarehouseClerk_2 on multiple.
+
+   **Hypotheses**:
+   - **Cross-department workarounds**: Finance backlog forces Logistics to proceed.
+   - **Insufficient staffing**: Same resources overloaded.
+
+   **SQL Query**:
+   ```sql
+   -- Resource workload and cross-role violations
+   SELECT r.department, r.role, COUNT(DISTINCT oel.case_id) as cases_handled,
+          STRING_AGG(DISTINCT oel.activity, ', ') as activities_performed
+   FROM order_event_log oel
+   JOIN resources r ON oel.resource = r.resource_id
+   WHERE oel.case_id IN (1001,1002,1003,1004)
+   GROUP BY r.department, r.role
+   HAVING COUNT(DISTINCT oel.case_id) > 1 OR r.department = 'Logistics'
+   ORDER BY cases_handled DESC;
+   ```
+
+#### Summary Recommendations
+- **Priority Cases**: 1004 (highest risk: payment without checks, highest value), 1002/1003 (shipping without approval).
+- **Next Steps**: Run the above queries to quantify scope across full dataset. If anomalies >10% of cases, audit systems/resources. Consider process mining tools (e.g., Celonis) for visualization.
+- **Potential Impact**: Revenue loss from uncredited shipments; compliance risks in Finance/Logistics.
+
+These queries are self-contained, efficient for PostgreSQL, and use window functions/aggregations for scalability. Let me know if you need refinements or analysis on query outputs!

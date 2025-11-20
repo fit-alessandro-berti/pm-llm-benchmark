@@ -1,0 +1,111 @@
+### 1. Identified Anomalies in the Temporal Profile Model
+
+The temporal profile reveals several irregularities in the average time intervals (in seconds) and standard deviations between activity pairs:
+
+- **('R', 'P')**: Average ~25 hours (90,000s) with a very low STDEV of 3,600s (1 hour). The tight variance suggests unnaturally consistent timing, potentially indicating scripted or automated approvals without variability expected in real processes.
+  
+- **('P', 'N')**: Average 7 days (604,800s) with high STDEV of 172,800s (2 days). This points to extreme variability and prolonged delays in notifications post-approval, inconsistent with efficient workflows.
+
+- **('A', 'C')**: Average 2 hours (7,200s) with STDEV of 3,600s (1 hour). Unusually rapid progression from assignment to closure implies possible bypassing of intermediate steps like evaluation or approval.
+
+- **('E', 'N')**: Average 5 minutes (300s) with low STDEV of 60s (1 minute). This hyper-short interval suggests rushed or automated transitions that may skip necessary reviews or human oversight.
+
+Other pairs like ('R', 'A') or ('N', 'C') appear more aligned with typical business pacing.
+
+### 2. Hypotheses for Anomalies
+
+- **Rigid timing in ('R', 'P')**: Could stem from an automated approval bot or pre-configured rules triggering approvals at fixed intervals (e.g., batch processing at ~25 hours), ignoring case complexity. Low STDEV hints at artificial uniformity rather than organic decision-making.
+
+- **Extended and variable delays in ('P', 'N')**: Likely due to bottlenecks in notification systems, such as manual customer outreach queues, email server backlogs, or compliance holds (e.g., legal reviews). High STDEV indicates intermittent resource shortages or prioritization issues affecting subsets of claims.
+
+- **Rapid ('A', 'C') progression**: May reflect "fast-track" claims closed without full evaluation, possibly for low-value or template-based submissions, or erroneous data entry skipping steps. This could signal process shortcuts or insider handling of routine claims.
+
+- **Ultra-quick ('E', 'N')**: Possibly automated notifications firing immediately post-evaluation in a scripted workflow, bypassing quality checks or human confirmation. Low STDEV reinforces mechanical execution over discretionary judgment.
+
+Broader factors: Adjuster specialization mismatches, regional holidays causing delays, or fraudulent claims engineered to mimic normalcy while exploiting timing loopholes.
+
+### 3. Verification Approaches Using SQL Queries
+
+To verify, use these PostgreSQL queries on `claim_events` (joined with `claims` and `adjusters` where relevant). They flag outliers assuming a Z-score threshold of 2 (i.e., time > AVG + 2*STDEV or < AVG - 2*STDEV) or direct thresholds for simplicity. Adjust ZETA as needed.
+
+#### a. Claims with anomalous time between 'R' and 'P' (e.g., too consistent/narrow range)
+```sql
+WITH ra_times AS (
+  SELECT ce1.claim_id,
+         EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_between_rp
+  FROM claim_events ce1
+  JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+  WHERE ce1.activity = 'R' AND ce2.activity = 'P'
+    AND ce1.timestamp < ce2.timestamp
+),
+profile_stats AS (SELECT 90000 AS avg_rp, 3600 AS stdev_rp)
+SELECT ra.claim_id, ra.seconds_between_rp,
+       ABS((ra.seconds_between_rp - ps.avg_rp) / ps.stdev_rp) AS z_score
+FROM ra_times ra, profile_stats ps
+WHERE ABS((ra.seconds_between_rp - ps.avg_rp) / ps.stdev_rp) > 2  -- Outliers
+ORDER BY z_score DESC
+LIMIT 20;
+```
+
+#### b. Claims with excessive 'P' to 'N' delays (correlated with adjusters/regions)
+```sql
+WITH pn_times AS (
+  SELECT ce1.claim_id, ce2.timestamp - ce1.timestamp AS delay_pn,
+         c.claim_type, a.region, ce1.resource AS approving_resource
+  FROM claim_events ce1
+  JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+  JOIN claims c ON ce1.claim_id = c.claim_id
+  JOIN adjusters a ON ce1.resource::INTEGER = a.adjuster_id  -- Assuming resource is adjuster_id as string
+  WHERE ce1.activity = 'P' AND ce2.activity = 'N' AND ce1.timestamp < ce2.timestamp
+)
+SELECT claim_id, EXTRACT(EPOCH FROM delay_pn) AS seconds_delay,
+       claim_type, region, approving_resource
+FROM pn_times
+WHERE EXTRACT(EPOCH FROM delay_pn) > 604800 + (2 * 172800)  -- > AVG + 2*STDEV
+ORDER BY seconds_delay DESC
+LIMIT 50;
+```
+
+#### c. Claims closing too quickly after 'A' (check for skipped steps)
+```sql
+WITH ac_times AS (
+  SELECT ce1.claim_id,
+         EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_ac
+  FROM claim_events ce1
+  JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+  WHERE ce1.activity = 'A' AND ce2.activity = 'C' AND ce1.timestamp < ce2.timestamp
+)
+SELECT ac.claim_id, ac.seconds_ac,
+       -- Check if E or P occurred between A and C
+       COUNT(ce.event_id) FILTER (WHERE ce.activity IN ('E', 'P') 
+                                  AND ce.timestamp > (SELECT timestamp FROM claim_events WHERE claim_id = ac.claim_id AND activity = 'A')
+                                  AND ce.timestamp < (SELECT timestamp FROM claim_events WHERE claim_id = ac.claim_id AND activity = 'C')) AS intermediate_steps
+FROM ac_times ac
+LEFT JOIN claim_events ce ON ce.claim_id = ac.claim_id
+GROUP BY ac.claim_id, ac.seconds_ac
+HAVING ac.seconds_ac < 7200  -- < 2 hours avg
+ORDER BY ac.seconds_ac ASC;
+```
+
+#### d. Rapid 'E' to 'N' transitions (grouped by resource/claim type)
+```sql
+WITH en_times AS (
+  SELECT ce1.claim_id,
+         EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_en,
+         ce1.resource AS evaluator_resource,
+         c.claim_type
+  FROM claim_events ce1
+  JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+  JOIN claims c ON ce1.claim_id = c.claim_id
+  WHERE ce1.activity = 'E' AND ce2.activity = 'N' AND ce1.timestamp < ce2.timestamp
+)
+SELECT evaluator_resource, claim_type, COUNT(*) AS count_fast_en,
+       AVG(seconds_en) AS avg_seconds, MIN(seconds_en) AS min_seconds
+FROM en_times
+WHERE seconds_en < 300  -- < 5 min avg
+GROUP BY evaluator_resource, claim_type
+HAVING COUNT(*) > 5  -- Patterns in specific resources/types
+ORDER BY avg_seconds ASC;
+```
+
+These queries pinpoint anomalous claims, reveal correlations (e.g., specific adjusters or regions), and confirm if intermediates are skipped, enabling targeted audits.

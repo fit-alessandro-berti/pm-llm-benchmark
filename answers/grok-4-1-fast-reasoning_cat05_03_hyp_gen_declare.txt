@@ -1,0 +1,100 @@
+### Identified Anomalies
+The DECLARE model contains several critical contradictions and deviations from the intended business logic (R  A  E  P  N  C):
+
+1. **Contradiction between `responded_existence` (A  E) and `noncoexistence` (E and C cannot coexist)**:  
+   The model mandates that every "A" (Assign Adjuster) must be responded to by an "E" (Evaluate Claim) later in the trace. However, it simultaneously forbids the coexistence of "E" and "C" (Close Claim) in any trace. This creates an impossibility: if an "A" occurs (as expected in the intended flow), an "E" must follow, preventing a "C" from ever occurring—directly blocking the required closure of claims.
+
+2. **Conflict with `existence` of "C"**:  
+   Every trace must contain a "C", but the above rules make "C" impossible in traces with "A" and "E". The only traces satisfying the model would be those without "A" (thus no forced "E"), allowing "R"  "C" directly. This undermines the intended multi-step process, permitting shortcuts that skip assignment and evaluation entirely.
+
+3. **Redundancy and under-specification relative to intended flow**:  
+   - `init` ("R") and `precedence` ("C" after "R") are consistent but insufficient; they do not enforce sequencing for "A", "P", or "N".  
+   - No constraints cover "P" (Approve) or "N" (Notify), allowing them to occur out of order or be skipped.  
+   - The model implicitly allows undesired paths like "R"  "C" (skipping all intermediate steps) while forbidding the ideal path due to the E-C noncoexistence.
+
+These anomalies render the model logically inconsistent for the intended process, as no trace can satisfy all constraints while following R  A  E  P  N  C.
+
+### Hypotheses for Anomalies
+1. **Misinterpretation of business requirements**: The `noncoexistence` rule for "E" and "C" may stem from a misunderstanding of "noncoexistence" as prohibiting concurrent activities (e.g., evaluation and closing in parallel) rather than presence in the same trace. This could arise from confusing temporal operators with coexistence semantics during model design.
+
+2. **Incremental policy changes not propagated consistently**: The model might have evolved from an earlier version focused only on "R" and "C" (e.g., for quick closures), with `responded_existence` added later to enforce evaluation after assignment. However, the outdated `noncoexistence` rule was not removed or adjusted, leading to conflicts.
+
+3. **Technical issues or incomplete event log data**: During discovery from the `claim_events` table, noisy or partial data (e.g., missing "E" events due to logging errors) may have inferred spurious `noncoexistence` between "E" and "C". High-confidence rules could have been auto-generated from a biased subset of traces, ignoring full process variants.
+
+4. **Business pressure for rapid claim handling**: Constraints like `noncoexistence` might reflect a desire to allow skipping evaluation ("E") for low-risk claims to enable fast closure ("C"), prioritizing speed over thoroughness. This codifies shortcuts as "normal" while accidentally conflicting with assignment-driven evaluation.
+
+### Verification Approaches Using SQL Queries
+To empirically check if these anomalies manifest in the event logs (and validate against the model's predictions), execute the following PostgreSQL queries on the `claim_events` table (joined with `claims` where needed). These focus on detecting forbidden paths, missing responses, and real-world deviations.
+
+1. **Detect claims closed without evaluation (tests `noncoexistence` violation and skipped "E")**:  
+   ```sql
+   SELECT DISTINCT ce.claim_id, c.customer_id, c.submission_date
+   FROM claim_events ce
+   JOIN claims c ON ce.claim_id = c.claim_id
+   WHERE ce.activity = 'C'
+   GROUP BY ce.claim_id, c.customer_id, c.submission_date
+   HAVING COUNT(CASE WHEN ce.activity = 'E' THEN 1 END) = 0
+   ORDER BY c.submission_date DESC;
+   ```
+   *Purpose*: Identifies traces with "C" but no "E", which the model allows only if no "A" occurred, but flags potential shortcuts undermining evaluation.
+
+2. **Detect claims with both "E" and "C" coexisting (direct `noncoexistence` violation)**:  
+   ```sql
+   SELECT ce.claim_id, COUNT(CASE WHEN activity = 'E' THEN 1 END) as eval_count,
+          COUNT(CASE WHEN activity = 'C' THEN 1 END) as close_count
+   FROM claim_events ce
+   WHERE activity IN ('E', 'C')
+   GROUP BY ce.claim_id
+   HAVING COUNT(CASE WHEN activity = 'E' THEN 1 END) > 0
+      AND COUNT(CASE WHEN activity = 'C' THEN 1 END) > 0
+   ORDER BY close_count DESC;
+   ```
+   *Purpose*: Quantifies traces forbidden by the model, revealing if the intended flow occurs in practice despite the constraint.
+
+3. **Check if every "A" is responded to by "E" (`responded_existence` compliance)**:  
+   ```sql
+   SELECT ce.claim_id,
+          COUNT(CASE WHEN activity = 'A' THEN 1 END) as assign_count,
+          COUNT(CASE WHEN activity = 'E' THEN 1 END) as eval_count
+   FROM claim_events ce
+   WHERE activity IN ('A', 'E')
+   GROUP BY ce.claim_id
+   HAVING COUNT(CASE WHEN activity = 'A' THEN 1 END) > COUNT(CASE WHEN activity = 'E' THEN 1 END)
+   ORDER BY assign_count DESC;
+   ```
+   *Purpose*: Finds claims with "A" events not matched by sufficient "E" events afterward (add `WHERE ce.timestamp > assign_timestamp` subquery for strict response checking).
+
+4. **Verify traces not starting with "R" or lacking "C" (tests `init` and `existence`)**:  
+   ```sql
+   WITH first_events AS (
+     SELECT claim_id, MIN(timestamp) as first_ts, activity
+     FROM claim_events
+     GROUP BY claim_id, activity
+   )
+   SELECT fe.claim_id,
+          CASE WHEN fe.activity != 'R' THEN 'No init R' END as init_violation,
+          CASE WHEN NOT EXISTS (SELECT 1 FROM claim_events ce2 WHERE ce2.claim_id = fe.claim_id AND ce2.activity = 'C')
+               THEN 'Missing C' END as existence_violation
+   FROM first_events fe
+   WHERE fe.activity != 'R'
+   UNION
+   SELECT claim_id, NULL, 'Missing C'
+   FROM claims c
+   WHERE NOT EXISTS (SELECT 1 FROM claim_events ce WHERE ce.claim_id = c.claim_id AND ce.activity = 'C');
+   ```
+   *Purpose*: Surfaces incomplete traces contradicting core requirements.
+
+5. **Link to adjusters: Check if "E" events use specialized adjusters (post-assignment validation)**:  
+   ```sql
+   SELECT ce.claim_id, ce.resource, a.name, a.specialization,
+          STRING_AGG(ce.activity, '  ' ORDER BY ce.timestamp) as sequence
+   FROM claim_events ce
+   JOIN adjusters a ON ce.resource::INTEGER = a.adjuster_id
+   WHERE ce.activity IN ('A', 'E')
+   GROUP BY ce.claim_id, ce.resource, a.name, a.specialization
+   HAVING COUNT(CASE WHEN ce.activity = 'A' THEN 1 END) > 0
+      AND COUNT(CASE WHEN ce.activity = 'E' THEN 1 END) = 0;
+   ```
+   *Purpose*: Identifies un-evaluated assignments, checking if `resource` matches `adjuster_id` and if specialization aligns (e.g., parse `claim_type` from `claims` for mismatches).
+
+These queries can be aggregated (e.g., with `COUNT(*)`) for conformance ratios and visualized to prioritize anomalous claims.
