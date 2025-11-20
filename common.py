@@ -17,7 +17,7 @@ from typing import Dict, Any
 ANSWERING_MODEL_NAME = "claude-sonnet-4-5-thinking-20250929" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
-EVALUATING_MODEL_NAME = "grok-4-fast-reasoning" if len(sys.argv) < 3 else sys.argv[2]
+EVALUATING_MODEL_NAME = "grok-4-1-fast-reasoning" if len(sys.argv) < 3 else sys.argv[2]
 
 
 class RateLimiter:
@@ -1536,7 +1536,7 @@ def clean_model_name(m_name):
 
 
 def get_base_evaluation_path(model_name):
-    return "evaluation-grok41-fast" if "grok-4.1-fast" in model_name else "evaluation-" + clean_model_name(model_name).split("-exp")[0].split("-preview")[0]
+    return "evaluation-grok41-fast" if ("grok-4.1-fast" in model_name or "grok-4-1-fast" in model_name) else "evaluation-" + clean_model_name(model_name).split("-exp")[0].split("-preview")[0]
 
 
 def configure_rate_limiter(requests_per_minute=60, requests_per_hour=1000,
