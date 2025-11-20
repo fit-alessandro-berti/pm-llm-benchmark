@@ -31,12 +31,13 @@ class RateLimiter:
         self.tokens_per_minute = tokens_per_minute
         self.tokens_per_hour = tokens_per_hour
         self.max_concurrent = max_concurrent
-        
+
         self.lock = threading.Lock()
         self.request_times = deque()
-        self.token_usage = deque()  # (timestamp, token_count)
+        self.token_usage = deque()  # (timestamp, token_count, request_id)
         self.concurrent_requests = 0
-        self.processing_files = {}  # Track files being processed: {filepath: thread_id}
+        self.processing_files = {}  # Track files being processed: {filepath: {thread_id, request_id}}
+        self.next_request_id = 0
         
     def can_acquire(self, estimated_tokens=4000, filepath=None):
         """Check if a request can be made based on rate limits."""
@@ -56,15 +57,15 @@ class RateLimiter:
             hour_ago = now - timedelta(hours=1)
             
             self.request_times = deque([t for t in self.request_times if t > hour_ago])
-            self.token_usage = deque([(t, tokens) for t, tokens in self.token_usage if t > hour_ago])
+            self.token_usage = deque([(t, tokens, req_id) for t, tokens, req_id in self.token_usage if t > hour_ago])
             
             # Count requests in windows
             requests_last_minute = sum(1 for t in self.request_times if t > minute_ago)
             requests_last_hour = len(self.request_times)
             
             # Count tokens in windows
-            tokens_last_minute = sum(tokens for t, tokens in self.token_usage if t > minute_ago)
-            tokens_last_hour = sum(tokens for _, tokens in self.token_usage)
+            tokens_last_minute = sum(tokens for t, tokens, _ in self.token_usage if t > minute_ago)
+            tokens_last_hour = sum(tokens for _, tokens, _ in self.token_usage)
             
             # Check all limits
             if requests_last_minute >= self.requests_per_minute:
@@ -79,35 +80,48 @@ class RateLimiter:
             return True, "OK"
     
     def acquire(self, estimated_tokens=4000, filepath=None):
-        """Acquire a slot for making a request. Returns True if acquired, False otherwise."""
+        """Acquire a slot for making a request. Returns (success, reason, request_id)."""
         can_proceed, reason = self.can_acquire(estimated_tokens, filepath)
         if not can_proceed:
-            return False, reason
+            return False, reason, None
         
         with self.lock:
             now = datetime.now()
+            request_id = self.next_request_id
+            self.next_request_id += 1
             self.request_times.append(now)
-            self.token_usage.append((now, estimated_tokens))
+            self.token_usage.append((now, estimated_tokens, request_id))
             self.concurrent_requests += 1
             
             if filepath:
-                self.processing_files[filepath] = threading.current_thread().ident
+                self.processing_files[filepath] = {
+                    "thread_id": threading.current_thread().ident,
+                    "request_id": request_id
+                }
             
-            return True, "Acquired"
+            return True, "Acquired", request_id
     
-    def release(self, actual_tokens=None, filepath=None):
+    def release(self, actual_tokens=None, filepath=None, request_id=None):
         """Release the slot after request completion."""
         with self.lock:
             self.concurrent_requests = max(0, self.concurrent_requests - 1)
             
+            stored_request_id = request_id
             if filepath and filepath in self.processing_files:
-                del self.processing_files[filepath]
+                info = self.processing_files.pop(filepath)
+                if stored_request_id is None and isinstance(info, dict):
+                    stored_request_id = info.get("request_id")
             
-            # Update token count if actual usage is provided
-            if actual_tokens and self.token_usage:
-                last_time, estimated = self.token_usage[-1]
-                if estimated != actual_tokens:
-                    self.token_usage[-1] = (last_time, actual_tokens)
+            if stored_request_id is None:
+                return
+            
+            if actual_tokens is not None and self.token_usage:
+                for idx in range(len(self.token_usage) - 1, -1, -1):
+                    ts, recorded_tokens, req_id = self.token_usage[idx]
+                    if req_id == stored_request_id:
+                        if recorded_tokens != actual_tokens:
+                            self.token_usage[idx] = (ts, actual_tokens, req_id)
+                        break
     
     def wait_for_slot(self, estimated_tokens=4000, filepath=None, max_wait=300):
         """Wait until a slot becomes available or timeout."""
@@ -115,15 +129,15 @@ class RateLimiter:
         wait_interval = 1  # Start with 1 second wait
         
         while time.time() - start_time < max_wait:
-            acquired, reason = self.acquire(estimated_tokens, filepath)
+            acquired, reason, request_id = self.acquire(estimated_tokens, filepath)
             if acquired:
-                return True, reason
+                return True, reason, request_id
             
             # Exponential backoff with jitter
             time.sleep(wait_interval + (time.time() % 0.5))
             wait_interval = min(wait_interval * 1.2, 10)  # Cap at 10 seconds
         
-        return False, "Timeout waiting for slot"
+        return False, "Timeout waiting for slot", None
     
     def is_file_processing(self, filepath):
         """Check if a file is currently being processed."""
@@ -139,8 +153,8 @@ class RateLimiter:
             
             requests_last_minute = sum(1 for t in self.request_times if t > minute_ago)
             requests_last_hour = len([t for t in self.request_times if t > hour_ago])
-            tokens_last_minute = sum(tokens for t, tokens in self.token_usage if t > minute_ago)
-            tokens_last_hour = sum(tokens for t, tokens in self.token_usage if t > hour_ago)
+            tokens_last_minute = sum(tokens for t, tokens, _ in self.token_usage if t > minute_ago)
+            tokens_last_hour = sum(tokens for t, tokens, _ in self.token_usage if t > hour_ago)
             
             return {
                 "concurrent_requests": self.concurrent_requests,
@@ -556,7 +570,7 @@ def is_excluded_from_table(model_name):
 def get_ordered_references_llms(base_path="."):
     try:
         from utils import overall_table
-        output, all_jsons, ordered_llms = overall_table.execute(os.path.join(base_path, "evaluation-grok4-fast"),
+        output, all_jsons, ordered_llms = overall_table.execute(os.path.join(base_path, "evaluation-grok41-fast"),
                                                                 None, include_closed_source=True, require_vision=False,
                                                                 leaderboard_title="Overall Leaderboard")
     except:
@@ -1077,24 +1091,77 @@ def query_text_simple_google(question, api_url, target_file):
     return response_message
 
 
+def _load_prompt_text(question_path, explicit_text):
+    if explicit_text is not None:
+        return explicit_text
+    if not question_path:
+        return ""
+    try:
+        with open(question_path, "r", encoding="utf-8") as handler:
+            return handler.read()
+    except Exception:
+        try:
+            with open(question_path, "r") as handler:
+                return handler.read()
+        except Exception:
+            return ""
+
+
+def _estimate_text_tokens(text):
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
+def _estimate_pre_request_tokens(prompt_text, fallback, extra_tokens=0):
+    prompt_tokens = _estimate_text_tokens(prompt_text)
+    if prompt_tokens == 0:
+        return fallback
+    response_guess = min(max(prompt_tokens // 2, 512), 4096)
+    total = prompt_tokens + response_guess + extra_tokens
+    buffer = max(256, int(total * 0.15))
+    estimate = total + buffer
+    if fallback:
+        estimate = max(int(fallback * 0.5), estimate)
+    return estimate
+
+
+def _estimate_actual_tokens(prompt_text, response_text, fallback, extra_tokens=0):
+    prompt_tokens = _estimate_text_tokens(prompt_text)
+    response_tokens = _estimate_text_tokens(response_text)
+    total = prompt_tokens + response_tokens + extra_tokens
+    if total == 0:
+        return fallback
+    buffer = max(128, int(total * 0.1))
+    return total + buffer
+
+
 def query_text_simple_with_rate_limit(question_path, target_file, callback, question=None, 
                                       use_rate_limit=True, estimated_tokens=4000):
     """Wrapper for query_text_simple with rate limiting support."""
     filepath = target_file if use_rate_limit else None
-    
+    prompt_text = _load_prompt_text(question_path, question)
+    effective_estimate = estimated_tokens or 0
     if use_rate_limit:
-        # Wait for a slot to become available
-        acquired, reason = RATE_LIMITER.wait_for_slot(estimated_tokens, filepath, max_wait=300)
+        if not effective_estimate:
+            effective_estimate = 4000
+        effective_estimate = _estimate_pre_request_tokens(prompt_text, effective_estimate)
+        acquired, reason, request_id = RATE_LIMITER.wait_for_slot(effective_estimate, filepath, max_wait=300)
         if not acquired:
             raise Exception(f"Failed to acquire rate limit slot: {reason}")
-    
+    else:
+        request_id = None
+        if not effective_estimate:
+            effective_estimate = 4000
+    response_message = None
     try:
         # Call the original function
-        query_text_simple(question_path, target_file, callback, question)
+        response_message = query_text_simple(question_path, target_file, callback, question)
+        return response_message
     finally:
-        if use_rate_limit:
-            # Release the slot
-            RATE_LIMITER.release(estimated_tokens, filepath)
+        if use_rate_limit and request_id is not None:
+            actual_tokens = _estimate_actual_tokens(prompt_text, response_message, effective_estimate)
+            RATE_LIMITER.release(actual_tokens, filepath, request_id=request_id)
 
 
 def query_text_simple(question_path, target_file, callback, question=None):
@@ -1118,6 +1185,8 @@ def query_text_simple(question_path, target_file, callback, question=None):
 
     if response_message:
         callback(response_message, target_file)
+
+    return response_message
 
 
 def query_image_simple_openai_new(base64_image, api_url, target_file, text):
@@ -1342,20 +1411,29 @@ def query_image_simple_with_rate_limit(question_path, target_file, callback, bas
                                        text=None, use_rate_limit=True, estimated_tokens=4000):
     """Wrapper for query_image_simple with rate limiting support."""
     filepath = target_file if use_rate_limit else None
-    
+    prompt_text = text if text is not None else "Can you describe the provided visualization?"
+    effective_estimate = estimated_tokens or 0
     if use_rate_limit:
-        # Wait for a slot to become available
-        acquired, reason = RATE_LIMITER.wait_for_slot(estimated_tokens, filepath, max_wait=300)
+        if not effective_estimate:
+            effective_estimate = 4000
+        # Images typically add extra latency/tokens on the request
+        effective_estimate = _estimate_pre_request_tokens(prompt_text, effective_estimate, extra_tokens=512)
+        acquired, reason, request_id = RATE_LIMITER.wait_for_slot(effective_estimate, filepath, max_wait=300)
         if not acquired:
             raise Exception(f"Failed to acquire rate limit slot: {reason}")
-    
+    else:
+        request_id = None
+        if not effective_estimate:
+            effective_estimate = 4000
+    response_message = None
     try:
         # Call the original function
-        query_image_simple(question_path, target_file, callback, base64_image, text)
+        response_message = query_image_simple(question_path, target_file, callback, base64_image, prompt_text)
+        return response_message
     finally:
-        if use_rate_limit:
-            # Release the slot
-            RATE_LIMITER.release(estimated_tokens, filepath)
+        if use_rate_limit and request_id is not None:
+            actual_tokens = _estimate_actual_tokens(prompt_text, response_message, effective_estimate, extra_tokens=512)
+            RATE_LIMITER.release(actual_tokens, filepath, request_id=request_id)
 
 
 def query_image_simple(question_path, target_file, callback, base64_image=None, text=None):
@@ -1378,6 +1456,7 @@ def query_image_simple(question_path, target_file, callback, base64_image=None, 
         response_message = query_image_simple_generic(base64_image, Shared.API_URL, target_file, text)
 
     callback(response_message, target_file)
+    return response_message
 
 
 def get_models():
@@ -1457,7 +1536,7 @@ def clean_model_name(m_name):
 
 
 def get_base_evaluation_path(model_name):
-    return "evaluation" if "gpt-4o" in model_name else "evaluation-grok4-fast" if "grok-4-fast" in model_name else "evaluation-" + clean_model_name(model_name).split("-exp")[0].split("-preview")[0]
+    return "evaluation-grok41-fast" if "grok-4.1-fast" in model_name else "evaluation-" + clean_model_name(model_name).split("-exp")[0].split("-preview")[0]
 
 
 def configure_rate_limiter(requests_per_minute=60, requests_per_hour=1000,
