@@ -101,9 +101,6 @@ def perform_mass_eval(use_multithreading=True, max_workers=3):
                 overall_table.write_evaluation(".", extra=True)
                 changed = True
 
-    if changed:
-        overall_table.write_evaluation(".", extra=True)
-
     return changed
 
 
