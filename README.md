@@ -38,7 +38,7 @@ The benchmark includes different categories of questions:
 
 The leaderboards include the results of the benchmark, as evaluated by the considered judge LLM:
 
-(**2025-09-20 TO NOW**) [grok-4-1-fast](leaderboard_grok-4-fast.md)
+(**2025-09-20 TO NOW**) [grok-4-1-fast](leaderboard_grok-4-1-fast-reasoning.md)
 
 * (v2.2, OLD, 2025-09-20 TO 2025-11-20) [grok-4-fast](old/leaderboard_grok-4-fast.md)
 * (v2.2, OLD, 2025-03-27 TO 2025-09-19) [gemini-2.5-pro](old/OLD_v2_2_leaderboard_gemini-2.5-pro.md)
