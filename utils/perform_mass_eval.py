@@ -68,7 +68,7 @@ def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True
     print(answer_models_keys)
 
     if initial_write:
-        #overall_table.write_evaluation(".", extra=True)
+        overall_table.write_evaluation(".", extra=True)
         pass
 
     changed = False

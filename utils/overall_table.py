@@ -230,7 +230,7 @@ def write_evaluation(base_path, extra=True):
     execute(evaluation_folder, os.path.join(base_path, "leaderboard_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True, require_vision=False,
             leaderboard_title="Overall Leaderboard", json_file=os.path.join(base_path, "hallucinations/leaderboard_stats.md"))
 
-    if False and (extra and "grok-4-fast" in e_m_name):
+    if True and (extra and "grok-4-1-fast" in e_m_name):
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_cot_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
                 require_vision=False, require_reasoning=True, require_reasoning_custom=True, leaderboard_title="Large Reasoning Models Leaderboard (Models with CoT)")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_nolrms_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
