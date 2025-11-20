@@ -43,7 +43,7 @@ def evaluate_model_threaded(m):
         return False
 
 
-def perform_mass_eval(use_multithreading=True, max_workers=3):
+def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True):
     answers = os.listdir("answers")
     answers_models = Counter([x.split("_cat")[0] for x in answers])
     # answers_models = {x: y for x, y in answers_models.items() if y >= 44}
@@ -67,7 +67,9 @@ def perform_mass_eval(use_multithreading=True, max_workers=3):
                                            x.lower()))
     print(answer_models_keys)
 
-    overall_table.write_evaluation(".", extra=True)
+    if initial_write:
+        #overall_table.write_evaluation(".", extra=True)
+        pass
 
     changed = False
     
@@ -134,7 +136,7 @@ if __name__ == "__main__":
         print(f"Rate limiter stats: {RATE_LIMITER.get_stats()}")
         
         changed = perform_mass_eval(use_multithreading=use_multithreading, 
-                                   max_workers=max_model_workers)
+                                   max_workers=max_model_workers, initial_write=(i == 0))
         
         if not changed:
             print("No changes detected, waiting before next iteration...")
