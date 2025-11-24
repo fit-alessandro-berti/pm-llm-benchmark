@@ -11,7 +11,7 @@ import common
 WAITING_TIME_RETRY = 15
 USE_MULTITHREADING = True
 MAX_WORKERS = 5
-TIME_BETWEEN_ANSWERS = 60
+TIME_BETWEEN_ANSWERS = 0
 
 
 def process_single_question(q, model_name, alias_model_name, use_rate_limit=False):
@@ -32,8 +32,10 @@ def process_single_question(q, model_name, alias_model_name, use_rate_limit=Fals
                 if use_rate_limit:
                     query_text_simple_with_rate_limit(question_path, answer_path, callback_write, 
                                                      use_rate_limit=True)
+                    time.sleep(TIME_BETWEEN_ANSWERS)
                 else:
                     query_text_simple(question_path, answer_path, callback_write)
+                    time.sleep(TIME_BETWEEN_ANSWERS)
                 return True
             elif is_visual_model(model_name):
                 try:
@@ -126,7 +128,6 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
                     else:
                         # Success or permanent failure
                         break
-            time.sleep(TIME_BETWEEN_ANSWERS)
 
 
 if __name__ == "__main__":
