@@ -9,9 +9,10 @@ from common import query_text_simple, query_image_simple, callback_write, set_ap
 import common
 
 WAITING_TIME_RETRY = 15
-USE_MULTITHREADING = False
+USE_MULTITHREADING = True
 MAX_WORKERS = 5
 TIME_BETWEEN_ANSWERS = 60
+
 
 def process_single_question(q, model_name, alias_model_name, use_rate_limit=False):
     """Process a single question."""
