@@ -9,9 +9,9 @@ from common import query_text_simple, query_image_simple, callback_write, set_ap
 import common
 
 WAITING_TIME_RETRY = 15
-USE_MULTITHREADING = True
+USE_MULTITHREADING = False
 MAX_WORKERS = 5
-
+TIME_BETWEEN_ANSWERS = 60
 
 def process_single_question(q, model_name, alias_model_name, use_rate_limit=False):
     """Process a single question."""
@@ -113,7 +113,6 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
     else:
         # Single-threaded processing (original behavior)
         for q in questions:
-            question_path = os.path.join("questions", q)
             answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
                 ".png", ".txt")
 
@@ -126,6 +125,7 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
                     else:
                         # Success or permanent failure
                         break
+            time.sleep(TIME_BETWEEN_ANSWERS)
 
 
 if __name__ == "__main__":
