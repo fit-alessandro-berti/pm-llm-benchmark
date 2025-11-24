@@ -647,8 +647,9 @@ def set_api_key(type_key):
         Shared.MODEL_NAME = ANSWERING_MODEL_NAME
         Shared.ALIAS_MODEL_NAME = Shared.MODEL_NAME
     else:
-        judge_api_key_path = "judge_api_key.txt" if os.path.exists("judge_api_key.txt") else "../judge_api_key.txt"
-        Shared.API_KEY = open(judge_api_key_path, "r").read().strip()
+        #judge_api_key_path = "judge_api_key.txt" if os.path.exists("judge_api_key.txt") else "../judge_api_key.txt"
+        #Shared.API_KEY = open(judge_api_key_path, "r").read().strip()
+        Shared.API_KEY = os.environ["GROK_API_KEY"]
         Shared.MODEL_NAME = EVALUATING_MODEL_NAME
         Shared.ALIAS_MODEL_NAME = Shared.MODEL_NAME
 
