@@ -340,7 +340,7 @@ MODELS_DICT = {
             "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b", "minimax/minimax-m2:free",
             "moonshotai/kimi-k2-thinking",
             "moonshotai/kimi-linear-48b-a3b-instruct",
-            "allenai/olmo-3-7b-think"
+            "allenai/olmo-3-7b-think", "openrouter/bert-nebulon-alpha"
         }
     },
     "manual": {
