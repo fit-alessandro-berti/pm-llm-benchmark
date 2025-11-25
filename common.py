@@ -259,7 +259,7 @@ MODELS_DICT = {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
             "mistral-large-2411", "mistral-small-2506",
             "open-mixtral-8x22b", "mistral-medium-2505", "devstral-medium-2507", "mistral-medium-2508",
-            "magistral-medium-2506", "magistral-small-2506", "magistral-small-2509"
+            "magistral-medium-2506", "magistral-small-2506", "magistral-small-2509", "magistral-medium-2509"
         }
     },
     "grok": {
