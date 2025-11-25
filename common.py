@@ -259,7 +259,7 @@ MODELS_DICT = {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
             "mistral-large-2411", "mistral-small-2506",
             "open-mixtral-8x22b", "mistral-medium-2505", "devstral-medium-2507", "mistral-medium-2508",
-            "magistral-medium-2506", "magistral-small-2506"
+            "magistral-medium-2506", "magistral-small-2506", "magistral-small-2509"
         }
     },
     "grok": {
@@ -978,7 +978,10 @@ def query_text_simple_generic(question, api_url, target_file):
 
                 response_message = message["content"]
 
-                if "reasoning_content" in message:
+                if isinstance(response_message, list) and len(response_message) == 2 and isinstance(response_message[0], dict) and isinstance(response_message[1], dict):
+                    if response_message[0]["type"] == "thinking" and response_message[1]["type"] == "text":
+                        response_message = "<think>\n" + response_message[0]["thinking"][-1]["text"].strip() + "\n</think>\n\n" + response_message[1]["text"].strip()
+                elif "reasoning_content" in message:
                     response_message = "<think>\n" + message["reasoning_content"] + "\n</think>\n\n" + response_message.strip()
 
             except Exception as e:
