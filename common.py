@@ -340,7 +340,7 @@ MODELS_DICT = {
             "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b", "minimax/minimax-m2:free",
             "moonshotai/kimi-k2-thinking",
             "moonshotai/kimi-linear-48b-a3b-instruct",
-            "allenai/olmo-3-7b-think", "openrouter/bert-nebulon-alpha"
+            "allenai/olmo-3-7b-think", "openrouter/bert-nebulon-alpha",
         }
     },
     "manual": {
@@ -490,6 +490,12 @@ MODELS_DICT = {
             "claude-opus-4-1-thinking-20250805": {
                 "provider": "claude",
                 "base_model": "claude-opus-4-1-20250805",
+                "thinking_tokens": 16000,
+                "max_tokens": 16000
+            },
+            "claude-opus-4-5-thinking-20251101": {
+                "provider": "claude",
+                "base_model": "claude-opus-4-5-20251101",
                 "thinking_tokens": 16000,
                 "max_tokens": 16000
             },
