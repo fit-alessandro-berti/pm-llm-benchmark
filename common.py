@@ -889,7 +889,8 @@ def query_text_simple_generic(question, api_url, target_file):
         # Decide if we want streaming
         streaming_enabled = False
         streaming_enabled = Shared.PAYLOAD_REASONING_EFFORT is None
-        #streaming_enabled = False
+        if "stral" in Shared.MODEL_NAME.lower():
+            streaming_enabled = False
 
         if streaming_enabled:
             payload["stream"] = True
