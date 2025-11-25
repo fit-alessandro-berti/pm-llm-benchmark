@@ -1,0 +1,173 @@
+# Analysis of the DECLARE Model for Insurance Claims Process
+
+## 1. Identified Anomalies
+
+### Anomaly A: Contradiction Between `existence(C)` and `noncoexistence(E, C)`
+
+The model mandates that:
+- Every claim trace **must** contain activity `C` (Close Claim) - via the `existence` constraint
+- Activities `E` (Evaluate) and `C` (Close) **cannot** both appear in the same trace - via the `noncoexistence` constraint
+
+This creates a fundamental contradiction: if closing is mandatory but evaluation and closing cannot coexist, then **no claim can ever be evaluated** if the process is to complete properly. This undermines the core purpose of the claims process where evaluation should be a critical step before closure.
+
+### Anomaly B: Broken Process Chain via `responded_existence(E, A)`
+
+The constraint states that if `E` (Evaluate) occurs, then `A` (Assign) must also occur somewhere in the trace. However, combined with the `noncoexistence(E, C)` constraint, this effectively means:
+- Claims that are evaluated cannot be closed
+- Claims that are closed cannot be evaluated
+- The assignment step becomes irrelevant for any claim that reaches closure
+
+### Anomaly C: Missing Sequential Constraints
+
+The `precedence(C, R)` constraint only ensures that `R` (Receive) occurs before `C` (Close), but there are no constraints enforcing:
+- Assignment before Evaluation
+- Evaluation before Approval
+- Approval before Notification
+- Notification before Closure
+
+This allows claims to be closed immediately after being received, bypassing all intermediate steps.
+
+### Anomaly D: Approval and Notification Steps Are Unconstrained
+
+Activities `P` (Approve) and `N` (Notify) have no constraints whatsoever, meaning:
+- Claims can be closed without approval
+- Customers may never be notified
+- These steps can occur in any order or be skipped entirely
+
+---
+
+## 2. Hypotheses for Anomaly Origins
+
+### Hypothesis 1: Incremental Policy Changes
+The organization may have undergone multiple policy revisions where new constraints were added without reviewing existing ones. The `noncoexistence` constraint might have been added to handle a specific edge case (e.g., auto-rejected claims) but was incorrectly applied globally.
+
+### Hypothesis 2: Misinterpretation of Business Requirements
+The `noncoexistence(E, C)` rule may stem from a misunderstanding—perhaps the intent was to ensure evaluation must complete before closure (a `precedence` relationship), but it was incorrectly encoded as mutual exclusion.
+
+### Hypothesis 3: Data Quality Issues During Model Mining
+If this DECLARE model was mined from historical event logs, corrupted or incomplete data could have produced spurious constraints. For example, if a subset of fast-tracked claims skipped evaluation, the mining algorithm might have incorrectly inferred that evaluation and closure are mutually exclusive.
+
+### Hypothesis 4: Operational Pressure for Speed
+Business pressure to reduce claim processing time may have led to constraints that allow skipping evaluation steps. The model might reflect actual (undesirable) behavior rather than intended process design.
+
+### Hypothesis 5: Separate Process Variants Merged Incorrectly
+Different claim types (e.g., low-value vs. high-value claims) might have different valid process flows. Merging constraints from multiple process variants without proper differentiation could create contradictions.
+
+---
+
+## 3. SQL-Based Verification Approaches
+
+### Query 1: Find Claims Closed Without Evaluation
+```sql
+SELECT c.claim_id, c.claim_type, c.claim_amount, c.submission_date
+FROM claims c
+WHERE EXISTS (
+    SELECT 1 FROM claim_events ce 
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'C'
+)
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events ce 
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'E'
+);
+```
+
+### Query 2: Find Claims Where Evaluation and Closing Coexist (Violating `noncoexistence`)
+```sql
+SELECT ce1.claim_id,
+       ce1.timestamp AS evaluation_time,
+       ce2.timestamp AS close_time
+FROM claim_events ce1
+JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+WHERE ce1.activity = 'E' AND ce2.activity = 'C';
+```
+
+### Query 3: Verify Evaluation Always Has Corresponding Assignment
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE EXISTS (
+    SELECT 1 FROM claim_events ce 
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'E'
+)
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events ce 
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'A'
+);
+```
+
+### Query 4: Find Claims Closed Without Approval
+```sql
+SELECT c.claim_id, c.claim_amount, c.claim_type
+FROM claims c
+WHERE EXISTS (
+    SELECT 1 FROM claim_events ce 
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'C'
+)
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events ce 
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'P'
+)
+ORDER BY c.claim_amount DESC;
+```
+
+### Query 5: Check for Claims Closed Immediately After Receipt (Skipping All Steps)
+```sql
+WITH claim_activities AS (
+    SELECT claim_id, 
+           array_agg(activity ORDER BY timestamp) AS activity_sequence
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT ca.claim_id, ca.activity_sequence, c.claim_amount
+FROM claim_activities ca
+JOIN claims c ON ca.claim_id = c.claim_id
+WHERE ca.activity_sequence = ARRAY['R', 'C'];
+```
+
+### Query 6: Identify Process Variants and Their Frequencies
+```sql
+WITH claim_sequences AS (
+    SELECT claim_id,
+           string_agg(activity, ' -> ' ORDER BY timestamp) AS process_path
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT process_path, 
+       COUNT(*) AS occurrence_count,
+       ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) AS percentage
+FROM claim_sequences
+GROUP BY process_path
+ORDER BY occurrence_count DESC;
+```
+
+### Query 7: Check if Adjusters Are Actually Assigned for Evaluated Claims
+```sql
+SELECT ce.claim_id, 
+       ce.resource AS evaluator,
+       a.name AS assigned_adjuster,
+       a.specialization,
+       c.claim_type
+FROM claim_events ce
+JOIN claims c ON ce.claim_id = c.claim_id
+LEFT JOIN claim_events assign_event ON ce.claim_id = assign_event.claim_id 
+    AND assign_event.activity = 'A'
+LEFT JOIN adjusters a ON assign_event.resource = a.name
+WHERE ce.activity = 'E';
+```
+
+### Query 8: Temporal Analysis - Average Time Between Steps
+```sql
+WITH step_times AS (
+    SELECT claim_id, activity, timestamp,
+           LAG(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp) AS prev_timestamp,
+           LAG(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS prev_activity
+    FROM claim_events
+)
+SELECT prev_activity || ' -> ' || activity AS transition,
+       AVG(EXTRACT(EPOCH FROM (timestamp - prev_timestamp))/3600) AS avg_hours,
+       COUNT(*) AS occurrences
+FROM step_times
+WHERE prev_activity IS NOT NULL
+GROUP BY prev_activity, activity
+ORDER BY occurrences DESC;
+```

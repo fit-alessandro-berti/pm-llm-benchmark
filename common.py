@@ -248,7 +248,8 @@ MODELS_DICT = {
             "claude-4-sonnet-20250514",
             "claude-opus-4-1-20250805",
             "claude-sonnet-4-5-20250929",
-            "claude-haiku-4-5-20251001"
+            "claude-haiku-4-5-20251001",
+            "claude-opus-4-5-20251101"
         }
     },
     "mistral": {
@@ -339,7 +340,7 @@ MODELS_DICT = {
             "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b", "minimax/minimax-m2:free",
             "moonshotai/kimi-k2-thinking",
             "moonshotai/kimi-linear-48b-a3b-instruct",
-            "allenai/olmo-3-32b-think", "allenai/olmo-3-7b-think"
+            "allenai/olmo-3-7b-think"
         }
     },
     "manual": {
