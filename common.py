@@ -341,6 +341,7 @@ MODELS_DICT = {
             "moonshotai/kimi-k2-thinking",
             "moonshotai/kimi-linear-48b-a3b-instruct",
             "allenai/olmo-3-7b-think", "openrouter/bert-nebulon-alpha",
+            "allenai/olmo-3-7b-instruct", "allenai/olmo-3-32b-think"
         }
     },
     "manual": {
