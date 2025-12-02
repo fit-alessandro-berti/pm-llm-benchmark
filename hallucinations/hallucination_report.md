@@ -2,6 +2,7 @@
 
 | Model | Total | 1a_instruction_override | 1b_context_omission | 1c_prompt_contradiction | 2a_concept_fabrication | 2b_spurious_numeric | 2c_false_citation | 3a_unsupported_leap | 3b_self_contradiction | 3c_circular_reasoning | 4a_syntax_error | 4b_model_semantics_breach | 4c_visual_descr_mismatch |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| deepseekdeepseek-v3.2-speciale-thinking | 25 | 0 | 5 | 0 | 0 | 1 | 0 | 15 | 0 | 0 | 0 | 2 | 2 |
 | qwenqwen3-next-80b-a3b-thinking | 30 | 3 | 5 | 2 | 1 | 5 | 1 | 7 | 1 | 0 | 3 | 2 | 0 |
 | Qwen3-235B-A22B-Thinking-2507 | 39 | 1 | 2 | 3 | 2 | 14 | 0 | 14 | 2 | 0 | 0 | 0 | 0 |
 | nousresearchhermes-4-70b | 47 | 3 | 5 | 2 | 1 | 8 | 0 | 18 | 2 | 0 | 2 | 4 | 2 |
@@ -11,6 +12,7 @@
 | Qwen3-30B-A3B-2507-Thinking | 68 | 2 | 6 | 2 | 5 | 13 | 2 | 28 | 5 | 0 | 3 | 1 | 1 |
 | gemini-2.5-pro-thinklow | 70 | 1 | 18 | 1 | 2 | 8 | 0 | 31 | 4 | 0 | 0 | 2 | 1 |
 | qwen-qwq-32b-stepbystep | 73 | 1 | 17 | 2 | 1 | 22 | 0 | 26 | 1 | 0 | 1 | 2 | 0 |
+| deepseekdeepseek-v3.2-thinking | 74 | 3 | 9 | 0 | 6 | 15 | 0 | 26 | 5 | 0 | 4 | 4 | 0 |
 | gemini-2.5-flash-thinkhigh | 74 | 1 | 23 | 1 | 2 | 5 | 0 | 31 | 4 | 1 | 0 | 4 | 1 |
 | phi4-reasoning | 74 | 5 | 13 | 2 | 0 | 5 | 0 | 31 | 2 | 0 | 1 | 13 | 1 |
 | gpt-5-2025-08-07 | 75 | 2 | 14 | 1 | 1 | 10 | 0 | 29 | 9 | 0 | 0 | 3 | 3 |
@@ -164,6 +166,7 @@
 | falcon33b-instruct-q8 | 293 | 18 | 53 | 12 | 6 | 22 | 0 | 112 | 19 | 0 | 7 | 18 | 5 |
 | olmo27b-1124-instruct-q8 | 294 | 13 | 48 | 5 | 8 | 26 | 7 | 119 | 10 | 0 | 13 | 25 | 3 |
 | meta-llamallama-4-scout | 298 | 12 | 70 | 4 | 3 | 30 | 1 | 104 | 22 | 0 | 5 | 16 | 10 |
+| arcee-aitrinity-mini | 306 | 14 | 36 | 12 | 38 | 39 | 5 | 72 | 16 | 0 | 24 | 29 | 5 |
 | gemma34b-it-q8 | 313 | 7 | 45 | 8 | 8 | 43 | 1 | 119 | 14 | 0 | 6 | 29 | 9 |
 | granite4small-h | 323 | 15 | 49 | 9 | 19 | 29 | 0 | 119 | 16 | 2 | 15 | 17 | 6 |
 | allenaiolmo-3-7b-instruct | 329 | 18 | 37 | 13 | 23 | 25 | 1 | 96 | 24 | 2 | 27 | 30 | 10 |
