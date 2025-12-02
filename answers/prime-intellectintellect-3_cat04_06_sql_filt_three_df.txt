@@ -1,0 +1,517 @@
+<think>
+We are going to break down the problem into steps:
+
+ Step 1: Identify cases that have the exact sequence of three activities in direct succession:
+   'Approve Purchase Requisition' -> 'Create Order' -> 'Confirm Order'
+
+ Step 2: Among those cases, filter to only those where the time between 'Create Order' and 'Confirm Order' is more than 5 days.
+
+ Step 3: Exclude these cases from the event_log. That is, return all events except those from the cases identified in Step 2.
+
+ However, note that the problem says: "exclude them from your final result" meaning we only want events from cases that do not meet the criteria.
+
+ Approach:
+
+ We can use a window function to identify the sequences and then filter.
+
+ Let me outline:
+
+ 1. For each case, we want to find if there is a sequence of three events (with no gaps) that matches the pattern.
+
+    We can assign row numbers partitioned by case_id and ordered by timestamp. Then, for each event, we can look for:
+
+      event1: activity = 'Approve Purchase Requisition'
+      event2: the next event (row_number = event1's row_number + 1) must be 'Create Order'
+      event3: the next event (row_number = event1's row_number + 2) must be 'Confirm Order'
+
+ 2. Then, for such a triplet, we calculate the time difference between event2 and event3 (i.e., 'Create Order' and 'Confirm Order').
+
+ 3. We then mark the case_id as bad if at least one such sequence exists and the time difference is > 5 days.
+
+ 4. Finally, we return all events from event_log where the case_id is NOT in the set of bad case_ids.
+
+ Implementation:
+
+ We can do:
+
+   WITH sequence_candidates AS (
+        SELECT
+            case_id,
+            timestamp AS approve_timestamp,
+            lead(timestamp, 1) OVER (PARTITION BY case_id ORDER BY timestamp) AS create_timestamp,
+            lead(timestamp, 2) OVER (PARTITION BY case_id ORDER BY timestamp) AS confirm_timestamp
+        FROM event_log
+        WHERE activity = 'Approve Purchase Requisition'
+    ),
+    matching_sequences AS (
+        SELECT
+            e.case_id
+        FROM event_log e
+        JOIN sequence_candidates s
+          ON e.case_id = s.case_id AND e.timestamp = s.create_timestamp AND e.activity = 'Create Order'
+          AND EXISTS (
+            SELECT 1
+            FROM event_log e3
+            WHERE e3.case_id = e.case_id
+              AND e3.timestamp = s.confirm_timestamp
+              AND e3.activity = 'Confirm Order'
+          )
+        WHERE s.confirm_timestamp IS NOT NULL
+          AND (s.confirm_timestamp - s.create_timestamp) > INTERVAL 5 DAY
+    )
+
+ But note: the above might not be efficient and also we are not checking the direct succession? Actually, we are using lead so the next event is the immediate next in time? But what if there are multiple events with same timestamp? We should use row_number to get the immediate next.
+
+ Alternatively, we can use:
+
+   WITH ordered_events AS (
+        SELECT
+            *,
+            row_number() OVER (PARTITION BY case_id ORDER BY timestamp) AS rn
+        FROM event_log
+    ),
+    sequence_candidates AS (
+        SELECT
+            case_id,
+            rn AS approve_rn,
+            lead(rn, 1) OVER (PARTITION BY case_id ORDER BY timestamp) AS create_rn,
+            lead(rn, 2) OVER (PARTITION BY case_id ORDER BY timestamp) AS confirm_rn
+        FROM ordered_events
+        WHERE activity = 'Approve Purchase Requisition'
+    ),
+    matching_sequences AS (
+        SELECT
+            s.case_id
+        FROM sequence_candidates s
+        JOIN ordered_events e1 ON e1.case_id = s.case_id AND e1.rn = s.approve_rn
+        JOIN ordered_events e2 ON e2.case_id = s.case_id AND e2.rn = s.create_rn AND e2.activity = 'Create Order'
+        JOIN ordered_events e3 ON e3.case_id = s.case_id AND e3.rn = s.confirm_rn AND e3.activity = 'Confirm Order'
+        WHERE (e3.timestamp - e2.timestamp) > INTERVAL 5 DAY
+    )
+
+ However, note: the above might not be necessary because we are using row_number and we know the next row is the immediate next. But we are also joining to check the activity? Actually, the lead in the sequence_candidates is taken from the same row that has 'Approve Purchase Requisition', so the next row (by row_number) is the next event. But we must ensure that the next event is indeed 'Create Order' and the next next is 'Confirm Order'. So we can do:
+
+   WITH ordered_events AS (
+        SELECT
+            *,
+            row_number() OVER (PARTITION BY case_id ORDER BY timestamp) AS rn
+        FROM event_log
+    ),
+    bad_cases AS (
+        SELECT DISTINCT
+            o.case_id
+        FROM ordered_events o
+        WHERE o.activity = 'Approve Purchase Requisition'
+          AND EXISTS (
+            SELECT 1
+            FROM ordered_events o2
+            WHERE o2.case_id = o.case_id
+              AND o2.rn = o.rn + 1
+              AND o2.activity = 'Create Order'
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM ordered_events o3
+            WHERE o3.case_id = o.case_id
+              AND o3.rn = o.rn + 2
+              AND o3.activity = 'Confirm Order'
+          )
+          AND (
+            SELECT timestamp
+            FROM ordered_events
+            WHERE case_id = o.case_id AND rn = o.rn + 2
+          ) - (
+            SELECT timestamp
+            FROM ordered_events
+            WHERE case_id = o.case_id AND rn = o.rn + 1
+          ) > INTERVAL 5 DAY
+    )
+
+ But this might be inefficient because of the correlated subqueries.
+
+ Alternatively, we can use:
+
+   WITH ordered_events AS (
+        SELECT
+            *,
+            lead(activity, 1) OVER (PARTITION BY case_id ORDER BY timestamp) AS next_activity,
+            lead(activity, 2) OVER (PARTITION BY case_id ORDER BY timestamp) AS next_next_activity,
+            lead(timestamp, 1) OVER (PARTITION BY case_id ORDER BY timestamp) AS next_ts,
+            lead(timestamp, 2) OVER (PARTITION BY case_id ORDER BY timestamp) AS next_next_ts
+        FROM event_log
+    ),
+    bad_cases AS (
+        SELECT DISTINCT case_id
+        FROM ordered_events
+        WHERE activity = 'Approve Purchase Requisition'
+          AND next_activity = 'Create Order'
+          AND next_next_activity = 'Confirm Order'
+          AND (next_next_ts - next_ts) > INTERVAL 5 DAY
+    )
+
+ This is simpler and uses window functions to get the next two activities and their timestamps.
+
+ Then, the final query is:
+
+   SELECT *
+   FROM event_log
+   WHERE case_id NOT IN (SELECT case_id FROM bad_cases)
+
+ However, note: the problem says "return all events from event_log except those that belong to cases matching both the specified sequence and the timing condition". So we are excluding the entire case if it has at least one such sequence that meets the timing condition.
+
+ But note: what if a case has multiple sequences? We are using DISTINCT in bad_cases, so we only mark the case once.
+
+ Let's write the query accordingly.
+
+ However, one caveat: the window functions might be expensive for large data, but we are only doing two leads and it's per row.
+
+ But note: the problem says "in direct succession" meaning no other event in between. Our window functions by row_number (if we use row_number) would ensure that. But in the last approach, we are using lead without row_number? Actually, we are ordering by timestamp. But what if two events have the same timestamp? Then the order might be arbitrary? The problem does not specify. We should assume that the events are ordered by timestamp and if same timestamp, we need a consistent order. We can add an additional ordering column if there is one (like event_id) but the problem doesn't provide. So we have to rely on timestamp only. If same timestamp, then the sequence might break? But the problem says "direct succession", so if two events happen at the same time, they are not in direct succession? Actually, the problem says "with no other event from the same case in between them". If two events have the same timestamp, then they are not separated by time? But they are two distinct events? We don't know. So we assume that the timestamp is unique per event? Or we can use the row_number with timestamp and then an additional column? The problem doesn't specify. We'll assume that the timestamp is sufficient to order events. If there are ties, we can break by activity or something else? But the problem doesn't specify. We'll just use timestamp.
+
+ Alternatively, we can use:
+
+   ORDER BY timestamp, activity
+
+ to have a deterministic order.
+
+ But the problem does not specify, so we'll do:
+
+   ORDER BY timestamp
+
+ and hope that the log has unique timestamps? Or if not, we might get wrong sequences? But the problem says "direct succession", meaning that there should be no event in between. If two events have the same timestamp, then they are not separated by time, but they are two events at the same time? Then they are not in a sequence? Actually, the sequence requires three events in order. So if we have:
+
+   event1: Approve at time T
+   event2: Create at time T (same as event1)
+   event3: Confirm at time T+1
+
+ Then the sequence would be broken because between Approve and Create there is no time? But they are two events at the same time? The problem says "direct succession" meaning one after the other without any other event in between. So if two events happen at the same time, they are not in a sequence? Actually, the problem does not specify. We'll assume that the events are ordered by timestamp and if two events have the same timestamp, they are considered to be at the same time and hence not in direct succession? Or maybe they are considered to be in any order? This is ambiguous.
+
+ Since the problem does not specify, we will assume that the timestamp is unique per event. If not, we can break ties by activity? But the problem does not give an event id. So we do:
+
+   ORDER BY timestamp, activity
+
+ to have a deterministic order. But note: the problem does not specify the activity for ordering? So we'll do:
+
+   ORDER BY timestamp, activity
+
+ However, the problem says "direct succession" meaning the next event in time. So if two events have the same timestamp, they are not separated in time? Then they are not in a sequence? Actually, the sequence requires that the events are consecutive in the log? But the problem says "with no other event from the same case in between them". If two events have the same timestamp, then they are not separated by time, but they are two events? Then there is no event between them? Actually, they are at the same time, so there is no event in between in terms of time? But the problem says "in direct succession" meaning one after the other? So if they are at the same time, they are not one after the other? This is ambiguous.
+
+ Given the ambiguity, we will assume that the log has unique timestamps. If not, we break ties by activity (alphabetically) to have a deterministic order. But note: the problem does not specify the order of events with the same timestamp. So we'll do:
+
+   ORDER BY timestamp, activity
+
+ Then, in the window functions, we use that order.
+
+ Let's write the query accordingly.
+
+ Steps:
+
+   WITH event_log_with_lead AS (
+        SELECT
+            *,
+            lead(activity, 1) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_activity,
+            lead(activity, 2) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_next_activity,
+            lead(timestamp, 1) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_ts,
+            lead(timestamp, 2) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_next_ts
+        FROM event_log
+    ),
+    bad_cases AS (
+        SELECT DISTINCT case_id
+        FROM event_log_with_lead
+        WHERE activity = 'Approve Purchase Requisition'
+          AND next_activity = 'Create Order'
+          AND next_next_activity = 'Confirm Order'
+          AND (next_next_ts - next_ts) > INTERVAL 5 DAY
+    )
+    SELECT *
+    FROM event_log
+    WHERE case_id NOT IN (SELECT case_id FROM bad_cases)
+
+ However, note: the problem says "the time elapsed between the 'Create Order' event and the 'Confirm Order' event". We are calculating (next_next_ts - next_ts) which is the time between the second and third event. That is correct.
+
+ But what if the case has multiple sequences? We are using DISTINCT so we only get the case once.
+
+ But note: what if a case has two sequences that meet the criteria? Then we still mark the case as bad and exclude all events of that case.
+
+ This matches the requirement: exclude cases that have at least one such sequence and timing condition.
+
+ However, note: the requirement says "among those cases that have this specific sequence, further refine the selection to only those where the time elapsed ... is more than 5 days". So we are only excluding cases that have at least one sequence that meets the timing condition.
+
+ But what if a case has a sequence that meets the timing condition and another that doesn't? Then we still exclude the entire case? The requirement says "exclude them" meaning the cases that meet both the sequence and the timing condition. So we are excluding the entire case if it has at least one such sequence that meets the timing condition.
+
+ This is consistent.
+
+ However, note: the requirement says "return all events from event_log except those that belong to cases matching both the specified sequence and the timing condition". So we are excluding the entire case if it has at least one sequence that meets the criteria.
+
+ Therefore, the above query should work.
+
+ But note: what if the case has the sequence but the time difference is <= 5 days? Then we do not exclude the case? Correct.
+
+ Also, what if the case has the sequence but we don't have the next two events? Then the lead will be NULL and the condition will fail.
+
+ One more thing: the lead functions are computed for every row. We are only interested in the rows that are 'Approve Purchase Requisition'. So we can filter first? But we cannot because we need the lead for the entire partition. So we compute for every row, but then we only use the rows that are 'Approve Purchase Requisition'. That is acceptable.
+
+ Alternatively, we can do:
+
+   WITH event_log_with_lead AS (
+        SELECT
+            *,
+            lead(activity, 1) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_activity,
+            lead(activity, 2) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_next_activity,
+            lead(timestamp, 1) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_ts,
+            lead(timestamp, 2) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_next_ts
+        FROM event_log
+    ),
+    candidate_sequences AS (
+        SELECT *
+        FROM event_log_with_lead
+        WHERE activity = 'Approve Purchase Requisition'
+          AND next_activity = 'Create Order'
+          AND next_next_activity = 'Confirm Order'
+          AND (next_next_ts - next_ts) > INTERVAL 5 DAY
+    ),
+    bad_cases AS (
+        SELECT DISTINCT case_id
+        FROM candidate_sequences
+    )
+    SELECT *
+    FROM event_log
+    WHERE case_id NOT IN (SELECT case_id FROM bad_cases)
+
+ This is the same.
+
+ But note: the problem says "the time elapsed between the 'Create Order' event and the 'Confirm Order' event". We are using the next_ts (which is the timestamp of the next event, i.e., 'Create Order') and next_next_ts (which is the timestamp of the event after that, i.e., 'Confirm Order'). So the difference is (next_next_ts - next_ts). That is the time between the second and third event. Correct.
+
+ However, note: the problem says "more than 5 days". We are using `> INTERVAL 5 DAY`. In DuckDB, we can use:
+
+   next_next_ts - next_ts > 5 * INTERVAL 1 DAY
+
+ But actually, in DuckDB, subtracting two timestamps gives an interval. And we can compare intervals? Actually, we can compare intervals with >.
+
+ Alternatively, we can do:
+
+   (next_next_ts - next_ts) > INTERVAL '5' DAY
+
+ But in DuckDB, we can write:
+
+   (next_next_ts - next_ts) > INTERVAL 5 DAY
+
+ However, let me check the DuckDB documentation: the interval syntax is `INTERVAL '5' DAY` or `INTERVAL 5 DAY`? Actually, both are acceptable? I think `INTERVAL 5 DAY` is valid.
+
+ But to be safe, we can do:
+
+   (next_next_ts - next_ts) > (INTERVAL '5' DAY)
+
+ But note: the subtraction of two timestamps in DuckDB returns an interval. And we can compare intervals.
+
+ Alternatively, we can extract the number of days? But the interval already represents the time difference.
+
+ However, note: the interval might include time of day? But the problem says "days". So if the events are at different times of the day, the interval might be 5 days and 1 hour? Then it is more than 5 days? Yes. So we are good.
+
+ But what if the events are exactly 5 days apart? Then we do not want to exclude? The condition is "more than 5 days", so we use >.
+
+ Therefore, the query is:
+
+   WITH event_log_with_lead AS (
+        SELECT
+            *,
+            lead(activity, 1) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_activity,
+            lead(activity, 2) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_next_activity,
+            lead(timestamp, 1) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_ts,
+            lead(timestamp, 2) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_next_ts
+        FROM event_log
+    ),
+    candidate_sequences AS (
+        SELECT *
+        FROM event_log_with_lead
+        WHERE activity = 'Approve Purchase Requisition'
+          AND next_activity = 'Create Order'
+          AND next_next_activity = 'Confirm Order'
+          AND (next_next_ts - next_ts) > INTERVAL 5 DAY
+    ),
+    bad_cases AS (
+        SELECT DISTINCT case_id
+        FROM candidate_sequences
+    )
+    SELECT *
+    FROM event_log
+    WHERE case_id NOT IN (SELECT case_id FROM bad_cases)
+
+ However, note: the problem says "return all events". We are returning all columns? The problem does not specify which columns to return, so we return all.
+
+ But what if there are no bad cases? Then we return all events.
+
+ Also, what if the table is empty? Then we return empty.
+
+ Let me test with a small example.
+
+ Example:
+
+   case_id | activity                | timestamp
+   -----------------------------------------------
+   1       | Approve Purchase Requisition | 2024-01-01 00:00:00
+   1       | Create Order              | 2024-01-02 00:00:00
+   1       | Confirm Order             | 2024-01-08 00:00:00   --> difference is 6 days -> bad case
+
+   Then we exclude case 1.
+
+   If the difference was 5 days, then we do not exclude.
+
+   Also, if the sequence is broken, then we don't exclude.
+
+   Also, if there is no 'Approve' at all, then we don't exclude.
+
+   Also, if there is a sequence but the next activity is not 'Create Order', then we don't exclude.
+
+   Also, if there is a sequence but the next next activity is not 'Confirm Order', then we don't exclude.
+
+   Also, if the sequence exists but the time difference is <=5 days, we don't exclude.
+
+   Also, if a case has multiple sequences? For example:
+
+        case_id | activity                | timestamp
+        -----------------------------------------------
+        2       | Approve Purchase Requisition | 2024-01-01
+        2       | Create Order              | 2024-01-02
+        2       | Confirm Order             | 2024-01-08   --> bad sequence (6 days)
+        2       | Approve Purchase Requisition | 2024-01-09
+        2       | Create Order              | 2024-01-10
+        2       | Confirm Order             | 2024-01-11   --> good sequence (1 day)
+
+        Then we mark case 2 as bad because of the first sequence? So we exclude the entire case.
+
+   This is what the problem requires: exclude cases that have at least one sequence that meets the criteria.
+
+ Therefore, the query is as above.
+
+ However, note: the window functions are computed over the entire partition. We are ordering by timestamp and activity. This is to break ties. But what if the activity is the same? Then we break by activity? Actually, we break by activity alphabetically? But if two events have the same timestamp and same activity? Then we break by activity again? That doesn't help. We need a unique ordering. The problem does not provide a unique identifier. So we assume that the combination of timestamp and activity is unique? Or we can use the row_number with an additional tie-breaker? But we don't have one.
+
+ We can use:
+
+   ORDER BY timestamp, activity, ... but we don't have more columns.
+
+ We can use the entire row? But that is not allowed.
+
+ Alternatively, we can use:
+
+   ORDER BY timestamp, activity, random()
+
+ But that is non-deterministic.
+
+ Since the problem does not specify, we'll assume that the log has unique timestamps. If not, we break ties by activity. If there are still ties, we break arbitrarily? But we need deterministic results.
+
+ We'll do:
+
+   ORDER BY timestamp, activity
+
+ and hope that the log does not have duplicate (timestamp, activity) for the same case? Or if it does, then the sequence might be broken? Actually, if there are two events with the same timestamp and same activity, then the lead might pick the wrong one? But the problem does not specify. We'll proceed.
+
+ Alternatively, we can use row_number with a more unique ordering? But we don't have more columns.
+
+ We'll stick with:
+
+   ORDER BY timestamp, activity
+
+ But note: the problem says "direct succession" meaning the next event in the log? Or the next event in time? We are ordering by time and then by activity, so we are getting the next event in time (and then by activity if same time). This should be acceptable.
+
+ Final query:
+
+   WITH event_log_with_lead AS (
+        SELECT
+            *,
+            lead(activity, 1) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_activity,
+            lead(activity, 2) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_next_activity,
+            lead(timestamp, 1) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_ts,
+            lead(timestamp, 2) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_next_ts
+        FROM event_log
+    ),
+    candidate_sequences AS (
+        SELECT *
+        FROM event_log_with_lead
+        WHERE activity = 'Approve Purchase Requisition'
+          AND next_activity = 'Create Order'
+          AND next_next_activity = 'Confirm Order'
+          AND (next_next_ts - next_ts) > INTERVAL 5 DAY
+    ),
+    bad_cases AS (
+        SELECT DISTINCT case_id
+        FROM candidate_sequences
+    )
+    SELECT *
+    FROM event_log
+    WHERE case_id NOT IN (SELECT case_id FROM bad_cases)
+
+ But note: the problem says "Please ensure proper grouping, ordering, and filtering". We are not grouping in the final result? We are just filtering by case_id. The final result is not grouped? The problem says "return all events", so we return each event.
+
+ We are ordering? The final result is not ordered? The problem does not specify an order. We can order by case_id and timestamp? But the problem does not specify. We'll leave it unsorted? Or we can add an ORDER BY? The problem says "return all events", so we can return in any order? But typically, we might want to order by case_id and timestamp. However, the problem does not specify. We'll leave it without an ORDER BY? But the problem says "Please ensure proper grouping, ordering, and filtering". It might mean in the process? Or in the final result? The final result does not require grouping or ordering? But we are not grouping in the final result.
+
+ However, the problem says "the result set consists solely of events from the cases that are not filtered out". So we are returning events, and we can order them arbitrarily? We'll not add an ORDER BY to the final query? But the problem does not specify.
+
+ Alternatively, we can order by case_id, timestamp to have a deterministic order? But the problem does not require. We'll leave it without an ORDER BY.
+
+ But note: the problem says "proper ordering" might refer to the window functions? We did order by timestamp and activity in the window functions.
+
+ Therefore, we are done.
+
+ However, note: what if the case has the sequence but the next event is not the immediate next? For example:
+
+   case_id | activity                | timestamp
+   -----------------------------------------------
+   3       | Approve Purchase Requisition | 2024-01-01
+   3       | Some Other Activity     | 2024-01-02
+   3       | Create Order            | 2024-01-03
+   3       | Confirm Order           | 2024-01-10
+
+   Then the sequence is broken by the 'Some Other Activity'. So we should not mark it. Our window function will not find it because the next activity after 'Approve' is 'Some Other Activity', not 'Create Order'. So it will not be included. Correct.
+
+ But what if the sequence is not consecutive? Our window function uses the immediate next row (by our ordering). So if there is an event in between, then the next activity will be that event, not 'Create Order'. So we are safe.
+
+ Therefore, the query is correct.
+
+ Let me write the final query.
+
+</think>
+
+
+To solve this problem, we need to identify cases in an event log that contain a specific sequence of activities with a time constraint and then exclude all events from those cases. The solution involves using window functions to detect the sequence and time difference, followed by filtering out the matching cases.
+
+### Approach
+1. **Identify Sequences**: Use window functions to find sequences where 'Approve Purchase Requisition' is immediately followed by 'Create Order', which is then immediately followed by 'Confirm Order'. This ensures no other events intervene between these activities.
+2. **Check Time Constraint**: For each identified sequence, calculate the time difference between 'Create Order' and 'Confirm Order'. Exclude cases where this difference exceeds 5 days.
+3. **Filter Cases**: Collect all case IDs that meet both the sequence and time conditions.
+4. **Return Non-Matching Events**: Return all events from the event log except those belonging to the identified cases.
+
+### Solution Code
+```sql
+WITH event_log_with_lead AS (
+    SELECT
+        *,
+        lead(activity, 1) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_activity,
+        lead(activity, 2) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_next_activity,
+        lead(timestamp, 1) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_ts,
+        lead(timestamp, 2) OVER (PARTITION BY case_id ORDER BY timestamp, activity) AS next_next_ts
+    FROM event_log
+),
+candidate_sequences AS (
+    SELECT *
+    FROM event_log_with_lead
+    WHERE activity = 'Approve Purchase Requisition'
+        AND next_activity = 'Create Order'
+        AND next_next_activity = 'Confirm Order'
+        AND (next_next_ts - next_ts) > INTERVAL 5 DAY
+),
+bad_cases AS (
+    SELECT DISTINCT case_id
+    FROM candidate_sequences
+)
+SELECT *
+FROM event_log
+WHERE case_id NOT IN (SELECT case_id FROM bad_cases);
+```
+
+### Explanation
+1. **event_log_with_lead**: This CTE adds columns for the next two activities and their timestamps using `lead()` window functions. The ordering ensures events are processed sequentially within each case.
+2. **candidate_sequences**: Filters rows where the current activity is 'Approve Purchase Requisition', followed immediately by 'Create Order' and then 'Confirm Order'. It also checks if the time between 'Create Order' and 'Confirm Order' exceeds 5 days.
+3. **bad_cases**: Collects distinct case IDs from `candidate_sequences` that meet the sequence and time conditions.
+4. **Final Query**: Returns all events from `event_log` excluding those cases identified in `bad_cases`.
+
+This approach efficiently identifies and excludes cases with the specified sequence and time constraint, ensuring the result contains only events from non-matching cases.
