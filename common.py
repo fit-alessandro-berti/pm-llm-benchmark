@@ -223,8 +223,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gpt-4o-2024-11-20", "gpt-3.5-turbo",
-            "gpt-4-turbo-2024-04-09", "o1-mini-2024-09-12",
-            "gpt-4.5-preview", "o1-2024-12-17", "gpt-4o-mini-2024-07-18",
+            "gpt-4-turbo-2024-04-09", "o1-2024-12-17", "gpt-4o-mini-2024-07-18",
             "o3-mini-2025-01-31", "gpt-4.1-2025-04-14", "gpt-4.1-mini-2025-04-14",
             "gpt-4.1-nano-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13",
             "o3-pro-2025-06-10", "gpt-5-nano-2025-08-07", "gpt-5-mini-2025-08-07",
@@ -258,8 +257,8 @@ MODELS_DICT = {
         "models": {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
             "mistral-large-2411", "mistral-small-2506",
-            "open-mixtral-8x22b", "mistral-medium-2505", "devstral-medium-2507", "mistral-medium-2508",
-            "magistral-medium-2506", "magistral-small-2506", "magistral-small-2509", "magistral-medium-2509"
+            "mistral-medium-2505", "devstral-medium-2507", "mistral-medium-2508",
+            "magistral-small-2509", "magistral-medium-2509"
         }
     },
     "grok": {
@@ -275,7 +274,6 @@ MODELS_DICT = {
         "api_url": "https://api.deepinfra.com/v1/openai/",
         "api_key": "sk-",
         "models": {
-            "meta-llama/Llama-3.3-70B-Instruct",
             "nvidia/Llama-3.1-Nemotron-70B-Instruct",
             "microsoft/phi-4", "microsoft/WizardLM-2-8x22B",
             "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
@@ -331,14 +329,13 @@ MODELS_DICT = {
         "models": {
             "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick",
             "inception/mercury", "baidu/ernie-4.5-300b-a47b",
-            "qwen/qwen3-235b-a22b-07-25", "qwen/qwen3-coder",
+            "qwen/qwen3-coder",
             "z-ai/glm-4.5", "z-ai/glm-4.5-air", "qwen/qwen3-30b-a3b-instruct-2507",
             "ai21/jamba-large-1.7", "ai21/jamba-mini-1.7",
             "moonshotai/kimi-k2-0905", "qwen/qwen3-max",
             "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking",
-            "openai/gpt-5-codex", "deepseek/deepseek-v3.2-exp",
-            "z-ai/glm-4.6", "baidu/ernie-4.5-21b-a3b-thinking",
-            "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b", "minimax/minimax-m2:free",
+            "openai/gpt-5-codex", "z-ai/glm-4.6", "baidu/ernie-4.5-21b-a3b-thinking",
+            "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b",
             "moonshotai/kimi-k2-thinking",
             "moonshotai/kimi-linear-48b-a3b-instruct",
             "allenai/olmo-3-7b-think", "openrouter/bert-nebulon-alpha",
@@ -445,10 +442,6 @@ MODELS_DICT = {
                 "base_model": "Qwen/Qwen3-14B",
                 "added_to_prompt": " /no_think"
             },
-            "Qwen/QwQ-32B-Preview": {
-                "provider": "openrouter",
-                "base_model": "qwen/qwq-32b-preview"
-            },
             "nousresearch/hermes-4-70b": {
                 "provider": "openrouter",
                 "base_model": "nousresearch/hermes-4-70b",
@@ -462,11 +455,6 @@ MODELS_DICT = {
             "nvidia/llama-3.3-nemotron-super-49b-v1.5-thinking": {
                 "provider": "openrouter",
                 "base_model": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-                "added_to_payload": {"reasoning": {"enabled": True}}
-            },
-            "deepseek/deepseek-v3.2-exp-thinking": {
-                "provider": "openrouter",
-                "base_model": "deepseek/deepseek-v3.2-exp",
                 "added_to_payload": {"reasoning": {"enabled": True}}
             },
             "deepseek/deepseek-v3.2-thinking": {
@@ -516,18 +504,6 @@ MODELS_DICT = {
                 "base_model": "claude-opus-4-5-20251101",
                 "thinking_tokens": 16000,
                 "max_tokens": 16000
-            },
-            "qwen-qwq-32b-nostepbystep": {
-                "provider": "groq",
-                "base_model": "qwen-qwq-32b",
-                "system_prompt": "You are a helpful and harmless assistant.",
-                "temperature": 0.6
-            },
-            "qwen-qwq-32b-stepbystep": {
-                "provider": "groq",
-                "base_model": "qwen-qwq-32b",
-                "system_prompt": "You are a helpful and harmless assistant. You should think step-by-step.",
-                "temperature": 0.6
             },
             "gemini-2.5-flash-09-2025-nothink": {
                 "provider": "google",
@@ -1527,7 +1503,7 @@ def check_all_models():
     insert_api_keys()
 
     for provider in MODELS_DICT:
-        if provider not in {"google", "claude", "grok", "qwen", "manual", "perplexity"}:
+        if provider not in {"google", "claude", "grok", "qwen", "manual", "perplexity", "ollama_local"}:
             print(provider)
             info = MODELS_DICT[provider]
             Shared.API_URL = info["api_url"]
