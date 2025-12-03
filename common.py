@@ -339,7 +339,7 @@ MODELS_DICT = {
             "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b",
             "moonshotai/kimi-k2-thinking",
             "moonshotai/kimi-linear-48b-a3b-instruct",
-            "allenai/olmo-3-7b-think", "openrouter/bert-nebulon-alpha",
+            "allenai/olmo-3-7b-think",
             "allenai/olmo-3-7b-instruct", "allenai/olmo-3-32b-think",
             "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1"
         }
