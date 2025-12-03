@@ -1,0 +1,318 @@
+Here are potential anomalies in the provided order event logs, their possible causes, and corresponding SQL queries to investigate each:
+
+---
+
+### **1. Missing Required Events in Process Flow**
+**Anomaly:**
+- **Case 1004** skips the `Perform Credit Check` and `Validate Stock` steps entirely, proceeding directly to `Receive Payment` and `Issue Invoice`.
+- **Case 1003** has `Confirm Shipment` after `Ship Goods` (reverse chronological order).
+
+**Possible Causes:**
+- **Policy Violation:** Some orders might be exempt from credit checks (e.g., high-value priority orders) or stock validation (e.g., pre-approved bulk orders).
+- **System Error:** A misconfigured workflow might bypass steps for certain orders.
+- **Manual Workaround:** A clerk might have manually approved the order without following the full process.
+
+**SQL Queries to Investigate:**
+```sql
+-- Check if any orders skip critical steps (e.g., credit check)
+SELECT
+    o.case_id,
+    o.order_type,
+    COUNT(DISTINCT oe.event_id) AS total_events,
+    SUM(CASE WHEN oe.activity IN ('Perform Credit Check', 'Validate Stock') THEN 1 ELSE 0 END) AS credit_checks,
+    SUM(CASE WHEN oe.activity IN ('Perform Credit Check', 'Validate Stock') THEN 0 ELSE 1 END) AS missing_steps
+FROM
+    orders o
+LEFT JOIN
+    order_event_log oe ON o.case_id = oe.case_id
+WHERE
+    o.case_id IN (1004)
+GROUP BY
+    o.case_id, o.order_type;
+
+-- Check for reverse chronological order (e.g., Confirm Shipment after Ship Goods)
+SELECT
+    oe1.case_id,
+    oe1.activity AS earlier_activity,
+    oe2.activity AS later_activity,
+    oe1.timestamp,
+    oe2.timestamp
+FROM
+    order_event_log oe1
+JOIN
+    order_event_log oe2 ON oe1.case_id = oe2.case_id
+WHERE
+    oe1.activity = 'Confirm Shipment'
+    AND oe2.activity = 'Ship Goods'
+    AND oe1.timestamp > oe2.timestamp;
+```
+
+---
+
+### **2. Inconsistent Timing Between Events**
+**Anomaly:**
+- **Case 1001:** `Ship Goods` (09:45) happens before `Issue Invoice` (10:00), but the payment (`Receive Payment`) is delayed until **February 5th** (5 days later).
+- **Case 1002:** `Register Order` (08:20) and `Confirm Shipment` (08:25) are extremely close, with `Ship Goods` (08:40) following.
+- **Case 1003:** `Ship Goods` (09:10) and `Issue Invoice` (09:30) are close, but `Confirm Shipment` (09:45) is delayed.
+
+**Possible Causes:**
+- **Logistics Delays:** Shipment delays could cause invoice issuance to be postponed.
+- **Manual Approval Gaps:** A step might be skipped or delayed due to human intervention.
+- **System Latency:** API calls or database updates might introduce delays.
+
+**SQL Queries to Investigate:**
+```sql
+-- Check for unusually long gaps between consecutive events
+WITH event_chains AS (
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        LEAD(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) AS next_timestamp
+    FROM
+        order_event_log
+)
+SELECT
+    case_id,
+    activity,
+    timestamp,
+    next_activity,
+    next_timestamp,
+    DATEDIFF(SECOND, timestamp, next_timestamp) AS gap_seconds
+FROM
+    event_chains
+WHERE
+    next_timestamp IS NOT NULL
+    AND DATEDIFF(SECOND, timestamp, next_timestamp) > 86400; -- >24 hours
+
+-- Check if payment is delayed after shipment
+SELECT
+    oe1.case_id,
+    oe1.activity AS last_activity_before_payment,
+    oe1.timestamp,
+    oe2.activity AS payment_activity,
+    oe2.timestamp,
+    DATEDIFF(DAY, oe1.timestamp, oe2.timestamp) AS days_delayed
+FROM
+    order_event_log oe1
+JOIN
+    order_event_log oe2 ON oe1.case_id = oe2.case_id
+WHERE
+    oe1.activity IN ('Ship Goods', 'Issue Invoice')
+    AND oe2.activity = 'Receive Payment'
+    AND oe1.timestamp < oe2.timestamp
+    AND DATEDIFF(DAY, oe1.timestamp, oe2.timestamp) > 1;
+```
+
+---
+
+### **3. Unusual Resource Roles or Departments**
+**Anomaly:**
+- **Case 1002:** `Confirm Shipment` is performed by `LogisticsMgr_2` (a manager) before `Ship Goods` (performed by a clerk).
+- **Case 1004:** `Ship Goods` is performed by `WarehouseClerk_4`, but `Confirm Shipment` is skipped entirely.
+
+**Possible Causes:**
+- **Role Misassignment:** A manager might be approving shipments without proper authorization.
+- **Manual Workflow:** A clerk might have shipped goods without manager confirmation.
+- **Data Entry Error:** The `resource` field might be incorrectly mapped to roles.
+
+**SQL Queries to Investigate:**
+```sql
+-- Check if a manager is involved in shipment approval before shipment
+SELECT
+    oe1.case_id,
+    oe1.activity AS shipment_activity,
+    oe1.resource,
+    oe2.activity AS approval_activity,
+    oe2.resource,
+    r1.role AS shipper_role,
+    r2.role AS approver_role
+FROM
+    order_event_log oe1
+JOIN
+    order_event_log oe2 ON oe1.case_id = oe2.case_id
+JOIN
+    resources r1 ON oe1.resource = r1.resource_id
+JOIN
+    resources r2 ON oe2.resource = r2.resource_id
+WHERE
+    oe1.activity = 'Ship Goods'
+    AND oe2.activity = 'Confirm Shipment'
+    AND oe1.timestamp < oe2.timestamp
+    AND r1.role = 'Logistics Manager'; -- Check if manager approves before shipment
+
+-- Check if shipment happens without confirmation
+SELECT
+    oe1.case_id,
+    oe1.activity AS shipment_activity,
+    oe1.resource,
+    r1.role AS shipper_role,
+    COUNT(DISTINCT oe2.event_id) AS confirmations_missing
+FROM
+    order_event_log oe1
+LEFT JOIN
+    order_event_log oe2 ON oe1.case_id = oe2.case_id
+    AND oe2.activity = 'Confirm Shipment'
+JOIN
+    resources r1 ON oe1.resource = r1.resource_id
+WHERE
+    oe1.activity = 'Ship Goods'
+    AND oe2.activity IS NULL
+GROUP BY
+    oe1.case_id, oe1.activity, oe1.resource, r1.role;
+```
+
+---
+
+### **4. Inconsistent Order Values with Event Logs**
+**Anomaly:**
+- **Case 1004:** `order_value = 3000.00` but `Receive Payment = 3000.00` (no invoice issued).
+- **Case 1001:** `order_value = 1250.00` but `Receive Payment = 1250.00` (matches invoice).
+
+**Possible Causes:**
+- **Invoice Not Issued:** The order might have been paid without an invoice (e.g., cash payment).
+- **Data Entry Error:** The `order_value` might not match the actual payment.
+- **Partial Payment:** The invoice might have been issued but not yet recorded.
+
+**SQL Queries to Investigate:**
+```sql
+-- Check if payment matches order value
+SELECT
+    o.case_id,
+    o.order_value,
+    oe.payment_amount,
+    CASE
+        WHEN oe.payment_amount IS NULL THEN 'No Payment Recorded'
+        WHEN oe.payment_amount = o.order_value THEN 'Matches'
+        ELSE CONCAT('Mismatch: Expected $', o.order_value, ', Got $', oe.payment_amount)
+    END AS status
+FROM
+    orders o
+LEFT JOIN (
+    SELECT
+        case_id,
+        amount AS payment_amount
+    FROM
+        order_event_log
+    WHERE
+        activity = 'Receive Payment'
+) oe ON o.case_id = oe.case_id;
+
+-- Check if invoice was issued for a paid order
+SELECT
+    o.case_id,
+    o.order_value,
+    oe.invoice_id,
+    oe.amount AS payment_amount
+FROM
+    orders o
+JOIN
+    order_event_log oe ON o.case_id = oe.case_id
+WHERE
+    oe.activity = 'Receive Payment'
+    AND oe.additional_info LIKE '%amount%'
+    AND oe.case_id NOT IN (
+        SELECT case_id
+        FROM order_event_log
+        WHERE activity = 'Issue Invoice'
+    );
+```
+
+---
+
+### **5. Duplicate or Duplicate-Like Events**
+**Anomaly:**
+- **Case 1002:** `Confirm Shipment` (`attempted_early=Y`) and `Ship Goods` (`tracking_id=TRK987`) are close in time.
+- **Case 1003:** `late_confirmation=Y` suggests a delay in confirmation.
+
+**Possible Causes:**
+- **Duplicate Logging:** Two separate events might have been logged as one.
+- **Manual Retry:** A failed shipment might have been resubmitted.
+- **Data Corruption:** A timestamp might have been incorrectly updated.
+
+**SQL Queries to Investigate:**
+```sql
+-- Check for duplicate event IDs (if allowed)
+SELECT
+    case_id,
+    COUNT(DISTINCT event_id) AS distinct_event_count,
+    COUNT(*) AS total_events
+FROM
+    order_event_log
+GROUP BY
+    case_id
+HAVING
+    COUNT(DISTINCT event_id) < COUNT(*); -- Identifies potential duplicates
+
+-- Check for events with similar timestamps (e.g., 5 minutes apart)
+SELECT
+    oe1.case_id,
+    oe1.activity,
+    oe1.timestamp,
+    oe2.activity,
+    oe2.timestamp,
+    DATEDIFF(MINUTE, oe1.timestamp, oe2.timestamp) AS time_diff_minutes
+FROM
+    order_event_log oe1
+JOIN
+    order_event_log oe2 ON oe1.case_id = oe2.case_id
+WHERE
+    oe1.timestamp < oe2.timestamp
+    AND DATEDIFF(MINUTE, oe1.timestamp, oe2.timestamp) < 5;
+```
+
+---
+
+### **6. Missing or Incomplete Customer Data**
+**Anomaly:**
+- No `customer_id` is provided for `order_event_log` entries, but it exists in the `orders` table.
+
+**Possible Causes:**
+- **Data Silo:** Customer data might be stored separately from order logs.
+- **Missing Link:** The `case_id` might not be properly linked to customer records.
+- **Data Entry Error:** The `customer_id` might be missing from the log.
+
+**SQL Queries to Investigate:**
+```sql
+-- Check if customer_id is missing in order_event_log
+SELECT
+    oe.case_id,
+    COUNT(DISTINCT o.customer_id) AS distinct_customer_count
+FROM
+    order_event_log oe
+LEFT JOIN
+    orders o ON oe.case_id = o.case_id
+GROUP BY
+    oe.case_id
+HAVING
+    COUNT(DISTINCT o.customer_id) = 0;
+
+-- Check if customer_id is recorded in orders but not linked to events
+SELECT
+    o.case_id,
+    o.customer_id,
+    COUNT(DISTINCT oe.case_id) AS event_count
+FROM
+    orders o
+LEFT JOIN
+    order_event_log oe ON o.case_id = oe.case_id
+GROUP BY
+    o.case_id, o.customer_id
+HAVING
+    event_count = 0; -- Orders with no linked events
+```
+
+---
+
+### **Summary of Hypotheses and SQL Queries**
+| **Anomaly**                          | **Possible Cause**                          | **SQL Query**                                                                 |
+|--------------------------------------|--------------------------------------------|------------------------------------------------------------------------------|
+| Skipped steps (e.g., credit check)    | Policy violation or system bypass         | Check for missing events in workflows.                                       |
+| Reverse chronological order           | Manual error or workflow misconfiguration   | Identify events out of sequence.                                             |
+| Unusually long gaps between events    | Logistics delays or manual delays          | Calculate time gaps between events.                                           |
+| Manager approval before shipment      | Role misassignment or manual workarounds   | Check resource roles and event order.                                         |
+| Payment mismatch with order value     | Invoice not issued or data error           | Compare `order_value` with `Receive Payment`.                                |
+| Duplicate events                      | Data corruption or duplicate logging       | Check for duplicate event IDs or similar timestamps.                        |
+| Missing customer data                 | Data silos or incomplete linking           | Verify `customer_id` linkage between tables.                                 |
+
+These queries can help uncover the root causes of anomalies in the event logs.

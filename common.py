@@ -258,7 +258,8 @@ MODELS_DICT = {
             "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
             "mistral-large-2411", "mistral-small-2506",
             "mistral-medium-2505", "devstral-medium-2507", "mistral-medium-2508",
-            "magistral-small-2509", "magistral-medium-2509"
+            "magistral-small-2509", "magistral-medium-2509", "ministral-3b-2512",
+            "ministral-8b-2512", "ministral-14b-2512", "mistral-large-2512"
         }
     },
     "grok": {
@@ -340,7 +341,7 @@ MODELS_DICT = {
             "moonshotai/kimi-linear-48b-a3b-instruct",
             "allenai/olmo-3-7b-think", "openrouter/bert-nebulon-alpha",
             "allenai/olmo-3-7b-instruct", "allenai/olmo-3-32b-think",
-            "arcee-ai/trinity-mini",
+            "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1"
         }
     },
     "manual": {
@@ -595,7 +596,7 @@ def get_ordered_references_llms(base_path="."):
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium", "grok-4", "horizon", "gpt-5", "sonoma", "polaris-alpha", "sherlock"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium", "grok-4", "horizon", "gpt-5", "sonoma", "polaris-alpha", "sherlock", "ministral-3b-2512", "ministral-8b-2512", "ministral-14b-2512", "mistral-large-2512"]
 
     for p in patterns:
         if p.lower() in model_name.lower():

@@ -1,0 +1,294 @@
+Here are the anomalies, hypotheses, and SQL queries to investigate the undesirable behaviors in the order event log:
+
+---
+
+### **1. Anomaly: Out-of-Order Process Execution**
+**Observations:**
+- Case **1002** skips "Perform Credit Check" and "Validate Stock" before "Confirm Shipment" and "Ship Goods."
+- Case **1003** performs "Ship Goods" before "Confirm Shipment."
+- Case **1004** receives payment before issuing an invoice or confirming shipment.
+
+**Hypotheses:**
+- **Policy Violation:** Some orders may bypass critical checks (e.g., credit or stock validation) due to urgency (e.g., "priority" orders).
+- **System Error:** The order management system may not enforce the correct sequence.
+- **Human Error:** Employees may manually override the process due to miscommunication or lack of training.
+
+**SQL Queries to Investigate:**
+```sql
+-- Find cases where "Confirm Shipment" or "Ship Goods" occurred before "Perform Credit Check"
+SELECT oel.case_id, oel.activity, oel.timestamp
+FROM order_event_log oel
+WHERE oel.activity IN ('Confirm Shipment', 'Ship Goods')
+  AND oel.case_id IN (
+      SELECT oel1.case_id
+      FROM order_event_log oel1
+      WHERE oel1.activity = 'Perform Credit Check'
+        AND oel1.timestamp > oel.timestamp
+  )
+ORDER BY oel.case_id, oel.timestamp;
+
+-- Find cases where "Receive Payment" occurred before "Issue Invoice"
+SELECT oel.case_id, oel.activity, oel.timestamp
+FROM order_event_log oel
+WHERE oel.activity = 'Receive Payment'
+  AND oel.case_id IN (
+      SELECT oel1.case_id
+      FROM order_event_log oel1
+      WHERE oel1.activity = 'Issue Invoice'
+        AND oel1.timestamp > oel.timestamp
+  )
+ORDER BY oel.case_id, oel.timestamp;
+
+-- Check if "priority" orders are more likely to skip steps
+SELECT o.order_type, COUNT(DISTINCT o.case_id) AS total_orders,
+       COUNT(DISTINCT CASE WHEN oel.activity IN ('Confirm Shipment', 'Ship Goods')
+                           AND oel.timestamp < (
+                               SELECT MIN(oel2.timestamp)
+                               FROM order_event_log oel2
+                               WHERE oel2.case_id = oel.case_id
+                                 AND oel2.activity = 'Perform Credit Check'
+                           ) THEN o.case_id END) AS skipped_credit_check
+FROM orders o
+JOIN order_event_log oel ON o.case_id = oel.case_id
+GROUP BY o.order_type;
+```
+
+---
+
+### **2. Anomaly: Missing Critical Steps**
+**Observations:**
+- Case **1004** never performs "Perform Credit Check" or "Validate Stock."
+- Case **1003** has a late "Confirm Shipment" (after "Ship Goods").
+
+**Hypotheses:**
+- **Fraud Risk:** Orders may be processed without proper validation (e.g., high-value orders bypassing credit checks).
+- **System Glitch:** Some steps may be logged incorrectly or not at all.
+- **Process Shortcut:** Employees may skip steps for "trusted" customers or small orders.
+
+**SQL Queries to Investigate:**
+```sql
+-- Find cases missing "Perform Credit Check" or "Validate Stock"
+SELECT o.case_id, o.order_type, o.order_value
+FROM orders o
+WHERE NOT EXISTS (
+    SELECT 1 FROM order_event_log oel
+    WHERE oel.case_id = o.case_id AND oel.activity = 'Perform Credit Check'
+)
+OR NOT EXISTS (
+    SELECT 1 FROM order_event_log oel
+    WHERE oel.case_id = o.case_id AND oel.activity = 'Validate Stock'
+)
+ORDER BY o.order_value DESC;
+
+-- Check if high-value orders are more likely to skip steps
+SELECT
+    CASE
+        WHEN o.order_value > 2000 THEN 'High Value (>2000)'
+        WHEN o.order_value > 1000 THEN 'Medium Value (1000-2000)'
+        ELSE 'Low Value (<=1000)'
+    END AS value_range,
+    COUNT(DISTINCT o.case_id) AS total_orders,
+    COUNT(DISTINCT CASE WHEN NOT EXISTS (
+        SELECT 1 FROM order_event_log oel
+        WHERE oel.case_id = o.case_id AND oel.activity = 'Perform Credit Check'
+    ) THEN o.case_id END) AS missing_credit_check,
+    COUNT(DISTINCT CASE WHEN NOT EXISTS (
+        SELECT 1 FROM order_event_log oel
+        WHERE oel.case_id = o.case_id AND oel.activity = 'Validate Stock'
+    ) THEN o.case_id END) AS missing_stock_check
+FROM orders o
+GROUP BY value_range;
+```
+
+---
+
+### **3. Anomaly: Early or Late Confirmations**
+**Observations:**
+- Case **1002** has "Confirm Shipment" immediately after "Register Order" (likely too early).
+- Case **1003** has "Confirm Shipment" after "Ship Goods" (too late).
+
+**Hypotheses:**
+- **Process Inefficiency:** Logistics may confirm shipments prematurely to meet KPIs.
+- **Data Entry Error:** Timestamps may be logged incorrectly.
+- **Role Misalignment:** Logistics managers may lack visibility into upstream steps.
+
+**SQL Queries to Investigate:**
+```sql
+-- Find cases where "Confirm Shipment" occurred too early (before credit/stock checks)
+SELECT oel.case_id, oel.timestamp AS confirm_timestamp,
+       MIN(oel2.timestamp) FILTER (WHERE oel2.activity = 'Perform Credit Check') AS credit_check_time,
+       MIN(oel2.timestamp) FILTER (WHERE oel2.activity = 'Validate Stock') AS stock_check_time
+FROM order_event_log oel
+JOIN order_event_log oel2 ON oel.case_id = oel2.case_id
+WHERE oel.activity = 'Confirm Shipment'
+  AND (oel2.activity IN ('Perform Credit Check', 'Validate Stock')
+       AND oel2.timestamp > oel.timestamp)
+GROUP BY oel.case_id, oel.timestamp
+ORDER BY oel.case_id;
+
+-- Find cases where "Confirm Shipment" occurred after "Ship Goods"
+SELECT oel.case_id, oel.timestamp AS confirm_timestamp,
+       MIN(oel2.timestamp) FILTER (WHERE oel2.activity = 'Ship Goods') AS ship_time
+FROM order_event_log oel
+JOIN order_event_log oel2 ON oel.case_id = oel2.case_id
+WHERE oel.activity = 'Confirm Shipment'
+  AND oel2.activity = 'Ship Goods'
+  AND oel2.timestamp < oel.timestamp
+GROUP BY oel.case_id, oel.timestamp;
+```
+
+---
+
+### **4. Anomaly: Payment Before Invoice**
+**Observations:**
+- Case **1004** receives payment before issuing an invoice.
+
+**Hypotheses:**
+- **Prepayment Policy:** Some customers may prepay (e.g., high-value or repeat customers).
+- **Fraud Risk:** Payments may be logged without proper invoicing.
+- **System Lag:** Invoice generation may be delayed due to technical issues.
+
+**SQL Queries to Investigate:**
+```sql
+-- Find all cases where payment was received before invoice
+SELECT oel.case_id, oel.timestamp AS payment_time,
+       MIN(oel2.timestamp) FILTER (WHERE oel2.activity = 'Issue Invoice') AS invoice_time
+FROM order_event_log oel
+JOIN order_event_log oel2 ON oel.case_id = oel2.case_id
+WHERE oel.activity = 'Receive Payment'
+  AND oel2.activity = 'Issue Invoice'
+  AND oel.timestamp < oel2.timestamp
+GROUP BY oel.case_id, oel.timestamp;
+
+-- Check if prepayment correlates with customer or order type
+SELECT o.customer_id, o.order_type, COUNT(*) AS prepayment_cases
+FROM orders o
+JOIN order_event_log oel ON o.case_id = oel.case_id
+WHERE oel.activity = 'Receive Payment'
+  AND oel.timestamp < (
+      SELECT MIN(oel2.timestamp)
+      FROM order_event_log oel2
+      WHERE oel2.case_id = o.case_id AND oel2.activity = 'Issue Invoice'
+  )
+GROUP BY o.customer_id, o.order_type
+ORDER BY prepayment_cases DESC;
+```
+
+---
+
+### **5. Anomaly: Resource Role Mismatch**
+**Observations:**
+- "Confirm Shipment" is performed by `LogisticsMgr_1` and `LogisticsMgr_2` (correct), but "Ship Goods" is performed by `WarehouseClerk_*` (also correct).
+- However, in Case **1002**, "Confirm Shipment" is logged as `attempted_early=Y`, suggesting a potential role conflict.
+
+**Hypotheses:**
+- **Role Overlap:** Logistics managers may be overstepping into warehouse operations.
+- **Training Gap:** Employees may not understand role boundaries.
+- **System Limitation:** The system may not enforce role-based permissions.
+
+**SQL Queries to Investigate:**
+```sql
+-- Find activities performed by resources outside their expected roles
+SELECT oel.case_id, oel.activity, oel.resource, r.role, r.department
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+WHERE
+    -- Logistics activities performed by non-Logistics resources
+    (oel.activity IN ('Confirm Shipment', 'Ship Goods') AND r.department != 'Logistics')
+    OR
+    -- Finance activities performed by non-Finance resources
+    (oel.activity IN ('Perform Credit Check', 'Issue Invoice', 'Receive Payment') AND r.department != 'Finance')
+    OR
+    -- Sales activities performed by non-Sales resources
+    (oel.activity = 'Register Order' AND r.department != 'Sales')
+ORDER BY oel.case_id, oel.timestamp;
+
+-- Check if "attempted_early" cases involve role mismatches
+SELECT oel.case_id, oel.activity, oel.resource, r.role, oel.additional_info
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+WHERE oel.additional_info LIKE '%attempted_early%'
+ORDER BY oel.case_id;
+```
+
+---
+
+### **6. Anomaly: Unusually Fast or Slow Process Times**
+**Observations:**
+- Case **1002** completes "Register Order" to "Ship Goods" in **20 minutes** (unusually fast).
+- Case **1001** takes **4 days** to receive payment (unusually slow).
+
+**Hypotheses:**
+- **Process Optimization:** Some orders may be expedited due to priority status.
+- **Bottlenecks:** Delays may occur in finance (e.g., payment processing).
+- **Data Quality:** Timestamps may be inaccurate.
+
+**SQL Queries to Investigate:**
+```sql
+-- Calculate total process time (Register Order to Receive Payment) for each case
+WITH process_times AS (
+    SELECT
+        oel.case_id,
+        MIN(oel.timestamp) FILTER (WHERE oel.activity = 'Register Order') AS start_time,
+        MAX(oel.timestamp) FILTER (WHERE oel.activity = 'Receive Payment') AS end_time,
+        EXTRACT(EPOCH FROM (MAX(oel.timestamp) FILTER (WHERE oel.activity = 'Receive Payment') -
+                           MIN(oel.timestamp) FILTER (WHERE oel.activity = 'Register Order'))) / 3600 AS total_hours
+    FROM order_event_log oel
+    GROUP BY oel.case_id
+)
+SELECT
+    pt.case_id,
+    o.order_type,
+    o.order_value,
+    pt.total_hours,
+    CASE
+        WHEN pt.total_hours < 1 THEN 'Very Fast (<1 hour)'
+        WHEN pt.total_hours < 24 THEN 'Fast (<24 hours)'
+        WHEN pt.total_hours < 72 THEN 'Normal (1-3 days)'
+        ELSE 'Slow (>3 days)'
+    END AS process_duration_category
+FROM process_times pt
+JOIN orders o ON pt.case_id = o.case_id
+ORDER BY pt.total_hours DESC;
+
+-- Identify cases with unusually fast "Register Order" to "Ship Goods"
+WITH ship_times AS (
+    SELECT
+        oel.case_id,
+        MIN(oel.timestamp) FILTER (WHERE oel.activity = 'Register Order') AS start_time,
+        MIN(oel.timestamp) FILTER (WHERE oel.activity = 'Ship Goods') AS ship_time,
+        EXTRACT(EPOCH FROM (MIN(oel.timestamp) FILTER (WHERE oel.activity = 'Ship Goods') -
+                           MIN(oel.timestamp) FILTER (WHERE oel.activity = 'Register Order'))) / 60 AS minutes_to_ship
+    FROM order_event_log oel
+    GROUP BY oel.case_id
+)
+SELECT
+    st.case_id,
+    o.order_type,
+    st.minutes_to_ship,
+    CASE
+        WHEN st.minutes_to_ship < 30 THEN 'Extremely Fast (<30 min)'
+        WHEN st.minutes_to_ship < 60 THEN 'Very Fast (30-60 min)'
+        ELSE 'Normal (>60 min)'
+    END AS ship_speed_category
+FROM ship_times st
+JOIN orders o ON st.case_id = o.case_id
+ORDER BY st.minutes_to_ship ASC;
+```
+
+---
+
+### **Summary of Key Findings and Next Steps**
+1. **Out-of-Order Processes:** Investigate why some orders skip critical steps (e.g., credit checks). Check if this correlates with order type ("priority") or customer.
+2. **Missing Steps:** High-value orders may bypass validation. Audit these cases for fraud or policy violations.
+3. **Early/Late Confirmations:** Logistics may confirm shipments prematurely. Review role permissions and training.
+4. **Payment Before Invoice:** Verify if prepayments are legitimate or indicative of fraud.
+5. **Role Mismatches:** Ensure resources are performing activities within their department's scope.
+6. **Process Speed:** Fast processes may indicate efficiency or shortcuts; slow processes may reveal bottlenecks.
+
+**Next Steps:**
+- **Audit High-Risk Cases:** Focus on orders with missing steps or unusual sequences.
+- **Interview Teams:** Understand why steps are skipped or reordered.
+- **Update Policies:** Enforce stricter validation for high-value orders.
+- **Improve Training:** Clarify role boundaries and process sequences.
+- **System Enhancements:** Add validation to enforce correct process flows.

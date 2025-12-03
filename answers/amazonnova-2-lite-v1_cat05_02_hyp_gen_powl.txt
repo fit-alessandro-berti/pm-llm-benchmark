@@ -1,0 +1,234 @@
+### **Step 1: Identify the Anomalies in the Given POWL Model**
+
+---
+
+### **Anomalies in the Model**
+
+1. **Loop Structure Between Evaluation and Approval (E  P  E)**  
+   - The model introduces a loop (`Operator.LOOP`) that allows **repeated evaluation and approval cycles** without a clear stopping condition. This loop makes it possible to evaluate and approve a claim multiple times, which is **unrealistic and potentially dangerous**.  
+   - **Anomaly**: **Multiple approvals** for a single claim might occur, violating business logic that a claim should only be approved once.
+
+2. **XOR Branch Skipping Customer Notification (N)**  
+   - The XOR (`Operator.XOR`) allows the process to either notify the customer (`N`) **or skip** this step (`skip`).  
+   - **Anomaly**: It is **possible to bypass notifying the customer**, which could result in claims being closed without the customer’s knowledge, violating compliance or customer service standards.
+
+3. **Partial Ordering Allowing Premature Closure (C)**  
+   - The partial order includes `A` (Assign Adjuster)  `C` (Close Claim) **without requiring** that `C` must come after the `loop` and `xor` steps.  
+   - This makes it **possible to close the claim prematurely**: **before evaluation/approval**, or **before notifying the customer**.  
+   - **Anomaly**: The claim closure step lacks a strict dependency on intermediate stages, violating the intended process flow.
+
+4. **Missing Dependency Between Loop and Closure**
+   - While there is an edge from `loop` to `xor`, and from `xor` to `C`, there is **no enforcing dependency** in POWL that ensures the loop and XOR are executed before C.  
+   - **Anomaly**: This may result in the claim being closed prematurely even **before it was evaluated or approved**.
+
+---
+
+## **Step 2: Hypotheses on Why These Anomalies Might Exist**
+
+---
+
+### **Hypothesis 1: Business Rule Changes Not Fully Implemented**
+   - **Scenario**: Recently, the company may have updated its policy:
+     - To allow **multiple evaluations** if a claim is ambiguous or disputed.
+     - To optionally **skip notification** for low-value claims.
+   - **Cause**: The process model may have been modified to reflect these new rules, but the change was **partial or incomplete**, leading to anomalies in the structure.
+   - **Evidence Needed**: Need to check if there is a pattern in the event logs that supports multiple evaluations, or skipped notifications for certain claim types.
+
+---
+
+### **Hypothesis 2: Miscommunication Between Teams**
+   - **Scenario**: The process designer may have misunderstood the intent of the business analysts or vice versa.
+   - **Cause**:
+     - The process design team may have thought that closing a claim could be done at any time after assignment (especially if the claim is trivial).
+     - The process may have been designed by two teams independently (e.g., claims handling team vs. compliance team), resulting in conflicting constraints.
+   - **Evidence Needed**: Analyze whether claims that were closed early were done by certain adjusters or regions more often.
+
+---
+
+### **Hypothesis 3: Technical Limitations of POWL Tooling**
+   - **Scenario**: The POWL modeling tool may have certain **limitations** or **default behaviors** that make expressing strict dependencies difficult or unintuitive.
+   - **Cause**:
+     - For example, it may be easier to define a partial order without adding all dependencies, or the tool may allow shortcutting steps in loops.
+   - **Evidence Needed**: Look at whether the same process modeled in another formalism (e.g., Petri-net or BPMN) avoids the anomalies.
+
+---
+
+### **Hypothesis 4: Inadequate Validation of the Process Model**
+   - **Scenario**: The model may not have been rigorously **validated against business rules** or **simulated** before deployment.
+   - **Cause**:
+     - There might be a missing checks to ensure:
+       - A claim is only closed after evaluation/approval.
+       - Notification is not skipped unless explicitly allowed.
+   - **Evidence Needed**: If historical event logs reveal missing steps (e.g., notifications), it may suggest the lack of validation was a cause.
+
+---
+
+## **Step 3: Proposed Database Queries to Verify Hypotheses**
+
+---
+
+### **1. Identify Claims Closed Without Evaluation or Approval**
+
+#### Goal:
+Find any claims such that a "Close Claim" (`C`) event occurred **without a preceding "Evaluate Claim" (`E`)** or **"Approve Claim" (`P`)**.  
+This would indicate the model’s **premature closure anomaly** is manifesting in practice.
+
+```sql
+-- Get claims where Close occurred but no Evaluate or Approve happened
+WITH claim_events_summary AS (
+    SELECT 
+        claim_id,
+        MAX(CASE WHEN activity = 'E' THEN 1 ELSE 0 END) AS has_evaluation,
+        MAX(CASE WHEN activity = 'P' THEN 1 ELSE 0 END) AS has_approval,
+        MAX(CASE WHEN activity = 'C' THEN 1 ELSE 0 END) AS has_closure
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT 
+    ces.claim_id,
+    COALESCE(c.claim_amount, 0) AS claim_amount,
+    c.claim_type,
+    COALESCE(a.name, 'N/A') AS assigned_adjuster
+FROM claim_events_summary ces
+LEFT JOIN claims c ON ces.claim_id = c.claim_id
+LEFT JOIN claim_events ce ON ces.claim_id = ce.claim_id AND ce.activity IN ('E', 'P', 'C')
+LEFT JOIN adjusters a ON c.customer_id IN (SELECT customer_id FROM claims WHERE claim_id = ces.claim_id)
+WHERE 
+    ces.has_closure = 1 
+    AND (ces.has_evaluation = 0 OR ces.has_approval = 0);
+```
+
+**Expected finding:** If any rows are returned, it means **claims were closed without evaluation or approval**, confirming the anomaly.
+
+---
+
+### **2. Locate Claims With Multiple Approvals**
+
+#### Goal:
+Check if there are claims that have **more than one approval event**.
+
+```sql
+SELECT 
+    claim_id,
+    COUNT(CASE WHEN activity = 'P' THEN 1 END) AS approval_count
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(CASE WHEN activity = 'P' THEN 1 END) > 1;
+```
+
+**Expected finding:** If any rows are returned, it suggests the **loop anomaly** is active and **multiple approvals** occurred.
+
+---
+
+### **3. Check If Customer Notification Is Frequently Skipped**
+
+#### Goal:
+Find what percentage of claims **do not** have a notification event (`N`) after approval.
+
+```sql
+WITH notification_status AS (
+    SELECT 
+        claim_id,
+        MAX(CASE WHEN activity = 'N' THEN 1 ELSE 0 END) AS has_notification
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT 
+    COUNT(*) AS total_claims,
+    SUM(CASE WHEN has_notification = 0 THEN 1 ELSE 0 END) AS claims_without_notification,
+    ROUND(
+        SUM(CASE WHEN has_notification = 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 
+        2
+    ) AS pct_skipped
+FROM notification_status;
+```
+
+**Expected finding:** If **pct_skipped** is high, it supports the hypothesis that the **XOR skip is frequently used**, aligning with the anomaly.
+
+---
+
+### **4. Identify Claims Closed Before Evaluation or Approval**
+
+#### Goal:
+Find claims where the **'Close Claim'** step occurred **before** a corresponding evaluation or approval step (i.e., time-order violation).
+
+```sql
+WITH event_times AS (
+    SELECT 
+        claim_id,
+        activity,
+        timestamp
+    FROM claim_events
+    WHERE activity IN ('E', 'P', 'C')
+)
+SELECT 
+    et1.claim_id,
+    et1.activity AS early_activity,
+    et1.timestamp AS early_time,
+    et2.activity AS later_activity,
+    et2.timestamp AS later_time,
+    ce.claim_amount,
+    ce.claim_type
+FROM event_times et1
+JOIN event_times et2 
+    ON et1.claim_id = et2.claim_id 
+    AND et1.timestamp > et2.timestamp
+WHERE 
+    et1.activity = 'C' 
+    AND et2.activity IN ('E', 'P');
+```
+
+**Expected finding:** If any rows are returned, it shows that **closure happened before evaluation or approval**, directly supporting the **partial order anomaly**.
+
+---
+
+### **5. Correlate Anomalous Behavior with Adjuster or Region**
+
+#### Goal:
+Check if certain **adjusters** or **regions** are responsible for the anomalous behavior.
+
+```sql
+WITH anomalous_closure AS (
+    SELECT 
+        ce.claim_id,
+        ce.resource AS adjuster_name
+    FROM claim_events ce
+    JOIN claims c ON ce.claim_id = c.claim_id
+    WHERE EXISTS (
+        SELECT 1
+        FROM claim_events ce2
+        WHERE ce2.claim_id = ce.claim_id
+          AND ce2.activity = 'C'
+          AND ce2.timestamp < (
+              SELECT MIN(timestamp)
+              FROM claim_events ce3
+              WHERE ce3.claim_id = ce.claim_id
+                AND ce3.activity IN ('E', 'P')
+          )
+    )
+)
+SELECT 
+    a.region,
+    COUNT(DISTINCT ac.claim_id) AS num_anomalous_closures
+FROM anomalous_closure ac
+LEFT JOIN adjusters a ON ac.adjuster_name = a.name
+GROUP BY a.region
+ORDER BY num_anomalous_closures DESC;
+```
+
+**Expected finding:** Reveals if specific **adjusters or regions** are disproportionately involved in premature closures.
+
+---
+
+## **Conclusion**
+
+By analyzing the database via these targeted queries, you can:
+
+- **Validate whether anomalies in the POWL model are being realized in practice**.
+- **Understand the scope** and **impact** of each anomaly.
+- **Inform remediation** such as:
+  - Updating the POWL model to enforce strict dependencies.
+  - Adding business rule checks in the workflow engine.
+  - Retraining teams or adjusting tooling to prevent skipped steps.
+
+This systematic validation helps ensure **process compliance**, **customer satisfaction**, and **regulatory adherence**.
