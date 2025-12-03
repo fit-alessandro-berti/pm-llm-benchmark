@@ -71,7 +71,7 @@ def manage_file_name(file_name, rec_depth=0):
 
 def execute(evaluation_folder, target_file, include_closed_source=True, require_vision=False,
             require_reasoning=False, require_reasoning_custom=False, require_not_reasoning=False,
-            leaderboard_title="Overall Leaderboard", reg_expr=None, json_file=None):
+            leaderboard_title="Overall Leaderboard", reg_expr=None, json_file=None, allowed_models=None):
     files = os.listdir(evaluation_folder)
     models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
     models = {x: y for x, y in models.items() if y >= 44 and not is_excluded_from_table(x)}
@@ -92,8 +92,22 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     max_c10 = 0.0
 
     for m in models:
+        # If a whitelist of models is provided, skip everything else
+        if allowed_models is not None:
+            if m in allowed_models:
+                pass
+            else:
+                found = False
+                for m2 in allowed_models:
+                    if m in m2 or m2 in m:
+                        found = True
+                        break
+
+                if not found:
+                    continue
+
         if (include_closed_source or is_open_source(m)) and \
-                (not require_reasoning or (is_large_reasoning_model(m) and \
+                (not require_reasoning or (is_large_reasoning_model(m) and
                                            (not require_reasoning_custom or force_custom_evaluation_lrm(m)))) and \
                 (not require_not_reasoning or not is_large_reasoning_model(m)):
             if reg_expr is None or reg_expr.lower() in m.lower():
@@ -144,9 +158,10 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
         results.append((m, this_json["score_textual"], this_json["total_score"], table, score_c1, score_c2, score_c3,
                         score_c4, score_c5, score_c6, score_c7, score_c8, score_c9, score_c10))
 
+    # NOTE: this keeps the original sorting logic, including the use of this_json
     results.sort(key=lambda x: (
-    x[1], x[2], this_json["score_c1"], this_json["score_c2"], this_json["score_c3"], this_json["score_c4"],
-    this_json["score_c5"], x[0]), reverse=True)
+        x[1], x[2], this_json["score_c1"], this_json["score_c2"], this_json["score_c3"], this_json["score_c4"],
+        this_json["score_c5"], x[0]), reverse=True)
 
     overall_table = []
 
@@ -158,7 +173,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
             news = ""
             i = 0
             while i < len(spli):
-                if i == 0 or len(news)+len(spli[i])+1 <= target_len:
+                if i == 0 or len(news) + len(spli[i]) + 1 <= target_len:
                     if i > 0:
                         news += "-"
                     news += spli[i]
@@ -227,10 +242,48 @@ def write_evaluation(base_path, extra=True):
     base_evaluation_path = get_base_evaluation_path(EVALUATING_MODEL_NAME)
     evaluation_folder = os.path.join(base_path, base_evaluation_path)
 
-    execute(evaluation_folder, os.path.join(base_path, "leaderboard_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True, require_vision=False,
-            leaderboard_title="Overall Leaderboard", json_file=os.path.join(base_path, "hallucinations/leaderboard_stats.md"))
+    # Main overall leaderboard
+    execute(
+        evaluation_folder,
+        os.path.join(base_path, "leaderboard_" + get_suffix_name(e_m_name) + ".md"),
+        include_closed_source=True,
+        require_vision=False,
+        leaderboard_title="Overall Leaderboard",
+        json_file=os.path.join(base_path, "hallucinations/leaderboard_stats.md"),
+    )
+
+    # --- New: small models leaderboard based on hallucinations/model_info.json ---
+    model_info_path = os.path.join(base_path, "hallucinations", "model_info.json")
+    small_models = set()
+    try:
+        with open(model_info_path, "r") as f:
+            model_info = json.load(f)
+        for k, v in model_info.items():
+            if isinstance(v, list) and len(v) > 0:
+                first_val = v[0]
+                # Accept numeric values that are strictly lower than 5
+                try:
+                    first_val_num = float(first_val)
+                    if first_val_num < 5:
+                        small_models.add(k)
+                except (TypeError, ValueError):
+                    # Non-numeric first value, ignore
+                    continue
+    except FileNotFoundError:
+        model_info = {}
+        small_models = set()
 
     if True and (extra and "grok-4-1-fast" in e_m_name):
+        if len(small_models) > 0:
+            execute(
+                evaluation_folder,
+                os.path.join(base_path, "leaderboard_small_" + get_suffix_name(e_m_name) + ".md"),
+                include_closed_source=True,
+                require_vision=False,
+                leaderboard_title="Small Models (<5B) Leaderboard",
+                allowed_models=small_models,
+            )
+
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_cot_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
                 require_vision=False, require_reasoning=True, require_reasoning_custom=True, leaderboard_title="Large Reasoning Models Leaderboard (Models with CoT)")
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_nolrms_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
