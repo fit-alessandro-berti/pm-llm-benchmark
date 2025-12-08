@@ -277,7 +277,7 @@ MODELS_DICT = {
         "models": {
             "nvidia/Llama-3.1-Nemotron-70B-Instruct",
             "microsoft/phi-4", "microsoft/WizardLM-2-8x22B",
-            "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
+            "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-V3",
             "Qwen/Qwen3-32B", "Qwen/Qwen3-14B",
             "deepseek-ai/DeepSeek-R1-0528", "deepseek-ai/DeepSeek-V3.1"
         }
@@ -340,7 +340,7 @@ MODELS_DICT = {
             "moonshotai/kimi-k2-thinking",
             "moonshotai/kimi-linear-48b-a3b-instruct",
             "allenai/olmo-3-7b-think",
-            "allenai/olmo-3-7b-instruct", "allenai/olmo-3-32b-think",
+            "allenai/olmo-3-7b-instruct",
             "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1"
         }
     },
@@ -1504,7 +1504,7 @@ def check_all_models():
     insert_api_keys()
 
     for provider in MODELS_DICT:
-        if provider not in {"google", "claude", "grok", "qwen", "manual", "perplexity", "ollama_local"}:
+        if provider not in {"google", "claude", "grok", "qwen", "manual", "perplexity"}:
             print(provider)
             info = MODELS_DICT[provider]
             Shared.API_URL = info["api_url"]
