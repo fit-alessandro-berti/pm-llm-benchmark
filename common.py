@@ -341,7 +341,7 @@ MODELS_DICT = {
             "moonshotai/kimi-linear-48b-a3b-instruct",
             "allenai/olmo-3-7b-think",
             "allenai/olmo-3-7b-instruct",
-            "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1"
+            "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1", "essentialai/rnj-1-instruct"
         }
     },
     "manual": {
