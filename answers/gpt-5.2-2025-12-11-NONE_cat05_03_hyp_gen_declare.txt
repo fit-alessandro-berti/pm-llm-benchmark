@@ -1,0 +1,183 @@
+## 1) Anomalies in the DECLARE constraints
+
+### A. Direct logical contradiction: **Evaluation cannot happen**
+- **responded_existence(E, A)**: if **E** occurs, **A** must occur (fine by itself).
+- **existence(C)**: **C** must occur in every case (every claim must be closed).
+- **noncoexistence(E, C)**: **E** and **C** cannot both occur in the same case.
+
+Because **C is mandatory** and **E cannot coexist with C**, **E is effectively forbidden** in all cases. That undermines the process intent (claims normally require evaluation before closure/approval).
+
+### B. Process intent undermined: critical steps become optional / skippable
+There is no constraint requiring:
+- **A** (assignment) to happen in every case
+- **E** (evaluation) to happen in every case
+- **P** (approval) and **N** (notification) to happen, or to occur in the correct order
+
+As a result, the model allows traces like:
+- `R  C` (receive then close immediately)
+- `R  A  C` (assigned but never evaluated/approved/notified)
+- `R  P  C` (approval without evaluation/assignment, unless other constraints exist elsewhere)
+
+### C. Weak ordering: closure is only constrained to be after receipt
+- **init(R)** plus **precedence(C, R)** implies “C must have an R before it”, but it does **not** enforce the rest of the lifecycle (A/E/P/N). The intended flow is mostly unconstrained.
+
+---
+
+## 2) Hypotheses for why these anomalies exist
+
+1. **Mis-specified constraint type (modeling error)**
+   - The author may have intended “E must happen before C” (a precedence/response relation), but accidentally encoded **noncoexistence(E, C)** which forbids evaluation in closed cases.
+
+2. **Conflation of “closure” meanings**
+   - “C” might represent an administrative closure/cancellation rather than a normal completed claim. If so, forbidding E with C could reflect “cancelled claims are never evaluated,” but then **existence(C)** forces *every* claim into that cancellation-style ending.
+
+3. **Policy change or dual process variants not separated**
+   - There may be two real processes: (a) straight-through quick closures (no evaluation), (b) normal evaluated claims. The model may have merged both, then tried to prevent mixing steps with a coarse noncoexistence rule.
+
+4. **Event log incompleteness / instrumentation gaps**
+   - Evaluation may occur but is not logged as “E” (or logged under a different code). Discovery then “learns” that E rarely appears with C, and overfits by declaring them noncoexistent.
+
+5. **Labeling ambiguity**
+   - “E” could be overloaded (e.g., “Escalate” instead of “Evaluate”) and escalation indeed shouldn’t happen in claims that are quickly closed; incorrect semantics would yield contradictory constraints.
+
+6. **Data noise from automated/system closures**
+   - Claims may be auto-closed (duplicates, withdrawn) without evaluation; if those dominate the dataset, mining may push the model toward “C always, E never with C”.
+
+---
+
+## 3) SQL-based verification approaches (PostgreSQL)
+
+Assumptions used below:
+- A “case” is a `claim_id`.
+- Activities are in `claim_events.activity`.
+- You can adapt time windows and filters (e.g., by claim_type, region, period).
+
+### A. Check whether evaluation truly never co-occurs with closure (tests the noncoexistence)
+```sql
+SELECT
+  ce.claim_id,
+  bool_or(ce.activity = 'E') AS has_evaluation,
+  bool_or(ce.activity = 'C') AS has_close
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING bool_or(ce.activity = 'E')
+   AND bool_or(ce.activity = 'C');
+```
+If this returns rows, the **noncoexistence(E, C)** rule is violated in practice.
+
+### B. Check whether all claims are actually closed (tests existence(C))
+```sql
+SELECT c.claim_id
+FROM claims c
+LEFT JOIN claim_events ce
+  ON ce.claim_id = c.claim_id
+ AND ce.activity = 'C'
+WHERE ce.claim_id IS NULL;
+```
+Returned rows indicate cases without a close event (violates **existence(C)**).
+
+### C. Check whether claims can be “closed without evaluation” (undesired path allowed by the model)
+```sql
+SELECT
+  ce.claim_id
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING bool_or(ce.activity = 'C')
+   AND NOT bool_or(ce.activity = 'E');
+```
+
+### D. Check whether closure happens before receipt (tests precedence(C, R))
+```sql
+WITH first_times AS (
+  SELECT
+    claim_id,
+    min(timestamp) FILTER (WHERE activity = 'R') AS first_r,
+    min(timestamp) FILTER (WHERE activity = 'C') AS first_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT *
+FROM first_times
+WHERE first_c IS NOT NULL
+  AND (first_r IS NULL OR first_c < first_r);
+```
+
+### E. Check “if evaluation happens, assignment exists” (tests responded_existence(E, A))
+```sql
+SELECT
+  ce.claim_id
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING bool_or(ce.activity = 'E')
+   AND NOT bool_or(ce.activity = 'A');
+```
+
+### F. Check ordering gaps: evaluation occurring before assignment (often undesired even if not encoded)
+```sql
+WITH first_times AS (
+  SELECT
+    claim_id,
+    min(timestamp) FILTER (WHERE activity = 'A') AS first_a,
+    min(timestamp) FILTER (WHERE activity = 'E') AS first_e
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT *
+FROM first_times
+WHERE first_e IS NOT NULL
+  AND (first_a IS NULL OR first_e < first_a);
+```
+
+### G. Check missing approval/notification before close (common business expectation)
+```sql
+SELECT
+  claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING bool_or(activity = 'C')
+   AND (NOT bool_or(activity = 'P')
+        OR NOT bool_or(activity = 'N'));
+```
+
+### H. Check whether “resource” on assignment/evaluation matches known adjusters (data quality / semantics)
+If `claim_events.resource` stores an adjuster name:
+```sql
+SELECT DISTINCT ce.resource
+FROM claim_events ce
+LEFT JOIN adjusters a
+  ON a.name = ce.resource
+WHERE ce.activity IN ('A','E')
+  AND a.adjuster_id IS NULL;
+```
+
+If `claim_events.resource` stores an adjuster_id as text:
+```sql
+SELECT DISTINCT ce.resource
+FROM claim_events ce
+LEFT JOIN adjusters a
+  ON a.adjuster_id::text = ce.resource
+WHERE ce.activity IN ('A','E')
+  AND a.adjuster_id IS NULL;
+```
+
+### I. Identify dominant “quick close” variant (supports hypothesis of mixed variants)
+```sql
+WITH seq AS (
+  SELECT
+    claim_id,
+    min(timestamp) FILTER (WHERE activity='R') AS r_time,
+    min(timestamp) FILTER (WHERE activity='C') AS c_time,
+    min(timestamp) FILTER (WHERE activity='E') AS e_time
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  count(*) AS total_closed,
+  count(*) FILTER (WHERE e_time IS NULL) AS closed_without_e,
+  count(*) FILTER (WHERE e_time IS NOT NULL) AS closed_with_e,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY (c_time - r_time)) AS median_r_to_c
+FROM seq
+WHERE c_time IS NOT NULL;
+```
+
+These queries let you (a) validate whether the constraints match reality, (b) quantify how often the problematic patterns occur, and (c) distinguish between true business variants vs. logging/modeling errors.

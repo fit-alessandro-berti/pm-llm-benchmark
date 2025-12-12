@@ -1,0 +1,285 @@
+## 1) Anomalies in the POWL model
+
+### A. Loop between **Evaluate (E)** and **Approve (P)**
+- The model contains `LOOP(E, P)`. In many interpretations of a process-tree loop, this allows:
+  - repeating **E** multiple times (re-work),
+  - and potentially executing **P** multiple times as the “redo/loop” part.
+- That implies behaviors such as:
+  - **E  P  E  P  …**
+  - “Approval” occurring more than once for the same claim, or approval happening and then returning to evaluation again (which is unusual unless “approval” actually means “provisional approval” or “decision” with re-open).
+
+### B. XOR that allows skipping **Notify Customer (N)**
+- The XOR is `XOR(N, skip)`, explicitly allowing a path where the customer is never notified.
+- That might be valid for edge cases (e.g., auto-denial letters handled elsewhere, or internal-only claims), but as an “ideal flow” it’s typically mandatory.
+
+### C. Partial-order anomaly enabling premature **Close (C)**
+- The partial order includes:
+  - `R  A`, `A  loop`, `loop  xor`, **and** `A  C`
+  - but **does not** enforce `xor  C` (or even `loop  C` directly).
+- This can allow **C** to occur after **A** but *before* evaluation/approval/notification complete, depending on enabled concurrency/ordering semantics:
+  - Example allowed trace (conceptually): **R  A  C** (and the rest may or may not happen later).
+- This contradicts the stated intended sequence where close is the last step.
+
+### D. Missing explicit relation “C after xor”
+- Since `xor` is not ordered before `C`, the model can be interpreted as allowing closure without notification/skip decision being resolved, i.e., the notification decision may occur after closing.
+
+---
+
+## 2) Hypotheses for why these anomalies might exist
+
+### Loop (E/P) hypotheses
+1. **Rework/iteration was intended, but modeled incorrectly**
+   - Real intent might be: evaluate  (request more info  evaluate again)  approve once.
+   - They used **P** as the “redo” part, but it should have been something like “Request Info” or “Revise Evaluation”.
+2. **“Approve” label is overloaded**
+   - “P” might represent a broader “decision” step (approve/deny/pend) that can happen multiple times as the claim evolves.
+3. **System allows reopening after approval**
+   - Operational reality: approvals can be reversed (fraud flags, additional documents), causing back-and-forth.
+4. **Event logging artifact**
+   - The workflow may log “approve” every time a manager views/updates an approval screen, producing multiple P events even though business-wise it’s a single approval.
+
+### XOR skip of notification hypotheses
+1. **Notification handled outside the captured system**
+   - Customer notification might be done by an external CRM/email system not writing `N` into `claim_events`.
+2. **Silent/implicit notification**
+   - Some approvals/closures auto-notify via batch jobs; events aren’t logged as `N`.
+3. **Policy differences by claim_type/region**
+   - Certain claim types (or regions) may not require notification (or use different activity labels).
+4. **Modeler inserted skip to fit observed data**
+   - If logs often miss `N`, the analyst may have added a skip branch to increase conformance.
+
+### Premature close (A  C) hypotheses
+1. **Fast-track closures**
+   - Claims may be closed immediately after assignment (duplicates, wrong policy, withdrawn claim, no coverage).
+   - In that case the ideal flow needs an explicit “Reject/Withdraw/Void” path rather than letting C occur early.
+2. **Data quality / missing events**
+   - E/P/N might occur but are not recorded (integration gaps), making it *look* like closure is premature.
+3. **Technical/workflow bug**
+   - UI or API might allow setting claim status to “closed” without completing required tasks.
+4. **Partial implementation of new controls**
+   - Business introduced mandatory evaluation/approval, but enforcement rules weren’t added everywhere (e.g., only in some channels/regions).
+
+---
+
+## 3) How to verify hypotheses using the database (example PostgreSQL queries)
+
+Below are query patterns to detect whether the “anomalies” appear in real executions captured in `claim_events`.
+
+> Assumption: `claim_events.activity` contains values like `'R','A','E','P','N','C'` (or longer labels). Adjust filters accordingly.
+
+---
+
+### A. Claims closed without evaluation and/or approval
+
+**A1) Closed but missing E or P entirely**
+```sql
+SELECT
+  ce.claim_id
+FROM claim_events ce
+WHERE ce.activity = 'C'
+GROUP BY ce.claim_id
+HAVING
+  SUM(CASE WHEN ce.activity = 'E' THEN 1 ELSE 0 END) = 0
+  OR
+  SUM(CASE WHEN ce.activity = 'P' THEN 1 ELSE 0 END) = 0;
+```
+
+**A2) Closed before first evaluation/approval (timestamp ordering)**
+```sql
+WITH t AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS t_close,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS t_eval,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS t_approve
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT *
+FROM t
+WHERE t_close IS NOT NULL
+  AND (
+    (t_eval IS NOT NULL AND t_close < t_eval)
+    OR
+    (t_approve IS NOT NULL AND t_close < t_approve)
+    OR
+    (t_eval IS NULL)  -- no evaluation at all
+    OR
+    (t_approve IS NULL) -- no approval at all
+  );
+```
+
+This helps distinguish:
+- true premature close (close occurs earlier than E/P),
+- versus missing E/P (nulls).
+
+---
+
+### B. Multiple approvals / repeated E-P looping behavior
+
+**B1) Claims with multiple approvals**
+```sql
+SELECT
+  claim_id,
+  COUNT(*) AS approvals
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY claim_id
+HAVING COUNT(*) > 1
+ORDER BY approvals DESC;
+```
+
+**B2) Detect explicit “P then later E” (approval followed by re-evaluation)**
+```sql
+WITH ordered AS (
+  SELECT
+    claim_id,
+    activity,
+    timestamp,
+    LAG(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS prev_activity
+  FROM claim_events
+)
+SELECT claim_id, timestamp
+FROM ordered
+WHERE activity = 'E' AND prev_activity = 'P';
+```
+
+If this occurs frequently, it supports hypotheses like “reopen after approval” or mis-labeled events.
+
+---
+
+### C. Notification skipped (no N) and whether it depends on type/region
+
+**C1) Closed claims with no notification**
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    COUNT(*) FILTER (WHERE activity = 'N') AS n_cnt,
+    COUNT(*) FILTER (WHERE activity = 'C') AS c_cnt
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id
+FROM per_claim
+WHERE c_cnt > 0 AND n_cnt = 0;
+```
+
+**C2) Notification rate by claim_type**
+```sql
+WITH per_claim AS (
+  SELECT
+    c.claim_type,
+    ce.claim_id,
+    MAX(CASE WHEN ce.activity = 'C' THEN 1 ELSE 0 END) AS closed,
+    MAX(CASE WHEN ce.activity = 'N' THEN 1 ELSE 0 END) AS notified
+  FROM claims c
+  JOIN claim_events ce ON ce.claim_id = c.claim_id
+  GROUP BY c.claim_type, ce.claim_id
+)
+SELECT
+  claim_type,
+  COUNT(*) FILTER (WHERE closed = 1) AS closed_claims,
+  COUNT(*) FILTER (WHERE closed = 1 AND notified = 1) AS closed_and_notified,
+  ROUND(
+    100.0 * COUNT(*) FILTER (WHERE closed = 1 AND notified = 1)
+    / NULLIF(COUNT(*) FILTER (WHERE closed = 1), 0),
+    2
+  ) AS pct_notified
+FROM per_claim
+GROUP BY claim_type
+ORDER BY closed_claims DESC;
+```
+
+If some claim types have very low notification rates, it supports “policy difference” or “external notification system” hypotheses.
+
+---
+
+### D. Verify “A  C” premature closure pattern explicitly
+
+**D1) Close occurs soon after assignment (fast-track closure)**
+```sql
+WITH t AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS t_assign,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS t_close
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  claim_id,
+  t_assign,
+  t_close,
+  (t_close - t_assign) AS time_to_close
+FROM t
+WHERE t_assign IS NOT NULL AND t_close IS NOT NULL
+ORDER BY time_to_close ASC;
+```
+
+If many claims close within minutes/hours after assignment, it suggests legitimate short-circuit scenarios or automation.
+
+**D2) Close without ever entering the E/P loop**
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MAX(CASE WHEN activity = 'A' THEN 1 ELSE 0 END) AS has_a,
+    MAX(CASE WHEN activity = 'C' THEN 1 ELSE 0 END) AS has_c,
+    MAX(CASE WHEN activity = 'E' THEN 1 ELSE 0 END) AS has_e,
+    MAX(CASE WHEN activity = 'P' THEN 1 ELSE 0 END) AS has_p
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id
+FROM per_claim
+WHERE has_a = 1 AND has_c = 1 AND (has_e = 0 AND has_p = 0);
+```
+
+---
+
+### E. Use adjuster/region info to explain anomalies (resource vs adjusters)
+
+If `claim_events.resource` contains adjuster IDs or names, you can test whether certain regions/specializations correlate with anomalies.
+
+**E1) Premature close rate by adjuster region (if resource matches adjusters.adjuster_id)**
+```sql
+WITH per_claim AS (
+  SELECT
+    ce.claim_id,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'A') AS t_a,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'C') AS t_c,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'E') AS t_e,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'P') AS t_p,
+    MIN(ce.resource)::int FILTER (WHERE ce.activity = 'A') AS assigner_id
+  FROM claim_events ce
+  GROUP BY ce.claim_id
+),
+flagged AS (
+  SELECT
+    claim_id,
+    assigner_id,
+    CASE WHEN t_c IS NOT NULL AND (t_e IS NULL OR t_p IS NULL) THEN 1 ELSE 0 END AS closed_missing_steps
+  FROM per_claim
+)
+SELECT
+  a.region,
+  COUNT(*) AS claims,
+  SUM(closed_missing_steps) AS closed_missing_steps,
+  ROUND(100.0 * SUM(closed_missing_steps) / NULLIF(COUNT(*),0), 2) AS pct
+FROM flagged f
+JOIN adjusters a ON a.adjuster_id = f.assigner_id
+GROUP BY a.region
+ORDER BY pct DESC;
+```
+
+If certain regions have high rates, it supports “regional rule differences” or “localized training/system issues”.
+
+---
+
+## What this verification gives you
+- If anomalies appear **rarely** and cluster in certain types/regions, they’re likely **legitimate exceptions** not captured in the “ideal” model.
+- If anomalies appear **frequently across the board**, it points to **logging gaps, mislabeling, or missing enforcement controls**.
+- If you see **P repeated** or **PE transitions**, it supports “reopen/rework” or “approve event is noisy”.
+
+If you tell me the actual string values used in `claim_events.activity` and the format of `resource` (name vs ID), I can tailor the queries precisely and add indexes/recommended constraints to make the checks fast.

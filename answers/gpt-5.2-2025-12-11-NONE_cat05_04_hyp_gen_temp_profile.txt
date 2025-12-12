@@ -1,0 +1,318 @@
+## 1) Anomalies in the temporal profile
+
+1. **R  P (Receive  Approve): avg ~25 hours with very low STDEV (1 hour)**
+   - Approvals are happening with near clockwork regularity. In real operations, claim complexity, missing documents, weekends, and workload usually create more variation.
+
+2. **P  N (Approve  Notify): avg ~7 days with high STDEV (2 days)**
+   - Notification is very delayed on average and highly inconsistent. This suggests a queue/backlog, batching behavior, or that “Notify” is logged late or inconsistently.
+
+3. **A  C (Assign  Close): avg 2 hours**
+   - Closing shortly after assignment implies many claims might be closed without evaluation/approval, or closures are administrative/cancellation events rather than “finalized claim completed” closures.
+
+4. **E  N (Evaluate  Notify): avg 5 minutes**
+   - Notification almost immediately after evaluation may indicate automation, or that “Evaluate” is logged at the end of evaluation (i.e., event timestamp reflects completion), or that steps are being skipped/merged.
+
+5. **R  E (1 day, STDEV 8 hours) vs R  P (~1.04 days, STDEV 1 hour)**
+   - If approval depends on evaluation, you’d expect RP to have *at least* as much variance as RE (often more). The mismatch suggests timestamp semantics, batching, or missing/duplicated events.
+
+---
+
+## 2) Hypotheses explaining the anomalies
+
+### A) R  P “too consistent”
+- **Batch approvals at fixed times** (e.g., approvals run nightly at 6pm), producing near-constant elapsed times.
+- **Timestamp semantics issue**: “Approve” timestamp might reflect entry time into a downstream system rather than true approval time.
+- **Synthetic/default timestamps**: approvals recorded with rounded times (top of hour) or copied from another field.
+- **Process shortcut**: many claims auto-approved exactly after a fixed SLA threshold.
+
+### B) P  N “very long and variable”
+- **Notifications are batched weekly** (e.g., weekly statement letters) or processed by a separate team with backlog.
+- **Notify event logged when a letter is printed/mailed**, not when the customer is actually notified.
+- **Manual step with capacity constraints** (holidays/weekends causing spikes).
+- **Rework/holds**: approvals done, but notification waits for additional documents or payment scheduling.
+
+### C) A  C “too fast”
+- **Immediate closures due to duplicates, withdrawals, ineligibility**, or “close-as-admin” reasons.
+- **Missing intermediate events** (Evaluate/Approve not logged) or events logged under different activity codes/resources.
+- **Out-of-order timestamps** where Close is recorded earlier than other steps.
+
+### D) E  N “too fast”
+- **Automation**: evaluation triggers auto-notification instantly.
+- **Evaluate logged at completion** and notify is an automated message sent immediately after completion.
+- **Activity meaning mismatch**: “E” might be “eligibility check” rather than full evaluation.
+
+---
+
+## 3) Verification approaches (SQL)
+
+### Helper: derive per-claim first timestamp of each activity
+Use this pattern to compute durations consistently (first occurrence; adjust to min/max as needed):
+
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS t_r,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS t_a,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS t_e,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS t_p,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS t_n,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS t_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT * FROM per_claim;
+```
+
+---
+
+### 3.1 Find claims deviating from expected ranges (Z-score style)
+
+**R  P outliers** (expected avg=90000s, stdev=3600s):
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity='R') AS t_r,
+    MIN(timestamp) FILTER (WHERE activity='P') AS t_p
+  FROM claim_events
+  GROUP BY claim_id
+),
+dur AS (
+  SELECT
+    claim_id,
+    EXTRACT(EPOCH FROM (t_p - t_r)) AS sec_rp
+  FROM per_claim
+  WHERE t_r IS NOT NULL AND t_p IS NOT NULL
+)
+SELECT
+  claim_id,
+  sec_rp,
+  (sec_rp - 90000.0) / 3600.0 AS z_rp
+FROM dur
+WHERE ABS((sec_rp - 90000.0) / 3600.0) > 3
+ORDER BY ABS((sec_rp - 90000.0) / 3600.0) DESC;
+```
+
+**P  N outliers** (avg=604800s, stdev=172800s):
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity='P') AS t_p,
+    MIN(timestamp) FILTER (WHERE activity='N') AS t_n
+  FROM claim_events
+  GROUP BY claim_id
+),
+dur AS (
+  SELECT claim_id, EXTRACT(EPOCH FROM (t_n - t_p)) AS sec_pn
+  FROM per_claim
+  WHERE t_p IS NOT NULL AND t_n IS NOT NULL
+)
+SELECT
+  claim_id,
+  sec_pn,
+  (sec_pn - 604800.0) / 172800.0 AS z_pn
+FROM dur
+WHERE ABS((sec_pn - 604800.0) / 172800.0) > 3
+ORDER BY ABS((sec_pn - 604800.0) / 172800.0) DESC;
+```
+
+---
+
+### 3.2 Check for missing/short-circuit paths (e.g., A  C with no E/P)
+
+**Claims closed quickly after assignment and missing evaluate/approve**:
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity='A') AS t_a,
+    MIN(timestamp) FILTER (WHERE activity='C') AS t_c,
+    MIN(timestamp) FILTER (WHERE activity='E') AS t_e,
+    MIN(timestamp) FILTER (WHERE activity='P') AS t_p
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  claim_id,
+  EXTRACT(EPOCH FROM (t_c - t_a))/60.0 AS minutes_a_to_c,
+  t_e IS NULL AS missing_e,
+  t_p IS NULL AS missing_p
+FROM per_claim
+WHERE t_a IS NOT NULL
+  AND t_c IS NOT NULL
+  AND t_c >= t_a
+  AND EXTRACT(EPOCH FROM (t_c - t_a)) <= 2*3600
+  AND (t_e IS NULL OR t_p IS NULL)
+ORDER BY minutes_a_to_c ASC;
+```
+
+---
+
+### 3.3 Validate event ordering and timestamp quality
+
+**Detect negative or impossible durations (out-of-order timestamps)**:
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity='R') AS t_r,
+    MIN(timestamp) FILTER (WHERE activity='A') AS t_a,
+    MIN(timestamp) FILTER (WHERE activity='E') AS t_e,
+    MIN(timestamp) FILTER (WHERE activity='P') AS t_p,
+    MIN(timestamp) FILTER (WHERE activity='N') AS t_n,
+    MIN(timestamp) FILTER (WHERE activity='C') AS t_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT *
+FROM per_claim
+WHERE (t_a IS NOT NULL AND t_r IS NOT NULL AND t_a < t_r)
+   OR (t_e IS NOT NULL AND t_a IS NOT NULL AND t_e < t_a)
+   OR (t_p IS NOT NULL AND t_e IS NOT NULL AND t_p < t_e)
+   OR (t_n IS NOT NULL AND t_p IS NOT NULL AND t_n < t_p)
+   OR (t_c IS NOT NULL AND t_n IS NOT NULL AND t_c < t_n);
+```
+
+**Check for “rounded timestamps” suggesting synthetic logging** (many approvals at exact hour):
+```sql
+SELECT
+  DATE_TRUNC('hour', timestamp) AS hour_bucket,
+  COUNT(*) AS approvals
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY 1
+ORDER BY approvals DESC
+LIMIT 50;
+```
+
+---
+
+### 3.4 Test the “batching” hypothesis for P  N
+
+**Distribution by day-of-week for Notify events** (weekly batching shows spikes):
+```sql
+SELECT
+  EXTRACT(DOW FROM timestamp) AS dow,
+  COUNT(*) AS notify_count
+FROM claim_events
+WHERE activity = 'N'
+GROUP BY 1
+ORDER BY 1;
+```
+
+**How many notifications happen exactly 7 days after approval (± small tolerance)**:
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity='P') AS t_p,
+    MIN(timestamp) FILTER (WHERE activity='N') AS t_n
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  COUNT(*) FILTER (WHERE ABS(EXTRACT(EPOCH FROM (t_n - t_p)) - 604800) <= 3600) AS approx_7_days,
+  COUNT(*) AS total_with_p_and_n
+FROM per_claim
+WHERE t_p IS NOT NULL AND t_n IS NOT NULL;
+```
+
+---
+
+### 3.5 Correlate anomalies with claim type, amount, region, adjuster/resource
+
+**Join anomalies to claim attributes** (example: long PN by claim_type):
+```sql
+WITH per_claim AS (
+  SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    MIN(e.timestamp) FILTER (WHERE e.activity='P') AS t_p,
+    MIN(e.timestamp) FILTER (WHERE e.activity='N') AS t_n
+  FROM claims c
+  JOIN claim_events e ON e.claim_id = c.claim_id
+  GROUP BY c.claim_id, c.claim_type, c.claim_amount
+),
+dur AS (
+  SELECT
+    claim_id, claim_type, claim_amount,
+    EXTRACT(EPOCH FROM (t_n - t_p)) AS sec_pn
+  FROM per_claim
+  WHERE t_p IS NOT NULL AND t_n IS NOT NULL
+)
+SELECT
+  claim_type,
+  COUNT(*) AS n,
+  AVG(sec_pn)/3600.0 AS avg_hours,
+  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sec_pn)/3600.0 AS median_hours
+FROM dur
+GROUP BY claim_type
+ORDER BY avg_hours DESC;
+```
+
+**By adjuster region/specialization** (assuming assign event resource maps to adjuster name or id in `resource`):
+```sql
+WITH assigned AS (
+  SELECT
+    ce.claim_id,
+    ce.resource,
+    MIN(ce.timestamp) AS t_a
+  FROM claim_events ce
+  WHERE ce.activity = 'A'
+  GROUP BY ce.claim_id, ce.resource
+),
+closed AS (
+  SELECT claim_id, MIN(timestamp) AS t_c
+  FROM claim_events
+  WHERE activity = 'C'
+  GROUP BY claim_id
+),
+ac AS (
+  SELECT
+    a.claim_id,
+    a.resource,
+    EXTRACT(EPOCH FROM (c.t_c - a.t_a)) AS sec_ac
+  FROM assigned a
+  JOIN closed c USING (claim_id)
+  WHERE c.t_c >= a.t_a
+)
+SELECT
+  adj.region,
+  adj.specialization,
+  COUNT(*) AS n,
+  AVG(sec_ac)/60.0 AS avg_minutes_assign_to_close
+FROM ac
+JOIN adjusters adj
+  ON adj.name = ac.resource   -- adjust if resource stores adjuster_id instead
+GROUP BY adj.region, adj.specialization
+ORDER BY avg_minutes_assign_to_close ASC;
+```
+
+---
+
+### 3.6 Inspect whether “Evaluate” or “Approve” is being skipped or duplicated
+
+**Counts of activities per claim** (to detect missing steps or multiple approvals):
+```sql
+SELECT
+  claim_id,
+  COUNT(*) FILTER (WHERE activity='R') AS n_r,
+  COUNT(*) FILTER (WHERE activity='A') AS n_a,
+  COUNT(*) FILTER (WHERE activity='E') AS n_e,
+  COUNT(*) FILTER (WHERE activity='P') AS n_p,
+  COUNT(*) FILTER (WHERE activity='N') AS n_n,
+  COUNT(*) FILTER (WHERE activity='C') AS n_c
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity='P') > 1
+    OR COUNT(*) FILTER (WHERE activity='E') = 0
+    OR COUNT(*) FILTER (WHERE activity='C') = 0
+ORDER BY claim_id;
+```
+
+---
+
+If you confirm how `claim_events.resource` relates to `adjusters` (name vs id), the correlation queries can be tightened to avoid ambiguous joins.

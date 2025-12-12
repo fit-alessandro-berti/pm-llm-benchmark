@@ -4,7 +4,7 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 
 | Model                             | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | OPT                  | :nerd_face: VI       |
 |:----------------------------------|:---------|:-------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| deepseek-v3.2-speciale-thinking   | **48.7** | :white_check_mark: | :white_check_mark: | **7.5**              | **8.6**              | :mage_woman: **8.0** | :mage_woman: **6.5** | **6.5**              | :mage_woman: **6.8** | **4.7**              | 0.0                  |
+| deepseek-v3.2-speciale-thinking   | **48.7** | :white_check_mark: | :white_check_mark: | **7.5**              | **8.6**              | :mage_woman: **8.0** | **6.5**              | **6.5**              | :mage_woman: **6.8** | **4.7**              | 0.0                  |
 | deepseek-v3.2-thinking            | **45.1** | :white_check_mark: | :white_check_mark: | :mage_woman: **7.6** | 8.3                  | 7.0                  | 5.8                  | 5.8                  | 5.9                  | **4.7**              | 0.0                  |
 | gpt-5-pro-2025-10-06              | **44.9** | :x:                | :white_check_mark: | 6.5                  | **8.5**              | 7.2                  | **6.4**              | 6.1                  | 5.6                  | **4.8**              | **5.9**              |
 | gpt-5-2025-08-07-HIGH             | **44.8** | :x:                | :white_check_mark: | 6.5                  | :mage_woman: **8.7** | 6.0                  | 6.1                  | 6.4                  | **6.5**              | 4.6                  | **5.9**              |
@@ -12,19 +12,19 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 | gpt-5-2025-08-07                  | **44.2** | :x:                | :white_check_mark: | 6.7                  | **8.4**              | 6.3                  | **6.4**              | **6.6**              | 6.0                  | 3.8                  | **5.9**              |
 | grok-4-fast-reasoning             | **44.2** | :x:                | :white_check_mark: | 6.8                  | 8.1                  | 6.3                  | 5.9                  | 5.9                  | **6.5**              | **4.7**              | **5.8**              |
 | Qwen3-235B-A22B-Thinking-2507     | **43.9** | :white_check_mark: | :white_check_mark: | 6.8                  | 7.5                  | 6.9                  | 5.7                  | 5.8                  | 6.3                  | **4.8**              | 0.0                  |
-| moonshotaikimi-k2-thinking        | **43.7** | :white_check_mark: | :white_check_mark: | **7.3**              | **8.5**              | 6.4                  | **6.2**              | 5.8                  | 5.5                  | 4.0                  | 0.0                  |
+| moonshotaikimi-k2-thinking        | **43.7** | :white_check_mark: | :white_check_mark: | **7.3**              | **8.5**              | 6.4                  | 6.2                  | 5.8                  | 5.5                  | 4.0                  | 0.0                  |
 | gemini-3-pro-preview              | **43.6** | :x:                | :white_check_mark: | 6.4                  | 6.8                  | 7.2                  | **6.3**              | 6.2                  | 6.1                  | 4.4                  | :mage_woman: **6.0** |
 | gpt-5.1-2025-11-13-HIGH           | **43.5** | :x:                | :white_check_mark: | 6.6                  | 8.3                  | 5.8                  | 5.7                  | 6.1                  | **6.6**              | 4.4                  | **5.9**              |
 | gpt-5.2-2025-12-11-XHIGH          | **43.5** | :x:                | :white_check_mark: | 7.2                  | **8.5**              | 7.4                  | **6.3**              | 5.1                  | 6.2                  | 2.8                  | **5.9**              |
 | o3-pro-2025-06-10                 | **43.4** | :x:                | :white_check_mark: | 6.5                  | **8.4**              | 6.2                  | 6.0                  | 5.7                  | 6.2                  | 4.4                  | :mage_woman: **6.0** |
-| gpt-5.2-2025-12-11-HIGH           | **43.4** | :x:                | :white_check_mark: | 6.4                  | **8.4**              | 6.2                  | :mage_woman: **6.5** | 6.0                  | **6.7**              | 3.1                  | **5.9**              |
+| gpt-5.2-2025-12-11-HIGH           | **43.4** | :x:                | :white_check_mark: | 6.4                  | **8.4**              | 6.2                  | **6.5**              | 6.0                  | **6.7**              | 3.1                  | **5.9**              |
 | gemini-2.5-flash-thinkhigh        | **43.3** | :x:                | :white_check_mark: | 7.0                  | 7.6                  | 5.9                  | **6.4**              | 6.1                  | 5.7                  | 4.6                  | **5.8**              |
 | o3-pro-2025-06-10-HIGH            | **43.1** | :x:                | :white_check_mark: | 7.1                  | **8.5**              | 6.0                  | 5.4                  | 6.4                  | 5.4                  | 4.5                  | :mage_woman: **6.0** |
 | grok-4-1-fast-reasoning           | **43.1** | :x:                | :white_check_mark: | 6.2                  | 8.1                  | 7.4                  | 5.4                  | 6.2                  | 5.3                  | 4.5                  | **5.8**              |
-| o3-mini-20250131-HIGH             | **42.7** | :x:                | :white_check_mark: | **7.4**              | **8.4**              | 5.4                  | :mage_woman: **6.5** | 5.5                  | 5.7                  | 4.0                  | **5.8**              |
+| o3-mini-20250131-HIGH             | **42.7** | :x:                | :white_check_mark: | **7.4**              | **8.4**              | 5.4                  | **6.5**              | 5.5                  | 5.7                  | 4.0                  | **5.8**              |
 | claude-sonnet-4-5-thinking        | **42.7** | :x:                | :white_check_mark: | 7.1                  | 8.2                  | 6.0                  | 5.7                  | 6.3                  | 5.2                  | 4.1                  | **5.8**              |
 | prime-intellectintellect-3        | **42.5** | :white_check_mark: | :white_check_mark: | 6.8                  | 7.8                  | 6.2                  | 5.6                  | 5.7                  | 5.9                  | 4.6                  | 0.0                  |
-| grok-code-fast-1                  | **42.5** | :x:                | :white_check_mark: | 6.7                  | 7.5                  | 5.3                  | **6.2**              | **6.5**              | 5.6                  | **4.8**              | 0.0                  |
+| grok-code-fast-1                  | **42.5** | :x:                | :white_check_mark: | 6.7                  | 7.5                  | 5.3                  | 6.2                  | **6.5**              | 5.6                  | **4.8**              | 0.0                  |
 | gpt-5-mini-2025-08-07             | **42.5** | :x:                | :white_check_mark: | 6.0                  | 7.8                  | 5.4                  | **6.3**              | 6.4                  | 6.3                  | 4.2                  | :mage_woman: **6.0** |
 | o3-pro-2025-06-10-search          | **42.3** | :x:                | :white_check_mark: | 6.9                  | 7.0                  | 5.8                  | 6.0                  | **6.5**              | 6.2                  | 3.9                  | :mage_woman: **6.0** |
 | nemotron-ultra-253b-v1-thinkenab  | **42.3** | :white_check_mark: | :white_check_mark: | 6.8                  | 7.8                  | 6.1                  | 5.6                  | 6.0                  | 5.7                  | 4.2                  | 0.0                  |
@@ -53,6 +53,7 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 | DeepSeek-R1-0528                  | **40.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 7.6                  | 5.3                  | 4.9                  | 6.2                  | **6.6**              | 4.4                  | 0.0                  |
 | chatgpt-4o-latest-2025-03-26      | **40.7** | :x:                | :x:                | 6.7                  | 6.5                  | 5.5                  | 5.8                  | 6.3                  | 5.7                  | 4.2                  | 5.6                  |
 | phi4-reasoning                    | **40.6** | :white_check_mark: | :white_check_mark: | 7.1                  | 7.4                  | 4.6                  | 6.0                  | 5.8                  | 5.9                  | 3.8                  | 0.0                  |
+| gpt-5.2-2025-12-11-NONE           | **40.4** | :x:                | :x:                | 6.7                  | 7.9                  | 4.8                  | :mage_woman: **6.6** | 5.0                  | 5.7                  | 3.7                  | **5.9**              |
 | claude-opus-4-5-20251101          | **40.4** | :x:                | :x:                | 6.9                  | 8.1                  | 5.9                  | 5.1                  | 5.4                  | 5.4                  | 3.5                  | **5.8**              |
 | allenaiolmo-3-32b-think           | **40.4** | :white_check_mark: | :white_check_mark: | 6.9                  | 6.5                  | 4.9                  | 5.6                  | 5.7                  | 6.2                  | 4.5                  | 0.0                  |
 | gemini-2.5-flash-nothink          | **40.2** | :x:                | :x:                | 6.7                  | 7.0                  | 4.2                  | 5.8                  | 6.2                  | 5.6                  | **4.7**              | **5.8**              |
@@ -96,7 +97,7 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 | exaone-deep32b-fp16               | **36.9** | :white_check_mark: | :white_check_mark: | 5.8                  | 7.1                  | 4.2                  | 5.4                  | 4.6                  | 6.3                  | 3.6                  | 0.0                  |
 | DeepSeek-V3.1                     | **36.9** | :white_check_mark: | :x:                | 6.7                  | 7.4                  | 2.8                  | 4.4                  | 5.9                  | 5.6                  | 4.0                  | 0.0                  |
 | z-aiglm-4.5-air                   | **36.8** | :white_check_mark: | :white_check_mark: | 5.7                  | 5.7                  | 5.3                  | 5.3                  | 5.5                  | 5.2                  | 4.1                  | 0.0                  |
-| moonshotaikimi-k2-0905            | **36.8** | :white_check_mark: | :x:                | 6.2                  | 6.2                  | 4.3                  | **6.2**              | 6.4                  | 4.3                  | 3.2                  | 0.0                  |
+| moonshotaikimi-k2-0905            | **36.8** | :white_check_mark: | :x:                | 6.2                  | 6.2                  | 4.3                  | 6.2                  | 6.4                  | 4.3                  | 3.2                  | 0.0                  |
 | gpt-5-chat-latest-2025-08-08      | **36.7** | :x:                | :x:                | 6.7                  | 6.2                  | 4.5                  | 5.2                  | 5.6                  | 5.6                  | 3.0                  | **5.8**              |
 | sonar-pro                         | **36.5** | :x:                | :x:                | 6.5                  | 5.8                  | 3.7                  | 5.6                  | 5.8                  | 4.8                  | 4.2                  | 0.0                  |
 | o1-mini-2024-09-12                | **36.2** | :x:                | :white_check_mark: | 6.1                  | 6.8                  | 3.4                  | 5.4                  | 5.6                  | 5.3                  | 3.6                  | 0.0                  |
@@ -3211,6 +3212,70 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             |     9.3 |
 | cat08_04_resource_assign           |     9.3 |
 | cat08_05_task_schedul              |     1.4 |
+
+
+
+### gpt-5.2-2025-12-11-NONE   => 40.4 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |   10    |
+| cat01_02_activity_context          |    8.4  |
+| cat01_03_high_level_events         |    8.4  |
+| cat01_04_sensor_recordings         |    3    |
+| cat01_05_merge_two_logs            |    9    |
+| cat01_06_system_logs               |    8.4  |
+| cat01_07_interv_to_pseudo_bpmn     |    9.6  |
+| cat01_08_tables_to_log             |   10    |
+| cat02_01_conformance_textual       |    8.4  |
+| cat02_02_conf_desiderata           |    5    |
+| cat02_03_anomaly_event_log         |   10    |
+| cat02_04_powl_anomaly_detection    |    8.4  |
+| cat02_05_two_powls_anomalies       |    8.6  |
+| cat02_06_root_cause_1              |    9.6  |
+| cat02_07_root_cause_2              |   10    |
+| cat02_08_underfitting_process_tree |   10    |
+| cat02_09_fix_process_tree          |    9.4  |
+| cat03_01_process_tree_generation   |   10    |
+| cat03_02_powl_generation           |   10    |
+| cat03_03_log_skeleton_generation   |    8.4  |
+| cat03_04_declare_generation        |    3.2  |
+| cat03_05_temp_profile_generation   |    3.08 |
+| cat03_06_petri_net_generation      |    4    |
+| cat03_07_process_tree_discovery    |    5    |
+| cat03_08_powl_discovery            |    4    |
+| cat04_01_pseudo_bpmn_description   |    9.4  |
+| cat04_02_pseudo_bpmn_open_question |   10    |
+| cat04_03_declare_open_question     |    9.4  |
+| cat04_04_declare_description       |    7.5  |
+| cat04_05_sql_filt_num_events       |   10    |
+| cat04_06_sql_filt_three_df         |   10    |
+| cat04_07_sql_filt_top_k_vars       |   10    |
+| cat05_01_hyp_generation_log        |    1    |
+| cat05_02_hyp_gen_powl              |    1    |
+| cat05_03_hyp_gen_declare           |    8.4  |
+| cat05_04_hyp_gen_temp_profile      |    9.4  |
+| cat05_05_question_gen_nlp          |   10    |
+| cat05_06_question_pseudo_bpmn      |   10    |
+| cat05_07_question_interview        |   10    |
+| cat06_01_bias_text                 |   10    |
+| cat06_02_bias_event_log            |    8.4  |
+| cat06_03_bias_powl                 |   10    |
+| cat06_04_bias_two_logs             |    8.4  |
+| cat06_05_bias_two_logs_2           |   10    |
+| cat06_06_bias_mitigation_declare   |    1    |
+| cat06_07_fair_unfair_powl          |    9    |
+| cat07_01_ocdfg                     |   10    |
+| cat07_02_bpmn_orders               |    9.6  |
+| cat07_03_bpmn_dispatch             |   10    |
+| cat07_04_causal_net                |   10    |
+| cat07_05_proclets                  |   10    |
+| cat07_06_perf_spectrum             |    9.6  |
+| cat08_01_queue_mining              |    7.85 |
+| cat08_02_instance_spanning         |    9.6  |
+| cat08_03_transport_opt             |   10    |
+| cat08_04_resource_assign           |    8.4  |
+| cat08_05_task_schedul              |    1.1  |
 
 
 
