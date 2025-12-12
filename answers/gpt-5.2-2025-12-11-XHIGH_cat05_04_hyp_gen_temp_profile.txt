@@ -1,0 +1,345 @@
+## 1) Anomalies in the timing profile
+
+- **R  P (Receive  Approve):** avg  **90,000s (~25h)** with **very low STDEV  3,600s (1h)**  
+  This is unusually “deterministic” for a real operational process.
+
+- **P  N (Approve  Notify):** avg  **604,800s (7 days)** with **high STDEV  172,800s (2 days)**  
+  Notification is extremely delayed on average and highly inconsistent.
+
+- **A  C (Assign  Close):** avg  **7,200s (2h)**  
+  Many claims appear to close soon after assignment, suggesting skipped work, an alternate “quick-close” path, or missing events.
+
+- **E  N (Evaluate  Notify):** avg  **300s (5 min)** with **STDEV  60s**  
+  This is very fast (often “system-speed”), and the low variance suggests automation or logging artifacts.
+
+- **E  C (Evaluate  Close):** avg  **3,600s (1h)** with **STDEV  3,000s (~50 min)**  
+  Variability is nearly as large as the mean, suggesting multiple variants (fast reject vs complex handling) or inconsistent event semantics.
+
+---
+
+## 2) Hypotheses explaining the anomalies
+
+### R  P (low variance)
+- **Batch approvals / scheduled job** (e.g., approvals posted at a fixed time daily).
+- **Timestamp rounding/truncation** (approvals recorded on the hour/day).
+- **Event semantics mismatch:** “P” might mean “entered into approval queue” or “approval posted”, not the true decision time.
+- **Timezone or ETL offset** producing a consistent ~24–26h shift.
+
+### P  N (very long + inconsistent)
+- **Notification is manual/backlogged** (letters/emails sent in weekly batches).
+- **Notification logged late** (e.g., when a letter is printed/mailed, not when customer is notified).
+- **Holds between approve and notify** (fraud checks, compliance waiting periods, payment setup).
+- **Multiple N events** or missing N events; your pairing rule (first N after P) may pick an unintended N.
+
+### A  C (fast close)
+- Many claims are **duplicates / invalid / withdrawn** and get closed quickly after assignment.
+- **Missing events** (E/P/N not recorded), making the trace look short.
+- “C” may include **cancellation/voiding** rather than true process completion.
+
+### E  N (very fast)
+- **Automated notification** triggered immediately after evaluation.
+- “E” timestamp recorded at the **end** of evaluation, collapsing the gap.
+- “N” could be an **internal notification** (not customer-facing), while customer notification is something else.
+
+---
+
+## 3) Verification approaches (PostgreSQL SQL)
+
+### A) Recompute the model’s avg/STDEV from raw logs (sanity-check)
+Computes, for each claim, the first occurrence of activity1 and the first later occurrence of activity2:
+
+```sql
+WITH pairs(a1, a2) AS (
+  VALUES
+    ('R','A'), ('R','E'), ('R','P'),
+    ('A','C'),
+    ('E','N'), ('E','C'),
+    ('P','N'),
+    ('N','C')
+),
+first_a1 AS (
+  SELECT ce.claim_id, ce.activity, MIN(ce."timestamp") AS a1_ts
+  FROM claim_events ce
+  JOIN pairs p ON p.a1 = ce.activity
+  GROUP BY ce.claim_id, ce.activity
+),
+deltas AS (
+  SELECT
+    p.a1, p.a2, f.claim_id,
+    EXTRACT(EPOCH FROM (nxt.a2_ts - f.a1_ts)) AS delta_sec
+  FROM pairs p
+  JOIN first_a1 f ON f.activity = p.a1
+  JOIN LATERAL (
+    SELECT MIN(ce2."timestamp") AS a2_ts
+    FROM claim_events ce2
+    WHERE ce2.claim_id = f.claim_id
+      AND ce2.activity = p.a2
+      AND ce2."timestamp" > f.a1_ts
+  ) nxt ON nxt.a2_ts IS NOT NULL
+)
+SELECT
+  a1, a2,
+  COUNT(*) AS n_claims,
+  AVG(delta_sec) AS avg_sec,
+  STDDEV_SAMP(delta_sec) AS stdev_sec
+FROM deltas
+GROUP BY a1, a2
+ORDER BY a1, a2;
+```
+
+If recomputed RP STDEV is much larger than 1 hour, the model likely used a different pairing rule or filtered data.
+
+---
+
+### B) Extract outlier claims via Z-scores (example: RP and PN)
+
+**RP outliers** (avg=90000, stdev=3600, threshold 3):
+
+```sql
+WITH r AS (
+  SELECT claim_id, MIN("timestamp") AS r_ts
+  FROM claim_events
+  WHERE activity = 'R'
+  GROUP BY claim_id
+),
+rp AS (
+  SELECT
+    r.claim_id,
+    r.r_ts,
+    p.p_ts,
+    EXTRACT(EPOCH FROM (p.p_ts - r.r_ts)) AS delta_sec
+  FROM r
+  JOIN LATERAL (
+    SELECT MIN("timestamp") AS p_ts
+    FROM claim_events
+    WHERE claim_id = r.claim_id
+      AND activity = 'P'
+      AND "timestamp" > r.r_ts
+  ) p ON p.p_ts IS NOT NULL
+)
+SELECT
+  claim_id, r_ts, p_ts, delta_sec,
+  (delta_sec - 90000.0) / 3600.0 AS zscore
+FROM rp
+WHERE ABS((delta_sec - 90000.0) / 3600.0) > 3
+ORDER BY ABS((delta_sec - 90000.0) / 3600.0) DESC;
+```
+
+**PN outliers** (avg=604800, stdev=172800):
+
+```sql
+WITH p AS (
+  SELECT claim_id, MIN("timestamp") AS p_ts
+  FROM claim_events
+  WHERE activity = 'P'
+  GROUP BY claim_id
+),
+pn AS (
+  SELECT
+    p.claim_id,
+    p.p_ts,
+    n.n_ts,
+    EXTRACT(EPOCH FROM (n.n_ts - p.p_ts)) AS delta_sec
+  FROM p
+  JOIN LATERAL (
+    SELECT MIN("timestamp") AS n_ts
+    FROM claim_events
+    WHERE claim_id = p.claim_id
+      AND activity = 'N'
+      AND "timestamp" > p.p_ts
+  ) n ON n.n_ts IS NOT NULL
+)
+SELECT
+  claim_id, p_ts, n_ts, delta_sec,
+  (delta_sec - 604800.0) / 172800.0 AS zscore
+FROM pn
+WHERE ABS((delta_sec - 604800.0) / 172800.0) > 3
+ORDER BY delta_sec DESC;
+```
+
+---
+
+### C) Check if RP is driven by batching / timestamp rounding
+Are approvals concentrated at specific times?
+
+```sql
+SELECT
+  EXTRACT(HOUR FROM "timestamp") AS hour_of_day,
+  EXTRACT(MINUTE FROM "timestamp") AS minute,
+  COUNT(*) AS approvals
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY 1,2
+ORDER BY approvals DESC
+LIMIT 20;
+```
+
+What fraction occur exactly on the hour?
+
+```sql
+SELECT
+  COUNT(*) FILTER (
+    WHERE EXTRACT(MINUTE FROM "timestamp") = 0
+      AND EXTRACT(SECOND FROM "timestamp") = 0
+  )::decimal / COUNT(*) AS pct_on_the_hour
+FROM claim_events
+WHERE activity = 'P';
+```
+
+High `pct_on_the_hour` supports “scheduled job / rounded timestamps” and explains low STDEV.
+
+---
+
+### D) Investigate long PN delays by claim attributes (claim_type, amount)
+```sql
+WITH p AS (
+  SELECT claim_id, MIN("timestamp") AS p_ts
+  FROM claim_events
+  WHERE activity = 'P'
+  GROUP BY claim_id
+),
+pn AS (
+  SELECT
+    p.claim_id,
+    EXTRACT(EPOCH FROM (n.n_ts - p.p_ts)) AS delta_sec
+  FROM p
+  JOIN LATERAL (
+    SELECT MIN("timestamp") AS n_ts
+    FROM claim_events
+    WHERE claim_id = p.claim_id
+      AND activity = 'N'
+      AND "timestamp" > p.p_ts
+  ) n ON n.n_ts IS NOT NULL
+)
+SELECT
+  c.claim_type,
+  AVG(pn.delta_sec)/86400.0 AS avg_days,
+  COUNT(*) AS n_claims
+FROM pn
+JOIN claims c USING (claim_id)
+GROUP BY c.claim_type
+ORDER BY avg_days DESC;
+```
+
+---
+
+### E) Validate “closed shortly after assignment” and whether steps are skipped
+```sql
+WITH a AS (
+  SELECT claim_id, MIN("timestamp") AS a_ts
+  FROM claim_events
+  WHERE activity = 'A'
+  GROUP BY claim_id
+),
+ac AS (
+  SELECT
+    a.claim_id,
+    a.a_ts,
+    c.c_ts,
+    EXTRACT(EPOCH FROM (c.c_ts - a.a_ts)) AS delta_sec
+  FROM a
+  JOIN LATERAL (
+    SELECT MIN("timestamp") AS c_ts
+    FROM claim_events
+    WHERE claim_id = a.claim_id
+      AND activity = 'C'
+      AND "timestamp" > a.a_ts
+  ) c ON c.c_ts IS NOT NULL
+)
+SELECT
+  ac.claim_id,
+  ac.delta_sec/60.0 AS minutes_to_close,
+  EXISTS (
+    SELECT 1 FROM claim_events x
+    WHERE x.claim_id = ac.claim_id
+      AND x.activity IN ('E','P','N')
+      AND x."timestamp" BETWEEN ac.a_ts AND ac.c_ts
+  ) AS has_any_EPN_between
+FROM ac
+WHERE ac.delta_sec <= 7200
+ORDER BY minutes_to_close;
+```
+
+If many are missing E/P/N between A and C, you likely have a distinct “quick close” path or incomplete logging.
+
+---
+
+### F) Inspect EN “system-speed” transitions and who performed them
+```sql
+WITH e AS (
+  SELECT claim_id, MIN("timestamp") AS e_ts
+  FROM claim_events
+  WHERE activity = 'E'
+  GROUP BY claim_id
+),
+en AS (
+  SELECT
+    e.claim_id,
+    e.e_ts,
+    n.n_ts,
+    EXTRACT(EPOCH FROM (n.n_ts - e.e_ts)) AS delta_sec
+  FROM e
+  JOIN LATERAL (
+    SELECT MIN("timestamp") AS n_ts
+    FROM claim_events
+    WHERE claim_id = e.claim_id
+      AND activity = 'N'
+      AND "timestamp" > e.e_ts
+  ) n ON n.n_ts IS NOT NULL
+)
+SELECT
+  en.claim_id,
+  en.delta_sec,
+  ce_e.resource AS evaluator,
+  ce_n.resource AS notifier,
+  ce_n.additional_info
+FROM en
+LEFT JOIN claim_events ce_e
+  ON ce_e.claim_id=en.claim_id AND ce_e.activity='E' AND ce_e."timestamp"=en.e_ts
+LEFT JOIN claim_events ce_n
+  ON ce_n.claim_id=en.claim_id AND ce_n.activity='N' AND ce_n."timestamp"=en.n_ts
+WHERE en.delta_sec <= 300
+ORDER BY en.delta_sec ASC;
+```
+
+Consistent “system” notifier resources and near-zero gaps support automation or logging-time artifacts.
+
+---
+
+### G) Data-quality checks: out-of-order events and repeated activities
+Out-of-order relative to intended sequence:
+
+```sql
+WITH t AS (
+  SELECT
+    claim_id,
+    MIN("timestamp") FILTER (WHERE activity='R') AS r_ts,
+    MIN("timestamp") FILTER (WHERE activity='A') AS a_ts,
+    MIN("timestamp") FILTER (WHERE activity='E') AS e_ts,
+    MIN("timestamp") FILTER (WHERE activity='P') AS p_ts,
+    MIN("timestamp") FILTER (WHERE activity='N') AS n_ts,
+    MIN("timestamp") FILTER (WHERE activity='C') AS c_ts
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT *
+FROM t
+WHERE (a_ts IS NOT NULL AND r_ts IS NOT NULL AND a_ts < r_ts)
+   OR (e_ts IS NOT NULL AND a_ts IS NOT NULL AND e_ts < a_ts)
+   OR (p_ts IS NOT NULL AND e_ts IS NOT NULL AND p_ts < e_ts)
+   OR (n_ts IS NOT NULL AND p_ts IS NOT NULL AND n_ts < p_ts)
+   OR (c_ts IS NOT NULL AND n_ts IS NOT NULL AND c_ts < n_ts);
+```
+
+Repeated P or N events (can distort “eventually” timing):
+
+```sql
+SELECT claim_id, activity, COUNT(*) AS cnt
+FROM claim_events
+WHERE activity IN ('P','N')
+GROUP BY claim_id, activity
+HAVING COUNT(*) > 1
+ORDER BY cnt DESC, claim_id;
+```
+
+These queries will distinguish true operational bottlenecks/variants (batching, backlogs, fast-close paths) from logging artifacts (rounded timestamps, misordered or missing events, mismatched activity meaning).

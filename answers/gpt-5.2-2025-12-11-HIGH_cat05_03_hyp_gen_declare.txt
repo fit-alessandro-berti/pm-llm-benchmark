@@ -1,0 +1,191 @@
+## 1) Anomalies in the constraint set
+
+1. **Hard contradiction: `C` must happen, but `E` cannot co-occur with `C`.**  
+   - If every case must contain **C (Close)** and **E (Evaluate)** is declared **noncoexistent** with **C**, then **any case containing E becomes invalid**.  
+   - With support/confidence 1.0 on both, the only way to satisfy the model is: **E never occurs in any case**.
+
+2. **Business-logic undermined: evaluation is effectively forbidden.**  
+   - In a realistic claim lifecycle, closing without evaluation is typically exceptional; here it becomes the *only* valid behavior.
+
+3. **Unenforceable / vacuous dependency: `E` responded existence  `A`.**  
+   - “If E occurs, A occurs somewhere” becomes mostly irrelevant if **E is impossible** due to the contradiction above.
+
+4. **Ordering gap: assignment is not required to occur before evaluation.**  
+   - Even if E were allowed, “responded existence” does **not** ensure **A happens before E** (it only ensures A occurs somewhere in the trace).
+
+5. **Intended steps can be skipped entirely (P, N, A are not required).**  
+   - There are no existence/precedence constraints for **A (Assign)**, **P (Approve)**, **N (Notify)**.  
+   - The model allows minimal traces like: **R  C** (receive then close).
+
+6. **Redundancy / overconstraint on start: `init R` plus `precedence(C, R)`.**  
+   - If every case starts with **R**, then “R precedes C” adds little (it only matters if C could occur without R somewhere earlier, which `init` already constrains strongly).
+
+---
+
+## 2) Hypotheses for why these anomalies appear
+
+1. **Misinterpretation of activity labels (semantic drift).**  
+   - “E” may not mean “Evaluate” in the log (e.g., “Escalate”, “Exception handling”), so analysts may have added a noncoexistence with “C” for a different meaning.
+
+2. **Mixed case types in one model (heterogeneous process variants).**  
+   - Some claims might be “withdrawn/duplicate/invalid” and go **R  C** without evaluation, while others go through evaluation. A single global model with strict 1.0 thresholds can create contradictions.
+
+3. **Mining artifact due to incomplete or biased event logging.**  
+   - If evaluation events are frequently missing (not recorded, recorded in another system, or filtered out), discovery may incorrectly infer that “E never appears with C” or that “E is incompatible with closure”.
+
+4. **Policy change not consistently reflected.**  
+   - A former rule might have prevented evaluation for certain cases, or evaluation may have been replaced by automatic decisioning, but other constraints were not updated.
+
+5. **Data-quality issues in timestamps or case correlation.**  
+   - If events are attached to wrong `claim_id` or timestamps are unreliable, discovered relations (especially ordering/existence) can become contradictory.
+
+---
+
+## 3) SQL verification approaches (PostgreSQL)
+
+### A. Check whether the core contradiction occurs in reality (do E and C co-occur?)
+```sql
+SELECT
+  COUNT(*) AS total_claims,
+  COUNT(*) FILTER (WHERE has_e) AS claims_with_e,
+  COUNT(*) FILTER (WHERE has_c) AS claims_with_c,
+  COUNT(*) FILTER (WHERE has_e AND has_c) AS claims_with_both_e_and_c
+FROM (
+  SELECT
+    claim_id,
+    BOOL_OR(activity = 'E') AS has_e,
+    BOOL_OR(activity = 'C') AS has_c
+  FROM claim_events
+  GROUP BY claim_id
+) s;
+```
+
+### B. Find concrete violations of the “E and C cannot co-exist” rule
+```sql
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING BOOL_OR(activity = 'E')
+   AND BOOL_OR(activity = 'C')
+ORDER BY claim_id;
+```
+
+### C. Identify claims closed without any evaluation (common “undesired path”)
+```sql
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING BOOL_OR(activity = 'C')
+   AND NOT BOOL_OR(activity = 'E')
+ORDER BY claim_id;
+```
+
+### D. Check whether cases actually start with Receive (R)
+```sql
+WITH first_evt AS (
+  SELECT DISTINCT ON (claim_id)
+         claim_id, activity, timestamp
+  FROM claim_events
+  ORDER BY claim_id, timestamp
+)
+SELECT *
+FROM first_evt
+WHERE activity <> 'R'
+ORDER BY claim_id;
+```
+
+### E. Check existence of closure (C) for every claim (process completion)
+```sql
+SELECT c.claim_id
+FROM claims c
+LEFT JOIN claim_events e
+  ON e.claim_id = c.claim_id
+ AND e.activity = 'C'
+WHERE e.claim_id IS NULL
+ORDER BY c.claim_id;
+```
+
+### F. If evaluation happens, verify an assignment exists (E  A)
+```sql
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING BOOL_OR(activity = 'E')
+   AND NOT BOOL_OR(activity = 'A')
+ORDER BY claim_id;
+```
+
+### G. Verify ordering: assignment should occur before evaluation (not just “somewhere”)
+```sql
+WITH times AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS first_a_time,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS first_e_time
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT *
+FROM times
+WHERE first_e_time IS NOT NULL
+  AND (first_a_time IS NULL OR first_a_time > first_e_time)
+ORDER BY claim_id;
+```
+
+### H. Detect “close before notify/approve” patterns (skipped late steps)
+```sql
+WITH times AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS c_time,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS n_time,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT *
+FROM times
+WHERE c_time IS NOT NULL
+  AND (p_time IS NULL OR p_time > c_time
+    OR n_time IS NULL OR n_time > c_time)
+ORDER BY claim_id;
+```
+
+### I. Tie assignment to real adjusters (resource integrity check)
+(Assuming `claim_events.resource` stores an `adjuster_id` as text; adapt if it stores names.)
+```sql
+SELECT ce.claim_id, ce.timestamp, ce.resource
+FROM claim_events ce
+LEFT JOIN adjusters a
+  ON a.adjuster_id = ce.resource::int
+WHERE ce.activity = 'A'
+  AND a.adjuster_id IS NULL
+ORDER BY ce.claim_id, ce.timestamp;
+```
+
+### J. Check specialization vs claim type at assignment time (potential misrouting)
+```sql
+WITH last_assign AS (
+  SELECT DISTINCT ON (ce.claim_id)
+         ce.claim_id,
+         ce.timestamp,
+         ce.resource::int AS adjuster_id
+  FROM claim_events ce
+  WHERE ce.activity = 'A'
+  ORDER BY ce.claim_id, ce.timestamp DESC
+)
+SELECT
+  la.claim_id,
+  c.claim_type,
+  a.adjuster_id,
+  a.specialization,
+  a.region
+FROM last_assign la
+JOIN claims c ON c.claim_id = la.claim_id
+JOIN adjusters a ON a.adjuster_id = la.adjuster_id
+WHERE (c.claim_type ILIKE '%home%' AND a.specialization <> 'home')
+   OR (c.claim_type ILIKE '%auto%' AND a.specialization <> 'auto')
+ORDER BY la.claim_id;
+```
+
+If you want, I can also suggest a minimal “repaired” constraint set that matches the intended flow (e.g., existence/precedence/response constraints for AEPNC) and avoids logical contradictions.

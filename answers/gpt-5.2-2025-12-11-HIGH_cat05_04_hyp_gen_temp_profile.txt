@@ -1,0 +1,427 @@
+## 1) Anomalies in the temporal profile
+
+1. **('R','P') Receive  Approve: AVG ~25h, STDEV 1h (very low variance)**
+   - Approvals occurring with near-clockwork regularity is atypical for claims, which usually vary by complexity, missing documents, adjuster workload, etc.
+
+2. **('P','N') Approve  Notify: AVG 7 days, STDEV 2 days (very long and highly variable)**
+   - Notification after approval should usually be fast (minutes/hours), not a week on average, and the high variance suggests inconsistent handling (some quick, some very delayed).
+
+3. **('A','C') Assign  Close: AVG 2h, STDEV 1h (potential premature closure)**
+   - Closing shortly after assignment, without consistent evidence of Evaluate/Approve/Notify in between, suggests cancellations, duplicates, missing steps, or logging issues.
+
+4. **('E','N') Evaluate  Notify: AVG 5 min, STDEV 1 min (too fast / highly automated)**
+   - If “Notify” represents customer communication, 5 minutes after evaluation is suspiciously fast unless it’s an automated system message (or Evaluate is logged late).
+
+5. **Model inconsistency vs intended order**
+   - The model includes pairs that imply outcomes without intermediate steps (e.g., AC, EC) and very different speeds for adjacent steps (EN is minutes, but PN is days), which is logically inconsistent unless “Notify” means different things in different contexts.
+
+---
+
+## 2) Hypotheses for why these anomalies might exist
+
+### A) Receive  Approve has very low variance
+- **Batch/queue-driven approvals**: approvals happen at fixed daily cutoffs (e.g., every day at 10:00), producing tightly clustered durations.
+- **SLA timer artifacts**: approvals auto-trigger at a fixed time threshold (e.g., “auto-approve if not reviewed within 24h”).
+- **Timestamp quality issue**: “R” and/or “P” timestamps are system-generated at predictable times (e.g., midnight ingestion, scheduled job postings).
+- **Different claim populations mixed**: e.g., many claims are auto-approved with a fixed delay while complex ones are excluded or rarely reach P.
+
+### B) Approve  Notify is extremely long and variable
+- **Manual notification backlog**: customer contact is done by a separate team with uneven workload.
+- **External dependency**: notification only after payment batch, fraud clearance, or document dispatch.
+- **Multiple meanings of “N”**: “Notify” might sometimes mean “internal notification” and other times “customer notified,” causing bimodal timing.
+- **Missing/late logging**: notifications happen earlier but are recorded days later.
+
+### C) Assign  Close happens very quickly
+- **Immediate closures** due to duplicates, withdrawals, ineligible claims, or “no coverage” decisions made right after assignment.
+- **Process deviation**: adjusters close without formally logging Evaluate/Approve/Notify events.
+- **Event ordering problems**: Evaluate/Approve occurred but were recorded with timestamps earlier/later incorrectly (or missing).
+- **Reopened cases**: a quick close after assignment might precede later events if cases are reopened, confusing eventual-pair metrics.
+
+### D) Evaluate  Notify is extremely short
+- **Automation**: Evaluate triggers an automated notification (email/SMS) immediately.
+- **Evaluate logged at end**: evaluation work happens earlier, but “E” is only recorded when the adjuster clicks “complete,” right before notification.
+- **Notify is internal**: “N” could be an internal status update rather than a customer message.
+
+---
+
+## 3) Verification approaches with SQL (PostgreSQL)
+
+### 3.1 Build per-claim timestamps for each activity (basis for most checks)
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS ts_r,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS ts_a,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS ts_e,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_p,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS ts_n,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS ts_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT * FROM per_claim;
+```
+
+---
+
+### 3.2 Receive  Approve: check “clockwork” timing and outliers
+**A) Distribution and “time of day” clustering for approvals**
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS ts_r,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_p
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  date_trunc('hour', ts_p) AS approve_hour_bucket,
+  COUNT(*) AS cnt
+FROM per_claim
+WHERE ts_r IS NOT NULL AND ts_p IS NOT NULL
+GROUP BY 1
+ORDER BY 1;
+```
+
+**B) Claims outside expected RP range (e.g., mean ± 3*stdev = 25h ± 3h)**
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS ts_r,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_p
+  FROM claim_events
+  GROUP BY claim_id
+),
+d AS (
+  SELECT
+    claim_id,
+    EXTRACT(EPOCH FROM (ts_p - ts_r)) AS sec_rp
+  FROM per_claim
+  WHERE ts_r IS NOT NULL AND ts_p IS NOT NULL
+)
+SELECT *
+FROM d
+WHERE sec_rp < (90000 - 3*3600) OR sec_rp > (90000 + 3*3600)
+ORDER BY sec_rp;
+```
+
+**C) Check if R/P timestamps are system-generated (same minutes/seconds)**
+```sql
+SELECT
+  activity,
+  EXTRACT(MINUTE FROM timestamp) AS minute_part,
+  EXTRACT(SECOND FROM timestamp) AS second_part,
+  COUNT(*) AS cnt
+FROM claim_events
+WHERE activity IN ('R','P')
+GROUP BY 1,2,3
+ORDER BY cnt DESC
+LIMIT 50;
+```
+
+---
+
+### 3.3 Approve  Notify: quantify delays and identify drivers (resource/claim_type/region)
+
+**A) Find claims with very long PN (e.g., > 7d + 3*2d = 13d)**
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_p,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS ts_n
+  FROM claim_events
+  GROUP BY claim_id
+),
+d AS (
+  SELECT
+    claim_id,
+    (ts_n - ts_p) AS dur_pn,
+    EXTRACT(EPOCH FROM (ts_n - ts_p)) AS sec_pn
+  FROM per_claim
+  WHERE ts_p IS NOT NULL AND ts_n IS NOT NULL
+)
+SELECT claim_id, dur_pn
+FROM d
+WHERE sec_pn > (604800 + 3*172800)
+ORDER BY dur_pn DESC;
+```
+
+**B) Correlate PN delay with claim_type and amount**
+```sql
+WITH per_claim AS (
+  SELECT
+    ce.claim_id,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'P') AS ts_p,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'N') AS ts_n
+  FROM claim_events ce
+  GROUP BY ce.claim_id
+),
+d AS (
+  SELECT
+    p.claim_id,
+    EXTRACT(EPOCH FROM (p.ts_n - p.ts_p)) / 3600.0 AS hours_pn
+  FROM per_claim p
+  WHERE p.ts_p IS NOT NULL AND p.ts_n IS NOT NULL
+)
+SELECT
+  c.claim_type,
+  COUNT(*) AS n,
+  AVG(d.hours_pn) AS avg_hours_pn,
+  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY d.hours_pn) AS median_hours_pn,
+  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY d.hours_pn) AS p90_hours_pn
+FROM d
+JOIN claims c ON c.claim_id = d.claim_id
+GROUP BY c.claim_type
+ORDER BY avg_hours_pn DESC;
+```
+
+**C) Correlate PN delay with “Notify” resource (who logs N)**
+```sql
+WITH pn AS (
+  SELECT
+    p.claim_id,
+    p.timestamp AS ts_p,
+    n.timestamp AS ts_n,
+    n.resource  AS notify_resource,
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))/3600.0 AS hours_pn
+  FROM claim_events p
+  JOIN claim_events n
+    ON n.claim_id = p.claim_id
+   AND n.activity = 'N'
+  WHERE p.activity = 'P'
+    AND n.timestamp > p.timestamp
+    AND p.timestamp = (
+      SELECT MIN(p2.timestamp)
+      FROM claim_events p2
+      WHERE p2.claim_id = p.claim_id AND p2.activity='P'
+    )
+    AND n.timestamp = (
+      SELECT MIN(n2.timestamp)
+      FROM claim_events n2
+      WHERE n2.claim_id = n.claim_id AND n2.activity='N'
+    )
+)
+SELECT
+  notify_resource,
+  COUNT(*) AS n,
+  AVG(hours_pn) AS avg_hours_pn,
+  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY hours_pn) AS p90_hours_pn
+FROM pn
+GROUP BY notify_resource
+ORDER BY avg_hours_pn DESC;
+```
+
+---
+
+### 3.4 Assign  Close: detect “closed without evaluation/approval/notify” patterns
+
+**A) Claims closed within 2 hours of assignment**
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS ts_a,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS ts_c
+  FROM claim_events
+  GROUP BY claim_id
+),
+d AS (
+  SELECT
+    claim_id,
+    EXTRACT(EPOCH FROM (ts_c - ts_a))/60.0 AS minutes_ac
+  FROM per_claim
+  WHERE ts_a IS NOT NULL AND ts_c IS NOT NULL AND ts_c > ts_a
+)
+SELECT *
+FROM d
+WHERE minutes_ac <= 120
+ORDER BY minutes_ac;
+```
+
+**B) Of those quick AC, check whether E/P/N are missing**
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS ts_a,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS ts_e,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_p,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS ts_n,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS ts_c
+  FROM claim_events
+  GROUP BY claim_id
+),
+quick AS (
+  SELECT *
+  FROM per_claim
+  WHERE ts_a IS NOT NULL AND ts_c IS NOT NULL
+    AND ts_c > ts_a
+    AND (ts_c - ts_a) <= interval '2 hours'
+)
+SELECT
+  claim_id,
+  ts_a, ts_e, ts_p, ts_n, ts_c,
+  (ts_e IS NULL) AS missing_e,
+  (ts_p IS NULL) AS missing_p,
+  (ts_n IS NULL) AS missing_n
+FROM quick
+ORDER BY ts_c - ts_a;
+```
+
+**C) Tie quick closures to adjuster specialization/region (via assignment resource)**
+_Assumes `claim_events.resource` can be matched to `adjusters.name` (or adjuster_id stored in resource)._
+```sql
+WITH assign_close AS (
+  SELECT
+    a.claim_id,
+    a.resource AS assign_resource,
+    a.timestamp AS ts_a,
+    c.timestamp AS ts_c,
+    EXTRACT(EPOCH FROM (c.timestamp - a.timestamp))/60.0 AS minutes_ac
+  FROM claim_events a
+  JOIN claim_events c
+    ON c.claim_id = a.claim_id
+   AND c.activity = 'C'
+  WHERE a.activity = 'A'
+    AND c.timestamp > a.timestamp
+),
+firsts AS (
+  SELECT DISTINCT ON (claim_id)
+    claim_id, assign_resource, ts_a, ts_c, minutes_ac
+  FROM assign_close
+  ORDER BY claim_id, ts_a ASC
+)
+SELECT
+  ad.region,
+  ad.specialization,
+  COUNT(*) AS n,
+  AVG(minutes_ac) AS avg_minutes_ac
+FROM firsts f
+LEFT JOIN adjusters ad
+  ON ad.name = f.assign_resource
+WHERE minutes_ac <= 120
+GROUP BY ad.region, ad.specialization
+ORDER BY n DESC;
+```
+
+---
+
+### 3.5 Evaluate  Notify: confirm automation vs logging artifacts
+
+**A) Find EN under 10 minutes (or outside mean ± 3*stdev = 5min ± 3min)**
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS ts_e,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS ts_n
+  FROM claim_events
+  GROUP BY claim_id
+),
+d AS (
+  SELECT
+    claim_id,
+    EXTRACT(EPOCH FROM (ts_n - ts_e)) AS sec_en
+  FROM per_claim
+  WHERE ts_e IS NOT NULL AND ts_n IS NOT NULL AND ts_n > ts_e
+)
+SELECT *
+FROM d
+WHERE sec_en < (300 - 3*60) OR sec_en > (300 + 3*60)
+ORDER BY sec_en;
+```
+
+**B) Check if Notify is performed by a system user**
+```sql
+SELECT
+  resource,
+  COUNT(*) AS notify_events
+FROM claim_events
+WHERE activity = 'N'
+GROUP BY resource
+ORDER BY notify_events DESC;
+```
+
+**C) Compare EN timing when Notify resource is “system-like” vs human**
+```sql
+WITH en AS (
+  SELECT
+    e.claim_id,
+    n.resource AS notify_resource,
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp))/60.0 AS minutes_en
+  FROM claim_events e
+  JOIN claim_events n
+    ON n.claim_id = e.claim_id
+   AND n.activity = 'N'
+  WHERE e.activity = 'E'
+    AND n.timestamp > e.timestamp
+),
+first_pair AS (
+  SELECT DISTINCT ON (claim_id)
+    claim_id, notify_resource, minutes_en
+  FROM en
+  ORDER BY claim_id, minutes_en
+)
+SELECT
+  CASE WHEN notify_resource ILIKE '%system%' OR notify_resource ILIKE '%bot%' THEN 'system_like'
+       ELSE 'human_like' END AS notify_actor_type,
+  COUNT(*) AS n,
+  AVG(minutes_en) AS avg_minutes_en,
+  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY minutes_en) AS p90_minutes_en
+FROM first_pair
+GROUP BY 1;
+```
+
+---
+
+### 3.6 Check event ordering and missing steps (data quality / conformance)
+
+**A) Claims where timestamps violate intended order (e.g., N before P, C before N, etc.)**
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS ts_r,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS ts_a,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS ts_e,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS ts_p,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS ts_n,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS ts_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT *
+FROM per_claim
+WHERE (ts_p IS NOT NULL AND ts_n IS NOT NULL AND ts_n < ts_p)
+   OR (ts_n IS NOT NULL AND ts_c IS NOT NULL AND ts_c < ts_n)
+   OR (ts_a IS NOT NULL AND ts_e IS NOT NULL AND ts_e < ts_a)
+   OR (ts_r IS NOT NULL AND ts_a IS NOT NULL AND ts_a < ts_r);
+```
+
+**B) Claims missing core milestones (e.g., have Close but no Notify/Approve/Evaluate)**
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    BOOL_OR(activity='R') AS has_r,
+    BOOL_OR(activity='A') AS has_a,
+    BOOL_OR(activity='E') AS has_e,
+    BOOL_OR(activity='P') AS has_p,
+    BOOL_OR(activity='N') AS has_n,
+    BOOL_OR(activity='C') AS has_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT *
+FROM per_claim
+WHERE has_c
+  AND (NOT has_e OR NOT has_p OR NOT has_n);
+```
+
+---
+
+If you want, I can tailor the thresholds in the “outlier” queries to exactly match a chosen ZETA factor (e.g., 2.0, 2.5, 3.0) and produce a single consolidated query that outputs all flagged claims with the violating activity-pair and z-score.

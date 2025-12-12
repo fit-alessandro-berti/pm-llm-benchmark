@@ -388,6 +388,16 @@ MODELS_DICT = {
                 "base_model": "gpt-5.1-2025-11-13",
                 "reasoning_effort": "high"
             },
+            "gpt-5.2-2025-12-11-HIGH": {
+                "provider": "openai",
+                "base_model": "gpt-5.2-2025-12-11",
+                "reasoning_effort": "high"
+            },
+            "gpt-5.2-2025-12-11-XHIGH": {
+                "provider": "openai",
+                "base_model": "gpt-5.2-2025-12-11",
+                "reasoning_effort": "xhigh"
+            },
             "o3-pro-2025-06-10-HIGH": {
                 "provider": "openai",
                 "base_model": "o3-pro-2025-06-10",

@@ -1,0 +1,237 @@
+## 1) Anomalies / problematic interactions in the constraints
+
+1. **“E” becomes impossible in any compliant case**
+   - `existence(C)` forces every case to contain **C**.
+   - `noncoexistence(E, C)` forbids **E** and **C** appearing together in the same case.
+   - Therefore, any case containing **E** can never contain **C**, but **C is mandatory**, so **E is effectively forbidden** across all valid traces.
+
+2. **A constraint becomes vacuous (adds no behavioral restriction)**
+   - `responded_existence(E -> A)` (if **E** happens, **A** must happen somewhere) becomes irrelevant if **E cannot occur** due to the interaction above.
+
+3. **The model allows “shortcut” executions that are typically undesirable**
+   - With `init(R)`, `existence(C)`, and `precedence(R before C)`, a minimal valid trace is essentially **R  C**, with no requirement for other steps (e.g., assignment/approval/notification).
+   - This creates a large space of executions that may violate expected operational controls (e.g., closing without any substantive handling).
+
+4. **Redundancy / over-specification**
+   - Given `existence(C)` ensures the case is non-empty and `init(R)` forces the first event to be **R**, the `precedence(R before C)` constraint is largely redundant (R is already guaranteed to occur before anything else).
+
+5. **Weak relation between assignment and evaluation (even if E were allowed)**
+   - `responded_existence(E -> A)` does **not** enforce that **A occurs before E**, only that it occurs somewhere. That permits sequences like **E … A** (if E were not effectively banned).
+
+---
+
+## 2) Hypotheses for why these anomalies appear
+
+- **Activity-label confusion / mapping errors**
+  - One code may have been mapped incorrectly (e.g., “C” not actually representing the same business meaning across systems; “E” might be a different kind of event than assumed).
+- **Log extraction/windowing artifact**
+  - If the data was extracted with a cutoff, cases with **E** may not yet have reached **C** inside the dataset, making **E and C appear mutually exclusive**.
+- **Missing events / incomplete integration**
+  - “E” events may not be recorded for many cases (or “C” may be missing for evaluated cases), causing mined constraints to incorrectly infer noncoexistence.
+- **Multiple process variants merged**
+  - A subset of claims may follow a “fast-track” path with no evaluation, while another subset is evaluated but closed in a different system or later—mining across mixed variants can generate misleading universal constraints.
+- **Overfitting due to small or biased sample**
+  - Perfect `support/confidence = 1.0` across constraints can happen if the mining dataset is small, heavily filtered, or dominated by one scenario.
+- **Policy or operational pressure**
+  - If operational practice includes rapid closures without evaluation, discovery may reflect that behavior even if it is not intended policy.
+
+---
+
+## 3) SQL-based verification approaches (PostgreSQL)
+
+### A. Check whether “E” truly never co-occurs with “C”
+Claims that contain **both E and C** (would violate `noncoexistence(E, C)`):
+```sql
+SELECT claim_id,
+       COUNT(*) FILTER (WHERE activity = 'E') AS e_cnt,
+       COUNT(*) FILTER (WHERE activity = 'C') AS c_cnt
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'C') > 0;
+```
+
+If any exist, inspect ordering/timestamps:
+```sql
+SELECT claim_id,
+       MIN(timestamp) FILTER (WHERE activity = 'E') AS first_e_ts,
+       MIN(timestamp) FILTER (WHERE activity = 'C') AS first_c_ts,
+       MAX(timestamp) FILTER (WHERE activity = 'E') AS last_e_ts,
+       MAX(timestamp) FILTER (WHERE activity = 'C') AS last_c_ts
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'C') > 0;
+```
+
+---
+
+### B. Find “closed without evaluation” (shortcut behavior)
+Claims that have **C** but no **E**:
+```sql
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'C') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'E') = 0;
+```
+
+If you want “pure shortcuts” like exactly **R then C** and nothing else:
+```sql
+WITH ordered AS (
+  SELECT claim_id, activity,
+         ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp, event_id) AS rn,
+         COUNT(*)    OVER (PARTITION BY claim_id) AS total_events
+  FROM claim_events
+)
+SELECT claim_id
+FROM ordered
+GROUP BY claim_id
+HAVING MAX(total_events) = 2
+   AND MAX(CASE WHEN rn = 1 THEN activity END) = 'R'
+   AND MAX(CASE WHEN rn = 2 THEN activity END) = 'C';
+```
+
+---
+
+### C. Find “evaluated but never closed” (possible extraction cutoff or missing close events)
+```sql
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'C') = 0;
+```
+
+To see if these cluster near the end of the available event timeline (suggesting truncation):
+```sql
+WITH max_ts AS (
+  SELECT MAX(timestamp) AS max_ts FROM claim_events
+),
+last_event AS (
+  SELECT claim_id,
+         MAX(timestamp) AS last_ts,
+         COUNT(*) FILTER (WHERE activity = 'E') AS e_cnt,
+         COUNT(*) FILTER (WHERE activity = 'C') AS c_cnt
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT le.claim_id, le.last_ts
+FROM last_event le
+CROSS JOIN max_ts m
+WHERE le.e_cnt > 0 AND le.c_cnt = 0
+  AND le.last_ts > m.max_ts - INTERVAL '7 days'
+ORDER BY le.last_ts DESC;
+```
+
+---
+
+### D. Validate `init(R)`: first event per claim should be R
+```sql
+WITH first_event AS (
+  SELECT claim_id, activity, timestamp,
+         ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp, event_id) AS rn
+  FROM claim_events
+)
+SELECT claim_id, activity, timestamp
+FROM first_event
+WHERE rn = 1
+  AND activity <> 'R';
+```
+
+Also check claims that never have **R** at all:
+```sql
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'R') = 0;
+```
+
+---
+
+### E. Validate `precedence(R before C)`: no close without an earlier receive
+Find **C** events that do **not** have any earlier **R** in the same claim:
+```sql
+SELECT c.claim_id, c.event_id, c.timestamp AS close_ts
+FROM claim_events c
+WHERE c.activity = 'C'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events r
+    WHERE r.claim_id = c.claim_id
+      AND r.activity = 'R'
+      AND r.timestamp < c.timestamp
+  );
+```
+
+---
+
+### F. Validate `responded_existence(E -> A)` and check ordering (A before E)
+Claims with **E** but no **A** (violates `responded_existence`):
+```sql
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'A') = 0;
+```
+
+Claims where **E happens before A** (not forbidden by responded-existence, but often suspicious):
+```sql
+WITH t AS (
+  SELECT claim_id,
+         MIN(timestamp) FILTER (WHERE activity = 'A') AS a_ts,
+         MIN(timestamp) FILTER (WHERE activity = 'E') AS e_ts
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id, a_ts, e_ts
+FROM t
+WHERE e_ts IS NOT NULL
+  AND (a_ts IS NULL OR e_ts < a_ts);
+```
+
+---
+
+### G. Check whether assignment events map to real adjusters (resource integrity)
+If `claim_events.resource` contains an **adjuster name**:
+```sql
+SELECT ce.claim_id, ce.event_id, ce.resource
+FROM claim_events ce
+LEFT JOIN adjusters a
+  ON a.name = ce.resource
+WHERE ce.activity = 'A'
+  AND a.adjuster_id IS NULL;
+```
+
+If `claim_events.resource` contains an **adjuster id embedded in text**, try extracting digits:
+```sql
+SELECT ce.claim_id, ce.event_id, ce.resource
+FROM claim_events ce
+LEFT JOIN adjusters a
+  ON a.adjuster_id = NULLIF(regexp_replace(ce.resource, '\D', '', 'g'), '')::int
+WHERE ce.activity = 'A'
+  AND a.adjuster_id IS NULL;
+```
+
+---
+
+### H. Inspect behavior by claim characteristics (to detect variants driving the anomalies)
+Activity presence by claim type:
+```sql
+SELECT c.claim_type, ce.activity, COUNT(*) AS event_count
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id
+GROUP BY c.claim_type, ce.activity
+ORDER BY c.claim_type, ce.activity;
+```
+
+Trace samples (quickly see “R,C” style cases):
+```sql
+SELECT ce.claim_id,
+       string_agg(ce.activity, '->' ORDER BY ce.timestamp, ce.event_id) AS trace
+FROM claim_events ce
+GROUP BY ce.claim_id
+ORDER BY ce.claim_id
+LIMIT 50;
+```

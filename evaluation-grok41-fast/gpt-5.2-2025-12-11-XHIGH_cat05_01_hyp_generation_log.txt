@@ -1,0 +1,167 @@
+1. **Observed process variants (high-level)**  
+   - **Variant 1** (case 1001): Exact match to normal flow – Register Order  Perform Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Issue Invoice  Receive Payment.  
+   - **Variant 2** (case 1002, priority order): Register Order  Confirm Shipment  Ship Goods  Perform Credit Check  Validate Stock  Issue Invoice  Receive Payment (logistics steps before finance/stock checks).  
+   - **Variant 3** (case 1003, standard order): Register Order  Perform Credit Check  Ship Goods  Issue Invoice  Confirm Shipment  Receive Payment (missing Validate Stock; Ship Goods & Issue Invoice before Confirm Shipment).  
+   - **Variant 4** (case 1004, standard high-value order): Register Order  Receive Payment  Issue Invoice  Confirm Shipment  Ship Goods (missing Perform Credit Check & Validate Stock; Payment before Invoice).  
+
+2. **Anomalies detected**  
+   - **A1: Credit control bypassed – Perform Credit Check missing or after shipping activities (Ship Goods/Confirm Shipment)**  
+     **Evidence**: Case 1002 (Ship Goods at 2024-02-01 08:40:00 & Confirm Shipment at 08:25:00 before Credit Check at 09:10:00; credit_score=650 borderline); case 1004 (no Credit Check at all, Ship Goods at 09:50:00).  
+     **Why it matters**: High financial exposure – shipping without credit approval risks bad debt (esp. low credit_score or high order_value=3000); policy violation, potential fraud.  
+     **Hypotheses**: Workaround for "priority" orders (1002); role overstep or system config allows logistics to proceed independently; insider bypass for favored customers.  
+     **SQL to detect + quantify**  
+     ```
+     -- List cases: details on shipping vs credit timestamps (anomalous if ship_ts < credit_ts or no credit)
+     WITH case_times AS (
+       SELECT 
+         oel.case_id,
+         MIN(CASE WHEN oel.activity IN ('Ship Goods', 'Confirm Shipment') THEN oel.timestamp END) AS first_shipment_ts,
+         MAX(CASE WHEN oel.activity = 'Perform Credit Check' THEN oel.timestamp END) AS credit_ts,
+         STRING_AGG(oel.additional_info, '; ') FILTER (WHERE oel.activity = 'Perform Credit Check'), additional_info
+       FROM order_event_log oel
+       GROUP BY oel.case_id
+     )
+     SELECT case_id, first_shipment_ts, credit_ts, additional_info
+     FROM case_times 
+     WHERE first_shipment_ts < credit_ts OR credit_ts IS NULL
+     ORDER BY case_id;
+     ```
+     *Interpretation: Rows show cases with pre-/non-credit shipping; review additional_info for scores.*  
+     ```
+     -- Summary: prevalence by order_type
+     WITH anomalies AS (
+       SELECT 
+         o.case_id, o.order_type, o.order_value,
+         CASE WHEN ct.first_shipment_ts < ct.credit_ts OR ct.credit_ts IS NULL THEN 1 ELSE 0 END AS is_anomalous
+       FROM orders o
+       LEFT JOIN LATERAL (
+         SELECT 
+           case_id,
+           MIN(CASE WHEN activity IN ('Ship Goods', 'Confirm Shipment') THEN timestamp END) AS first_shipment_ts,
+           MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) AS credit_ts
+         FROM order_event_log 
+         GROUP BY case_id
+       ) ct ON o.case_id = ct.case_id
+     )
+     SELECT 
+       COUNT(*) AS total_cases,
+       COUNT(*) FILTER (WHERE is_anomalous = 1) AS anomalous_cases,
+       ROUND(100.0 * COUNT(*) FILTER (WHERE is_anomalous = 1) / COUNT(*), 2) AS pct_anomalous,
+       COUNT(*) FILTER (WHERE is_anomalous = 1 AND order_type = 'priority') AS priority_anomalous
+     FROM anomalies;
+     ```
+     *Interpretation: High pct or priority breakdown flags systemic bypass risk.*
+
+   - **A2: Validate Stock missing (critical pre-shipment control skipped)**  
+     **Evidence**: Case 1003 (no Validate Stock; Ship Goods at 09:10:00); case 1004 (no Validate Stock; Ship Goods at 09:50:00).  
+     **Why it matters**: Operational risk – potential oversell/stockouts, inventory discrepancies, customer delivery failures.  
+     **Hypotheses**: Assumed "available" for low-value/standard orders; integration delay from warehouse system; training gap where clerks skip if prior steps "seem ok".  
+     **SQL to detect + quantify**  
+     ```
+     -- List cases: all cases missing Validate Stock
+     SELECT DISTINCT case_id
+     FROM order_event_log
+     WHERE case_id NOT IN (
+       SELECT case_id FROM order_event_log WHERE activity = 'Validate Stock'
+     )
+     ORDER BY case_id;
+     ```
+     *Interpretation: List confirms missing control pre-shipment.*  
+     ```
+     -- Summary: prevalence, avg order_value impact
+     WITH missing_validate AS (
+       SELECT o.case_id, o.order_type, o.order_value
+       FROM orders o
+       WHERE o.case_id NOT IN (SELECT case_id FROM order_event_log WHERE activity = 'Validate Stock')
+     )
+     SELECT 
+       COUNT(*) AS total_cases,
+       (SELECT COUNT(*) FROM orders) AS total_all_cases,
+       ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM orders), 2) AS pct_missing,
+       AVG(order_value) AS avg_value_missing
+     FROM missing_validate;
+     ```
+     *Interpretation: Pct shows prevalence; high avg_value = higher exposure.*
+
+   - **A3: Receive Payment before Issue Invoice (payment precedes billing)**  
+     **Evidence**: Case 1004 (Payment at 09:05:00 before Invoice at 09:20:00, amount=3000.00 despite no checks).  
+     **Why it matters**: Fraud red flag (prepayment scam or accounting error); revenue recognition violation, audit risk.  
+     **Hypotheses**: Customer prepayment workaround bypassing controls; data entry error (reversed events); collusion between sales/finance for high-value deals.  
+     **SQL to detect + quantify**  
+     ```
+     -- List cases: payment ts vs invoice ts
+     WITH case_times AS (
+       SELECT 
+         case_id,
+         MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS payment_ts,
+         MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS invoice_ts
+       FROM order_event_log
+       GROUP BY case_id
+     )
+     SELECT case_id, payment_ts, invoice_ts
+     FROM case_times 
+     WHERE payment_ts < invoice_ts;
+     ```
+     *Interpretation: Rows flag inverted billing/payment sequence.*  
+     ```
+     -- Summary: count + value at risk
+     SELECT 
+       COUNT(DISTINCT case_id) AS anomalous_cases,
+       SUM(o.order_value) AS total_value_prepaid,
+       COUNT(*) * 100.0 / (SELECT COUNT(DISTINCT case_id) FROM order_event_log)::numeric AS pct_all_cases
+     FROM order_event_log pel
+     JOIN orders o ON pel.case_id = o.case_id
+     WHERE pel.activity = 'Receive Payment'
+     AND pel.timestamp < (SELECT MIN(timestamp) FROM order_event_log iel WHERE iel.case_id = pel.case_id AND iel.activity = 'Issue Invoice');
+     ```
+     *Interpretation: Total value highlights fraud exposure.*
+
+   - **A4: Confirm Shipment after Ship Goods or Issue Invoice before Confirm Shipment (logistics sequence inverted/early invoicing)**  
+     **Evidence**: Case 1003 (Ship Goods 09:10:00 before Confirm 09:45:00, late_confirmation=Y; Issue Invoice 09:30:00 before Confirm); case 1004 (Issue Invoice 09:20:00 before Confirm 09:25:00).  
+     **Why it matters**: Logistics chaos (ship unconfirmed = tracking/liability issues); premature invoicing risks disputes/non-payment.  
+     **Hypotheses**: Operational pressure/rush shipping; system glitch in sequencing; policy allowing "provisional" ships.  
+     **SQL to detect + quantify**  
+     ```
+     -- List cases: inverted shipment confirm or early invoice
+     WITH logistics_times AS (
+       SELECT 
+         case_id,
+         MIN(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) AS confirm_ts,
+         MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS ship_ts,
+         MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS invoice_ts
+       FROM order_event_log
+       GROUP BY case_id
+     )
+     SELECT case_id, confirm_ts, ship_ts, invoice_ts
+     FROM logistics_times
+     WHERE ship_ts > confirm_ts OR invoice_ts < confirm_ts;
+     ```
+     *Interpretation: Rows show sequence flips; check additional_info for flags like late_confirmation.*
+
+   - **A5: Suspicious ultra-short cycle times from Register Order to Receive Payment (<1 hour)**  
+     **Evidence**: Case 1004 (5 mins: 09:00 to 09:05, high-value 3000).  
+     **Why it matters**: Unrealistic for full process; indicates test data, fraud, or timestamp errors.  
+     **Hypotheses**: Data quality issue (bulk insert errors); fraud (fake quick cycles); automated/scripted tests.  
+     **SQL to detect + quantify**  
+     ```
+     -- List cases: short cycles
+     WITH cycle_times AS (
+       SELECT 
+         case_id,
+         MIN(CASE WHEN activity = 'Register Order' THEN timestamp END) AS start_ts,
+         MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS end_ts
+       FROM order_event_log
+       GROUP BY case_id
+     )
+     SELECT case_id, start_ts, end_ts, end_ts - start_ts AS duration
+     FROM cycle_times 
+     WHERE end_ts - start_ts < INTERVAL '1 hour';
+     ```
+     *Interpretation: Short durations flag implausible cases.*
+
+3. **Prioritized next investigations** (top 3–5, based on risk/impact)  
+   1. **High-value early payments (A3)**: Join to customer history; check for repeat customers/resources (e.g., FinanceTeam_02). Risk: fraud.  
+   2. **Credit bypass esp. priority/low-score (A1)**: Correlate with credit_score in additional_info & order_value >2000. Risk: bad debt.  
+   3. **Missing Validate Stock (A2)**: Check post-event stock discrepancies (if avail.); by WarehouseClerk. Risk: inventory loss.  
+   4. **Logistics inversions (A4)**: Parse additional_info for flags (e.g., '%late%' or 'scheduled=N'); delivery failure rates. Risk: ops/customer.  
+   5. **Short cycles (A5)**: Validate timestamps vs system logs; resource patterns. Risk: data integrity.
