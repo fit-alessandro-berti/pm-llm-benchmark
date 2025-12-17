@@ -341,7 +341,8 @@ MODELS_DICT = {
             "moonshotai/kimi-linear-48b-a3b-instruct",
             "allenai/olmo-3-7b-think",
             "allenai/olmo-3-7b-instruct",
-            "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1", "essentialai/rnj-1-instruct"
+            "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1", "essentialai/rnj-1-instruct",
+            "xiaomi/mimo-v2-flash:free"
         }
     },
     "manual": {
@@ -628,7 +629,7 @@ def is_visual_model(model_name):
 
 def is_open_source(m_name):
     m_name = m_name.lower()
-    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "sonar-", "quasar", "optimus", "o3-2", "o4-mini-2", "gpt-5", "horizon", "cypher", "mistral-medium", "magistral-medium", "sonoma"]
+    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "sonar-", "quasar", "optimus", "o3-2", "o4-mini-2", "gpt-5", "horizon", "cypher", "mistral-medium", "magistral-medium", "sonoma", "mimo"]
 
     for p in patterns:
         if p in m_name:

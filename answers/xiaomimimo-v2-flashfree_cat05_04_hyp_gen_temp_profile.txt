@@ -1,0 +1,138 @@
+### Identified Anomalies in the Temporal Profile
+
+1.  **Receive to Approve (R  P):**
+    *   **Anomaly:** The average duration is approximately 25 hours (90,000 seconds), which is reasonably fast, but the standard deviation is extremely low (3,600 seconds or 1 hour). In a complex insurance process involving evaluation and approval, one would expect significant variance in processing times based on claim complexity, adjuster workload, and documentation quality. A tight distribution suggests the process is either highly automated or artificially constrained, rather than organic.
+
+2.  **Approve to Notify (P  N):**
+    *   **Anomaly:** There is a massive average delay of 7 days (604,800 seconds) with a high standard deviation of 2 days (172,800 seconds). While approval processing might be fast, a week-long gap before informing the customer is a significant service failure. The high deviation indicates this delay is inconsistent, suggesting some claims get stuck in a backlog while others are processed immediately.
+
+3.  **Assign to Close (A  C):**
+    *   **Anomaly:** The average time between assigning an adjuster and closing the claim is only 2 hours (7,200 seconds). This is exceptionally fast, especially if standard steps like "Evaluate" (E) are expected in between. It suggests that many claims are being closed almost immediately after assignment, potentially without proper investigation or processing.
+
+4.  **Evaluate to Notify (E  N):**
+    *   **Anomaly:** The average time between evaluation and notification is 5 minutes (300 seconds). While digital processes are fast, 5 minutes implies the notification is fired automatically the moment evaluation is logged, leaving no time for review, final approval logic (unless P is skipped), or manual intervention.
+
+### Hypotheses on Anomaly Causes
+
+1.  **Process Skipping / Data Integrity Issues (RP, AC, EN):**
+    *   The extremely short intervals and low deviations (RP, EN) or the lack of expected intermediate steps (AC) suggest that users or systems might be logging "completion" events (like P or C) to clear queues without actually performing the work. This could be a metric-gaming behavior where adjusters mark claims as closed to maintain performance KPIs, or a system configuration that auto-advances states.
+
+2.  **Systemic Bottlenecks / Human Factors (PN):**
+    *   The 7-day delay between Approval and Notification is highly suspicious for a digital workflow. It suggests that while the *Approval* logic (perhaps automated) happens quickly, the subsequent step is manual, resource-constrained, or deprioritized. It could also indicate a "pending payment" queue where claims sit until funds are released or a batch process for notifications runs weekly rather than daily.
+
+3.  **Resource Allocation & Specialization Mismatches:**
+    *   The anomalies might be correlated with specific adjusters or regions. For example, one region might have a culture of closing claims immediately (AC) to keep their stats low, while another region strictly follows the process. Conversely, the long PN delay might be caused by a central notification team that is under-resourced.
+
+### Verification Approaches using SQL
+
+#### 1. Verify the "Approve to Notify" (PN) Bottleneck
+This query identifies claims where the time between approval and notification exceeds the business expectation (e.g., 24 hours), and correlates them with the adjuster and claim type to see if specific groups are affected.
+
+```sql
+SELECT 
+    ce_n.claim_id,
+    c.claim_type,
+    ce_p.timestamp AS approved_at,
+    ce_n.timestamp AS notified_at,
+    EXTRACT(EPOCH FROM (ce_n.timestamp - ce_p.timestamp)) / 3600 AS hours_to_notify,
+    ce_p.resource AS approved_by_resource,
+    a.name AS adjuster_name,
+    a.region
+FROM 
+    claim_events ce_p
+JOIN 
+    claim_events ce_n ON ce_p.claim_id = ce_n.claim_id
+JOIN 
+    claims c ON ce_p.claim_id = c.claim_id
+LEFT JOIN 
+    claim_events ce_a ON ce_a.claim_id = c.claim_id AND ce_a.activity = 'A'
+LEFT JOIN 
+    adjusters a ON ce_a.resource::integer = a.adjuster_id -- Assuming resource stores adjuster_id
+WHERE 
+    ce_p.activity = 'P' 
+    AND ce_n.activity = 'N'
+    AND ce_p.timestamp < ce_n.timestamp
+    AND EXTRACT(EPOCH FROM (ce_n.timestamp - ce_p.timestamp)) > 86400 -- More than 24 hours
+ORDER BY 
+    hours_to_notify DESC;
+```
+
+#### 2. Identify Premature Closures (AC)
+This query looks for claims that were closed almost immediately after assignment, skipping the Evaluation and Approval steps. This helps test the hypothesis that claims are being closed without work.
+
+```sql
+-- Find claims closed very quickly after assignment
+WITH ClaimLifecycle AS (
+    SELECT 
+        claim_id,
+        MIN(CASE WHEN activity = 'A' THEN timestamp END) as assign_time,
+        MAX(CASE WHEN activity = 'C' THEN timestamp END) as close_time,
+        bool_or(activity = 'E') as has_evaluation,
+        bool_or(activity = 'P') as has_approval
+    FROM 
+        claim_events
+    GROUP BY 
+        claim_id
+)
+SELECT 
+    cl.claim_id,
+    c.claim_amount,
+    cl.assign_time,
+    cl.close_time,
+    EXTRACT(EPOCH FROM (cl.close_time - cl.assign_time)) / 60 AS minutes_to_close,
+    cl.has_evaluation,
+    cl.has_approval,
+    a.name AS adjuster_name
+FROM 
+    ClaimLifecycle cl
+JOIN 
+    claims c ON cl.claim_id = c.claim_id
+JOIN 
+    claim_events ce_a ON cl.claim_id = ce_a.claim_id AND ce_a.activity = 'A'
+LEFT JOIN 
+    adjusters a ON ce_a.resource::integer = a.adjuster_id
+WHERE 
+    cl.assign_time IS NOT NULL 
+    AND cl.close_time IS NOT NULL
+    AND EXTRACT(EPOCH FROM (cl.close_time - cl.assign_time)) < 7200 -- Less than 2 hours
+    AND (cl.has_evaluation IS FALSE OR cl.has_approval IS FALSE) -- Missing intermediate steps
+ORDER BY 
+    minutes_to_close ASC;
+```
+
+#### 3. Analyze Variance in "Receive to Approve" (RP)
+To verify the suspiciously low standard deviation (rigidity), we calculate the standard deviation of R-to-P times per adjuster. If the hypothesis is correct that this is artificial, we might see specific adjusters or automated resources with near-zero variance.
+
+```sql
+WITH ApprovalTimes AS (
+    SELECT 
+        ce_r.claim_id,
+        ce_r.resource AS receiving_resource,
+        MIN(CASE WHEN ce_p.activity = 'P' THEN ce_p.timestamp END) AS approve_time,
+        MIN(CASE WHEN ce_r.activity = 'R' THEN ce_r.timestamp END) AS receive_time
+    FROM 
+        claim_events ce_r
+    JOIN 
+        claim_events ce_p ON ce_r.claim_id = ce_p.claim_id
+    WHERE 
+        ce_r.activity = 'R' 
+        AND ce_p.activity = 'P'
+    GROUP BY 
+        ce_r.claim_id, ce_r.resource
+)
+SELECT 
+    receiving_resource,
+    COUNT(*) as claim_count,
+    AVG(EXTRACT(EPOCH FROM (approve_time - receive_time))) as avg_seconds,
+    STDDEV(EXTRACT(EPOCH FROM (approve_time - receive_time))) as std_dev_seconds
+FROM 
+    ApprovalTimes
+WHERE 
+    approve_time IS NOT NULL
+GROUP BY 
+    receiving_resource
+HAVING 
+    COUNT(*) > 10 -- Ensure statistical significance
+ORDER BY 
+    std_dev_seconds ASC;
+```

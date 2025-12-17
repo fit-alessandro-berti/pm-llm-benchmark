@@ -1,0 +1,149 @@
+Based on the provided schema and data, here is an analysis of anomalies, hypothesized causes, and proposed SQL queries for investigation.
+
+### 1. Analysis of Anomalies and Hypothesized Causes
+
+#### Anomaly A: Out-of-Order "Receive Payment" (Case 1004)
+*   **Observation:** In Case 1004, the `Receive Payment` event occurred at `09:05:00`, which is immediately after `Register Order` at `09:00:00`. Crucially, this happened **before** the `Issue Invoice` event at `09:20:00`.
+*   **Hypothesis:** This suggests a "Deposit-First" or "Pre-payment" workflow, or perhaps a system error where the payment timestamp was recorded incorrectly (e.g., clock skew or manual entry error). Alternatively, the invoice might have been generated offline/external to the system and the event log missed it, or the payment is for a previous order and incorrectly linked to this new case ID.
+
+#### Anomaly B: Missing Process Steps (Case 1003 and 1004)
+*   **Observation:**
+    *   Case 1003 is missing `Validate Stock` and `Confirm Shipment` (happened out of order).
+    *   Case 1004 is missing `Validate Stock` entirely.
+*   **Hypothesis:**
+    *   **Bypass Logic:** The system or policy might automatically bypass `Validate Stock` for certain conditions (e.g., digital goods, very low value, or trusted customers).
+    *   **System Error:** Events failed to be logged in the database due to a transient error.
+    *   **Data Corruption:** The specific `event_id` records were deleted or failed to insert.
+
+#### Anomaly C: Future Dated Shipment / "Time Travel" (Case 1002)
+*   **Observation:** In Case 1002, `Register Order` is at `08:20:00`. `Confirm Shipment` happens at `08:25:00` (only 5 minutes later), and `Ship Goods` happens at `08:40:00`. This is an extremely short turnaround time (15 minutes from order to shipping).
+*   **Hypothesis:** This might be a "Rush" or "Express" shipping method where inventory is pre-packed. However, it could also be a data entry error where the `Confirm Shipment` timestamp is incorrect (perhaps recording the *planned* shipment time rather than the actual confirmation time).
+
+#### Anomaly D: Late Credit Check (Case 1002)
+*   **Observation:** In Case 1002, `Perform Credit Check` happens at `09:10:00`. This is **after** `Ship Goods` (`08:40:00`) and `Issue Invoice` (`09:30:00`).
+*   **Hypothesis:** This implies a violation of the standard process flow. It suggests either:
+    1.  **Retroactive Approval:** The system shipped goods before credit approval, and the check happened later (high risk).
+    2.  **System Bug:** The events were logged out of order by the system.
+    3.  **Recurring Customer:** The system allows shipping to repeat customers without a real-time credit check, but the audit log still records a "delayed" check event.
+
+---
+
+### 2. Proposed SQL Queries
+
+Here are specific SQL queries to investigate these hypotheses.
+
+#### Investigation A: Validating Sequence Violations (Deposits before Invoices)
+*Hypothesis: Find orders where payment was received before the invoice was issued.*
+
+```sql
+WITH EventTimes AS (
+    SELECT
+        case_id,
+        MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS pay_time,
+        MAX(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS invoice_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    case_id,
+    pay_time,
+    invoice_time,
+    pay_time - invoice_time AS diff
+FROM EventTimes
+WHERE pay_time IS NOT NULL
+  AND invoice_time IS NOT NULL
+  AND pay_time < invoice_time;
+```
+
+#### Investigation B: Identifying Missing Steps
+*Hypothesis: Find cases that have completed the end of the process (e.g., 'Receive Payment') but are missing critical intermediate steps like 'Validate Stock'.*
+
+```sql
+SELECT DISTINCT
+    e.case_id
+FROM order_event_log e
+WHERE e.activity = 'Receive Payment'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM order_event_log sub
+      WHERE sub.case_id = e.case_id
+        AND sub.activity = 'Validate Stock'
+  );
+```
+
+#### Investigation C: Extreme Cycle Time Detection (Rush Orders)
+*Hypothesis: Identify orders where the time between 'Register Order' and 'Ship Goods' is suspiciously short (e.g., < 30 minutes), potentially indicating data entry errors or bypassed processes.*
+
+```sql
+WITH ProcessTimes AS (
+    SELECT
+        case_id,
+        MIN(timestamp) AS start_time, -- Assuming Register Order is usually the first event
+        MAX(timestamp) AS end_time    -- Assuming Ship Goods is usually among the last
+    FROM order_event_log
+    WHERE activity IN ('Register Order', 'Ship Goods')
+    GROUP BY case_id
+    HAVING COUNT(DISTINCT activity) = 2
+)
+SELECT
+    case_id,
+    start_time,
+    end_time,
+    EXTRACT(EPOCH FROM (end_time - start_time)) / 60 AS duration_minutes
+FROM ProcessTimes
+WHERE EXTRACT(EPOCH FROM (end_time - start_time)) / 60 < 30;
+```
+
+#### Investigation D: Post-Processing Credit Checks
+*Hypothesis: Detect if Credit Checks are happening after goods have already been shipped, which is a high-risk financial anomaly.*
+
+```sql
+WITH KeyEvents AS (
+    SELECT
+        case_id,
+        MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) as credit_time,
+        MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) as ship_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    case_id,
+    credit_time,
+    ship_time
+FROM KeyEvents
+WHERE credit_time IS NOT NULL
+  AND ship_time IS NOT NULL
+  AND credit_time > ship_time;
+```
+
+#### Investigation E: Resource Role Mismatch
+*Hypothesis: Verify if the resources performing the activities match the expected roles in the `resources` table (e.g., a 'SalesRep' performing a 'Finance' task).*
+
+```sql
+SELECT
+    e.case_id,
+    e.activity,
+    e.resource,
+    r.role,
+    r.department
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE
+    (e.activity = 'Perform Credit Check' AND r.department != 'Finance')
+    OR (e.activity = 'Register Order' AND r.department != 'Sales')
+    OR (e.activity = 'Ship Goods' AND r.department != 'Logistics')
+    OR (e.activity = 'Issue Invoice' AND r.department != 'Finance');
+```
+
+#### Investigation F: Resource Capacity / Overload
+*Hypothesis: Check if specific resources are handling an unusually high volume of orders, which might explain skipped steps or data entry errors due to rush.*
+
+```sql
+SELECT
+    resource,
+    COUNT(DISTINCT case_id) as total_orders_handled,
+    COUNT(*) as total_events_processed
+FROM order_event_log
+GROUP BY resource
+ORDER BY total_orders_handled DESC;
+```
