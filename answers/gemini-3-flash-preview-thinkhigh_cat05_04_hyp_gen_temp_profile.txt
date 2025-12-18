@@ -1,0 +1,109 @@
+### 1. Analysis of Anomalies in the Temporal Profile
+
+Based on the temporal profile model, the following anomalies have been identified:
+
+*   **Abnormal Consistency in Approval Timing (R to P):** The transition from Receive (R) to Approve (P) takes approximately 25 hours with a standard deviation of only 1 hour. In a manual insurance process, evaluation and approval times typically vary significantly based on claim complexity. Such a low variance suggests an artificial constraint or a batch-processing system rather than a merit-based workflow.
+*   **Excessive Lag in Customer Notification (P to N):** There is a massive 7-day average gap between Approving (P) a claim and Notifying (N) the customer. This is the longest interval in the process and suggests a significant bottleneck that occurs *after* the decision has already been made.
+*   **Suspiciously Rapid Closure (A to C):** The average time from Assign (A) to Close (C) is only 2 hours. Since the steps Evaluate (E) and Approve (P) are intended to occur between assignment and closure, a 2-hour window is likely insufficient for a thorough review, suggesting steps are being skipped or claims are being summarily rejected/closed.
+*   **Near-Instantaneous Evaluation-to-Notification (E to N):** A 5-minute average between Evaluation and Notification is unusually fast, especially given that the Approval (P) step should logically sit between them. This suggests the notification might be automated based on the evaluation entry, potentially bypassing the formal approval gate.
+
+---
+
+### 2. Hypotheses for Anomalies
+
+*   **Hypothesis A: Batch Processing or "Cooldown" Periods:** The rigid 25-hour window for approval (R to P) suggests that claims might be held in a queue and processed by an automated script at a specific time of day, or there is a mandatory waiting period enforced by the system before an approval can be finalized.
+*   **Hypothesis B: Notification Bottlenecks:** The 7-day delay (P to N) may be caused by a manual administrative process, such as a requirement to send physical mail notifications that are only printed and dispatched once a week, or a resource shortage in the customer relations department.
+*   **Hypothesis C: Process Skipping/Fast-Tracking:** The rapid A to C and E to N intervals suggest that for certain claim types (perhaps low-value or "auto-insurance" glass claims), the system or adjusters are bypassing the standard "Evaluate -> Approve" sequence to meet volume KPIs.
+*   **Hypothesis D: Data Entry Latency:** The small standard deviations in some areas vs. large ones in others (like P to N) could indicate that some timestamps represent when work was actually done, while others represent when data was bulk-uploaded into the system at the end of a shift or week.
+
+---
+
+### 3. Verification Approaches via SQL Queries
+
+The following queries target the `claim_events` and `claims` tables to validate the hypotheses above.
+
+#### A. Identifying Out-of-Sequence or Skipped Steps
+This query identifies claims that move from Assignment to Close in under 3 hours while checking if the mandatory "Approve" (P) step was missing.
+
+```sql
+SELECT 
+    a.claim_id, 
+    c.claim_type, 
+    c.claim_amount,
+    a.timestamp AS assigned_at, 
+    b.timestamp AS closed_at,
+    EXTRACT(EPOCH FROM (b.timestamp - a.timestamp))/3600 AS hours_to_close
+FROM claim_events a
+JOIN claim_events b ON a.claim_id = b.claim_id
+JOIN claims c ON a.claim_id = c.claim_id
+WHERE a.activity = 'A' 
+  AND b.activity = 'C'
+  AND (b.timestamp - a.timestamp) < INTERVAL '3 hours'
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events e 
+      WHERE e.claim_id = a.claim_id AND e.activity = 'P'
+  );
+```
+
+#### B. Analyzing the 7-Day Notification Delay by Resource
+This query correlates the long delay between Approval (P) and Notification (N) with specific adjusters or regions to see if the bottleneck is localized.
+
+```sql
+WITH StepIntervals AS (
+    SELECT 
+        p.claim_id,
+        p.timestamp AS approved_at,
+        n.timestamp AS notified_at,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400 AS days_to_notify,
+        cl.claim_type,
+        adj.region,
+        adj.name AS adjuster_name
+    FROM claim_events p
+    JOIN claim_events n ON p.claim_id = n.claim_id
+    JOIN claims cl ON p.claim_id = cl.claim_id
+    JOIN adjusters adj ON p.resource = adj.name -- Assuming resource name maps to adjuster
+    WHERE p.activity = 'P' AND n.activity = 'N'
+)
+SELECT 
+    region, 
+    adjuster_name, 
+    AVG(days_to_notify) as avg_days, 
+    COUNT(*) as claim_count
+FROM StepIntervals
+GROUP BY region, adjuster_name
+HAVING AVG(days_to_notify) > 5
+ORDER BY avg_days DESC;
+```
+
+#### C. Testing for Batch Approval Patterns
+This query extracts the hour of the day and day of the week for the "Approve" (P) activity to determine if approvals are clustering around a specific schedule.
+
+```sql
+SELECT 
+    EXTRACT(DOW FROM timestamp) AS day_of_week, -- 0=Sunday, 6=Saturday
+    EXTRACT(HOUR FROM timestamp) AS hour_of_day,
+    COUNT(*) AS approval_count
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY day_of_week, hour_of_day
+ORDER BY approval_count DESC;
+```
+
+#### D. Correlating Rapid Evaluation-to-Notification with Claim Value
+This query checks if the 5-minute "Evaluate to Notify" (E to N) anomaly is specific to low-monetary-value claims, which might indicate an automated bypass.
+
+```sql
+SELECT 
+    CASE 
+        WHEN c.claim_amount < 1000 THEN 'Low Value (<1k)'
+        WHEN c.claim_amount BETWEEN 1000 AND 5000 THEN 'Medium Value (1k-5k)'
+        ELSE 'High Value (>5k)'
+    END AS value_category,
+    AVG(EXTRACT(EPOCH FROM (n.timestamp - e.timestamp))) AS avg_seconds_e_to_n,
+    COUNT(*) as sample_size
+FROM claim_events e
+JOIN claim_events n ON e.claim_id = n.claim_id
+JOIN claims c ON e.claim_id = c.claim_id
+WHERE e.activity = 'E' AND n.activity = 'N'
+GROUP BY 1;
+```

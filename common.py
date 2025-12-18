@@ -527,6 +527,16 @@ MODELS_DICT = {
                 "thinking_tokens": 16000,
                 "max_tokens": 16000
             },
+            "gemini-3-flash-preview-nothink": {
+                "provider": "google",
+                "base_model": "gemini-3-flash-preview",
+                "thinking_tokens": 0
+            },
+            "gemini-3-flash-preview-thinkhigh": {
+                "provider": "google",
+                "base_model": "gemini-3-flash-preview",
+                "thinking_tokens": 24576
+            },
             "gemini-2.5-flash-09-2025-nothink": {
                 "provider": "google",
                 "base_model": "gemini-2.5-flash-preview-09-2025",
