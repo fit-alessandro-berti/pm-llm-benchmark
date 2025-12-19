@@ -1,0 +1,138 @@
+### Identified Anomalies and Undesirable Behaviors
+
+The event log contains four order cases, with **case 1001** following the assumed normal process flow perfectly. The other three cases exhibit clear deviations from the expected sequence:
+
+1. **Out-of-sequence activities** (violations of process order):
+   - **Case 1002**: Logistics activities ("Confirm Shipment" and "Ship Goods") occur **immediately after "Register Order"**, before credit check or stock validation. Credit check and stock validation happen afterward.
+   - **Case 1003**: "Ship Goods" occurs **right after credit check**, skipping stock validation, and "Confirm Shipment" happens **after** shipping and invoicing (marked as "late_confirmation=Y").
+   - **Case 1004**: "Receive Payment" occurs **immediately after "Register Order"**, followed by invoicing, with shipment activities later. No credit check at all.
+
+2. **Missing key control activities**:
+   - **Cases 1003 and 1004**: No "Validate Stock" recorded.
+   - **Case 1004**: No "Perform Credit Check" recorded.
+
+These deviations represent undesirable behaviors, as they bypass critical controls:
+- Shipping goods without verifying stock availability risks fulfilling unavailable items or inventory discrepancies.
+- Shipping or proceeding without credit checks risks non-payment or bad debt.
+- Early payment before invoicing or fulfillment might indicate prepaid orders but could also suggest manual overrides or fraudulent manipulation.
+- Late shipment confirmation after shipping indicates poor coordination or after-the-fact logging.
+
+### Hypothesized Causes
+
+- **Policy violations or intentional bypasses**: Resources might skip steps for high-priority/rush orders (e.g., case 1002 is "priority"), trusted customers, or to meet performance targets. Early shipment in case 1002 ("attempted_early=Y") suggests deliberate rushing.
+- **System configuration issues or manual workarounds**: The process might allow parallel execution or lack enforcement of sequence (e.g., no workflow engine blocking out-of-order steps).
+- **Data entry errors or logging issues**: Some activities might occur but not be logged, or timestamps could be incorrect.
+- **Fraud or collusion risks**: In case 1004, receiving payment upfront without checks/fulfillment could enable money laundering or fictitious orders. Bypassing controls in others might hide issues.
+- **Departmental silos or training gaps**: Logistics acting too early (cases 1002/1003) might stem from poor handoffs between Sales, Finance, and Logistics.
+- **Prepayment policy exceptions**: Case 1004's early payment might be legitimate for certain order types/customers, but it deviates significantly.
+
+### Proposed SQL Queries for Further Investigation
+
+To validate these hypotheses on a larger dataset, here are targeted SQL queries joining `order_event_log` with `orders` and `resources` where relevant:
+
+1. **Find cases with out-of-order shipment (shipping before credit check or stock validation)**:
+   ```sql
+   WITH event_ranks AS (
+       SELECT 
+           case_id,
+           activity,
+           ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS seq_pos
+       FROM order_event_log
+   )
+   SELECT 
+       er1.case_id,
+       o.order_type,
+       o.order_value
+   FROM event_ranks er1
+   JOIN event_ranks er2 ON er1.case_id = er2.case_id
+   JOIN orders o ON er1.case_id = o.case_id
+   WHERE er1.activity IN ('Ship Goods', 'Confirm Shipment')
+     AND er2.activity IN ('Perform Credit Check', 'Validate Stock')
+     AND er1.seq_pos < er2.seq_pos
+   ORDER BY o.order_value DESC;
+   ```
+   *Purpose*: Identifies risky early shipments; correlate with high-value or priority orders.
+
+2. **Cases missing key activities (no credit check or no stock validation)**:
+   ```sql
+   SELECT 
+       o.case_id,
+       o.order_type,
+       o.order_value,
+       CASE WHEN cc.case_id IS NULL THEN 'Missing Credit Check' END AS issue1,
+       CASE WHEN vs.case_id IS NULL THEN 'Missing Stock Validation' END AS issue2
+   FROM orders o
+   LEFT JOIN (SELECT DISTINCT case_id FROM order_event_log WHERE activity = 'Perform Credit Check') cc ON o.case_id = cc.case_id
+   LEFT JOIN (SELECT DISTINCT case_id FROM order_event_log WHERE activity = 'Validate Stock') vs ON o.case_id = vs.case_id
+   WHERE cc.case_id IS NULL OR vs.case_id IS NULL;
+   ```
+   *Purpose*: Quantifies control bypasses; check if concentrated in certain order_types.
+
+3. **Cases with early payment (payment before invoice or shipment)**:
+   ```sql
+   WITH payment_time AS (
+       SELECT case_id, MIN(timestamp) AS pay_ts 
+       FROM order_event_log 
+       WHERE activity = 'Receive Payment' 
+       GROUP BY case_id
+   ), invoice_time AS (
+       SELECT case_id, MIN(timestamp) AS inv_ts 
+       FROM order_event_log 
+       WHERE activity = 'Issue Invoice' 
+       GROUP BY case_id
+   ), ship_time AS (
+       SELECT case_id, MIN(timestamp) AS ship_ts 
+       FROM order_event_log 
+       WHERE activity = 'Ship Goods' 
+       GROUP BY case_id
+   )
+   SELECT 
+       p.case_id,
+       o.order_value,
+       o.customer_id
+   FROM payment_time p
+   JOIN orders o ON p.case_id = o.case_id
+   LEFT JOIN invoice_time i ON p.case_id = i.case_id
+   LEFT JOIN ship_time s ON p.case_id = s.case_id
+   WHERE (i.inv_ts IS NULL OR p.pay_ts < i.inv_ts)
+      OR (s.ship_ts IS NULL OR p.pay_ts < s.ship_ts);
+   ```
+   *Purpose*: Detects unusual prepayment patterns, potentially fraudulent.
+
+4. **Involvement of resources/departments in anomalous sequences**:
+   ```sql
+   SELECT 
+       r.department,
+       r.role,
+       el.resource,
+       COUNT(DISTINCT el.case_id) AS anomalous_cases
+   FROM order_event_log el
+   JOIN resources r ON el.resource = r.resource_id
+   JOIN (
+       -- Subquery for cases with any out-of-order or missing key steps (combine logic from above)
+       SELECT DISTINCT case_id 
+       FROM order_event_log 
+       WHERE case_id IN (
+           SELECT case_id FROM /* insert logic from query 1 or 2 */
+       )
+   ) anomaly_cases ON el.case_id = anomaly_cases.case_id
+   GROUP BY r.department, r.role, el.resource
+   ORDER BY anomalous_cases DESC;
+   ```
+   *Purpose*: Pinpoints if specific roles (e.g., certain Logistics managers) or departments are repeatedly involved in deviations.
+
+5. **Late shipment confirmation (confirmation after shipping)**:
+   ```sql
+   SELECT 
+       el1.case_id,
+       el1.timestamp AS confirm_ts,
+       el2.timestamp AS ship_ts
+   FROM order_event_log el1
+   JOIN order_event_log el2 ON el1.case_id = el2.case_id
+   WHERE el1.activity = 'Confirm Shipment'
+     AND el2.activity = 'Ship Goods'
+     AND el1.timestamp > el2.timestamp;
+   ```
+   *Purpose*: Highlights coordination issues in Logistics.
+
+These queries can be run and extended (e.g., adding filters for dates or thresholds) to uncover patterns, risks, or root causes in the full dataset.
