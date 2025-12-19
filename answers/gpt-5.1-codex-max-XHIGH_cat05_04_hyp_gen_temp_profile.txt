@@ -1,0 +1,150 @@
+**Anomalies Noted**
+
+- Receive  Approve: Average ~25 hours with very low variation, suggesting approvals happen on a rigid schedule or are automated.
+- Approve  Notify: Extremely long average delay (7 days) with high variability, indicating possible backlogs or inconsistent notification handling.
+- Assign  Close: Very short overall duration (2 hours), implying some claims might be closed prematurely without intermediate steps.
+- Evaluate  Notify: Very short gap (5 minutes), which may indicate auto-notifications being sent immediately after evaluation.
+
+**Hypotheses**
+
+- Approvals may be batched or timed, leading to a near-constant delay from receive to approve.
+- Notification delays could be driven by workload peaks, manual processes, or region-specific practices.
+- Rapid closures after assignment might reflect trivial claims, errors, or a practice of closing without full evaluation/approval.
+- Immediate notifications after evaluation could be an automated trigger, potentially skipping necessary reviews.
+
+**Verification Queries (PostgreSQL)**
+
+1. **Claims with unusual Receive  Approve times** (far from the ~25h norm):
+```sql
+WITH evt AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'R' THEN timestamp END) AS t_r,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS t_p
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  e.claim_id,
+  e.t_r,
+  e.t_p,
+  EXTRACT(EPOCH FROM (e.t_p - e.t_r)) AS seconds_r_to_p,
+  c.claim_type,
+  c.claim_amount
+FROM evt e
+JOIN claims c ON c.claim_id = e.claim_id
+WHERE e.t_r IS NOT NULL AND e.t_p IS NOT NULL
+  AND (
+    EXTRACT(EPOCH FROM (e.t_p - e.t_r)) < 18*3600  -- <18 hours
+    OR EXTRACT(EPOCH FROM (e.t_p - e.t_r)) > 36*3600  -- >36 hours
+  )
+ORDER BY seconds_r_to_p;
+```
+
+2. **Approve  Notify delays that are excessively long or very short**:
+```sql
+WITH evt AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS t_p,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS t_n
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  e.claim_id,
+  e.t_p,
+  e.t_n,
+  EXTRACT(EPOCH FROM (e.t_n - e.t_p)) AS seconds_p_to_n,
+  c.claim_type
+FROM evt e
+JOIN claims c ON c.claim_id = e.claim_id
+WHERE e.t_p IS NOT NULL AND e.t_n IS NOT NULL
+  AND (
+    EXTRACT(EPOCH FROM (e.t_n - e.t_p)) < 1*3600       -- <1 hour
+    OR EXTRACT(EPOCH FROM (e.t_n - e.t_p)) > 7*24*3600 -- >7 days
+  )
+ORDER BY seconds_p_to_n DESC;
+```
+
+3. **Claims closed soon after assignment (Assign  Close < 2 hours), potentially missing Evaluate/Approve**:
+```sql
+WITH evt AS (
+  SELECT
+    ce.claim_id,
+    MIN(CASE WHEN activity = 'A' THEN timestamp END) AS t_a,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS t_c,
+    BOOL_OR(activity = 'E') AS has_evaluate,
+    BOOL_OR(activity = 'P') AS has_approve
+  FROM claim_events ce
+  GROUP BY ce.claim_id
+)
+SELECT
+  e.claim_id,
+  e.t_a,
+  e.t_c,
+  EXTRACT(EPOCH FROM (e.t_c - e.t_a)) AS seconds_a_to_c,
+  e.has_evaluate,
+  e.has_approve,
+  c.claim_type
+FROM evt e
+JOIN claims c ON c.claim_id = e.claim_id
+WHERE e.t_a IS NOT NULL AND e.t_c IS NOT NULL
+  AND EXTRACT(EPOCH FROM (e.t_c - e.t_a)) < 2*3600
+ORDER BY seconds_a_to_c;
+```
+
+4. **Immediate notifications after evaluation (Evaluate  Notify < 10 minutes)**:
+```sql
+WITH evt AS (
+  SELECT
+    claim_id,
+    MIN(CASE WHEN activity = 'E' THEN timestamp END) AS t_e,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS t_n
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  e.claim_id,
+  e.t_e,
+  e.t_n,
+  EXTRACT(EPOCH FROM (e.t_n - e.t_e)) AS seconds_e_to_n,
+  c.claim_type
+FROM evt e
+JOIN claims c ON c.claim_id = e.claim_id
+WHERE e.t_e IS NOT NULL AND e.t_n IS NOT NULL
+  AND EXTRACT(EPOCH FROM (e.t_n - e.t_e)) < 600 -- <10 minutes
+ORDER BY seconds_e_to_n;
+```
+
+5. **Correlate anomalies with adjusters or regions** (assuming `resource` holds an adjuster ID as text):
+```sql
+WITH anomalies AS (
+  SELECT
+    ce.claim_id,
+    MIN(CASE WHEN activity = 'P' THEN timestamp END) AS t_p,
+    MIN(CASE WHEN activity = 'N' THEN timestamp END) AS t_n,
+    MIN(CASE WHEN activity = 'E' THEN timestamp END) AS t_e,
+    MIN(CASE WHEN activity = 'A' THEN timestamp END) AS t_a,
+    MIN(CASE WHEN activity = 'C' THEN timestamp END) AS t_c,
+    MIN(resource) FILTER (WHERE activity = 'A') AS assigner_resource
+  FROM claim_events ce
+  GROUP BY ce.claim_id
+)
+SELECT
+  a.claim_id,
+  c.claim_type,
+  adj.region,
+  EXTRACT(EPOCH FROM (a.t_n - a.t_p)) AS seconds_p_to_n,
+  EXTRACT(EPOCH FROM (a.t_c - a.t_a)) AS seconds_a_to_c
+FROM anomalies a
+JOIN claims c ON c.claim_id = a.claim_id
+LEFT JOIN adjusters adj ON adj.adjuster_id::text = a.assigner_resource
+WHERE a.t_p IS NOT NULL AND a.t_n IS NOT NULL
+  AND EXTRACT(EPOCH FROM (a.t_n - a.t_p)) > 7*24*3600  -- long PN
+  OR (a.t_a IS NOT NULL AND a.t_c IS NOT NULL
+      AND EXTRACT(EPOCH FROM (a.t_c - a.t_a)) < 2*3600) -- short AC
+ORDER BY adj.region, c.claim_type;
+```
+
+These queries surface claims that deviate from expected timing and allow inspection by claim type, adjuster, or region to see if particular segments are driving the anomalies.

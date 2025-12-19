@@ -4,16 +4,16 @@ Aggregated hallucination counts across all LLMs, organized by PM-LLM benchmark c
 
 | Hallucination Type | CAT01 | CAT02 | CAT03 | CAT04 | CAT05 | CAT06 | CAT07 | CAT08 | Total |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1a. Instruction Override | 411 | 116 | 255 | 201 | 192 | 160 | 0 | 64 | 1399 |
-| 1b. Context Omission | 1138 | 862 | 481 | 914 | 512 | 715 | 327 | 877 | 5826 |
-| 1c. Prompt Contradiction | 213 | 113 | 177 | 142 | 43 | 63 | 10 | 14 | 775 |
-| 2a. Concept Fabrication | 180 | 119 | 239 | 324 | 137 | 194 | 44 | 295 | 1532 |
-| 2b. Spurious Numeric | 522 | 874 | 624 | 236 | 294 | 284 | 120 | 669 | 3623 |
+| 1a. Instruction Override | 411 | 117 | 256 | 203 | 193 | 161 | 0 | 64 | 1405 |
+| 1b. Context Omission | 1144 | 867 | 482 | 918 | 516 | 718 | 327 | 883 | 5855 |
+| 1c. Prompt Contradiction | 214 | 113 | 177 | 144 | 43 | 63 | 10 | 14 | 778 |
+| 2a. Concept Fabrication | 181 | 119 | 239 | 324 | 137 | 195 | 44 | 295 | 1534 |
+| 2b. Spurious Numeric | 527 | 876 | 626 | 236 | 297 | 286 | 121 | 672 | 3641 |
 | 2c. False Citation | 15 | 21 | 6 | 35 | 6 | 26 | 0 | 13 | 122 |
-| 3a. Unsupported Leap | 1731 | 1690 | 2406 | 2000 | 1419 | 1394 | 435 | 1325 | 12400 |
-| 3b. Self Contradiction | 383 | 302 | 440 | 251 | 87 | 194 | 27 | 55 | 1739 |
+| 3a. Unsupported Leap | 1734 | 1693 | 2411 | 2008 | 1422 | 1400 | 438 | 1335 | 12441 |
+| 3b. Self Contradiction | 385 | 303 | 441 | 252 | 88 | 195 | 27 | 56 | 1747 |
 | 3c. Circular Reasoning | 13 | 12 | 7 | 2 | 7 | 7 | 0 | 17 | 65 |
-| 4a. Syntax Error | 72 | 33 | 335 | 100 | 254 | 124 | 0 | 40 | 958 |
-| 4b. Model Semantics Breach | 170 | 118 | 934 | 219 | 149 | 205 | 112 | 14 | 1921 |
-| 4c. Visual Description Mismatch | 152 | 45 | 68 | 113 | 26 | 29 | 249 | 33 | 715 |
-| **Total** | **5000** | **4305** | **5972** | **4537** | **3126** | **3395** | **1324** | **3416** | **31075** |
+| 4a. Syntax Error | 72 | 34 | 335 | 101 | 254 | 124 | 0 | 40 | 960 |
+| 4b. Model Semantics Breach | 172 | 118 | 936 | 222 | 149 | 205 | 112 | 14 | 1928 |
+| 4c. Visual Description Mismatch | 153 | 47 | 69 | 113 | 26 | 29 | 251 | 33 | 721 |
+| **Total** | **5021** | **4320** | **5985** | **4558** | **3138** | **3409** | **1330** | **3436** | **31197** |

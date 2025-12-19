@@ -404,6 +404,11 @@ MODELS_DICT = {
                 "base_model": "gpt-5.2-2025-12-11",
                 "reasoning_effort": "xhigh"
             },
+            "gpt-5.1-codex-max-XHIGH": {
+                "provider": "openai",
+                "base_model": "gpt-5.1-codex-max",
+                "reasoning_effort": "xhigh"
+            },
             "o3-pro-2025-06-10-HIGH": {
                 "provider": "openai",
                 "base_model": "o3-pro-2025-06-10",
@@ -658,7 +663,7 @@ def is_large_reasoning_model(m_name):
     for p in patterns:
         if p in m_name:
             if (not "qwen3" in m_name) or ("qwen3" in m_name and not ("nstruct" in m_name or "coder" in m_name or "max" in m_name)):
-                if not ("chat" in m_name or "none" in m_name):
+                if not ("chat" in m_name or "none" in m_name or "nothink" in m_name):
                     return True
 
     return False
