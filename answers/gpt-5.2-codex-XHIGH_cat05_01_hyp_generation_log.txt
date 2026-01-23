@@ -1,0 +1,184 @@
+Below is a structured response that highlights **anomalies**, suggests **plausible causes**, and provides **SQL queries** to validate each hypothesis using your PostgreSQL schema.
+
+---
+
+##  1) Observed Anomalies / Undesirable Behaviors
+
+### **A. Activities occur out of order**
+- **Case 1002**: Confirm Shipment + Ship Goods happen *before* credit check and stock validation.  
+- **Case 1003**: Ship Goods occurs *before* Confirm Shipment (late confirmation).  
+- **Case 1004**: Receive Payment happens *before* invoice is issued.
+
+### **B. Missing mandatory activities**
+- **Case 1003**: No “Validate Stock” event.
+- **Case 1004**: No “Perform Credit Check” or “Validate Stock” events.
+
+### **C. Shipment despite “shipment_scheduled=N”**
+- **Case 1004** confirms shipment not scheduled, but goods still shipped.
+
+### **D. Very short cycle times**
+- Some orders move from Register  Ship within minutes (possible automation or bad timestamps).
+
+---
+
+##  2) Plausible Causes / Hypotheses
+
+- **Manual overrides / policy violations** (e.g., shipping before credit check).
+- **Priority orders** skipping controls (case 1002 is priority).
+- **System integration delays** causing late logging (events logged after the fact).
+- **Prepayment workflows** (payment before invoice).
+- **Incomplete logging / missing events** (validation steps missing).
+- **Training issues / process noncompliance.**
+
+---
+
+##  3) SQL Queries to Investigate
+
+### **A. Build percase activity timeline (baseline)**
+```sql
+WITH step_times AS (
+    SELECT case_id,
+           MIN(CASE WHEN activity='Register Order' THEN timestamp END) AS reg_ts,
+           MIN(CASE WHEN activity='Perform Credit Check' THEN timestamp END) AS credit_ts,
+           MIN(CASE WHEN activity='Validate Stock' THEN timestamp END) AS stock_ts,
+           MIN(CASE WHEN activity='Confirm Shipment' THEN timestamp END) AS confirm_ts,
+           MIN(CASE WHEN activity='Ship Goods' THEN timestamp END) AS ship_ts,
+           MIN(CASE WHEN activity='Issue Invoice' THEN timestamp END) AS invoice_ts,
+           MIN(CASE WHEN activity='Receive Payment' THEN timestamp END) AS payment_ts
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT * FROM step_times;
+```
+
+---
+
+### **B. Find cases with missing required activities**
+```sql
+WITH required(activity) AS (
+    VALUES ('Register Order'), ('Perform Credit Check'), ('Validate Stock'),
+           ('Confirm Shipment'), ('Ship Goods'), ('Issue Invoice'), ('Receive Payment')
+)
+SELECT o.case_id, r.activity AS missing_activity
+FROM orders o
+CROSS JOIN required r
+LEFT JOIN order_event_log e
+       ON e.case_id = o.case_id AND e.activity = r.activity
+WHERE e.event_id IS NULL
+ORDER BY o.case_id, missing_activity;
+```
+
+---
+
+### **C. Detect shipments before credit check / stock validation / confirmation**
+```sql
+WITH step_times AS (
+    SELECT case_id,
+           MIN(CASE WHEN activity='Perform Credit Check' THEN timestamp END) AS credit_ts,
+           MIN(CASE WHEN activity='Validate Stock' THEN timestamp END) AS stock_ts,
+           MIN(CASE WHEN activity='Confirm Shipment' THEN timestamp END) AS confirm_ts,
+           MIN(CASE WHEN activity='Ship Goods' THEN timestamp END) AS ship_ts
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT case_id, ship_ts, credit_ts, stock_ts, confirm_ts
+FROM step_times
+WHERE ship_ts < credit_ts
+   OR ship_ts < stock_ts
+   OR ship_ts < confirm_ts;
+```
+
+---
+
+### **D. Detect payment before invoice**
+```sql
+WITH step_times AS (
+    SELECT case_id,
+           MIN(CASE WHEN activity='Issue Invoice' THEN timestamp END) AS invoice_ts,
+           MIN(CASE WHEN activity='Receive Payment' THEN timestamp END) AS payment_ts
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT case_id, invoice_ts, payment_ts
+FROM step_times
+WHERE payment_ts < invoice_ts;
+```
+
+---
+
+### **E. Shipments even when shipment_scheduled = N**
+```sql
+SELECT c.case_id, c.timestamp AS confirm_ts, c.additional_info
+FROM order_event_log c
+WHERE c.activity = 'Confirm Shipment'
+  AND c.additional_info LIKE '%shipment_scheduled=N%'
+  AND EXISTS (
+        SELECT 1
+        FROM order_event_log s
+        WHERE s.case_id = c.case_id
+          AND s.activity = 'Ship Goods'
+          AND s.timestamp > c.timestamp
+  );
+```
+
+---
+
+### **F. Check if deviations correlate with order type/value**
+```sql
+WITH step_times AS (
+    SELECT case_id,
+           MIN(CASE WHEN activity='Perform Credit Check' THEN timestamp END) AS credit_ts,
+           MIN(CASE WHEN activity='Ship Goods' THEN timestamp END) AS ship_ts
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT o.order_type, o.order_value, COUNT(*) AS cases
+FROM orders o
+JOIN step_times st ON o.case_id = st.case_id
+WHERE st.credit_ts IS NULL OR st.ship_ts < st.credit_ts
+GROUP BY o.order_type, o.order_value
+ORDER BY cases DESC;
+```
+
+---
+
+### **G. Resources performing tasks outside their department**
+```sql
+SELECT e.case_id, e.activity, e.resource, r.department
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE (e.activity='Register Order' AND r.department <> 'Sales')
+   OR (e.activity='Perform Credit Check' AND r.department <> 'Finance')
+   OR (e.activity='Validate Stock' AND r.department <> 'Logistics')
+   OR (e.activity IN ('Confirm Shipment','Ship Goods') AND r.department <> 'Logistics')
+   OR (e.activity IN ('Issue Invoice','Receive Payment') AND r.department <> 'Finance');
+```
+
+---
+
+### **H. Extremely short order-to-ship cycle**
+```sql
+WITH step_times AS (
+    SELECT case_id,
+           MIN(CASE WHEN activity='Register Order' THEN timestamp END) AS reg_ts,
+           MIN(CASE WHEN activity='Ship Goods' THEN timestamp END) AS ship_ts
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT case_id,
+       ship_ts - reg_ts AS reg_to_ship
+FROM step_times
+WHERE ship_ts - reg_ts < INTERVAL '30 minutes';
+```
+
+---
+
+##  Next Steps
+Once the anomalies are confirmed, you can:
+- Compare with order type or channel.
+- Identify frequent violators by resource/department.
+- Build dashboards for compliance KPIs.
+
+---
+
+If you'd like, I can also provide **automated anomaly detection SQL**, **conformance checking**, or **process mining logic** tailored to this schema.

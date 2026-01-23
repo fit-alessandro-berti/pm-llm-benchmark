@@ -1,0 +1,169 @@
+Below is a selfcontained analysis of the temporal profile anomalies, plausible explanations, and concrete SQL checks you can run in PostgreSQL to validate them.
+
+---
+
+## 1) Anomalies in the Temporal Profile
+
+**1. Receive  Approve (RP):**  
+Average  25 hours with a **very low** standard deviation (1 hour).  
+ Unusually rigid timing for approvals, suggesting batching or timestamp rounding.
+
+**2. Approve  Notify (PN):**  
+Average  7 days with **high** variance (2 days).  
+ Indicates inconsistent notification delays; could be backlog or external dependencies.
+
+**3. Assign  Close (AC):**  
+Average  2 hours.  
+ Closure is very fast relative to expected steps; possibly skipping evaluation/approval.
+
+**4. Evaluate  Notify (EN):**  
+Average  5 minutes.  
+ Too fast for meaningful evaluation + notification; may be automated or mislogged.
+
+---
+
+## 2) Hypotheses for Why These Anomalies Occur
+
+**RP (very low variance):**
+- Approvals are done in a daily batch at fixed times.
+- Approval timestamps are rounded to the hour/day.
+- Autoapproval rules for certain claim types (e.g., low value).
+
+**PN (very long & variable):**
+- Notifications are delayed by manual paperwork, payout confirmation, or backlog.
+- Notifications sent in weekly batches, causing 7day lag.
+- Process depends on external parties before notifying the customer.
+
+**AC (very fast closures):**
+- Claims are autoclosed due to duplicates, cancellations, or missing docs.
+- Evaluation/approval events aren’t logged for some claims.
+- Adjusters close immediately if claim is out of scope.
+
+**EN (too fast):**
+- Evaluation triggers automatic notification in the same system.
+- Events may be recorded in reverse order or with inaccurate timestamps.
+- Same actor or system logs both steps automatically.
+
+---
+
+## 3) SQL Verification Queries
+
+### 3.1 Build a Base Table of First Timestamps per Activity
+```sql
+WITH first_evt AS (
+  SELECT
+      claim_id,
+      MIN(CASE WHEN activity='R' THEN timestamp END) AS r_ts,
+      MIN(CASE WHEN activity='A' THEN timestamp END) AS a_ts,
+      MIN(CASE WHEN activity='E' THEN timestamp END) AS e_ts,
+      MIN(CASE WHEN activity='P' THEN timestamp END) AS p_ts,
+      MIN(CASE WHEN activity='N' THEN timestamp END) AS n_ts,
+      MIN(CASE WHEN activity='C' THEN timestamp END) AS c_ts,
+      MAX(CASE WHEN activity='A' THEN resource END) AS assigned_resource
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT * FROM first_evt;
+```
+
+---
+
+### 3.2 RP Outside Expected Range (Rigid Timing)
+*(ZETA=3; expected = 90,000 ± 3×3600 sec)*  
+```sql
+WITH first_evt AS (...)  -- same CTE as above
+SELECT
+  claim_id,
+  EXTRACT(EPOCH FROM (p_ts - r_ts)) AS rp_seconds
+FROM first_evt
+WHERE r_ts IS NOT NULL AND p_ts IS NOT NULL
+  AND ABS(EXTRACT(EPOCH FROM (p_ts - r_ts)) - 90000) > 3*3600
+ORDER BY rp_seconds;
+```
+
+**Check if approvals are batched at a fixed hour:**
+```sql
+WITH first_evt AS (...)
+SELECT date_trunc('hour', p_ts) AS approval_hour, COUNT(*) AS cnt
+FROM first_evt
+WHERE p_ts IS NOT NULL
+GROUP BY approval_hour
+ORDER BY cnt DESC;
+```
+
+---
+
+### 3.3 Long PN Delays and Correlation with Claim Type / Region
+*(Delayed if > 7 days + 2×2 days)*  
+```sql
+WITH first_evt AS (...)
+SELECT
+    c.claim_type,
+    a.region,
+    COUNT(*) AS delayed_cnt,
+    AVG(EXTRACT(EPOCH FROM (n_ts - p_ts))) AS avg_pn_delay
+FROM first_evt f
+JOIN claims c ON c.claim_id = f.claim_id
+LEFT JOIN adjusters a ON a.adjuster_id::text = f.assigned_resource
+WHERE p_ts IS NOT NULL AND n_ts IS NOT NULL
+  AND EXTRACT(EPOCH FROM (n_ts - p_ts)) > 604800 + 2*172800
+GROUP BY c.claim_type, a.region
+ORDER BY delayed_cnt DESC;
+```
+
+---
+
+### 3.4 Claims Closed Quickly After Assignment (AC)
+```sql
+WITH first_evt AS (...)
+SELECT
+  claim_id,
+  EXTRACT(EPOCH FROM (c_ts - a_ts)) AS ac_seconds
+FROM first_evt
+WHERE a_ts IS NOT NULL AND c_ts IS NOT NULL
+  AND EXTRACT(EPOCH FROM (c_ts - a_ts)) < 7200  -- < 2 hours
+ORDER BY ac_seconds;
+```
+
+**Check whether evaluation/approval steps are missing:**
+```sql
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING
+  COUNT(*) FILTER (WHERE activity='A') > 0
+  AND COUNT(*) FILTER (WHERE activity='C') > 0
+  AND COUNT(*) FILTER (WHERE activity IN ('E','P')) = 0;
+```
+
+---
+
+### 3.5 Evaluate  Notify Too Fast or Reversed
+```sql
+WITH first_evt AS (...)
+SELECT
+  claim_id,
+  EXTRACT(EPOCH FROM (n_ts - e_ts)) AS en_seconds
+FROM first_evt
+WHERE e_ts IS NOT NULL AND n_ts IS NOT NULL
+  AND (EXTRACT(EPOCH FROM (n_ts - e_ts)) < 300 - 2*60
+       OR EXTRACT(EPOCH FROM (n_ts - e_ts)) < 0);
+```
+
+**See if same resource performs both steps (automation indicator):**
+```sql
+SELECT ce1.claim_id
+FROM claim_events ce1
+JOIN claim_events ce2
+  ON ce1.claim_id = ce2.claim_id
+WHERE ce1.activity='E'
+  AND ce2.activity='N'
+  AND ce1.resource = ce2.resource;
+```
+
+---
+
+## Summary
+
+The anomalies suggest **batch processing**, **manual backlog**, **missing event logging**, or **automation effects**.  
+The SQL above isolates outliers and ties them to claim type, region, or adjusters so you can confirm whether the temporal profile reflects real process behavior or data issues.

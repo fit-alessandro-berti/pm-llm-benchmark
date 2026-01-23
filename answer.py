@@ -107,7 +107,7 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
             # Wait for all tasks to complete
             for q, future in futures:
                 try:
-                    result = future.result(timeout=300)  # 5 minute timeout per question
+                    result = future.result(timeout=1200)  # 20 minute timeout per question
                     if result:
                         print(f"Successfully processed {q}")
                 except Exception as e:
