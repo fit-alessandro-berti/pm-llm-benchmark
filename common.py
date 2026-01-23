@@ -343,7 +343,7 @@ MODELS_DICT = {
             "allenai/olmo-3-7b-instruct",
             "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1", "essentialai/rnj-1-instruct",
             "xiaomi/mimo-v2-flash:free", "minimax/minimax-m2.1", "z-ai/glm-4.7",
-            "writer/palmyra-x5"
+            "writer/palmyra-x5", "z-ai/glm-4.7-flash"
         }
     },
     "manual": {
@@ -664,7 +664,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "gemini-3", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "nemotron-3-nano-30b-a3b", "minimax-m2.1"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "gemini-3", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "nemotron-3-nano-30b-a3b", "minimax-m2.1", "glm-4.7"]
 
     for p in patterns:
         if p in m_name:
