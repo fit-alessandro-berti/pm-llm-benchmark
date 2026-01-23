@@ -1,0 +1,151 @@
+### Anomalies and Hypotheses in Claim Handling Process
+
+#### 1. **Anomalies in Temporal Profile**
+
+- **(R  P): Receive to Approve – Avg: ~25 hrs, STDEV: 1 hr**  
+  This narrow standard deviation is suspicious given the complexity of insurance claims. Approval typically depends on evaluation and adjuster input, which should introduce variability. Such low variance suggests a rigid or possibly automated approval schedule, potentially bypassing necessary steps.
+
+- **(P  N): Approve to Notify – Avg: 7 days, STDEV: 2 days**  
+  A full week between approval and notification is excessive. Customers should be informed promptly after a decision. The high variability (±2 days) implies inconsistent handling—possibly batch processing, backlog, or manual follow-up bottlenecks.
+
+- **(A  C): Assign to Close – Avg: 2 hrs, STDEV: 1 hr**  
+  Closing a claim just two hours after assignment suggests premature closure. This skips critical stages like evaluation or approval in some cases, possibly due to misrouting, data entry errors, or system shortcuts.
+
+- **(E  N): Evaluate to Notify – Avg: 5 mins, STDEV: 1 min**  
+  Extremely rapid notifications post-evaluation imply automation or process skipping. In reality, evaluation may require internal review before customer communication. This may indicate missing intermediate validations or system-triggered notifications without human oversight.
+
+---
+
+#### 2. **Hypotheses for Observed Patterns**
+
+- **Automated or Scripted Approvals (RP):**  
+  Some claims may be auto-approved based on rules (e.g., low value), but if this affects non-trivial claims, it could bypass proper review. Low STDEV hints at algorithmic timing rather than human decision lag.
+
+- **Notification Backlog (PN):**  
+  The delay could stem from a centralized team responsible for notifications, overwhelmed by volume, or reliant on manual email generation. Alternatively, delays might be intentional if payments are processed weekly.
+
+- **Premature Closures (AC):**  
+  Adjusters might be closing claims incorrectly—either due to training gaps, pressure to reduce backlogs, or misclassification. These claims likely skip key evaluation or approval events.
+
+- **Tightly Coupled Evaluate–Notify (EN):**  
+  This could reflect a well-integrated system where notification is auto-triggered upon evaluation completion. However, if evaluation results aren’t validated before notification, it risks sending premature or incorrect updates.
+
+---
+
+#### 3. **Verification via SQL Queries**
+
+**Query 1: Identify claims with unusually short RP duration (<24 hrs) and check for missing intermediate steps**  
+```sql
+WITH claim_timings AS (
+  SELECT 
+    ce1.claim_id,
+    ce1.timestamp AS receive_time,
+    ce2.timestamp AS approve_time,
+    EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS duration_secs
+  FROM claim_events ce1
+  JOIN claim_events ce2 
+    ON ce1.claim_id = ce2.claim_id 
+    AND ce1.activity = 'R' 
+    AND ce2.activity = 'P'
+  WHERE ce2.timestamp > ce1.timestamp
+),
+missing_evaluation AS (
+  SELECT ct.claim_id
+  FROM claim_timings ct
+  LEFT JOIN claim_events ce_eval 
+    ON ct.claim_id = ce_eval.claim_id 
+   AND ce_eval.activity = 'E'
+  WHERE ce_eval.event_id IS NULL
+)
+SELECT 
+  ct.claim_id,
+  ROUND(ct.duration_secs / 3600, 2) AS duration_hrs,
+  c.claim_type,
+  c.claim_amount
+FROM claim_timings ct
+JOIN missing_evaluation me ON ct.claim_id = me.claim_id
+JOIN claims c ON ct.claim_id = c.claim_id
+WHERE ct.duration_secs < 86400  -- Less than 24 hours
+ORDER BY ct.duration_secs;
+```
+
+> *Purpose:* Confirm if approvals happen too fast and lack an evaluation record—indicating skipped steps.
+
+---
+
+**Query 2: Find claims where PN exceeds 5 days and analyze by resource or region**  
+```sql
+WITH approval_notify AS (
+  SELECT 
+    ce1.claim_id,
+    ce1.resource AS approve_resource,
+    ce2.resource AS notify_resource,
+    EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) / 86400 AS delay_days
+  FROM claim_events ce1
+  JOIN claim_events ce2 
+    ON ce1.claim_id = ce2.claim_id
+    AND ce1.activity = 'P' 
+    AND ce2.activity = 'N'
+  WHERE ce2.timestamp > ce1.timestamp
+)
+SELECT 
+  an.claim_id,
+  an.delay_days,
+  an.approve_resource,
+  c.claim_type,
+  adj.region
+FROM approval_notify an
+JOIN claims c ON an.claim_id = c.claim_id
+JOIN claim_events ce_assign ON c.claim_id = ce_assign.claim_id AND ce_assign.activity = 'A'
+JOIN adjusters adj ON ce_assign.resource = adj.name
+WHERE an.delay_days > 5
+ORDER BY an.delay_days DESC;
+```
+
+> *Purpose:* Detect systemic delays in notification and link them to specific regions or adjusters.
+
+---
+
+**Query 3: Investigate claims closed within 3 hours of assignment (AC) and verify missing activities**  
+```sql
+WITH assign_close AS (
+  SELECT 
+    ce1.claim_id,
+    ce1.timestamp AS assign_time,
+    ce2.timestamp AS close_time,
+    EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) / 3600 AS duration_hrs
+  FROM claim_events ce1
+  JOIN claim_events ce2 
+    ON ce1.claim_id = ce2.claim_id
+    AND ce1.activity = 'A' 
+    AND ce2.activity = 'C'
+  WHERE ce2.timestamp > ce1.timestamp
+),
+required_steps AS (
+  SELECT claim_id,
+    BOOL_OR(activity = 'E') AS has_evaluate,
+    BOOL_OR(activity = 'P') AS has_approve
+  FROM claim_events
+  WHERE activity IN ('E', 'P')
+  GROUP BY claim_id
+)
+SELECT 
+  ac.claim_id,
+  ac.duration_hrs,
+  COALESCE(rs.has_evaluate, FALSE) AS missing_evaluation,
+  COALESCE(rs.has_approve, FALSE) AS missing_approval,
+  c.claim_type,
+  c.claim_amount
+FROM assign_close ac
+LEFT JOIN required_steps rs ON ac.claim_id = rs.claim_id
+JOIN claims c ON ac.claim_id = c.claim_id
+WHERE ac.duration_hrs <= 3
+  AND (NOT rs.has_evaluate OR NOT rs.has_approve)
+ORDER BY ac.duration_hrs;
+```
+
+> *Purpose:* Uncover potentially invalid closures that skip core process steps.
+
+---
+
+These queries can surface patterns tied to adjusters, claim types, or automation flags, helping distinguish between legitimate fast-track claims and genuine process violations. Further analysis could segment by `claim_type` or `region` to localize issues.

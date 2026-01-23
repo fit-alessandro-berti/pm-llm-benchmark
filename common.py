@@ -342,7 +342,8 @@ MODELS_DICT = {
             "allenai/olmo-3-7b-think",
             "allenai/olmo-3-7b-instruct",
             "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1", "essentialai/rnj-1-instruct",
-            "xiaomi/mimo-v2-flash:free", "minimax/minimax-m2.1", "z-ai/glm-4.7"
+            "xiaomi/mimo-v2-flash:free", "minimax/minimax-m2.1", "z-ai/glm-4.7",
+            "writer/palmyra-x5"
         }
     },
     "manual": {

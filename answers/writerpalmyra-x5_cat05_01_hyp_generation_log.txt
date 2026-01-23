@@ -1,0 +1,202 @@
+Got it! Let's dive into the event log analysis.
+
+Looking at the data across cases **1001** through **1004**, several deviations from the expected process flow jump out—especially around **event sequencing**, **missing steps**, and **timing inconsistencies**. Here's what stands out:
+
+---
+
+###  **Identified Anomalies**
+
+#### 1. **Out-of-Sequence Activities**
+- **Case 1002**:  
+  - `Confirm Shipment` and `Ship Goods` occur **before** `Validate Stock` and `Perform Credit Check`.  
+  - Specifically: Shipment happens at `08:40`, but credit check only occurs at `09:10` — a clear policy violation.
+
+- **Case 1003**:  
+  - `Ship Goods` occurs **before** `Confirm Shipment` (shipped at `09:10`, confirmed at `09:45`).  
+  - Also, `Ship Goods` precedes `Validate Stock`—wait, no `Validate Stock` event at all? That step is **missing**.
+
+- **Case 1004**:  
+  - `Receive Payment` happens **before** `Issue Invoice` — payment received at `09:05`, invoice issued at `09:20`. That’s not just out of order—it's a major accounting red flag.
+  - Also, no `Validate Stock` or `Perform Credit Check` recorded at all.
+  - `Confirm Shipment` says `shipment_scheduled=N`, yet goods were shipped anyway.
+
+---
+
+#### 2. **Missing Required Steps**
+The expected process includes:
+1. Register Order  
+2. Perform Credit Check   
+3. Validate Stock   
+4. Confirm Shipment   
+5. Ship Goods   
+6. Issue Invoice   
+7. Receive Payment   
+
+But in practice:
+- **Case 1002**: All steps present, but **credit check after shipment**.
+- **Case 1003**:  No `Validate Stock` recorded.
+- **Case 1004**:  Missing both `Perform Credit Check` and `Validate Stock`.
+
+---
+
+#### 3. **Suspicious Timing**
+- **Case 1004**: Payment received **5 minutes** after order registration—far too fast unless automated or pre-authorized. But no invoice yet, so how was amount determined?
+- **Case 1002**: Shipment confirmed **5 minutes** after order registration — likely premature, possibly due to "priority" override, but risky without credit/stock checks.
+
+---
+
+###  Possible Root Causes (Hypotheses)
+
+| Anomaly | Possible Explanation |
+|-------|------------------------|
+| **Credit check after shipment** | System allows override for "priority" orders, or credit system integration is delayed. Maybe a workflow misconfiguration. |
+| **Shipment before confirmation or stock validation** | Warehouse staff bypassing logistics approval — could be collusion, training gap, or system lacks enforcement. |
+| **Payment before invoice** | Possibly a prepayment, but not reflected in `additional_info`. Could also be a data entry error or reversed event logging. |
+| **Missing stock/credit events** | Either the activity didn’t happen (compliance failure), or the system failed to log it (integration issue). |
+| **Invoices issued after payment** | Indicates reactive bookkeeping—finance team might be backlogging entries. |
+
+---
+
+###  Suggested SQL Queries to Investigate
+
+Let me draft some targeted queries to probe these issues.
+
+---
+
+#### **1. Find cases where Ship Goods occurs before Perform Credit Check**
+```sql
+WITH ranked_events AS (
+  SELECT
+    case_id,
+    activity,
+    timestamp,
+    LEAD(activity) OVER (PARTITION BY case_id ORDER BY timestamp) AS next_activity,
+    LEAD(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) AS next_timestamp
+  FROM order_event_log
+  WHERE activity IN ('Ship Goods', 'Perform Credit Check')
+)
+SELECT DISTINCT
+  r1.case_id
+FROM ranked_events r1
+JOIN ranked_events r2 ON r1.case_id = r2.case_id
+WHERE r1.activity = 'Ship Goods'
+  AND r2.activity = 'Perform Credit Check'
+  AND r1.timestamp > r2.timestamp; -- Wait, we want ship BEFORE credit check
+-- Correction:
+```
+
+Actually:
+
+```sql
+SELECT DISTINCT
+  o1.case_id
+FROM order_event_log o1
+JOIN order_event_log o2
+  ON o1.case_id = o2.case_id
+WHERE o1.activity = 'Ship Goods'
+  AND o2.activity = 'Perform Credit Check'
+  AND o1.timestamp < o2.timestamp;
+```
+
+---
+
+#### **2. Find cases missing 'Validate Stock'**
+```sql
+SELECT DISTINCT o.case_id
+FROM orders o
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM order_event_log e
+  WHERE e.case_id = o.case_id
+    AND e.activity = 'Validate Stock'
+);
+```
+
+---
+
+#### **3. Find cases where 'Receive Payment' occurs before 'Issue Invoice'**
+```sql
+SELECT DISTINCT
+  o1.case_id
+FROM order_event_log o1
+JOIN order_event_log o2
+  ON o1.case_id = o2.case_id
+WHERE o1.activity = 'Receive Payment'
+  AND o2.activity = 'Issue Invoice'
+  AND o1.timestamp < o2.timestamp;
+```
+
+---
+
+#### **4. Check if 'Ship Goods' occurs before 'Confirm Shipment'**
+```sql
+SELECT DISTINCT
+  o1.case_id
+FROM order_event_log o1
+JOIN order_event_log o2
+  ON o1.case_id = o2.case_id
+WHERE o1.activity = 'Ship Goods'
+  AND o2.activity = 'Confirm Shipment'
+  AND o1.timestamp < o2.timestamp;
+```
+
+---
+
+#### **5. Count anomalies per order type**
+```sql
+SELECT
+  ord.order_type,
+  COUNT(*) AS anomaly_count
+FROM orders ord
+WHERE ord.case_id IN (
+  SELECT case_id FROM order_event_log
+  WHERE activity = 'Receive Payment'
+    AND timestamp < (
+      SELECT MIN(timestamp)
+      FROM order_event_log e2
+      WHERE e2.case_id = order_event_log.case_id
+        AND e2.activity = 'Issue Invoice'
+    )
+  UNION
+  SELECT case_id FROM order_event_log
+  WHERE activity = 'Ship Goods'
+    AND timestamp < (
+      SELECT MIN(timestamp)
+      FROM order_event_log e2
+      WHERE e2.case_id = order_event_log.case_id
+        AND e2.activity = 'Perform Credit Check'
+    )
+)
+GROUP BY ord.order_type;
+```
+
+---
+
+#### **6. Find resources involved in earliest shipments (potential policy violators)**
+```sql
+-- Get first 3 shipments and who shipped them
+SELECT
+  e.case_id,
+  e.resource,
+  r.role,
+  r.department,
+  e.timestamp,
+  e.additional_info
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE e.activity = 'Ship Goods'
+ORDER BY e.timestamp
+LIMIT 3;
+```
+
+---
+
+### Next Steps?
+
+Would you like me to:
+- Visualize the process flow with sequence frequencies?
+- Suggest fixes (e.g., constraints, alerts)?
+- Enrich with cycle time or performance metrics?
+- Flag specific users/resources for review?
+
+Let me know how deep you want to go.
