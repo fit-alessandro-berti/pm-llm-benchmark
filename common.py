@@ -344,7 +344,8 @@ MODELS_DICT = {
             "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1", "essentialai/rnj-1-instruct",
             "xiaomi/mimo-v2-flash:free", "minimax/minimax-m2.1", "z-ai/glm-4.7",
             "writer/palmyra-x5", "z-ai/glm-4.7-flash", "liquid/lfm-2.5-1.2b-thinking:free",
-            "moonshotai/kimi-k2.5", "arcee-ai/trinity-large-preview:free"
+            "moonshotai/kimi-k2.5", "arcee-ai/trinity-large-preview:free",
+            "stepfun/step-3.5-flash:free"
         }
     },
     "manual": {
