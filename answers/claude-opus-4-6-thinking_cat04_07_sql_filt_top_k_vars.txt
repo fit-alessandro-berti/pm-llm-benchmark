@@ -1,0 +1,123 @@
+# DuckDB Query: Filter Event Log by Top K Process Variants
+
+## Strategy
+
+The query is built in four logical stages using **Common Table Expressions (CTEs)**:
+
+```
+event_log  ordered sequence per case  count per variant  top K  filter original events
+```
+
+## Complete SQL Query
+
+```sql
+-- ============================================================
+-- Replace the literal 5 with your desired K value throughout
+-- ============================================================
+
+WITH
+-- 
+-- STEP 1: Build the ordered activity sequence (variant) per case
+-- 
+case_variants AS (
+    SELECT
+        case_id,
+        LIST(activity ORDER BY timestamp ASC) AS variant   -- ordered LIST/array
+    FROM event_log
+    GROUP BY case_id
+),
+
+-- 
+-- STEP 2 & 3: Aggregate cases per variant, keep only the top K
+--             variants ranked by descending frequency
+-- 
+top_k_variants AS (
+    SELECT
+        variant,
+        COUNT(*) AS num_cases
+    FROM case_variants
+    GROUP BY variant
+    ORDER BY num_cases DESC
+    LIMIT 5                        --   set K here
+),
+
+-- 
+-- STEP 4a: Collect the case_ids that belong to a top-K variant
+-- 
+filtered_cases AS (
+    SELECT cv.case_id
+    FROM case_variants cv
+    INNER JOIN top_k_variants tkv
+           ON cv.variant = tkv.variant      -- LIST equality join
+)
+
+-- 
+-- STEP 4b: Return every original event whose case is in the
+--          filtered set
+-- 
+SELECT el.*
+FROM event_log el
+INNER JOIN filtered_cases fc
+        ON el.case_id = fc.case_id
+ORDER BY el.case_id, el.timestamp;
+```
+
+## How Each CTE Works
+
+| CTE | Purpose | Key Mechanism |
+|---|---|---|
+| **`case_variants`** | Produces one row per `case_id` with its full activity sequence | `LIST(activity ORDER BY timestamp)` builds an **ordered array** — DuckDB's native list type preserves order and supports equality comparison |
+| **`top_k_variants`** | Counts how many cases share each unique variant and keeps only the **K most frequent** | `GROUP BY variant` + `ORDER BY … LIMIT K` |
+| **`filtered_cases`** | Resolves which `case_id`s belong to a top-K variant | `INNER JOIN` on the list column — DuckDB compares lists element-wise |
+| **Final SELECT** | Returns the **raw events** for qualifying cases only | Simple join back to `event_log` |
+
+## Key DuckDB Features Leveraged
+
+1. **`LIST(expr ORDER BY …)`** — An *ordered* aggregate that produces a native `LIST` (array) column. This is the idiomatic DuckDB way to capture an activity sequence without string concatenation hacks.
+
+2. **List equality (`=`)** — DuckDB supports direct equality comparison of `LIST` values, so the join `cv.variant = tkv.variant` works correctly out of the box (two variants match only if they have the same activities in the same order).
+
+3. **`LIMIT` inside a CTE** — DuckDB allows `ORDER BY … LIMIT` within a CTE, making the top-K selection clean and self-contained.
+
+## Optional: Include the Variant & Rank in the Output
+
+If you also want to **see** each event's variant and that variant's rank/frequency:
+
+```sql
+WITH
+case_variants AS (
+    SELECT
+        case_id,
+        LIST(activity ORDER BY timestamp ASC) AS variant
+    FROM event_log
+    GROUP BY case_id
+),
+top_k_variants AS (
+    SELECT
+        variant,
+        COUNT(*)   AS num_cases,
+        DENSE_RANK() OVER (ORDER BY COUNT(*) DESC) AS variant_rank
+    FROM case_variants
+    GROUP BY variant
+    QUALIFY variant_rank <= 5      --   set K here
+),
+filtered_cases AS (
+    SELECT
+        cv.case_id,
+        tkv.variant,
+        tkv.num_cases,
+        tkv.variant_rank
+    FROM case_variants cv
+    INNER JOIN top_k_variants tkv ON cv.variant = tkv.variant
+)
+SELECT
+    el.*,
+    fc.variant,
+    fc.variant_rank,
+    fc.num_cases
+FROM event_log el
+INNER JOIN filtered_cases fc ON el.case_id = fc.case_id
+ORDER BY fc.variant_rank, el.case_id, el.timestamp;
+```
+
+> **Note on ties:** Using `DENSE_RANK() … QUALIFY` instead of `LIMIT` ensures that if multiple variants share the K-th frequency count, *all* of them are included rather than arbitrarily dropping some. Choose whichever tie-breaking semantics suits your analysis.

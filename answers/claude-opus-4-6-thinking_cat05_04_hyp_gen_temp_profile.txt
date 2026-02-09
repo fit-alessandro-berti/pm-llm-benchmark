@@ -1,0 +1,305 @@
+# Temporal Profile Anomaly Analysis for Insurance Claim Handling
+
+---
+
+## 1. Identified Anomalies
+
+### Anomaly 1: **R  P (Receive to Approve) — Rigid Approval Timing**
+- **Average:** ~25 hours | **STDEV:** 1 hour
+- The standard deviation is disproportionately small relative to the average. In a real-world claims process, the time between receiving a claim and approving it should vary considerably depending on claim complexity, claim amount, evaluator workload, and documentation requirements. A near-constant 25-hour window suggests an artificially constrained or batched approval cycle.
+
+### Anomaly 2: **P  N (Approve to Notify) — Excessive Notification Delay**
+- **Average:** 7 days | **STDEV:** 2 days
+- After a claim is approved, notifying the customer should be a straightforward downstream step — typically automated or near-immediate. A 7-day average with wide variance (ranging roughly from 3 to 11 days at ±2) suggests a severe process bottleneck, resource constraint, or a broken handoff between approval and notification teams.
+
+### Anomaly 3: **A  C (Assign to Close) — Premature Closure**
+- **Average:** 2 hours | **STDEV:** 1 hour
+- The process dictates that between assignment and closure, at minimum Evaluate (E), Approve (P), and Notify (N) should occur. A 2-hour gap between Assign and Close implies that for some claims, intermediate steps are either bypassed or collapsed, raising concerns about due diligence and potential fraud or rubber-stamping.
+
+### Anomaly 4: **E  N (Evaluate to Notify) — Suspiciously Rapid Transition**
+- **Average:** 5 minutes | **STDEV:** 1 minute
+- The Approve step (P) canonically sits between Evaluate and Notify. A 5-minute transition from E to N with almost no variance suggests the approval step is being skipped entirely, or E and N are being logged by the same automated mechanism simultaneously with a trivial delay.
+
+---
+
+## 2. Hypotheses
+
+### For R  P (Rigid Approval Timing)
+
+| Hypothesis | Rationale |
+|---|---|
+| **Batch processing on a fixed schedule** | Approvals may be processed once daily at a set time (e.g., every morning), creating an artificial ~24-hour cadence regardless of when the claim was received. |
+| **Automated approval for certain claim types** | Low-value or routine claims may trigger auto-approval after a fixed waiting period, removing human variability from the timing. |
+| **System-imposed delay or queue** | A workflow engine may enforce a mandatory hold period (e.g., for compliance or cooling-off) before releasing claims for approval. |
+
+### For P  N (Excessive Notification Delay)
+
+| Hypothesis | Rationale |
+|---|---|
+| **Manual notification process** | Notifications may require human action (e.g., drafting a letter, compiling documents) rather than being automated, introducing queuing delays. |
+| **Resource bottleneck in the notification team** | A small team or single individual responsible for customer communications may face capacity constraints, creating a backlog. |
+| **Dependency on external systems** | Notification may depend on an external mailing system, payment confirmation, or third-party integration that introduces latency. |
+| **Regional or policy-based variation** | Certain regions or claim types may have regulatory waiting periods, while others do not — explaining the high standard deviation. |
+
+### For A  C (Premature Closure)
+
+| Hypothesis | Rationale |
+|---|---|
+| **Duplicate or invalid claims closed early** | Some claims may be identified as duplicates or ineligible immediately after assignment and closed without further processing. |
+| **Adjuster discretion for trivial claims** | Adjusters may have authority to fast-track and close very low-value claims without full evaluation. |
+| **Data entry errors** | Close events may be logged erroneously, or claim events may be recorded out of order. |
+| **Fraudulent closure patterns** | Certain adjusters may be closing claims prematurely to inflate throughput metrics. |
+
+### For E  N (Rapid Evaluate-to-Notify)
+
+| Hypothesis | Rationale |
+|---|---|
+| **Approval step is being skipped** | The system or operators may bypass the formal Approve step for pre-authorized claim categories, jumping directly from Evaluate to Notify. |
+| **Automated notification triggered by evaluation** | An automated system may fire a notification immediately upon evaluation completion as a status update, not a final decision communication. |
+| **Logging artifact** | Both events may be part of the same transaction or system call, with the 5-minute gap representing processing overhead rather than meaningful elapsed time. |
+
+---
+
+## 3. Verification Approaches Using SQL
+
+### 3.1 Claims with Anomalous R  P Timing (Low Variance Detection)
+
+Identify claims where Receive-to-Approve time deviates from the expected ~25-hour average, especially looking for the suspicious clustering:
+
+```sql
+SELECT
+    r.claim_id,
+    r.timestamp AS receive_time,
+    p.timestamp AS approve_time,
+    EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS duration_seconds,
+    ROUND(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) / 3600.0, 2) AS duration_hours
+FROM claim_events r
+JOIN claim_events p
+    ON r.claim_id = p.claim_id
+WHERE r.activity = 'R'
+  AND p.activity = 'P'
+ORDER BY duration_seconds;
+```
+
+To check if the tight clustering is caused by batch processing at a specific hour:
+
+```sql
+SELECT
+    EXTRACT(HOUR FROM p.timestamp) AS approval_hour,
+    COUNT(*) AS num_approvals
+FROM claim_events p
+WHERE p.activity = 'P'
+GROUP BY EXTRACT(HOUR FROM p.timestamp)
+ORDER BY num_approvals DESC;
+```
+
+---
+
+### 3.2 Claims with Excessive P  N Delay
+
+Find claims where the Approve-to-Notify gap exceeds 2 standard deviations (i.e., longer than ~11 days or shorter than ~3 days):
+
+```sql
+SELECT
+    p.claim_id,
+    p.timestamp AS approve_time,
+    n.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS duration_seconds,
+    ROUND(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400.0, 2) AS duration_days,
+    c.claim_type,
+    p.resource AS approver,
+    n.resource AS notifier
+FROM claim_events p
+JOIN claim_events n
+    ON p.claim_id = n.claim_id
+JOIN claims c
+    ON c.claim_id = p.claim_id
+WHERE p.activity = 'P'
+  AND n.activity = 'N'
+  AND (
+      EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) > 604800 + 2 * 172800
+      OR EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) < 604800 - 2 * 172800
+  )
+ORDER BY duration_seconds DESC;
+```
+
+Correlate long P  N delays with adjuster region:
+
+```sql
+SELECT
+    adj.region,
+    AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) / 86400.0 AS avg_delay_days,
+    STDDEV(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) / 86400.0 AS stdev_delay_days,
+    COUNT(*) AS claim_count
+FROM claim_events p
+JOIN claim_events n ON p.claim_id = n.claim_id
+JOIN claim_events a ON p.claim_id = a.claim_id AND a.activity = 'A'
+JOIN adjusters adj ON a.resource = adj.name
+WHERE p.activity = 'P'
+  AND n.activity = 'N'
+GROUP BY adj.region
+ORDER BY avg_delay_days DESC;
+```
+
+---
+
+### 3.3 Claims Closed Prematurely After Assignment (A  C Without Intermediate Steps)
+
+Identify claims that went directly from Assign to Close without Evaluate, Approve, or Notify:
+
+```sql
+SELECT
+    a.claim_id,
+    a.timestamp AS assign_time,
+    cls.timestamp AS close_time,
+    EXTRACT(EPOCH FROM (cls.timestamp - a.timestamp)) / 3600.0 AS hours_to_close,
+    a.resource AS adjuster,
+    c.claim_amount,
+    c.claim_type
+FROM claim_events a
+JOIN claim_events cls
+    ON a.claim_id = cls.claim_id
+JOIN claims c
+    ON c.claim_id = a.claim_id
+WHERE a.activity = 'A'
+  AND cls.activity = 'C'
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events e
+      WHERE e.claim_id = a.claim_id
+        AND e.activity IN ('E', 'P', 'N')
+        AND e.timestamp > a.timestamp
+        AND e.timestamp < cls.timestamp
+  )
+ORDER BY hours_to_close ASC;
+```
+
+Check which adjusters have the highest rate of premature closures:
+
+```sql
+WITH premature_closures AS (
+    SELECT
+        a.claim_id,
+        a.resource AS adjuster
+    FROM claim_events a
+    JOIN claim_events cls ON a.claim_id = cls.claim_id
+    WHERE a.activity = 'A'
+      AND cls.activity = 'C'
+      AND EXTRACT(EPOCH FROM (cls.timestamp - a.timestamp)) < 7200
+      AND NOT EXISTS (
+          SELECT 1 FROM claim_events mid
+          WHERE mid.claim_id = a.claim_id
+            AND mid.activity IN ('E', 'P')
+            AND mid.timestamp BETWEEN a.timestamp AND cls.timestamp
+      )
+),
+total_assignments AS (
+    SELECT resource AS adjuster, COUNT(*) AS total
+    FROM claim_events WHERE activity = 'A'
+    GROUP BY resource
+)
+SELECT
+    t.adjuster,
+    t.total AS total_assigned,
+    COUNT(pc.claim_id) AS premature_close_count,
+    ROUND(COUNT(pc.claim_id)::DECIMAL / t.total * 100, 2) AS premature_pct
+FROM total_assignments t
+LEFT JOIN premature_closures pc ON t.adjuster = pc.adjuster
+GROUP BY t.adjuster, t.total
+ORDER BY premature_pct DESC;
+```
+
+---
+
+### 3.4 Claims with Suspiciously Rapid E  N Transition
+
+Identify claims where the Evaluate-to-Notify gap is under the threshold, and check whether the Approve step was skipped:
+
+```sql
+SELECT
+    e.claim_id,
+    e.timestamp AS evaluate_time,
+    n.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS duration_seconds,
+    c.claim_type,
+    c.claim_amount,
+    e.resource AS evaluator,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM claim_events p
+            WHERE p.claim_id = e.claim_id
+              AND p.activity = 'P'
+              AND p.timestamp BETWEEN e.timestamp AND n.timestamp
+        ) THEN 'Yes'
+        ELSE 'No'
+    END AS approval_present
+FROM claim_events e
+JOIN claim_events n ON e.claim_id = n.claim_id
+JOIN claims c ON c.claim_id = e.claim_id
+WHERE e.activity = 'E'
+  AND n.activity = 'N'
+  AND EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) < 600  -- under 10 minutes
+ORDER BY duration_seconds ASC;
+```
+
+Aggregate by claim type to see if certain categories skip approval:
+
+```sql
+SELECT
+    c.claim_type,
+    COUNT(*) AS total_fast_en_claims,
+    SUM(CASE
+        WHEN NOT EXISTS (
+            SELECT 1 FROM claim_events p
+            WHERE p.claim_id = e.claim_id
+              AND p.activity = 'P'
+              AND p.timestamp BETWEEN e.timestamp AND n.timestamp
+        ) THEN 1 ELSE 0
+    END) AS missing_approval_count,
+    AVG(c.claim_amount) AS avg_claim_amount
+FROM claim_events e
+JOIN claim_events n ON e.claim_id = n.claim_id
+JOIN claims c ON c.claim_id = e.claim_id
+WHERE e.activity = 'E'
+  AND n.activity = 'N'
+  AND EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) < 600
+GROUP BY c.claim_type
+ORDER BY missing_approval_count DESC;
+```
+
+---
+
+### 3.5 Comprehensive Temporal Deviation Report
+
+A general-purpose query to compute the actual average and standard deviation for all observed activity pairs and compare against the expected model:
+
+```sql
+WITH activity_pairs AS (
+    SELECT
+        e1.claim_id,
+        e1.activity AS activity1,
+        e2.activity AS activity2,
+        EXTRACT(EPOCH FROM (e2.timestamp - e1.timestamp)) AS duration_seconds
+    FROM claim_events e1
+    JOIN claim_events e2
+        ON e1.claim_id = e2.claim_id
+       AND e2.timestamp > e1.timestamp
+    WHERE (e1.activity, e2.activity) IN (
+        ('R','A'), ('R','E'), ('R','P'),
+        ('A','C'), ('E','N'), ('E','C'),
+        ('P','N'), ('N','C')
+    )
+)
+SELECT
+    activity1,
+    activity2,
+    COUNT(*) AS pair_count,
+    ROUND(AVG(duration_seconds), 2) AS actual_avg_seconds,
+    ROUND(STDDEV(duration_seconds), 2) AS actual_stdev_seconds,
+    ROUND(MIN(duration_seconds), 2) AS min_seconds,
+    ROUND(MAX(duration_seconds), 2) AS max_seconds
+FROM activity_pairs
+GROUP BY activity1, activity2
+ORDER BY activity1, activity2;
+```
+
+This final query serves as an empirical baseline comparison against the temporal profile model, making it possible to confirm or refute the modeled averages and standard deviations with actual data, and to pinpoint exactly where the real process execution diverges from the expected temporal profile.

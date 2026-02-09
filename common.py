@@ -540,6 +540,12 @@ MODELS_DICT = {
                 "thinking_tokens": 16000,
                 "max_tokens": 16000
             },
+            "claude-opus-4-6-thinking": {
+                "provider": "claude",
+                "base_model": "claude-opus-4-6",
+                "thinking_tokens": 16000,
+                "max_tokens": 16000
+            },
             "gemini-3-flash-preview-nothink": {
                 "provider": "google",
                 "base_model": "gemini-3-flash-preview",
