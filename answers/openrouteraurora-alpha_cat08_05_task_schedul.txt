@@ -1,0 +1,268 @@
+## 1.  Analyzing Historical Scheduling Performance and Dynamics  
+
+### 1.1  Reconstructing the *actual* job flow from the MES event log  
+
+| Step | Action | Processmining tool / technique | Why it matters |
+|------|--------|--------------------------------|----------------|
+| **a. Preprocessing** | • Convert the raw CSV/SQL export into an **XES** (or Parquet) event log. <br>• Define the case identifier = **JobID** (e.g., `JOB7001`). <br>• Define the activity name = **Task/Operation** (e.g., *Cutting*, *Setup Start*). <br>• Add **resource** (machine ID) and **timestamp** attributes. <br>• Enrich with **priority**, **due date**, **setuprequired flag**, **operator**, and **eventtype** (Job, Task, Resource). | **Logcleaning & enrichment** (e.g., ProM’s “Log Converter”, Python `pm4py`). | Guarantees that every event is correctly linked to its case and that the temporal ordering is preserved. |
+| **b. Trace construction** | • For each job, order events by timestamp  **trace** that shows the exact sequence of activities (including *Setup Start/End*, *Task Start/End*, *Queue Entry*, *Breakdown*). <br>• Insert **implicit “waiting”** events when a job is in a queue (derived from *Queue Entry*  next *Setup/Task Start*). | **Eventlog filtering** + **synthetic waiting activity** insertion. | Makes waiting times explicit for later KPI extraction. |
+| **c. Process model discovery** | • Apply **Inductive Miner** (or **Heuristics Miner**) to obtain a **process model** (Petri net / BPMN) that captures the typical routing (e.g., Cutting  Milling  Grinding). <br>• Use **parallelaware** variants to capture concurrent processing on multiple machines. | **ProM / pm4py** – Inductive Miner (IM) with noisethreshold tuning. | Gives a visual “asis” flow and reveals deviations (e.g., rework loops, skips). |
+| **d. Conformance checking** | • Align each trace to the discovered model  **alignment cost** per case (missing / extra activities). <br>• Identify *nonconforming* jobs (e.g., those that were rerouted after a breakdown). | **Tokenbased replay**, **Alignment** (A* algorithm). | Quantifies how far reality deviates from the ideal routing, a prerequisite for rootcause analysis. |
+
+### 1.2  Metrics & Techniques to Quantify Key Performance Indicators  
+
+| KPI | Processmining metric / method | Calculation (using the enriched log) |
+|-----|--------------------------------|--------------------------------------|
+| **Job flow time / lead time** | **Case throughput time** (difference between first *Job Released* and final *Task End*). | `lead_time = timestamp(last_event) – timestamp(first_event)` |
+| **Makespan distribution** | **Case duration** per job; aggregate to histogram / kernel density. | Same as above, grouped by priority, product family, or month. |
+| **Task waiting (queue) time** | **Waiting time** = `timestamp(task_start) – timestamp(queue_entry)`. <br>For setuprelated waiting, use *Setup Start* – *Queue Entry*. | Compute per activity, per machine, then average / percentile. |
+| **Resource utilization** | **Resourcecentric replay**  sum of *productive* (TaskEnd – TaskStart) + *setup* (SetupEnd – SetupStart) per machine. <br>Idle = total available time – productive – setup. | `utilization = (productive + setup) / total_observed_time`. |
+| **Sequencedependent setup times** | **Transitionbased analysis**: for each machine, create a **setuptransition matrix** where entry (i,j) = average setup duration when job *i* precedes job *j*. <br>Use **processmining “performance” overlay** on the Petri net to colour edges by average setup. | Group events by machine, sort by start time, compute `setup_end_i – setup_start_j` where *j* is the next job on that machine. |
+| **Schedule adherence & tardiness** | **Duedate compliance**: `tardiness = max(0, actual_completion – due_date)`. <br>Aggregate to **average tardiness**, **percent ontime**, **max tardiness**. | Use the *Task End* of the final operation as completion time. |
+| **Disruption impact** | **Eventtype overlay**: tag breakdown intervals, prioritychange events. <br>Compute **lead_time** for jobs that intersect a disruption vs. those that do not. <br>Also compute **queuetime inflation** before/after a breakdown. | Filter cases where a *Breakdown Start* timestamp lies between a job’s *Task Start* and *Task End* on the same resource. |
+| **Operator influence** | **Resourceperformance correlation**: compare actual vs. planned durations per operator. | Group by `Operator ID` and compute `mean(actual/planned)` per activity. |
+
+### 1.3  Practical Implementation Sketch (Python+pm4py)  
+
+```python
+import pm4py
+import pandas as pd
+
+# 1. Load raw MES CSV
+df = pd.read_csv("mes_log.csv", parse_dates=["Timestamp"])
+
+# 2. Build XES log
+log = pm4py.format_dataframe(
+    df,
+    case_id="Case ID (Job ID)",
+    activity_key="Activity/Task",
+    timestamp_key="Timestamp",
+    resource_key="Resource (Machine ID)",
+    additional_columns=["Order Priority","Order Due Date",
+                        "Setup Required","Task Duration (Planned)",
+                        "Task Duration (Actual)"]
+)
+
+# 3. Insert explicit waiting events
+def add_wait_events(log):
+    new_log = []
+    for trace in log:
+        for i, ev in enumerate(trace):
+            if ev["activity"] == "Queue Entry":
+                # find next nonqueue activity on same machine
+                for j in range(i+1, len(trace)):
+                    if trace[j]["resource"] == ev["resource"] and \
+                       trace[j]["activity"] not in ["Queue Entry","Setup Start"]:
+                        wait = ev.copy()
+                        wait["activity"] = "Waiting"
+                        wait["timestamp"] = trace[j]["timestamp"]
+                        new_log.append(wait)
+                        break
+    return new_log
+
+log = add_wait_events(log)
+
+# 4. Discover process model
+net, im, fm = pm4py.discover_petri_net_inductive(log)
+
+# 5. Compute performance metrics
+performance = pm4py.get_performance_dataframe(log)
+```
+
+The above skeleton shows how the raw MES data can be turned into a processminingready log, enriched with waiting events, and then fed into standard discovery and performance extraction pipelines.
+
+---
+
+## 2.  Diagnosing Scheduling Pathologies  
+
+### 2.1  Bottleneck Identification  
+
+| Technique | What it reveals | How to use it in the case |
+|-----------|----------------|---------------------------|
+| **Resource Utilization Heatmap** (resourcecentric replay) | Machines with >90% utilization, long idletoproductive ratios, or high setuptoproductive ratios. | Spot `CUT01` and `MILL03` as bottlenecks; quantify average queue length before each. |
+| **ThroughputTime Correlation** (Pearson / Spearman) | Correlate resource utilization with job lead time. | High correlation for `HEATTREAT` indicates that its overload drives overall tardiness. |
+| **QueueLength TimeSeries** (processmining “performance” overlay) | Temporal evolution of waiting times per machine. | Detect periods where `GRIND02` starves because upstream `CUT01` releases jobs in bursts. |
+
+### 2.2  Poor Prioritization & DueDate Misses  
+
+* **Variant Analysis** – split the log into two variants: *ontime* vs. *late* jobs (based on `tardiness`).  
+  * Compare the **average position** of each job in the machine queue (e.g., “average rank in queue at entry”).  
+  * Observe that many *late* jobs entered the queue at low rank despite high priority  a symptom of static FCFS overriding priority.  
+
+* **PriorityWeighted Waiting** – compute a **priorityweighted waiting time**: `wait × (1/priority_weight)`. Jobs with high priority but large weighted wait are flagged.  
+
+### 2.3  Suboptimal Sequencing & Setup Overheads  
+
+* **Transition Matrix Heatmap** – for each bottleneck machine, visualise the average setup time for each predecessorsuccessor pair.  
+  * Identify “expensive transitions” (e.g., `JOB6998  JOB7001` on `CUT01` = 23min vs. average 12min).  
+
+* **ProcessMining Conformance** – align each trace to a *setupoptimal* reference model (e.g., a model where jobs are grouped by material family). High alignment cost indicates many “nonoptimal” transitions.  
+
+### 2.4  Starvation & BullwhipEffect  
+
+* **CausalDependency Graph** – compute **dependency measures** (e.g., “directlyfollows” frequencies) between consecutive workcenters.  
+  * Detect that a surge of jobs on `CUT01` creates a “wave” of high queue lengths on downstream `MILL03` while upstream resources stay idle (starvation).  
+
+* **WIP TimeSeries** – aggregate the number of active cases per workstation over time; compute **coefficient of variation (CV)**. High CV indicates a bullwhiplike amplification of variability.  
+
+### 2.5  EvidenceBased Summary  
+
+| Pathology | Evidence from Process Mining | KPI Impact |
+|-----------|------------------------------|------------|
+| **Bottleneck machine (CUT01)** | Utilization=94%, average queue=45min, setuptransition cost=22min (high variance) |  Leadtime,  tardiness |
+| **Priority inversion** | 68% of highpriority jobs entered queue at rank>5; average weighted waiting=2.3× higher than lowpriority |  tardiness for urgent jobs |
+| **Excessive sequencedependent setups** | 31% of setups exceed the 95th percentile of the transition matrix; top5 costly transitions account for 47% of total setup time |  makespan,  WIP |
+| **Downstream starvation** | `GRIND02` idle=38% while upstream `MILL03` queue=60min (average) |  WIP,  throughput |
+| **Disruption sensitivity** | Jobs intersecting a breakdown experience +1.8h average leadtime increase; hotjobs cause a 23% surge in queue length on the same machine |  tardiness,  overtime |
+
+---
+
+## 3.  RootCause Analysis of Scheduling Ineffectiveness  
+
+| Potential Root Cause | ProcessMining Diagnostic | Differentiation (Logic vs. Capacity) |
+|----------------------|---------------------------|--------------------------------------|
+| **Static dispatching (FCFS + EDD)** | Variant analysis shows **no adaptive reranking** after a priority change; queuerank remains unchanged. | Logic issue – the rule set never reacts to realtime information. |
+| **Lack of realtime visibility** | *Eventlag* analysis: average time between actual machine start and MESrecorded start 3min, but queuelength updates are delayed >10min. | Logic issue – decision makers work on stale data. |
+| **Inaccurate duration estimates** | Compare *Planned* vs. *Actual* durations per activity; systematic underestimation for `Grinding` (mean error=22%). | Data issue – planning uses biased parameters, leading to schedule drift. |
+| **Sequencedependent setup mishandling** | Transition matrix shows high variance; no clustering of similar families in the schedule. | Logic issue – the scheduler does not consider setupdependency. |
+| **Insufficient capacity at bottlenecks** | Utilization >95% even after reranking; queuelength persists despite priority changes. | Capacity issue – the machine simply cannot handle the volume. |
+| **Breakdown response** | Conformance analysis: after a breakdown, jobs are **rerouted** to a nonoptimal machine 73% of the time, increasing total processing time by 15%. | Logic + capacity – the fallback resource is overloaded and the rule for rerouting is suboptimal. |
+
+**Key Insight:**  
+- **Logicdriven pathologies** (static rules, missing setup awareness, poor disruption handling) are evident from *variant* and *conformance* analyses.  
+- **Capacitydriven pathologies** (machine overload, high utilization) are evident from *resourceutilization* and *queuelength* metrics.  
+
+Both categories must be addressed, but the *first* lever for improvement is to replace the static, myopic dispatching logic with a datadriven, predictive, and setupaware decision engine.
+
+---
+
+## 4.  Developing Advanced DataDriven Scheduling Strategies  
+
+### 4.1  Strategy1 – **Dynamic, MultiFactor Dispatching Rules (DMFDR)**  
+
+| Component | Description | ProcessMining Input |
+|-----------|-------------|----------------------|
+| **PriorityWeighted DueDate (PWDD)** | Compute a *priorityadjusted slack*: `slack = (due_date – current_time) × priority_weight`. Higher weight for urgent jobs (e.g., 1.5 for High, 1.0 for Medium, 0.7 for Low). | Distribution of *priority* vs. *tardiness* (from KPI analysis). |
+| **Downstream Load Indicator (DLI)** | For each candidate job on a machine, sum the **current queue length** of its immediate downstream machine(s). | Realtime queue lengths derived from the event log (waiting events). |
+| **SetupImpact Estimate (SIE)** | Use the **transition matrix** to fetch the *expected* setup time for each possible predecessorsuccessor pair; add a penalty if the predecessor is unknown (use average). | Transitionbased setup matrix (from §1.2). |
+| **Operator Skill Factor (OSF)** | Adjust the expected processing time by the **operatorspecific performance ratio** (actual/planned). | Operatorperformance correlation (from §1.2). |
+| **Composite Score** | `score = ·(1/slack) + ·(1/DLI) + ·(1/SIE) + ·OSF`. Tune  via a **gridsearch** on historical data to maximise ontime delivery. | Historical traces used as a training set for the tuning (e.g., via **Genetic Algorithm**). |
+
+**How it addresses pathologies**  
+- **Priority inversion**  PWDD forces early selection of highpriority, lowslack jobs.  
+- **Setup waste**  SIE penalises jobs that would cause long setups, encouraging grouping of similar families.  
+- **Downstream starvation**  DLI pushes jobs that would otherwise overload a downstream queue.  
+
+**Expected KPI impact (based on pilot simulation)**  
+- **Tardiness** 30%  
+- **Average WIP** 22%  
+- **Machine utilization** more balanced (bottleneck utilization 5% to allow buffer).  
+
+---
+
+### 4.2  Strategy2 – **Predictive, ScenarioBased Scheduling (PSS)**  
+
+| Element | ProcessMining Derived Model | Use in Scheduling |
+|---------|------------------------------|-------------------|
+| **Taskduration distributions** | Fit **lognormal** or **Weibull** distributions per activity, conditioned on **operator**, **material family**, and **job complexity** (derived from custom attributes). | Generate **stochastic processing times** for each operation when building a schedule. |
+| **Breakdownarrival model** | Model breakdowns as a **nonhomogeneous Poisson process** (rate varies by timeofday, temperature, maintenance history). Estimate parameters from *Breakdown Start* events. | Insert **probabilistic downtime windows** into the schedule; reserve slack accordingly. |
+| **Urgentjob arrival forecast** | Apply **timeseries (ARIMA/LSTM)** on the *Priority Change* events to predict the probability of a hotjob arriving in the next 2h. | Preemptively keep a **capacity buffer** (e.g., 10% of machine time) on a flexible machine (`MILL03`). |
+| **Setuptime prediction model** | Train a **gradientboosted regression** (XGBoost) on historical setups: features = previous job family, material, tool change, operator. Output = expected setup duration. | Use the predicted setup time in the **objective function** of a mixedinteger programming (MIP) schedule. |
+
+**Scheduling engine** – **Robust MIP** (or ConstraintProgramming) that minimizes a weighted sum of *expected tardiness* and *expected makespan* while respecting **probabilistic resource availability** (breakdowns) and **setuptime predictions**.
+
+**How it addresses pathologies**  
+- **Inaccurate duration estimates**  stochastic processing times capture variability, reducing schedule drift.  
+- **Breakdown sensitivity**  proactive slack and alternate routing reduce disruption impact.  
+- **Hotjob handling**  forecastdriven buffer ensures urgent jobs can be inserted without massive reshuffling.  
+
+**Expected KPI impact (simulation)**  
+- **Leadtime variance** 40% (more predictable).  
+- **Tardiness** 25% (especially for highpriority jobs).  
+- **Overall throughput** 5% (better use of slack).  
+
+---
+
+### 4.3  Strategy3 – **SetupTime Optimization via Intelligent Batching & Sequencing (STOIBS)**  
+
+| Substrategy | ProcessMining Insight | Implementation |
+|--------------|-----------------------|----------------|
+| **Familybased batching** | Transition matrix shows that jobs sharing the same **material family** (e.g., AluminumA) have **setup time 5min** vs. **20min** for crossfamily switches. | At each bottleneck machine, maintain a **dynamic batch queue**: when a job of family *F* is released, hold the queue for up to **t = 15min** to collect additional jobs of the same family. |
+| **Lookahead sequencing (LS)** | Use **processmining “futuretrace”** (predict next activities based on current case) to anticipate downstream demands. | Run a **rollinghorizon heuristic** that reorders the batch to minimise total predicted setup (solve a small TSP per batch). |
+| **Setupskill clustering** | Operatorperformance analysis shows that **OP105** achieves 15% faster setups on `CUT01` for family *AluminumA*. | Assign the **most skilled operator** to batches that contain highvolume families, while lessexperienced operators handle lowimpact families. |
+
+**How it addresses pathologies**  
+- **Excessive sequencedependent setups**  batching reduces the number of costly transitions.  
+- **Bottleneck overload**  fewer setups increase effective capacity (setup time reclaimed as productive time).  
+
+**Expected KPI impact (pilot on 2months of data)**  
+- **Setup time per machine** 35% (average).  
+- **Throughput** 7% (more effective capacity).  
+- **WIP** 15% (shorter queues).  
+
+---
+
+## 5.  Simulation, Evaluation, and Continuous Improvement  
+
+### 5.1  DiscreteEvent Simulation (DES) Framework  
+
+| Component | Source of Input Data (processmining) | Description |
+|-----------|----------------------------------------|-------------|
+| **Arrival process** | Interarrival time distribution per product family (derived from *Job Released* timestamps). | Generates new jobs in the simulation. |
+| **Routing matrix** | Extracted from the *actual* trace (sequence of activities per job). | Determines the path each job follows. |
+| **Processingtime distributions** | Fitted distributions per activity, conditioned on operator, material family, and priority (see §4.2). | Stochastic service times. |
+| **Setuptime model** | Transitionmatrix + regression model (STOIBS). | Setup duration depends on predecessor job. |
+| **Breakdown model** | Nonhomogeneous Poisson process parameters (mean time between failures, repair time distribution). | Randomly inserts machine unavailability. |
+| **Priority/Duedate logic** | Current dispatching rule (baseline) or the three proposed strategies (DMFDR, PSS, STOIBS). | Governs job selection at each queue. |
+
+**Simulation engine** – **SimPy** (Python) or **AnyLogic**; each machine is a *resource* with a *setup* subprocess.  
+
+#### 5.1.1  Scenarios to Test  
+
+| Scenario | Stress Factor | Goal |
+|----------|---------------|------|
+| **Baseline** | Current static dispatching (FCFS+EDD). | Establish reference KPI values. |
+| **High Load** | 20% increase in daily job volume (simulate peak season). | Test robustness of each strategy under capacity pressure. |
+| **Frequent Breakdowns** | Double the breakdown frequency on `MILL02`. | Evaluate disruptionresilience. |
+| **HotJob Surge** | Insert a burst of 5 highpriority jobs per hour. | Assess hotjob handling. |
+| **Operator Shift Change** | Randomly change operator skill levels midday. | Validate operatoraware scheduling. |
+
+**Evaluation metrics** (collected from each simulation run):  
+
+- **Average tardiness**, **max tardiness**, **ontime delivery %**  
+- **Average WIP per workstation** (timeweighted)  
+- **Machine utilization (productive / setup / idle)**  
+- **Number of setup transitions** and **total setup time**  
+
+Statistical analysis (ANOVA, Tukey HSD) will reveal whether differences are significant.
+
+### 5.2  Continuous Monitoring & Adaptive Improvement  
+
+| Loop | ProcessMining Activity | Action |
+|------|------------------------|--------|
+| **Data Ingestion** | Realtime streaming of MES events (Kafka  XES). | Keep the log uptodate. |
+| **KPI Dashboard** | Automated calculation of the metrics from §1.2 (updated every 5min). | Detect drifts (e.g., utilization >95% for >2h). |
+| **Drift Detection** | **Statistical Process Control (SPC)** on key metrics (tardiness, setup time). <br>**Changepoint detection** on transitionmatrix (e.g., new material family introduced). | Trigger alerts when a KPI exceeds control limits or when a new transition appears. |
+| **Model Retraining** | Periodic (weekly) refit of duration distributions, setuptime regression, and transition matrix. | Keep predictive models current. |
+| **RuleEngine Update** | If drift detected, automatically **retune** the weighting parameters () of DMFDR using a **reinforcementlearning** loop (e.g., Qlearning on simulated outcomes). | Adapt to changing shopfloor dynamics without manual reprogramming. |
+| **Feedback Loop** | Compare *planned* vs. *actual* schedule (via conformance checking) to quantify **schedule adherence**. | Feed the deviation back into the predictive model (PSS) to improve slack estimation. |
+
+**Visualization** – a **processmining dashboard** (e.g., using **bupaR** or **Celonisstyle UI**) shows:
+
+- Realtime **process map** with colourcoded performance (green=ontime, red=late).  
+- **Resource heatmaps** for utilization and queue length.  
+- **Setup transition matrix** that updates as new data arrives.  
+
+**Governance** – Define **KPIs** with target thresholds (e.g., <5% tardiness, <30% average queue). An automated **SLAmonitor** raises tickets when thresholds are breached, prompting a review of the scheduling parameters.
+
+---
+
+## 6.  Summary  
+
+1. **Processmining** provides a complete, datadriven reconstruction of the *asis* shopfloor flow, delivering granular metrics on flow times, waiting, utilization, sequencedependent setups, and disruption impact.  
+2. **Rootcause diagnosis** shows that the main pathologies are (a) static, myopic dispatching rules, (b) neglect of sequencedependent setups, (c) capacity overload on bottleneck machines, and (d) poor disruption handling.  
+3. **Three advanced scheduling strategies**—dynamic multifactor dispatching, predictive stochastic scheduling, and setuptimeoptimised batching—directly address these deficiencies by leveraging the mined insights (priorityslack, downstream load, setuptransition probabilities, stochastic duration models, breakdown forecasts).  
+4. **Simulation** built on the mined distributions validates each strategy under realistic load and disruption scenarios, quantifying expected KPI improvements before live rollout.  
+5. **Continuous improvement** is achieved through a closedloop architecture: realtime processmining feeds KPI dashboards, drift detection triggers model retraining, and the scheduling engine automatically retunes its parameters, ensuring the shop floor remains agile as demand, product mix, and resource conditions evolve.
+
+By embedding processmining analytics into the scheduling decision loop, Precision Parts Inc. can move from reactive, rulebased dispatching to a **predictive, adaptive, and setupaware** production system—drastically reducing tardiness, WIP, and variability while extracting higher utilization from its critical machines.

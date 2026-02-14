@@ -1,0 +1,254 @@
+## 1. Process Discovery & Conformance Checking  
+
+### 1.1Datapreprocessing & Integration  
+
+| Source | Typical fields | Integration steps | Typical challenges |
+|--------|----------------|-------------------|--------------------|
+| **GPS Tracker** | `timestamp, vehicle_id, lat, lon, speed, ignition_status, status` | • Convert raw NMEA/CSV into a timeordered table.<br>• Derive *movement* events (e.g., “Depart”, “Arrive”, “Lowspeed”, “Idle”) by applying speedthresholds and stopduration rules.<br>• Snap GPS points to known POIs (depot, known customer geocodes, maintenance bays) using spatial join. | • Variable sampling interval (seconds vs minutes).<br>• GPS drift  false “arrivals”.<br>• Missing data when signal lost (e.g., tunnels). |
+| **Handheld Scanner** | `timestamp, driver_id, vehicle_id, package_id, event_type, location` | • Map scanner events to a *case* (VehicleDay).<br>• Enrich with package attributes (size, timewindow) from dispatch DB.<br>• Resolve duplicate scans (e.g., “Arrive” + “Depart” recorded at same second). | • Human error (misscans, omitted scans).<br>• Different timezones or clock drift between scanner and GPS device. |
+| **Dispatch System** | `planned_route_id, vehicle_id, driver_id, sequence_number, planned_arrival, planned_departure, window_start, window_end, package_id` | • Export planned route as a *reference* log (one “planned activity” per stop).<br>• Join on `vehicle_id` + `date` to create a *planned* trace that can be compared to the *actual* trace. | • Planned route may be updated during the day (rerouting) – need versioning.<br>• Different granularity (planned stop vs. actual stop may split into multiple GPS points). |
+| **Maintenance Logs** | `vehicle_id, start_ts, end_ts, type, description` | • Insert two artificial events: “MaintenanceStart” and “MaintenanceEnd” into the vehicleday case.<br>• Tag subsequent GPS/Scanner events with a “maintenanceaffected” flag. | • Overlapping maintenance with shift (e.g., night repairs) – must decide if they belong to the day’s case. |
+
+**Integration workflow (highlevel)**  
+
+1. **Extract  Clean** each source (remove duplicates, correct timestamps).  
+2. **Standardise time** (UTC) and **entity IDs** (vehicle, driver, package).  
+3. **Create a unified event log** (e.g., XES or CSV) with the following mandatory columns:  
+   * `case_id` = `vehicle_idYYYYMMDD` (one case per vehicle per operational day)  
+   * `activity` = canonical activity name (e.g., `StartShift`, `DepartDepot`, `Travel`, `ArriveCustomer`, `DeliverySuccess`, `DeliveryFailed`, `UnscheduledStop`, `MaintenanceStart`, `MaintenanceEnd`, `EndShift`)  
+   * `timestamp` = event time (millisecond precision)  
+   * `resource` = driver_id (or vehicle_id for machinedriven events)  
+   * `lifecycle` = `start`/`complete` where applicable (e.g., `DeliverySuccess` is a complete event)  
+   * **Optional attributes**: `package_id`, `planned_arrival`, `planned_departure`, `speed`, `lat`, `lon`, `traffic_flag`, `fuel_consumption` (if available).  
+
+**Typical challenges & mitigation**  
+
+| Challenge | Mitigation |
+|-----------|------------|
+| **Heterogeneous granularity** (GPS every 5s, scanner only at stops) | Use *event aggregation*: convert raw GPS points into higherlevel “Travel” activities (start = departure, end = arrival). |
+| **Clock drift** across devices | Align using a reference (e.g., depot server) and apply linear correction if systematic offset is detected. |
+| **Missing events** (no “ArriveCustomer” scan) | Infer from GPS stop detection + packageid from dispatch; flag as “inferred” for later quality checks. |
+| **Multiple concurrent routes** (rerouting) | Keep a *routing version* attribute; treat each version as a subcase for variant analysis. |
+| **Large volume** (millions of GPS points) | Preaggregate per minute or per stop; store in a columnar DB (e.g., ClickHouse) before exporting the event log. |
+
+### 1.2Process Discovery  
+
+1. **Select a discovery algorithm** that respects both *controlflow* and *temporal* aspects:  
+   * **Inductive Miner (IM)** – yields a sound, blockstructured model (Petri net) that is easy to interpret.  
+   * **Heuristics Miner** – useful when the log contains a lot of noise (e.g., occasional missed scans).  
+   * **Fuzzy Miner** – for a highlevel overview that highlights frequent paths while collapsing rare variants.  
+
+2. **Define the “actual” endtoend process**:  
+   * **Start**  `StartShift` (driver)  `DepartDepot` (vehicle)  *repeating loop* of `Travel`  `ArriveCustomer`  (`DeliverySuccess` / `DeliveryFailed`)  `DepartCustomer`  …  optional `UnscheduledStop` (maintenance, trafficjam, parking)  `ArriveDepot`  `EndShift`.  
+
+3. **Incorporate timing**:  
+   * Use *performance mining* (e.g., *process performance* view in ProM, Disco, Celonis) to colourcode arcs with **average duration** and **standard deviation**.  
+   * Add *resource* perspective: driverspecific swimlanes to see who performs which activities.  
+
+4. **Resulting model**: a Petri net (or BPMN) where each transition corresponds to a concrete activity; parallel branches can represent *travel* and *service* (delivery) activities that may overlap (e.g., “Travel” continues while “DeliverySuccess” occurs).  
+
+### 1.3Conformance Checking  
+
+| Conformance technique | Goal | Typical deviation types |
+|-----------------------|------|--------------------------|
+| **Alignment (Replay) – A* / Costbased** | Compare each case’s actual trace to the *planned* trace (derived from dispatch). | • **Missing activities** – e.g., a planned stop never visited.<br>• **Extra activities** – unscheduled stops, extra detours.<br>• **Outoforder** – sequence deviation (e.g., visiting stop5 before stop3). |
+| **Tokenbased fitness** (e.g., “Replay fitness”) | Quantify overall compliance (0–1). | • Low fitness indicates many deviations. |
+| **Temporal conformance** (e.g., “Temporal alignment”) | Check whether actual timestamps respect planned windows. | • **Late arrival** > window end.<br>• **Early arrival** (may cause waiting). |
+| **Resource conformance** | Verify drivervehicle assignments. | • Driver swaps, unassigned vehicle usage. |
+
+**Key deviations to look for**  
+
+1. **Sequence deviations** – drivers skipping or reordering stops (often due to traffic or missed deliveries).  
+2. **Unplanned stops** – any `Travel` segment that ends in an activity not present in the planned route (e.g., `UnscheduledStop`, `MaintenanceStart`).  
+3. **Timing deviations** – actual travel time > planned travel time by >X% (e.g., 20%).  
+4. **Failed deliveries** – `DeliveryFailed` events that create “revisit” loops later in the day.  
+5. **Extended dwell time** – unusually long `ArriveCustomer`  `DepartCustomer` intervals (parking, customer interaction).  
+
+The alignment output can be visualised as a *conformance map*: each case coloured by its fitness, with “hot spots” (high deviation) highlighted on the process model.
+
+---
+
+## 2. Performance Analysis & Bottleneck Identification  
+
+### 2.1KPIs & Their Calculation  
+
+| KPI | Definition | Required log fields | Calculation sketch |
+|-----|------------|---------------------|--------------------|
+| **OnTime Delivery Rate (OTDR)** | % of deliveries completed within the customer’s time window. | `package_id`, `planned_window_start`, `planned_window_end`, `DeliverySuccess` timestamp | `OTDR = (count(DeliverySuccess  window) / total deliveries) × 100`. |
+| **Average Service Time per Stop** | Mean time driver spends at a customer location (including scanning, interaction). | `ArriveCustomer`, `DepartCustomer` timestamps | `service_time = avg(DepartCustomer – ArriveCustomer)`. |
+| **TraveltoService Ratio (TSR)** | Ratio of total travel time to total service time per shift. | `Travel` start/end timestamps, `ArriveCustomer`/`DepartCustomer` | `TSR = (travel_time) / (service_time)`. |
+| **Fuel Consumption per km / per package** | Energy cost efficiency. (If fuel sensor data available; otherwise estimate via speed & distance). | `speed`, `odometer` or `distance` derived from GPS, `package_id` count | `fuel_per_km = total_fuel / total_km`; `fuel_per_pkg = total_fuel / total_packages`. |
+| **Vehicle Utilisation Rate** | % of shift time vehicle is moving (i.e., not idle or in maintenance). | `Ignition on/off`, `speed`, `MaintenanceStart/End` | `utilisation = (moving_time) / shift_duration`. |
+| **TrafficDelay Frequency & Duration** | Number and total length of lowspeed (<10km/h) periods. | `speed`, `timestamp` | Group consecutive lowspeed points  `delay_duration`; count & sum. |
+| **Failed Delivery Rate** | % of stops that required a revisit or were not completed. | `DeliveryFailed`, `DeliverySuccess` (later) | `failed_rate = count(DeliveryFailed) / total_stops`. |
+| **Mean Time Between Failures (MTBF)** | Average operational time between unscheduled maintenance events. | `MaintenanceStart` timestamps | `MTBF = total_operational_time / number_of_failures`. |
+
+All KPIs can be aggregated **per vehicle**, **per driver**, **per route**, **per timeofday**, or **per geographic zone** (gridcell) using the `case_id` and optional attributes.
+
+### 2.2Bottleneck Detection Techniques  
+
+| Technique | What it reveals | How to apply |
+|-----------|----------------|--------------|
+| **Throughput time heatmap** (process performance view) | Identify activities with high average duration or high variance. | Colourcode arcs of the discovered model with average duration; drilldown to see outliers. |
+| **Variant analysis** (group by trace similarity) | Spot lowperforming variants (e.g., routes with many revisits). | Use *clustered variants* (e.g., “highOTDR” vs. “lowOTDR”) and compare KPI distributions. |
+| **Caselevel bottleneck (** (e.g., “bottleneck analysis” in Celonis) | Pinpoint the exact activity that consumes the most time in a given case. | For each case, compute cumulative time per activity; rank activities across cases. |
+| **Geospatial bottleneck mapping** | Detect traffic hotspots, parkingdifficulty zones, or highfailure neighborhoods. | Join GPSderived stop locations with a city map; overlay average dwell time or delay duration per grid cell. |
+| **Resource (driver) performance profiling** | Identify drivers whose average service time or deviation rate is outlier. | Boxplot of `service_time` per driver; statistical tests (e.g., ANOVA) for significance. |
+| **Timeofday analysis** | Reveal peakhour congestion impact. | Slice the log by hour intervals; compute average travel speed, delay frequency, and OTDR per slice. |
+| **Correlation mining** (e.g., Pearson, Spearman) | Quantify relationships (e.g., traffic delay  OTDR). | Correlate `traffic_delay_duration` with `on_time` flag per stop. |
+
+**Quantifying impact**  
+
+- **Contribution to total delay**: For each activity *i*, compute `delay_i = (duration_i – planned_duration_i)`. Then `impact_i = delay_i / (all delays)`.  
+- **Cost impact**: Multiply `delay_i` by an estimated cost per minute (driver wage, fuel consumption).  
+- **Frequency impact**: `freq_i = count(i) / total_activities`. Activities with high `freq` and high `impact` are prime optimisation targets.
+
+---
+
+## 3. RootCause Analysis  
+
+### 3.1Potential Root Causes  
+
+| Symptom | Likely root cause(s) |
+|---------|----------------------|
+| **Systematic late arrivals on a subset of routes** | • Static route planning that does not consider realtime traffic.<br>• Underestimated travel times (historical averages outdated). |
+| **High variance in service time at certain customers** | • Inconsistent customer availability (e.g., “Not Home”).<br>• Parking difficulty or building access restrictions.<br>• Different driver communication skills. |
+| **Frequent unscheduled stops (engine warnings, breakdowns)** | • Vehicles operating beyond recommended mileage/usage thresholds.<br>• Lack of predictive maintenance; maintenance only after failure. |
+| **Repeated revisits for the same package** | • Inaccurate address geocoding, poor GPS signal.<br>• Poor timewindow communication (customer not aware of arrival window). |
+| **Excessive idle time between stops** | • Poor sequencing (e.g., “zigzag” route).<br>• Waiting for traffic lights/queues not captured as “travel”. |
+| **Driverspecific high fuel consumption** | • Aggressive acceleration/braking (derived from speed profile).<br>• Longer idling periods (engine on while parked). |
+
+### 3.2ProcessMiningBased Validation  
+
+1. **Variantbased rootcause mining**  
+   * Create two groups: **highperforming** cases (e.g., OTDR>95%) vs. **lowperforming** cases (OTDR<80%).  
+   * Use *processaware clustering* (e.g., *Trace Clustering* in ProM) to extract the most frequent patterns in each group.  
+   * Compare the presence of `UnscheduledStop`, `DeliveryFailed`, or long `Travel` segments.  
+
+2. **Correlation of traffic data**  
+   * Enrich GPS points with external traffic APIs (historical congestion levels).  
+   * Run *regression* (e.g., linear mixed model) where dependent variable = `arrival_delay`, independent variables = `traffic_congestion`, `time_of_day`, `driver_id`, `vehicle_age`.  
+   * Identify statistically significant predictors  root cause.  
+
+3. **Dwelltime analysis per customer zone**  
+   * Aggregate `service_time` by geographic grid.  
+   * Highlight zones where median dwell time exceeds a threshold (e.g., >7min).  
+   * Crossreference with `delivery_failed` count  potential address/geocoding issues.  
+
+4. **Predictive maintenance signal extraction**  
+   * From GPS speed/enginestatus, compute *engineload* metrics (e.g., RPM spikes, prolonged idle).  
+   * Use *process mining* to see if highload periods precede `MaintenanceStart`.  
+   * Build a *timetoevent* model (survival analysis) to estimate failure probability based on usage.  
+
+5. **Driver behaviour profiling**  
+   * Compute *accelerationbraking events* from speed delta >Xkm/h per second.  
+   * Compare fuel consumption per km across drivers.  
+   * Link highacceleration drivers to higher `Travel` time and fuel cost.  
+
+6. **Faileddelivery rootcause drilldown**  
+   * For each `DeliveryFailed`, examine preceding `ArriveCustomer` timestamp, traffic level, and whether a *timewindow violation* occurred.  
+   * Use *process mining* to see if failures cluster around specific time windows (e.g., earlymorning deliveries).  
+
+---
+
+## 4. DataDriven Optimization Strategies  
+
+### Strategy1 – **Dynamic RealTime Routing with TrafficAware RePlanning**  
+
+| Aspect | Details |
+|--------|---------|
+| **Targeted inefficiency** | Late arrivals caused by static routes that ignore realtime congestion. |
+| **Root cause addressed** | Underestimated travel times & lack of adaptability to traffic spikes. |
+| **Processmining evidence** | Alignment shows frequent *sequence deviations* after lowspeed GPS events; correlation analysis reveals strong link between trafficdelay duration and OTDR loss. |
+| **Implementation** | 1. Deploy an onboard routing engine (e.g., OSRM, GraphHopper) that consumes live traffic feeds (city traffic API).<br>2. Feed the engine the **remaining stop list** (derived from the current case’s “planned stops” that are still pending).<br>3. Trigger rerouting when a *lowspeed* segment exceeds a threshold (e.g., >10min of <10km/h). |
+| **KPIs impact** | • Expected OTDR 510% (fewer late arrivals).<br>• TraveltoService Ratio  (more efficient travel).<br>• Fuel consumption per km 3% (less stopandgo). |
+| **Monitoring** | Realtime dashboard showing *planned vs. actual route* overlay; alerts when rerouting is invoked. |
+
+### Strategy2 – **Territory & StopSequencing Optimisation Using Historical Performance**  
+
+| Aspect | Details |
+|--------|---------|
+| **Targeted inefficiency** | Excessive travel distance and high idle time between stops. |
+| **Root cause addressed** | Suboptimal geographic clustering and sequence ordering (e.g., zigzag pattern). |
+| **Processmining evidence** | Variant analysis shows a subset of routes with many *hightraveltime* arcs; heatmap of GPS points reveals “detour corridors”. |
+| **Implementation** | 1. Cluster customers into **microterritories** using kmeans on lat/lon and deliverywindow similarity.<br>2. Within each territory, run a **TravelingSalesman Problem (TSP)** solver that respects time windows and vehicle capacity.<br>3. Generate a **baseline “optimal” sequence** and compare to actual sequences via conformance; adjust dispatch planning rules accordingly. |
+| **KPIs impact** | • Travel distance per shift 8%  fuel cost .<br>• Average service time per stop unchanged, but total shift time   higher vehicle utilisation.<br>• Ontime delivery  (fewer rushed trips). |
+| **Monitoring** | Weekly “TerritoryPerformance” report: average travel distance, variance, and OTDR per territory. |
+
+### Strategy3 – **Predictive Maintenance & VehicleHealth Monitoring**  
+
+| Aspect | Details |
+|--------|---------|
+| **Targeted inefficiency** | Unscheduled stops for breakdowns, leading to lost service time and overtime. |
+| **Root cause addressed** | Reactive maintenance; lack of early warning. |
+| **Processmining evidence** | Alignment shows *UnscheduledStop* events often preceded by a series of lowspeed or enginewarning GPS events; survival analysis indicates high failure probability after >200km of continuous operation. |
+| **Implementation** | 1. Build a **predictive model** (e.g., Gradient Boosted Trees) using features: cumulative mileage, engineload patterns, average idle time, previous maintenance intervals.<br>2. Integrate model into fleetmanagement system to schedule **preventive maintenance** before predicted failure probability exceeds a threshold (e.g., 20%).<br>3. Add a “maintenanceready” flag to dispatch planning to avoid assigning atrisk vehicles to highpriority routes. |
+| **KPIs impact** | • Unscheduled stop frequency 40%  higher vehicle utilisation.<br>• MTBF  (longer intervals between failures).<br>• Fuel consumption per km  (engine runs smoother). |
+| **Monitoring** | Dashboard showing *predicted failure risk* per vehicle, maintenance schedule adherence, and postmaintenance OTDR comparison. |
+
+### Strategy4 – **Customer Communication & TimeWindow Management**  
+
+*(Optional fourth strategy if more breadth is desired)*  
+
+| Aspect | Details |
+|--------|---------|
+| **Targeted inefficiency** | Failed deliveries due to “Customer Not Home”. |
+| **Root cause addressed** | Poor alignment between promised windows and actual customer availability. |
+| **Processmining evidence** | High `DeliveryFailed` count clustered around earlymorning windows; variant analysis shows repeated revisits for the same package. |
+| **Implementation** | 1. Send **SMS/WhatsApp** notifications with a **realtime ETA** (derived from GPS).<br>2. Allow customers to **confirm** or **reschedule** within a 30minute buffer.<br>3. Update dispatch system onthefly to adjust the stop order. |
+| **KPIs impact** | • Faileddelivery rate 30%  OTDR .<br>• Reduced revisit travel distance  fuel . |
+| **Monitoring** | Rate of successful confirmations vs. failed deliveries; average ETA accuracy. |
+
+---
+
+## 5. Operational Constraints & Continuous Monitoring  
+
+### 5.1Accounting for Constraints  
+
+| Constraint | How it is respected in the optimisation |
+|------------|------------------------------------------|
+| **Driver workinghour limits** (e.g., 9h max) | When generating dynamic routes, enforce a **maxduration** constraint (including mandatory breaks). The routing engine must stop adding stops once the projected shift end approaches the legal limit. |
+| **Vehicle capacity (volume/weight)** | Include package weight/size attributes in the *territory clustering* and *TSP* solver; ensure the cumulative load never exceeds vehicle limits. |
+| **Customer time windows** | All routing algorithms (dynamic and static) incorporate **hard windows** (must be visited within) and **soft windows** (penalty for early/late). The processmining conformance check flags any violation for corrective action. |
+| **Regulatory breaks & rest periods** | Insert mandatory “Break” activities (e.g., 30min after 4h) into the process model; the optimizer must schedule a stop (e.g., depot or safe parking) before the break. |
+| **Fleet heterogeneity (electric vs. diesel)** | Add *energyconsumption* constraints for electric vehicles (max range) and separate routing pools. Predictive maintenance model uses vehicletype specific thresholds. |
+
+### 5.2Continuous Monitoring Blueprint  
+
+| Monitoring Layer | Dashboard / View | Core Metrics | Frequency |
+|------------------|------------------|--------------|-----------|
+| **Strategic Overview** | *Fleet KPI Summary* (singlepage) | OTDR, Avg. Fuel/km, MTBF, Vehicle Utilisation, FailedDelivery Rate | Daily (autorefresh) |
+| **ProcessLevel Performance** | *Process Model with Performance HeatMap* (Petri net) | Avg. duration per activity, variance, % of cases with low fitness | Every 4h (nearrealtime) |
+| **Bottleneck Spotlights** | *Geospatial HeatMap* (city grid) | Avg. dwell time, delay frequency, faileddelivery density | Hourly |
+| **Driver & Vehicle Profiles** | *Resource Dashboard* (driver/vehicle swimlanes) | Avg. service time, fuel consumption, deviation count | Shiftend |
+| **Predictive Maintenance** | *Risk Radar* (risk score per vehicle) | Failure probability, mileage since last service, engineload anomalies | Realtime (eventdriven) |
+| **Dynamic Routing Alerts** | *Live Route Tracker* (per vehicle) | Current ETA vs. planned, trafficdelay flag, rerouting count | Realtime (push notifications) |
+| **CustomerInteraction** | *Delivery Success Funnel* | % confirmed windows, % failed, reschedule count | Daily |
+
+**Alerting & Feedback Loop**  
+
+- **Deviation Alerts**: When a case’s conformance fitness drops below 0.8, automatically notify the dispatcher to review the route.  
+- **FuelEfficiency Alerts**: If a driver’s fuelperkm exceeds a threshold (e.g., 10% above fleet average) for three consecutive shifts, trigger a coaching session.  
+- **Maintenance Alerts**: When predictive model risk >0.7, schedule a preventive service within the next available maintenance window.  
+
+**Iterative Improvement Cycle**  
+
+1. **Collect** new event data (including any new sensor, traffic, or communication data).  
+2. **Rerun** discovery & conformance weekly to capture emerging patterns.  
+3. **Update** KPI baselines and thresholds based on the latest distribution.  
+4. **Refine** optimisation parameters (e.g., rerouting trigger threshold, TSP penalty weights).  
+5. **Report** impact on KPIs to senior management and adjust strategy accordingly.  
+
+---
+
+### TL;DR  
+
+- **Integrate** GPS, scanner, dispatch, and maintenance logs into a single event log (vehicleday case).  
+- **Discover** the actual process with Inductive/Heuristics/Fuzzy miners; **compare** it to the planned route via alignment & temporal conformance.  
+- **Measure** OTDR, travelservice ratio, fuel per km, utilization, trafficdelay, faileddelivery, MTBF, etc.  
+- **Identify** bottlenecks using performance heatmaps, variant clustering, geospatial analysis, and correlation with traffic/driver data.  
+- **Rootcause**: static routing, inaccurate traveltime estimates, traffic, servicetime variance, breakdowns, driver behaviour, failed deliveries.  
+- **Optimize** with (1) dynamic trafficaware routing, (2) datadriven territory & stopsequencing, (3) predictive maintenance, (optionally) (4) proactive customer communication.  
+- **Respect** driver hours, vehicle capacity, and time windows; **monitor** continuously via dashboards, alerts, and periodic remining to sustain improvements.  
+
+These steps give Speedy Parcels a **processminingdriven, datacentric roadmap** that directly tackles late deliveries and high operational costs while remaining feasible within realworld logistics constraints.

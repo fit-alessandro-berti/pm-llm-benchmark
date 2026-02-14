@@ -6,6 +6,7 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 |:---------------------------------|:---------|:-------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
 | deepseek-v3.2-speciale-thinking  | **48.7** | :white_check_mark: | :white_check_mark: | **7.5**              | :mage_woman: **8.6** | :mage_woman: **8.0** | :mage_woman: **6.5** | **6.5**              | **6.8**              | **4.7**              | :mage_woman: **0.0** |
 | moonshotaikimi-k2.5              | **46.1** | :white_check_mark: | :white_check_mark: | 7.0                  | **8.4**              | 6.7                  | 5.8                  | 6.4                  | :mage_woman: **7.0** | **4.8**              | :mage_woman: **0.0** |
+| z-aiglm-5                        | **46.0** | :white_check_mark: | :white_check_mark: | 7.2                  | 7.9                  | 6.9                  | **6.3**              | 6.1                  | **6.8**              | 4.6                  | :mage_woman: **0.0** |
 | deepseek-v3.2-thinking           | **45.1** | :white_check_mark: | :white_check_mark: | :mage_woman: **7.6** | **8.3**              | 7.0                  | 5.8                  | 5.8                  | 5.9                  | **4.7**              | :mage_woman: **0.0** |
 | Qwen3-235B-A22B-Thinking-2507    | **43.9** | :white_check_mark: | :white_check_mark: | 6.8                  | 7.5                  | 6.9                  | 5.7                  | 5.8                  | 6.3                  | **4.8**              | :mage_woman: **0.0** |
 | moonshotaikimi-k2-thinking       | **43.7** | :white_check_mark: | :white_check_mark: | **7.3**              | **8.5**              | 6.4                  | **6.2**              | 5.8                  | 5.5                  | 4.0                  | :mage_woman: **0.0** |
@@ -29,6 +30,7 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 | nemotron-super-49b-v1.5-thinking | **40.0** | :white_check_mark: | :white_check_mark: | 6.2                  | 7.1                  | 4.9                  | 5.7                  | 5.8                  | 6.4                  | 4.1                  | :mage_woman: **0.0** |
 | gpt-oss-120b                     | **39.6** | :white_check_mark: | :white_check_mark: | 5.1                  | 7.5                  | 4.9                  | 5.6                  | 6.1                  | 5.5                  | **4.9**              | :mage_woman: **0.0** |
 | z-aiglm-4.6                      | **39.1** | :white_check_mark: | :white_check_mark: | 6.0                  | 8.2                  | 5.6                  | 3.9                  | 4.9                  | 5.8                  | **4.7**              | :mage_woman: **0.0** |
+| minimaxminimax-m2.5              | **38.9** | :white_check_mark: | :white_check_mark: | 6.9                  | 7.2                  | 4.8                  | 5.7                  | 5.6                  | 5.0                  | 3.7                  | :mage_woman: **0.0** |
 | qwen34b-thinking-2507-q8_0       | **38.8** | :white_check_mark: | :white_check_mark: | 6.0                  | 7.7                  | 5.7                  | 4.5                  | 6.0                  | 5.3                  | 3.5                  | :mage_woman: **0.0** |
 | DeepSeek-R1                      | **38.5** | :white_check_mark: | :white_check_mark: | 6.9                  | 7.0                  | 4.3                  | 5.1                  | 5.0                  | 5.6                  | 4.5                  | :mage_woman: **0.0** |
 | Qwen3-32B                        | **37.9** | :white_check_mark: | :white_check_mark: | 6.6                  | 6.8                  | 3.2                  | 5.9                  | 5.3                  | 6.0                  | 4.1                  | :mage_woman: **0.0** |
@@ -171,6 +173,64 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             |     9.5 |
 | cat08_04_resource_assign           |     9.5 |
 | cat08_05_task_schedul              |     9.5 |
+
+
+
+### z-aiglm-5   => 46.0 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |    10   |
+| cat01_02_activity_context          |     8.2 |
+| cat01_03_high_level_events         |    10   |
+| cat01_04_sensor_recordings         |    10   |
+| cat01_05_merge_two_logs            |     8.2 |
+| cat01_06_system_logs               |     8.2 |
+| cat01_07_interv_to_pseudo_bpmn     |     7.9 |
+| cat01_08_tables_to_log             |    10   |
+| cat02_01_conformance_textual       |    10   |
+| cat02_02_conf_desiderata           |     7.2 |
+| cat02_03_anomaly_event_log         |    10   |
+| cat02_04_powl_anomaly_detection    |     8.2 |
+| cat02_05_two_powls_anomalies       |     8.2 |
+| cat02_06_root_cause_1              |    10   |
+| cat02_07_root_cause_2              |     6.8 |
+| cat02_08_underfitting_process_tree |    10   |
+| cat02_09_fix_process_tree          |     8.9 |
+| cat03_01_process_tree_generation   |    10   |
+| cat03_02_powl_generation           |    10   |
+| cat03_03_log_skeleton_generation   |     6.8 |
+| cat03_04_declare_generation        |    10   |
+| cat03_05_temp_profile_generation   |     2.5 |
+| cat03_06_petri_net_generation      |    10   |
+| cat03_07_process_tree_discovery    |    10   |
+| cat03_08_powl_discovery            |    10   |
+| cat04_01_pseudo_bpmn_description   |    10   |
+| cat04_02_pseudo_bpmn_open_question |     8.6 |
+| cat04_03_declare_open_question     |     6.7 |
+| cat04_04_declare_description       |     8.2 |
+| cat04_05_sql_filt_num_events       |    10   |
+| cat04_06_sql_filt_three_df         |    10   |
+| cat04_07_sql_filt_top_k_vars       |    10   |
+| cat05_01_hyp_generation_log        |     8.2 |
+| cat05_02_hyp_gen_powl              |    10   |
+| cat05_03_hyp_gen_declare           |     8.2 |
+| cat05_04_hyp_gen_temp_profile      |     8.2 |
+| cat05_05_question_gen_nlp          |    10   |
+| cat05_06_question_pseudo_bpmn      |     9.5 |
+| cat05_07_question_interview        |     7.2 |
+| cat06_01_bias_text                 |    10   |
+| cat06_02_bias_event_log            |     8.9 |
+| cat06_03_bias_powl                 |     9.3 |
+| cat06_04_bias_two_logs             |    10   |
+| cat06_05_bias_two_logs_2           |     9.5 |
+| cat06_06_bias_mitigation_declare   |    10   |
+| cat06_07_fair_unfair_powl          |    10   |
+| cat08_01_queue_mining              |     9.5 |
+| cat08_02_instance_spanning         |     9.5 |
+| cat08_03_transport_opt             |     8.4 |
+| cat08_04_resource_assign           |     9.3 |
+| cat08_05_task_schedul              |     9.3 |
 
 
 
@@ -1505,6 +1565,64 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             |     9.3 |
 | cat08_04_resource_assign           |     9.3 |
 | cat08_05_task_schedul              |     9.5 |
+
+
+
+### minimaxminimax-m2.5   => 38.9 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |    10   |
+| cat01_02_activity_context          |     8.9 |
+| cat01_03_high_level_events         |    10   |
+| cat01_04_sensor_recordings         |     8.2 |
+| cat01_05_merge_two_logs            |     8.9 |
+| cat01_06_system_logs               |     6.8 |
+| cat01_07_interv_to_pseudo_bpmn     |     8.2 |
+| cat01_08_tables_to_log             |     7.7 |
+| cat02_01_conformance_textual       |    10   |
+| cat02_02_conf_desiderata           |    10   |
+| cat02_03_anomaly_event_log         |     7.3 |
+| cat02_04_powl_anomaly_detection    |     7.2 |
+| cat02_05_two_powls_anomalies       |     9.5 |
+| cat02_06_root_cause_1              |     2.5 |
+| cat02_07_root_cause_2              |     8.2 |
+| cat02_08_underfitting_process_tree |    10   |
+| cat02_09_fix_process_tree          |     7.7 |
+| cat03_01_process_tree_generation   |     6.7 |
+| cat03_02_powl_generation           |     8.2 |
+| cat03_03_log_skeleton_generation   |     2   |
+| cat03_04_declare_generation        |     6.7 |
+| cat03_05_temp_profile_generation   |    10   |
+| cat03_06_petri_net_generation      |     8.2 |
+| cat03_07_process_tree_discovery    |     3.3 |
+| cat03_08_powl_discovery            |     3.1 |
+| cat04_01_pseudo_bpmn_description   |     9.5 |
+| cat04_02_pseudo_bpmn_open_question |     9.3 |
+| cat04_03_declare_open_question     |     8.2 |
+| cat04_04_declare_description       |     6.7 |
+| cat04_05_sql_filt_num_events       |     3.3 |
+| cat04_06_sql_filt_three_df         |    10   |
+| cat04_07_sql_filt_top_k_vars       |    10   |
+| cat05_01_hyp_generation_log        |     8.2 |
+| cat05_02_hyp_gen_powl              |     6.7 |
+| cat05_03_hyp_gen_declare           |     6   |
+| cat05_04_hyp_gen_temp_profile      |     8.9 |
+| cat05_05_question_gen_nlp          |     7.7 |
+| cat05_06_question_pseudo_bpmn      |    10   |
+| cat05_07_question_interview        |     8.2 |
+| cat06_01_bias_text                 |    10   |
+| cat06_02_bias_event_log            |     4.2 |
+| cat06_03_bias_powl                 |     8.2 |
+| cat06_04_bias_two_logs             |     6.7 |
+| cat06_05_bias_two_logs_2           |    10   |
+| cat06_06_bias_mitigation_declare   |     1   |
+| cat06_07_fair_unfair_powl          |    10   |
+| cat08_01_queue_mining              |    10   |
+| cat08_02_instance_spanning         |     1   |
+| cat08_03_transport_opt             |     9.3 |
+| cat08_04_resource_assign           |     9.5 |
+| cat08_05_task_schedul              |     7.2 |
 
 
 

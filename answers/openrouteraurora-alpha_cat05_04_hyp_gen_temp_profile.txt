@@ -1,0 +1,229 @@
+**Anomalies in the temporal profile**
+
+| Activity pair | Avg. time (seconds) | STDEV (seconds) | Why it stands out |
+|---------------|---------------------|-----------------|-------------------|
+| **R  P** (Receive  Approve) | 9000025h | 36001h | Very low variation for a long interval; suggests a rigid, possibly scripted approval window. |
+| **P  N** (Approve  Notify) | 6048007d | 1728002d | Extremely long gap with high dispersion; indicates that notifications are either delayed for days or sent almost immediately. |
+| **A  C** (Assign  Close) | 72002h | 36001h | Closure occurs quickly after assignment, often without a visible Evaluate or Approve step. |
+| **E  N** (Evaluate  Notify) | 3005min | 601min | Very short interval; may mean the notification is sent before any downstream checks or that the “Evaluate” step is automated. |
+
+**Potential explanations**
+
+| Anomaly | Hypothesis |
+|---------|------------|
+| **R  P** | • A batchapproval job runs on a fixed schedule (e.g., nightly) causing most claims to be approved around the same time after receipt.<br>• SLA enforcement forces a “completewithin24h” rule, limiting natural variation. |
+| **P  N** | • Manual notification (mail/phone) is postponed when adjusters are overloaded, producing long tails.<br>• Some claims are autonotified by the system immediately after approval, while others require a manual review, creating a bimodal distribution.<br>• Integration with an external carrier adds unpredictable latency. |
+| **A  C** | • Certain claim types (e.g., lowvalue “quickpay” auto claims) are closed automatically after assignment without a formal evaluation.<br>• Dataentry errors cause the “Close” event to be recorded before the real workflow finishes.<br>• A fallback rule closes claims that remain unevaluated after a timeout. |
+| **E  N** | • The system sends a provisional “evaluation complete” email instantly, then follows up later with a final decision.<br>• Human reviewers use a “oneclick” notify button, making the step almost instantaneous.<br>• Missing intermediate steps (e.g., “P”) in the log, so the recorded “Evaluate” is actually the final decision. |
+
+**SQLbased verification approaches**
+
+Below are example queries that can be run on PostgreSQL to surface concrete cases and test the hypotheses. Adjust the timewindow constants (`:avg`, `:stdev`, `:zeta`) as needed.
+
+---
+
+### 1. Claims where **R  P** deviates beyond a Zscore threshold  
+
+```sql
+WITH diffs AS (
+    SELECT
+        ce1.claim_id,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS delta_seconds,
+        ce1.timestamp AS r_ts,
+        ce2.timestamp AS p_ts
+    FROM claim_events ce1
+    JOIN claim_events ce2
+      ON ce1.claim_id = ce2.claim_id
+     AND ce1.activity = 'R'
+     AND ce2.activity = 'P'
+)
+SELECT
+    claim_id,
+    delta_seconds,
+    r_ts,
+    p_ts,
+    (delta_seconds - 90000)::numeric / 3600 AS z_score
+FROM diffs
+WHERE ABS((delta_seconds - 90000)::numeric / 3600) > 3;   -- Zeta = 3
+```
+
+*What to look for*: clusters of claims with the same `z_score` (e.g., around 0) indicate a rigid schedule; outliers may reveal manual overrides.
+
+---
+
+### 2. Claims with **P  N** unusually long or short intervals  
+
+```sql
+WITH diffs AS (
+    SELECT
+        ce1.claim_id,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS delta_seconds,
+        ce1.timestamp AS p_ts,
+        ce2.timestamp AS n_ts
+    FROM claim_events ce1
+    JOIN claim_events ce2
+      ON ce1.claim_id = ce2.claim_id
+     AND ce1.activity = 'P'
+     AND ce2.activity = 'N'
+)
+SELECT
+    claim_id,
+    delta_seconds,
+    p_ts,
+    n_ts,
+    CASE
+        WHEN delta_seconds > 604800 + 2*172800 THEN 'Very long'
+        WHEN delta_seconds < 604800 - 2*172800 THEN 'Very short'
+        ELSE 'Typical'
+    END AS category
+FROM diffs
+ORDER BY delta_seconds DESC
+LIMIT 20;
+```
+
+*What to look for*: claims flagged as “Very long” may be stuck in a manual queue; “Very short” could be autonotified.
+
+---
+
+### 3. Claims that close directly after assignment (missing intermediate steps)  
+
+```sql
+WITH assign_close AS (
+    SELECT
+        a.claim_id,
+        a.timestamp AS assign_ts,
+        c.timestamp AS close_ts,
+        EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) AS delta_seconds
+    FROM claim_events a
+    JOIN claim_events c
+      ON a.claim_id = c.claim_id
+     AND a.activity = 'A'
+     AND c.activity = 'C'
+),
+has_intermediate AS (
+    SELECT DISTINCT
+        claim_id
+    FROM claim_events
+    WHERE activity IN ('E','P','N')
+      AND timestamp BETWEEN (SELECT assign_ts FROM assign_close WHERE claim_id = claim_events.claim_id)
+                        AND (SELECT close_ts FROM assign_close WHERE claim_id = claim_events.claim_id)
+)
+SELECT
+    ac.claim_id,
+    ac.delta_seconds,
+    ac.assign_ts,
+    ac.close_ts
+FROM assign_close ac
+LEFT JOIN has_intermediate hi ON ac.claim_id = hi.claim_id
+WHERE hi.claim_id IS NULL               -- no E/P/N between A and C
+  AND ac.delta_seconds <= 7200;         -- within the reported 2hour average
+```
+
+*What to look for*: claims that truly lack an evaluation or approval step; crosscheck claim type or amount to see if they are lowvalue “quickpay” cases.
+
+---
+
+### 4. Correlate **E  N** speed with claim type or adjuster specialization  
+
+```sql
+WITH eval_notify AS (
+    SELECT
+        ce1.claim_id,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS delta_seconds,
+        ce1.timestamp AS eval_ts,
+        ce2.timestamp AS notify_ts
+    FROM claim_events ce1
+    JOIN claim_events ce2
+      ON ce1.claim_id = ce2.claim_id
+     AND ce1.activity = 'E'
+     AND ce2.activity = 'N'
+)
+SELECT
+    c.claim_type,
+    a.specialization,
+    COUNT(*) AS cnt,
+    AVG(en.delta_seconds) AS avg_seconds,
+    STDDEV_POP(en.delta_seconds) AS stdev_seconds
+FROM eval_notify en
+JOIN claims c      ON en.claim_id = c.claim_id
+LEFT JOIN adjusters a ON en.claim_id = a.adjuster_id   -- assuming resource maps to adjuster_id
+GROUP BY c.claim_type, a.specialization
+ORDER BY avg_seconds DESC
+LIMIT 10;
+```
+
+*What to look for*: specific claim types or adjuster specializations that consistently have sub5minute intervals, hinting at automation or shortcuts.
+
+---
+
+### 5. Detect “batchapproval” patterns for **R  P**  
+
+```sql
+WITH r_p AS (
+    SELECT
+        ce1.claim_id,
+        ce1.timestamp AS r_ts,
+        ce2.timestamp AS p_ts,
+        DATE_TRUNC('hour', ce2.timestamp) AS p_hour
+    FROM claim_events ce1
+    JOIN claim_events ce2
+      ON ce1.claim_id = ce2.claim_id
+     AND ce1.activity = 'R'
+     AND ce2.activity = 'P'
+)
+SELECT
+    p_hour,
+    COUNT(*) AS approvals_in_hour,
+    MIN(p_ts - r_ts) AS min_delay,
+    MAX(p_ts - r_ts) AS max_delay
+FROM r_p
+GROUP BY p_hour
+HAVING COUNT(*) > 20                -- many approvals in the same hour
+ORDER BY approvals_in_hour DESC;
+```
+
+*What to look for*: spikes where many claims are approved within the same hour, supporting the hypothesis of a scheduled batch job.
+
+---
+
+### 6. Crossregion analysis for long **P  N** delays  
+
+```sql
+WITH p_n AS (
+    SELECT
+        ce1.claim_id,
+        ce1.timestamp AS p_ts,
+        ce2.timestamp AS n_ts,
+        EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS delta_seconds,
+        c.customer_id,
+        a.region
+    FROM claim_events ce1
+    JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+    JOIN claims c        ON ce1.claim_id = c.claim_id
+    LEFT JOIN adjusters a ON ce1.resource = a.adjuster_id::text   -- assuming resource stores adjuster_id
+    WHERE ce1.activity = 'P' AND ce2.activity = 'N'
+)
+SELECT
+    region,
+    AVG(delta_seconds) AS avg_delay,
+    PDEV_POP(delta_seconds) AS stdev_delay,
+    COUNT(*) FILTER (WHERE delta_seconds > 604800 + 172800) AS very_long,
+    COUNT(*) FILTER (WHERE delta_seconds < 604800 - 172800) AS very_short
+FROM p_n
+GROUP BY region
+ORDER BY avg_delay DESC;
+```
+
+*What to look for*: regions where the average notification lag is significantly higher, perhaps due to staffing shortages or local regulatory steps.
+
+---
+
+### How to use the queries  
+
+1. **Run each query** on a recent snapshot of the `claim_events` table (e.g., last 90days).  
+2. **Export the result sets** to a spreadsheet or BI tool to visualize distributions (histograms, boxplots).  
+3. **Spot clusters** (e.g., many claims with identical `p_ts` values) that indicate batch processing.  
+4. **Join back to `claims`** (amount, type) and `adjusters` (specialization, region) to see whether specific business rules or resource constraints drive the anomalies.  
+5. **Iterate**: refine the Zscore or threshold values based on observed variance, then rerun to isolate the most extreme outliers for manual review.
+
+These steps will let you confirm whether the observed timing irregularities are intentional (policydriven automation) or symptomatic of dataquality issues, bottlenecks, or process violations.

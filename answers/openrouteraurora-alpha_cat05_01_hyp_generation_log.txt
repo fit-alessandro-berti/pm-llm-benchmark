@@ -1,0 +1,187 @@
+Below is a concise “audit” of the sample log, a set of plausible explanations for the irregularities that appear, and a handful of SQL statements you can run against the three tables (`order_event_log`, `orders`, `resources`) to dig deeper.
+
+---
+
+## 1  Observed anomalies / undesirable behaviours  
+
+| case_id | What looks odd (relative to the normal flow) | Why it may matter |
+|---------|---------------------------------------------|-------------------|
+| **1002** | *Confirm Shipment* (event9) and *Ship Goods* (event10) occur **before** the *Perform Credit Check* (event11) and *Validate Stock* (event12). | Skipping or reordering finance/warehouse checks can expose the company to credit risk or stockout errors. |
+| **1003** | *Ship Goods* (event17) happens **before** *Confirm Shipment* (event19). | The shipment was dispatched without a confirmed schedule – could be a process breach or a dataentry mistake. |
+| **1004** | *Receive Payment* (event22) occurs **immediately after** *Register Order* (event21) and **before** any *Issue Invoice* (event23) or *Confirm Shipment* (event24). | Payment before invoicing is unusual; may indicate a manual cashsale entry, a system shortcut, or a dataquality issue. |
+| **1004** | *Confirm Shipment* (event24) shows `shipment_scheduled=N` but the case still proceeds to *Ship Goods* (event25). | Shipping a nonscheduled order could be a policy violation or a misrecorded flag. |
+| **All cases** | The `resource` column sometimes contains a **rolelevel identifier** (e.g., `FinanceTeam_01`) while the `resources` table stores a **single resource_id** that matches exactly. If the naming conventions diverge, joins may fail or hide misassignments. | Inconsistent naming can mask who actually performed an activity, affecting audit trails. |
+| **All cases** | The `additional_info` field is a freeform string; some rows contain keyvalue pairs (e.g., `credit_score=810`) while others are empty. | Lack of structured data makes it hard to filter on critical attributes (e.g., low credit scores). |
+
+---
+
+## 2  Hypotheses for the root causes  
+
+| Anomaly | Possible cause(s) |
+|---------|-------------------|
+| Outoforder activities (1002, 1003) | • **System bug** that logs events with the wrong timestamp or sequence number.<br>• **Manual data entry** where an operator entered events after the fact and used the wrong order.<br>• **Policy exception** (e.g., “express shipping” that bypasses credit check). |
+| Payment before invoice (1004) | • **Cashsale process** that records payment at the point of sale and generates an invoice later.<br>• **Integration lag** between the ERP and the eventlogging system.<br>• **Dataentry error** (wrong case_id or duplicated event). |
+| Shipping despite “shipment_scheduled=N” (1004) | • **Business rule violation** – perhaps a manager overrode the schedule but the flag wasn’t updated.<br>• **Incorrect flag value** (typo, mismapped code). |
+| Inconsistent resource identifiers | • **Multiple source systems** feeding the log with different naming conventions.<br>• **Missing masterdata governance** for resource IDs. |
+| Unstructured `additional_info` | • **Lack of schema enforcement** – developers store adhoc keyvalue pairs.<br>• **Legacy legacy** that predates a more structured design. |
+
+---
+
+## 3  Suggested SQL investigations  
+
+Below are readytorun queries (PostgreSQL syntax) that let you explore each hypothesis. Feel free to adapt column names or add filters as needed.
+
+### 3.1  Detect outoforder activities per case  
+
+```sql
+-- List cases where the chronological order of activities deviates from the expected sequence
+WITH expected AS (
+    SELECT unnest(ARRAY[
+        'Register Order',
+        'Perform Credit Check',
+        'Validate Stock',
+        'Confirm Shipment',
+        'Ship Goods',
+        'Issue Invoice',
+        'Receive Payment'
+    ]) AS activity,
+    generate_series(1,7) AS expected_step
+)
+SELECT
+    o.case_id,
+    STRING_AGG(o.activity || '(' || o.event_id || ')', ' -> ') AS actual_path,
+    STRING_AGG(e.activity || '(' || e.expected_step || ')', ' -> ') AS expected_path
+FROM order_event_log o
+JOIN expected e
+  ON o.activity = e.activity
+GROUP BY o.case_id
+HAVING ARRAY_AGG(e.expected_step ORDER BY o.timestamp) <> ARRAY[1,2,3,4,5,6,7];
+```
+
+*What it does*: Builds the canonical sequence, then checks whether the ordered list of `expected_step` values for each `case_id` matches the perfect `[1,2,3,4,5,6,7]`. Any case that fails is flagged.
+
+### 3.2  Find cases where a later activity occurs **before** an earlier one (e.g., Ship Goods before Confirm Shipment)
+
+```sql
+-- Ship Goods occurring earlier than Confirm Shipment
+SELECT
+    a.case_id,
+    a.activity   AS earlier_activity,
+    a.timestamp  AS earlier_ts,
+    b.activity   AS later_activity,
+    b.timestamp  AS later_ts
+FROM order_event_log a
+JOIN order_event_log b
+  ON a.case_id = b.case_id
+WHERE a.activity = 'Ship Goods'
+  AND b.activity = 'Confirm Shipment'
+  AND a.timestamp < b.timestamp;
+```
+
+### 3.3  Identify payments that precede invoicing  
+
+```sql
+SELECT
+    p.case_id,
+    p.event_id   AS payment_evt,
+    p.timestamp  AS payment_ts,
+    i.event_id   AS invoice_evt,
+    i.timestamp  AS invoice_ts
+FROM order_event_log p
+JOIN order_event_log i
+  ON p.case_id = i.case_id
+WHERE p.activity = 'Receive Payment'
+  AND i.activity = 'Issue Invoice'
+  AND p.timestamp < i.timestamp;
+```
+
+### 3.4  Spot shipments flagged as “not scheduled” yet shipped  
+
+```sql
+SELECT
+    s.case_id,
+    s.event_id   AS confirm_evt,
+    s.timestamp  AS confirm_ts,
+    s.additional_info AS confirm_info,
+    sh.event_id  AS ship_evt,
+    sh.timestamp AS ship_ts
+FROM order_event_log s
+JOIN order_event_log sh
+  ON s.case_id = sh.case_id
+WHERE s.activity = 'Confirm Shipment'
+  AND sh.activity = 'Ship Goods'
+  AND s.additional_info ILIKE '%shipment_scheduled=N%'
+  AND sh.timestamp > s.timestamp;
+```
+
+### 3.5  Verify resourceID consistency across tables  
+
+```sql
+-- Resources referenced in the log that have no matching entry in the master table
+SELECT DISTINCT
+    o.resource
+FROM order_event_log o
+LEFT JOIN resources r
+  ON o.resource = r.resource_id
+WHERE r.resource_id IS NULL;
+```
+
+### 3.6  Extract lowcreditscore cases (score < 650)  
+
+```sql
+SELECT
+    o.case_id,
+    o.event_id,
+    o.timestamp,
+    o.resource,
+    split_part(o.additional_info, '=', 2)::INT AS credit_score
+FROM order_event_log o
+WHERE o.activity = 'Perform Credit Check'
+  AND split_part(o.additional_info, '=', 2)::INT < 650;
+```
+
+### 3.7  Summarise percase timelines (duration from registration to payment)  
+
+```sql
+WITH start_end AS (
+    SELECT
+        case_id,
+        MIN(CASE WHEN activity='Register Order' THEN timestamp END) AS register_ts,
+        MAX(CASE WHEN activity='Receive Payment' THEN timestamp END) AS payment_ts
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    se.case_id,
+    se.register_ts,
+    se.payment_ts,
+    EXTRACT(EPOCH FROM (se.payment_ts - se.register_ts))/3600 AS hours_to_payment,
+    o.order_value,
+    o.order_type
+FROM start_end se
+JOIN orders o
+  ON se.case_id = o.case_id
+ORDER BY hours_to_payment DESC;
+```
+
+*What it does*: Gives you a quick view of how long each order took to close, which can highlight outliers (e.g., unusually long or short cycles).
+
+---
+
+## 4  Next steps for a deeper investigation  
+
+1. **Validate timestamps** – ensure the `timestamp` column is stored in a consistent timezone (e.g., UTC) and that no clockskew issues exist.  
+2. **Normalize `additional_info`** – consider extracting keyvalue pairs into a separate table (e.g., `event_details`) so that you can filter on `credit_score`, `amount`, etc., with proper data types.  
+3. **Add a processstep column** – a derived column (e.g., `step_number`) that encodes the expected order would make future anomaly detection a simple range check.  
+4. **Implement a controltable** – a small reference table that lists mandatory activities per `order_type`. A nightly job could compare the actual log against the control table and raise alerts automatically.  
+5. **Review masterdata governance** – enforce a single source of truth for `resource_id` (perhaps a surrogate key) and make sure all upstream systems use that identifier.  
+
+---
+
+### TL;DR  
+
+- The sample log shows several outofsequence events, early payments, and a “not scheduled” shipment that still got shipped.  
+- Likely causes include system bugs, manual entry errors, policy exceptions, or inconsistent master data.  
+- The SQL snippets above let you surface all cases that break the normal flow, pinpoint lowcredit orders, verify resource IDs, and compute key performance metrics.  
+
+Run the queries, examine the results, and iterate on the hypotheses—each new insight will guide you toward the underlying dataquality or processcontrol issue. Good luck!

@@ -345,7 +345,8 @@ MODELS_DICT = {
             "xiaomi/mimo-v2-flash:free", "minimax/minimax-m2.1", "z-ai/glm-4.7",
             "writer/palmyra-x5", "z-ai/glm-4.7-flash", "liquid/lfm-2.5-1.2b-thinking:free",
             "moonshotai/kimi-k2.5", "arcee-ai/trinity-large-preview:free",
-            "stepfun/step-3.5-flash:free"
+            "stepfun/step-3.5-flash:free", "openrouter/aurora-alpha",
+            "minimax/minimax-m2.5", "z-ai/glm-5", "qwen/qwen3-max-thinking"
         }
     },
     "manual": {
@@ -672,7 +673,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "gemini-3", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "nemotron-3-nano-30b-a3b", "minimax-m2.1", "glm-4.7", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "gemini-3", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "nemotron-3-nano-30b-a3b", "minimax-m2.1", "glm-4.7", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5", "qwen3-max-thinking"]
 
     for p in patterns:
         if p in m_name:
@@ -685,7 +686,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous", "qwen3-next-80b-a3b-thinking", "nemotron-nano-9b-v2-thinking", "nemotron-3-nano-30b-a3b", "deepseek-v3.2-exp-thinking", "deepseek-v3.2-thinking", "deepseek-v3.2-speciale-thinking", "nemotron-super-49b-v1.5-thinking", "kimi-k2-thinking", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "glm", "minimax-m2.1", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous", "qwen3-next-80b-a3b-thinking", "nemotron-nano-9b-v2-thinking", "nemotron-3-nano-30b-a3b", "deepseek-v3.2-exp-thinking", "deepseek-v3.2-thinking", "deepseek-v3.2-speciale-thinking", "nemotron-super-49b-v1.5-thinking", "kimi-k2-thinking", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "glm", "minimax-m2.1", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5"]:
         if p in model_name and not ("deepseek-v3" in model_name and not ("-reasoner" in model_name or "-thinking" in model_name)):
             if (not "qwen3" in model_name) or ("qwen3" in model_name and not ("nstruct" in model_name or "coder" in model_name or "max" in model_name)):
                 return True

@@ -1,0 +1,169 @@
+**1. Detected anomalies in the DECLARE model**
+
+| DECLARE constraint | What it enforces | Why it conflicts with the intended flow |
+|--------------------|------------------|----------------------------------------|
+| `responded_existence` for **E** with activity **A** | “E must be preceded by an A” (i.e., an evaluation can only happen after an assignment) | This is fine, but the model also contains a `noncoexistence` rule that forbids **E** and **C** from appearing together, which contradicts the natural order **E  P  N  C**. |
+| `precedence` for **C** with activity **R** | “C must be preceded by an R” | This only guarantees that a claim is received before it is closed, but it does **not** require the intermediate steps (A, E, P, N). As a result, a claim could be closed immediately after receipt, bypassing essential activities. |
+| `noncoexistence` for **E** with activity **C** | “E and C cannot appear in the same trace” | In the ideal process, a claim is evaluated **before** it is closed, so they must coexist (E  …  C). This rule makes the model reject any trace that follows the correct business logic. |
+| `existence` for **C** | “C must appear at least once in every trace” | Combined with the `noncoexistence` rule above, the model forces a trace to contain **C** but forbids **E** in the same trace, which is impossible for a properly processed claim. |
+| `init` for **R** | “R must be the first activity” | This is consistent, but because the other constraints do not enforce the intermediate steps, the model permits a trace that is just **R  C**, violating the intended sixstep workflow. |
+
+**Resulting contradictions**
+
+* The model simultaneously requires **C** to exist while forbidding **E** from cooccurring with **C** – a claim that is evaluated cannot be closed, yet every claim must be closed.
+* The precedence rule for **C** only references **R**, allowing the omission of **A**, **E**, **P**, and **N**.
+* The `responded_existence` rule for **E** is effectively nullified because any trace containing **E** would be rejected by the `noncoexistence` rule.
+
+---
+
+**2. Plausible hypotheses for why these anomalies appear**
+
+| Hypothesis | Rationale |
+|-----------|-----------|
+| **Misinterpreted requirement** | The modeler may have read “evaluation must happen before closing” as “evaluation must not appear together with closing”, leading to a reversed `noncoexistence` rule. |
+| **Incremental policy change** | A newer policy might have introduced a “fasttrack” path where certain claims are closed after receipt (e.g., lowvalue auto claims). The model was updated only partially, adding the `precedence` rule for **C** but forgetting to adjust the `noncoexistence` rule. |
+| **Datadriven mining error** | The DECLARE constraints could have been mined from historical logs that contain many incomplete traces (e.g., claims that were abandoned). The mining algorithm may have overgeneralized the absence of **E** in some closedclaim traces, producing the `noncoexistence` rule. |
+| **Pressure for speed** | Business pressure to reduce processing time may have encouraged a “skipsteps” shortcut, and the model was deliberately relaxed for **C** but not for the other activities, creating an inconsistent set of constraints. |
+| **Technical implementation bug** | The script that translates raw event logs into DECLARE constraints might have incorrectly swapped “precedence” and “noncoexistence” semantics for the **E–C** pair, resulting in contradictory rules. |
+
+---
+
+**3. SQLbased verification strategies**
+
+Below are concrete queries that can be run against the three tables to see whether the anomalous patterns actually occur in the data.
+
+---
+
+### 3.1 Claims closed without any prior evaluation (E)
+
+```sql
+-- Find claim IDs that have a Close event but no Evaluate event earlier in the same trace
+SELECT c.claim_id
+FROM claims c
+JOIN claim_events ce_close
+  ON ce_close.claim_id = c.claim_id
+ AND ce_close.activity = 'C'
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce_eval
+    WHERE ce_eval.claim_id = c.claim_id
+      AND ce_eval.activity = 'E'
+      AND ce_eval.timestamp < ce_close.timestamp
+);
+```
+
+*Interpretation*: If the result set is nonempty, the model’s `precedence` rule for **C** (only requiring **R**) is being violated by real data, indicating a gap in the process.
+
+---
+
+### 3.2 Traces where evaluation and closing coexist (should be allowed, but prohibited by the model)
+
+```sql
+-- Find claim IDs that contain both an E and a C event (in any order)
+SELECT c.claim_id
+FROM claims c
+JOIN claim_events ce_e
+  ON ce_e.claim_id = c.claim_id
+ AND ce_e.activity = 'E'
+JOIN claim_events ce_c
+  ON ce_c.claim_id = c.claim_id
+ AND ce_c.activity = 'C';
+```
+
+*Interpretation*: Any rows returned demonstrate that the `noncoexistence` rule (E  C) does not hold in practice, confirming the anomaly.
+
+---
+
+### 3.3 Claims that skip intermediate steps (A, E, P, N) and go directly from R to C
+
+```sql
+-- Claims that have R and C but lack any of A, E, P, N between them
+SELECT c.claim_id
+FROM claims c
+JOIN claim_events ce_r
+  ON ce_r.claim_id = c.claim_id
+ AND ce_r.activity = 'R'
+JOIN claim_events ce_c
+  ON ce_c.claim_id = c.claim_id
+ AND ce_c.activity = 'C'
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce_mid
+    WHERE ce_mid.claim_id = c.claim_id
+      AND ce_mid.timestamp > ce_r.timestamp
+      AND ce_mid.timestamp < ce_c.timestamp
+      AND ce_mid.activity IN ('A','E','P','N')
+);
+```
+
+*Interpretation*: Presence of such claims indicates that the model’s `precedence` rule for **C** is too weak and that the business process is being bypassed.
+
+---
+
+### 3.4 Evaluation events that are not preceded by an assignment (A)
+
+```sql
+-- Claims where an E occurs before any A (or with no A at all)
+SELECT c.claim_id, ce_e.timestamp AS eval_time, ce_a.timestamp AS assign_time
+FROM claims c
+JOIN claim_events ce_e
+  ON ce_e.claim_id = c.claim_id
+ AND ce_e.activity = 'E'
+LEFT JOIN claim_events ce_a
+  ON ce_a.claim_id = c.claim_id
+ AND ce_a.activity = 'A'
+WHERE ce_a.timestamp IS NULL
+   OR ce_e.timestamp < ce_a.timestamp;
+```
+
+*Interpretation*: If rows appear, the `responded_existence` rule (E must be preceded by A) is violated in the operational data.
+
+---
+
+### 3.5 Claims where the same adjuster (resource) performed both assignment and evaluation
+
+```sql
+-- Detect whether the same resource (adjuster) is used for A and E in a claim
+SELECT c.claim_id,
+       a.resource AS assigner,
+       e.resource AS evaluator
+FROM claims c
+JOIN claim_events a
+  ON a.claim_id = c.claim_id
+ AND a.activity = 'A'
+JOIN claim_events e
+  ON e.claim_id = c.claim_id
+ AND e.activity = 'E'
+WHERE a.resource = e.resource;
+```
+
+*Interpretation*: This helps verify that assignments are actually being routed to an adjuster (resource) before evaluation, supporting the business rule that an adjuster must evaluate the claim they were assigned.
+
+---
+
+### 3.6 Claims where the final “Close” event is performed by a system (resource = 'SYSTEM') rather than an adjuster
+
+```sql
+SELECT c.claim_id, ce_c.timestamp, ce_c.resource
+FROM claims c
+JOIN claim_events ce_c
+  ON ce_c.claim_id = c.claim_id
+ AND ce_c.activity = 'C'
+WHERE ce_c.resource = 'SYSTEM';
+```
+
+*Interpretation*: If many closures are automated, the model may need a separate rule for systemgenerated closures; otherwise, the current constraints assume a humandriven close.
+
+---
+
+**How to use the results**
+
+* If queries 3.1, 3.2, or 3.3 return rows, the data already exhibits the contradictory behavior the model tries to forbid or permit.
+* Query 3.4 highlights gaps in the “assignthenevaluate” discipline.
+* Queries 3.5 and 3.6 provide additional context for whether the resource assignments align with the intended workflow.
+
+By running these queries, you can empirically confirm which of the anomalous DECLARE constraints are actually violated in the operational logs and decide whether to:
+
+* Remove the `noncoexistence` rule for **E** and **C**,
+* Strengthen the `precedence` rule for **C** to require **A**, **E**, **P**, and **N**,
+* Or adjust the process (e.g., introduce a fasttrack path) and then regenerate a consistent DECLARE model.

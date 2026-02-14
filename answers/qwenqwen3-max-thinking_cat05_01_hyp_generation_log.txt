@@ -1,0 +1,246 @@
+Based on the provided event log data and process schema, several anomalies and deviations from the assumed normal process flow are evident. Below is an analysis of these issues, hypotheses for their root causes, and targeted SQL queries to investigate them further.
+
+---
+
+##  **Identified Anomalies & Undesirable Behaviors**
+
+### **1. Out-of-Sequence Activities**
+- **Case 1002**: `Confirm Shipment` and `Ship Goods` occur **before** `Perform Credit Check` and `Validate Stock`.
+- **Case 1003**: `Ship Goods` occurs **before** `Confirm Shipment` and even before `Validate Stock`.
+- **Case 1004**: `Receive Payment` occurs **before** `Issue Invoice`, and both occur before any logistics steps.
+
+> **Implication**: Violation of business rules (e.g., shipping before credit validation or stock confirmation increases risk of failed deliveries or bad debt).
+
+### **2. Missing Activities**
+- **Case 1004**: Missing `Perform Credit Check` and `Validate Stock` entirely.
+- **Case 1003**: Missing explicit `Validate Stock` (though `Ship Goods` implies stock was available, it’s not logged).
+
+> **Implication**: Incomplete audit trail; possible bypass of controls.
+
+### **3. Temporal Impossibilities / Policy Violations**
+- **Case 1004**: Payment received **before** invoice issued — violates standard AR (Accounts Receivable) practice.
+- **Case 1002 & 1003**: Shipping initiated before credit check — high risk for low-credit customers (e.g., Case 1002 has credit_score=650, which may be below threshold).
+
+### **4. Role/Department Misalignment?**
+- `WarehouseClerk_3` performs `Ship Goods` in Cases 1001 and 1003, but `Confirm Shipment` is done by `LogisticsMgr_*`. That’s acceptable per schema.
+- However, in **Case 1004**, `Receive Payment` is done by `FinanceTeam_02` **before** any invoice — suggests either prepayment (valid?) or system/logic error.
+
+---
+
+##  **Hypotheses for Root Causes**
+
+| Anomaly | Possible Cause |
+|--------|----------------|
+| Out-of-sequence execution | - System allows manual override<br>- Poor UI/UX leading to user error<br>- Rushed processing for "priority" orders (e.g., Case 1002 is `priority`) |
+| Missing credit/stock checks | - System bug skipping validation for certain channels (e.g., online)<br>- Intentional bypass for trusted customers (but not logged)<br>- Logging failure (event not recorded) |
+| Payment before invoice | - Prepayment for high-value orders (Case 1004 = $3000)<br>- System allows payment entry without invoice linkage<br>- Data entry error |
+| Early shipping for low-credit customers | - Credit check delayed due to system load<br>- Sales rep pressure to fulfill orders quickly |
+
+---
+
+##  **Proposed SQL Queries for Investigation**
+
+### **1. Find all cases with out-of-sequence activities**
+Identify cases where key activities occur in wrong order (e.g., Ship before Credit Check):
+
+```sql
+WITH activity_order AS (
+  SELECT
+    case_id,
+    activity,
+    timestamp,
+    ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS log_order
+  FROM order_event_log
+),
+expected_sequence AS (
+  SELECT
+    case_id,
+    MAX(CASE WHEN activity = 'Register Order' THEN log_order END) AS register_order,
+    MAX(CASE WHEN activity = 'Perform Credit Check' THEN log_order END) AS credit_check,
+    MAX(CASE WHEN activity = 'Validate Stock' THEN log_order END) AS validate_stock,
+    MAX(CASE WHEN activity = 'Confirm Shipment' THEN log_order END) AS confirm_shipment,
+    MAX(CASE WHEN activity = 'Ship Goods' THEN log_order END) AS ship_goods,
+    MAX(CASE WHEN activity = 'Issue Invoice' THEN log_order END) AS issue_invoice,
+    MAX(CASE WHEN activity = 'Receive Payment' THEN log_order END) AS receive_payment
+  FROM activity_order
+  GROUP BY case_id
+)
+SELECT
+  case_id,
+  CASE
+    WHEN credit_check IS NOT NULL AND ship_goods < credit_check THEN 'Ship before credit check'
+    WHEN validate_stock IS NOT NULL AND ship_goods < validate_stock THEN 'Ship before stock validation'
+    WHEN issue_invoice IS NOT NULL AND receive_payment < issue_invoice THEN 'Payment before invoice'
+    WHEN confirm_shipment IS NOT NULL AND ship_goods < confirm_shipment THEN 'Ship before confirmation'
+  END AS anomaly_type
+FROM expected_sequence
+WHERE
+  (credit_check IS NOT NULL AND ship_goods < credit_check)
+  OR (validate_stock IS NOT NULL AND ship_goods < validate_stock)
+  OR (issue_invoice IS NOT NULL AND receive_payment < issue_invoice)
+  OR (confirm_shipment IS NOT NULL AND ship_goods < confirm_shipment);
+```
+
+---
+
+### **2. Identify cases missing critical activities**
+Find orders missing `Perform Credit Check` or `Validate Stock`:
+
+```sql
+SELECT
+  o.case_id,
+  o.order_type,
+  o.order_value,
+  o.customer_id,
+  CASE
+    WHEN NOT EXISTS (
+      SELECT 1 FROM order_event_log e
+      WHERE e.case_id = o.case_id AND e.activity = 'Perform Credit Check'
+    ) THEN 'Missing Credit Check'
+    WHEN NOT EXISTS (
+      SELECT 1 FROM order_event_log e
+      WHERE e.case_id = o.case_id AND e.activity = 'Validate Stock'
+    ) THEN 'Missing Stock Validation'
+  END AS missing_activity
+FROM orders o
+WHERE
+  NOT EXISTS (
+    SELECT 1 FROM order_event_log e
+    WHERE e.case_id = o.case_id AND e.activity = 'Perform Credit Check'
+  )
+  OR
+  NOT EXISTS (
+    SELECT 1 FROM order_event_log e
+    WHERE e.case_id = o.case_id AND e.activity = 'Validate Stock'
+  );
+```
+
+---
+
+### **3. Analyze early shipping by order type and credit score**
+Check if `priority` orders are more likely to skip checks:
+
+```sql
+WITH credit_scores AS (
+  SELECT
+    case_id,
+    SUBSTRING(additional_info, 'credit_score=(\d+)')::INTEGER AS credit_score
+  FROM order_event_log
+  WHERE activity = 'Perform Credit Check'
+    AND additional_info LIKE '%credit_score=%'
+),
+shipping_events AS (
+  SELECT
+    case_id,
+    MIN(timestamp) AS first_ship_timestamp
+  FROM order_event_log
+  WHERE activity IN ('Confirm Shipment', 'Ship Goods')
+  GROUP BY case_id
+),
+credit_events AS (
+  SELECT
+    case_id,
+    MIN(timestamp) AS credit_check_timestamp
+  FROM order_event_log
+  WHERE activity = 'Perform Credit Check'
+  GROUP BY case_id
+)
+SELECT
+  o.case_id,
+  o.order_type,
+  o.order_value,
+  cs.credit_score,
+  CASE
+    WHEN ce.case_id IS NULL THEN 'No credit check'
+    WHEN se.first_ship_timestamp < ce.credit_check_timestamp THEN 'Shipped before credit check'
+    ELSE 'Normal'
+  END AS risk_status
+FROM orders o
+LEFT JOIN credit_scores cs ON o.case_id = cs.case_id
+LEFT JOIN shipping_events se ON o.case_id = se.case_id
+LEFT JOIN credit_events ce ON o.case_id = ce.case_id
+WHERE
+  ce.case_id IS NULL
+  OR se.first_ship_timestamp < ce.credit_check_timestamp
+ORDER BY o.order_value DESC;
+```
+
+---
+
+### **4. Check for payments recorded before invoices**
+Validate temporal logic of financial events:
+
+```sql
+WITH invoice_times AS (
+  SELECT case_id, MIN(timestamp) AS invoice_time
+  FROM order_event_log
+  WHERE activity = 'Issue Invoice'
+  GROUP BY case_id
+),
+payment_times AS (
+  SELECT case_id, MIN(timestamp) AS payment_time
+  FROM order_event_log
+  WHERE activity = 'Receive Payment'
+  GROUP BY case_id
+)
+SELECT
+  i.case_id,
+  i.invoice_time,
+  p.payment_time,
+  o.order_value,
+  o.order_type
+FROM invoice_times i
+FULL OUTER JOIN payment_times p ON i.case_id = p.case_id
+JOIN orders o ON COALESCE(i.case_id, p.case_id) = o.case_id
+WHERE
+  p.payment_time < i.invoice_time  -- Payment before invoice
+  OR (i.case_id IS NULL AND p.case_id IS NOT NULL)  -- Payment without invoice
+  OR (p.case_id IS NULL AND i.case_id IS NOT NULL); -- Invoice without payment (less critical)
+```
+
+---
+
+### **5. Resource behavior analysis: Who is bypassing controls?**
+Identify resources frequently involved in anomalous flows:
+
+```sql
+WITH anomalous_cases AS (
+  -- Reuse logic from Query #1 to get case_id with anomalies
+  WITH activity_order AS (
+    SELECT case_id, activity, timestamp,
+           ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS log_order
+    FROM order_event_log
+  ),
+  seq AS (
+    SELECT
+      case_id,
+      MAX(CASE WHEN activity = 'Perform Credit Check' THEN log_order END) AS cc,
+      MAX(CASE WHEN activity = 'Ship Goods' THEN log_order END) AS sg
+    FROM activity_order
+    GROUP BY case_id
+  )
+  SELECT case_id
+  FROM seq
+  WHERE sg < cc OR cc IS NULL
+)
+SELECT
+  r.resource,
+  res.role,
+  res.department,
+  COUNT(*) AS anomaly_count
+FROM order_event_log r
+JOIN resources res ON r.resource = res.resource_id
+WHERE r.case_id IN (SELECT case_id FROM anomalous_cases)
+GROUP BY r.resource, res.role, res.department
+ORDER BY anomaly_count DESC;
+```
+
+---
+
+##  **Next Steps**
+- Run these queries to quantify frequency and patterns.
+- Cross-reference with business rules (e.g., Is prepayment allowed for orders >$2500?).
+- Interview teams (Sales, Logistics) to understand manual overrides.
+- Consider implementing process mining or workflow engine constraints to prevent out-of-sequence execution.
+
+These queries provide a foundation for root-cause analysis and process improvement.
