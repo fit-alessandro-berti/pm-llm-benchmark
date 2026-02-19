@@ -1,0 +1,394 @@
+# Process Anomaly Analysis: Order Event Log
+
+---
+
+## 1. Anomaly Identification by Case
+
+### Case 1001 —  Fully Conformant
+All seven activities occur in the correct order with appropriate resources. This is the **baseline** for comparison.
+
+---
+
+### Case 1002 —  Critical Sequence Violations
+
+| # | Observed Step | Expected Step | Issue |
+|---|---|---|---|
+| 2 | Confirm Shipment | Perform Credit Check | Shipment confirmed before any financial vetting |
+| 3 | Ship Goods | Perform Credit Check | Goods physically dispatched before credit approval |
+| 4 | Perform Credit Check | Validate Stock | Credit check performed post-shipment (retroactive) |
+| 5 | Validate Stock | Confirm Shipment | Stock validated after goods already left warehouse |
+
+**`additional_info` flag:** `attempted_early=Y` — the system or resource itself flagged the premature action.
+
+---
+
+### Case 1003 —  Missing Step + Out-of-Order Execution
+
+| # | Observed Step | Expected Step | Issue |
+|---|---|---|---|
+| 3 | Ship Goods | Validate Stock | Shipped before stock validation |
+| 4 | Issue Invoice | Confirm Shipment | Invoice raised before shipment confirmation |
+| 5 | Confirm Shipment | Ship Goods | Shipment confirmed *after* goods already sent |
+| — | *(absent)* | Validate Stock | **Validate Stock is entirely missing** |
+
+**`additional_info` flag:** `late_confirmation=Y` on the Confirm Shipment event.
+
+---
+
+### Case 1004 —  Severe Control Bypass
+
+| # | Observed Step | Expected Step | Issue |
+|---|---|---|---|
+| 2 | Receive Payment | Perform Credit Check | Payment recorded only 5 minutes after order registration |
+| 3 | Issue Invoice | Receive Payment | Invoice issued *after* payment was received |
+| — | *(absent)* | Perform Credit Check | **Credit Check is entirely missing** |
+| — | *(absent)* | Validate Stock | **Stock Validation is entirely missing** |
+
+**`additional_info` flag:** `shipment_scheduled=N` on Confirm Shipment, yet `Ship Goods` still executed.
+
+---
+
+## 2. Hypotheses for Root Causes
+
+| Anomaly Type | Possible Causes |
+|---|---|
+| **Out-of-order activities** | Manual override of workflow system; insufficient process enforcement in the BPM tool; staff bypassing controls under time pressure |
+| **Missing mandatory steps** | System bug silently skipping activities; deliberate omission by staff; activities logged in a different system not integrated with the event log |
+| **Payment before Invoice** | Pre-payment arrangement not reflected in process design; possible fraudulent transaction; data entry error (wrong case_id on event) |
+| **Shipment before Credit Check** | Priority customer treatment without formal process exception; sales pressure overriding financial controls; training gaps for new resources |
+| **Shipment despite `scheduled=N`** | Warehouse acting independently of logistics decision; poor system integration between Confirm Shipment and Ship Goods modules |
+| **Late/retroactive confirmations** | Compliance theater — rubber-stamping already-completed actions; audit trail manipulation |
+
+---
+
+## 3. Investigative SQL Queries
+
+---
+
+### Query 1 — Detect Cases with Missing Mandatory Activities
+
+```sql
+-- Identifies cases where one or more required process steps never occurred
+SELECT
+    o.case_id,
+    o.order_type,
+    o.order_value,
+    BOOL_OR(oel.activity = 'Register Order')       AS has_register_order,
+    BOOL_OR(oel.activity = 'Perform Credit Check') AS has_credit_check,
+    BOOL_OR(oel.activity = 'Validate Stock')       AS has_validate_stock,
+    BOOL_OR(oel.activity = 'Confirm Shipment')     AS has_confirm_shipment,
+    BOOL_OR(oel.activity = 'Ship Goods')           AS has_ship_goods,
+    BOOL_OR(oel.activity = 'Issue Invoice')        AS has_issue_invoice,
+    BOOL_OR(oel.activity = 'Receive Payment')      AS has_receive_payment
+FROM orders o
+LEFT JOIN order_event_log oel ON o.case_id = oel.case_id
+GROUP BY o.case_id, o.order_type, o.order_value
+HAVING
+    NOT BOOL_OR(oel.activity = 'Register Order')       OR
+    NOT BOOL_OR(oel.activity = 'Perform Credit Check') OR
+    NOT BOOL_OR(oel.activity = 'Validate Stock')       OR
+    NOT BOOL_OR(oel.activity = 'Confirm Shipment')     OR
+    NOT BOOL_OR(oel.activity = 'Ship Goods')           OR
+    NOT BOOL_OR(oel.activity = 'Issue Invoice')        OR
+    NOT BOOL_OR(oel.activity = 'Receive Payment')
+ORDER BY o.case_id;
+```
+
+> **Purpose:** Surfaces cases where critical steps like `Perform Credit Check` or `Validate Stock` were entirely skipped — a key financial and operational control gap.
+
+---
+
+### Query 2 — Detect Out-of-Order Activity Pairs (Generalised)
+
+```sql
+-- Compares actual execution order to expected order for every activity pair
+-- Flags any case where an activity occurs before one that should precede it
+WITH activity_order AS (
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS actual_position,
+        CASE activity
+            WHEN 'Register Order'       THEN 1
+            WHEN 'Perform Credit Check' THEN 2
+            WHEN 'Validate Stock'       THEN 3
+            WHEN 'Confirm Shipment'     THEN 4
+            WHEN 'Ship Goods'           THEN 5
+            WHEN 'Issue Invoice'        THEN 6
+            WHEN 'Receive Payment'      THEN 7
+            ELSE NULL
+        END AS expected_position
+    FROM order_event_log
+)
+SELECT
+    case_id,
+    activity,
+    timestamp,
+    actual_position,
+    expected_position,
+    (actual_position - expected_position) AS position_drift
+FROM activity_order
+WHERE expected_position IS NOT NULL
+  AND actual_position <> expected_position
+ORDER BY case_id, actual_position;
+```
+
+> **Purpose:** Provides a holistic conformance view — any row with non-zero `position_drift` indicates a sequencing deviation worth investigating.
+
+---
+
+### Query 3 — Goods Shipped Before Credit Check Was Performed
+
+```sql
+-- Finds cases where Ship Goods timestamp precedes Perform Credit Check timestamp
+SELECT
+    s.case_id,
+    s.timestamp                                             AS ship_timestamp,
+    s.resource                                             AS shipped_by,
+    c.timestamp                                             AS credit_check_timestamp,
+    c.resource                                             AS checked_by,
+    ROUND(
+        EXTRACT(EPOCH FROM (c.timestamp - s.timestamp)) / 60.0, 2
+    )                                                       AS minutes_credit_check_was_late,
+    o.order_value,
+    o.order_type
+FROM order_event_log s
+JOIN order_event_log c  ON s.case_id = c.case_id
+JOIN orders          o  ON s.case_id = o.case_id
+WHERE s.activity = 'Ship Goods'
+  AND c.activity = 'Perform Credit Check'
+  AND s.timestamp < c.timestamp
+ORDER BY minutes_credit_check_was_late DESC;
+```
+
+> **Purpose:** Directly tests the most dangerous financial control violation — dispatching goods to a customer who may have an unacceptable credit risk.
+
+---
+
+### Query 4 — Payment Received Before Invoice Was Issued
+
+```sql
+-- Cases where Receive Payment timestamp is earlier than Issue Invoice timestamp
+SELECT
+    p.case_id,
+    p.timestamp                                             AS payment_timestamp,
+    p.resource                                             AS payment_processed_by,
+    p.additional_info                                      AS payment_details,
+    i.timestamp                                             AS invoice_timestamp,
+    i.resource                                             AS invoice_issued_by,
+    ROUND(
+        EXTRACT(EPOCH FROM (i.timestamp - p.timestamp)) / 60.0, 2
+    )                                                       AS minutes_invoice_was_late,
+    o.order_value
+FROM order_event_log p
+JOIN order_event_log i  ON p.case_id = i.case_id
+JOIN orders          o  ON p.case_id = o.case_id
+WHERE p.activity = 'Receive Payment'
+  AND i.activity = 'Issue Invoice'
+  AND p.timestamp < i.timestamp
+ORDER BY p.case_id;
+```
+
+> **Purpose:** Isolates potential fraud, pre-payment schemes, or data integrity issues where money is recorded before a formal billing document exists.
+
+---
+
+### Query 5 — Shipment Confirmed or Executed Before Stock Was Validated
+
+```sql
+-- Two sub-checks: Confirm Shipment before Validate Stock AND Ship Goods before Validate Stock
+SELECT
+    e1.case_id,
+    e1.activity                                            AS early_activity,
+    e1.timestamp                                           AS early_timestamp,
+    e1.resource                                            AS early_resource,
+    e2.activity                                            AS stock_validation_activity,
+    e2.timestamp                                           AS stock_validation_timestamp,
+    e2.resource                                            AS stock_resource,
+    ROUND(
+        EXTRACT(EPOCH FROM (e2.timestamp - e1.timestamp)) / 60.0, 2
+    )                                                       AS minutes_stock_check_was_late
+FROM order_event_log e1
+JOIN order_event_log e2
+    ON e1.case_id = e2.case_id
+WHERE e1.activity IN ('Confirm Shipment', 'Ship Goods')
+  AND e2.activity = 'Validate Stock'
+  AND e1.timestamp < e2.timestamp
+ORDER BY e1.case_id, e1.timestamp;
+```
+
+> **Purpose:** Finds cases where logistics proceeded without confirming product availability, risking failed deliveries or inventory discrepancies.
+
+---
+
+### Query 6 — Confirm Shipment Happened After Ship Goods (Late Rubber-Stamping)
+
+```sql
+-- Shipment "confirmed" only after goods have already left — retroactive approval
+SELECT
+    ship.case_id,
+    ship.timestamp                                         AS goods_shipped_at,
+    ship.resource                                          AS shipped_by,
+    confirm.timestamp                                      AS shipment_confirmed_at,
+    confirm.resource                                       AS confirmed_by,
+    confirm.additional_info                                AS confirmation_notes,
+    ROUND(
+        EXTRACT(EPOCH FROM (confirm.timestamp - ship.timestamp)) / 60.0, 2
+    )                                                       AS minutes_confirmation_was_late
+FROM order_event_log ship
+JOIN order_event_log confirm
+    ON ship.case_id = confirm.case_id
+WHERE ship.activity    = 'Ship Goods'
+  AND confirm.activity = 'Confirm Shipment'
+  AND ship.timestamp   < confirm.timestamp
+ORDER BY minutes_confirmation_was_late DESC;
+```
+
+> **Purpose:** Detects retroactive approvals, where the authorising step is recorded after the action it was meant to authorise — an audit trail integrity issue.
+
+---
+
+### Query 7 — Resources Performing Activities Outside Their Authorised Department
+
+```sql
+-- Cross-references event log resources against expected departmental ownership
+SELECT
+    oel.case_id,
+    oel.event_id,
+    oel.activity,
+    oel.timestamp,
+    oel.resource,
+    r.role,
+    r.department                                           AS actual_department,
+    CASE oel.activity
+        WHEN 'Register Order'       THEN 'Sales'
+        WHEN 'Perform Credit Check' THEN 'Finance'
+        WHEN 'Validate Stock'       THEN 'Logistics'
+        WHEN 'Confirm Shipment'     THEN 'Logistics'
+        WHEN 'Ship Goods'           THEN 'Logistics'
+        WHEN 'Issue Invoice'        THEN 'Finance'
+        WHEN 'Receive Payment'      THEN 'Finance'
+    END                                                    AS expected_department
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+WHERE r.department <> CASE oel.activity
+    WHEN 'Register Order'       THEN 'Sales'
+    WHEN 'Perform Credit Check' THEN 'Finance'
+    WHEN 'Validate Stock'       THEN 'Logistics'
+    WHEN 'Confirm Shipment'     THEN 'Logistics'
+    WHEN 'Ship Goods'           THEN 'Logistics'
+    WHEN 'Issue Invoice'        THEN 'Finance'
+    WHEN 'Receive Payment'      THEN 'Finance'
+    ELSE r.department  -- non-standard activities: skip
+END
+ORDER BY oel.case_id, oel.timestamp;
+```
+
+> **Purpose:** Enforces segregation-of-duties by checking whether each activity is performed by a resource belonging to the correct department.
+
+---
+
+### Query 8 — Suspiciously Fast End-to-End Process Completion
+
+```sql
+-- Cases completing in an unusually short timeframe (potential shortcuts or data errors)
+SELECT
+    oel.case_id,
+    o.order_type,
+    o.order_value,
+    MIN(oel.timestamp)                                     AS process_start,
+    MAX(oel.timestamp)                                     AS process_end,
+    ROUND(
+        EXTRACT(EPOCH FROM (MAX(oel.timestamp) - MIN(oel.timestamp))) / 3600.0, 2
+    )                                                       AS total_hours,
+    COUNT(DISTINCT oel.activity)                           AS distinct_activities_count,
+    7 - COUNT(DISTINCT oel.activity)                       AS missing_steps_count
+FROM order_event_log oel
+JOIN orders o ON oel.case_id = o.case_id
+GROUP BY oel.case_id, o.order_type, o.order_value
+ORDER BY total_hours ASC;
+```
+
+> **Purpose:** Short cycle times combined with fewer-than-expected activity counts strongly suggest skipped controls or bulk data imports with incorrect timestamps.
+
+---
+
+### Query 9 — Cases Where Shipment Proceeded Despite `shipment_scheduled=N`
+
+```sql
+-- Finds cases flagged as "not scheduled" in Confirm Shipment but still shipped
+SELECT
+    cs.case_id,
+    cs.timestamp                                           AS confirmation_timestamp,
+    cs.resource                                            AS confirmed_by,
+    cs.additional_info                                     AS confirmation_flag,
+    sg.timestamp                                           AS ship_timestamp,
+    sg.resource                                            AS shipped_by,
+    sg.additional_info                                     AS tracking_info,
+    o.order_value,
+    o.order_type
+FROM order_event_log cs
+JOIN order_event_log sg  ON cs.case_id = sg.case_id
+JOIN orders          o   ON cs.case_id = o.case_id
+WHERE cs.activity    = 'Confirm Shipment'
+  AND cs.additional_info ILIKE '%shipment_scheduled=N%'
+  AND sg.activity    = 'Ship Goods'
+ORDER BY cs.case_id;
+```
+
+> **Purpose:** An explicit `shipment_scheduled=N` flag should halt the process — any subsequent shipping activity points to a control system failure or deliberate bypass.
+
+---
+
+### Query 10 — Full Process Conformance Summary Per Case
+
+```sql
+-- Produces a per-case conformance scorecard showing violations and missing steps
+WITH expected AS (
+    SELECT
+        unnest(ARRAY[
+            'Register Order','Perform Credit Check','Validate Stock',
+            'Confirm Shipment','Ship Goods','Issue Invoice','Receive Payment'
+        ])                    AS activity,
+        generate_series(1, 7) AS expected_step
+),
+actual AS (
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS actual_step
+    FROM order_event_log
+)
+SELECT
+    a.case_id,
+    a.activity,
+    a.actual_step,
+    e.expected_step,
+    a.timestamp,
+    CASE
+        WHEN e.expected_step IS NULL         THEN 'Unknown Activity'
+        WHEN a.actual_step = e.expected_step THEN 'Conformant'
+        WHEN a.actual_step < e.expected_step THEN 'Executed Too Early'
+        WHEN a.actual_step > e.expected_step THEN 'Executed Too Late'
+    END                                                        AS conformance_status
+FROM actual a
+LEFT JOIN expected e ON a.activity = e.activity
+ORDER BY a.case_id, a.actual_step;
+```
+
+> **Purpose:** The single most comprehensive audit view — aligns every recorded event against its expected position and categorises each deviation, giving process analysts an immediate diagnostic report across all cases.
+
+---
+
+## 4. Summary of Findings
+
+| Case | Missing Steps | Out-of-Order | Premature Activity | Other Flag |
+|---|---|---|---|---|
+| 1001 | None | None | None |  Clean |
+| 1002 | None |  Credit Check, Stock Validation |  Ship before Credit | `attempted_early=Y` |
+| 1003 |  Validate Stock |  Ship before Confirm | None | `late_confirmation=Y` |
+| 1004 |  Credit Check, Validate Stock |  Payment before Invoice |  Payment 5 min after order | `shipment_scheduled=N` yet shipped |
+
+The queries above provide a systematic investigation framework: **Query 1** for completeness, **Queries 2–6** for ordering violations, **Query 7** for role compliance, **Queries 8–9** for time-based red flags, and **Query 10** as the master conformance dashboard.

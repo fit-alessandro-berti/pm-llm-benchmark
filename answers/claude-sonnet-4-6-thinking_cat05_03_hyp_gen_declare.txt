@@ -1,0 +1,254 @@
+# DECLARE Model Analysis: Anomalies, Hypotheses, and Verification
+
+---
+
+## 1. Identified Anomalies
+
+### Anomaly 1 — Direct Contradiction Between `existence` and `noncoexistence`
+
+| Constraint | Interpretation |
+|---|---|
+| `existence: C` | Every trace **must** contain a Close event |
+| `noncoexistence: E  C` | Evaluate and Close **cannot both appear** in the same trace |
+
+**Contradiction:** Since `C` is mandatory in every trace, and `E` cannot coexist with `C`, the model **implicitly forbids Evaluate from ever occurring**. This eliminates the most critical quality-control step in the entire claim lifecycle.
+
+---
+
+### Anomaly 2 — `responded_existence` Becomes Vacuously Satisfied
+
+The constraint:
+```
+responded_existence: E  A
+```
+States: *"If Evaluate occurs, then Assign must also occur."*
+
+Because Anomaly 1 prevents `E` from ever legally firing, this constraint is **never triggered** — it is vacuously true. No meaningful enforcement of adjuster assignment is provided. The model silently ignores whether adjusters are ever involved.
+
+---
+
+### Anomaly 3 — `precedence(C, R)` Allows Catastrophic Shortcutting
+
+The only ordering constraint on Close is:
+```
+precedence: C requires R before it
+```
+This permits a legally conformant trace of:
+
+```
+R  C
+```
+
+All intermediate steps — **Assign (A)**, **Evaluate (E)**, **Approve (P)**, **Notify (N)** — are completely optional under this model. Combined with the prohibition on `E`, the model structurally rewards skipping evaluation rather than enforcing it.
+
+---
+
+### Anomaly 4 — Missing Constraints for Critical Intermediate Steps
+
+The model contains no constraints governing:
+- Whether `P` (Approve) must exist
+- Whether `N` (Notify) must exist before `C`
+- Ordering between `A  E  P  N`
+
+This leaves the majority of the intended process unmodeled, creating a permissive gap where claims can be received and immediately closed.
+
+---
+
+## 2. Hypotheses for Why These Anomalies Exist
+
+### Hypothesis A — Misinterpretation of Noncoexistence Semantics
+The intent behind `noncoexistence(E, C)` was likely **"do not evaluate a claim after it has been closed"** — a reasonable temporal restriction. However, DECLARE's `noncoexistence` is bidirectional and trace-wide, not directional. The implementer confused a *temporal ordering constraint* with a *mutual exclusion constraint*.
+
+### Hypothesis B — Incremental, Uncoordinated Policy Changes
+At some point, a fast-track policy may have been introduced for low-value or auto-approved claims, allowing closure without formal evaluation. This was added as a `noncoexistence` rule. Later, the `existence: C` constraint was added or strengthened without revisiting the impact on the evaluation constraint, leaving both in irreconcilable conflict.
+
+### Hypothesis C — Constraint Mining from Biased or Incomplete Event Logs
+If the DECLARE model was automatically mined from historical event data, and a significant portion of historical claims were improperly closed without evaluation (due to past process failures or system errors), the mining algorithm would observe E and C rarely co-occurring and generate a `noncoexistence` constraint — faithfully describing the flawed history rather than the intended process.
+
+### Hypothesis D — Operational Pressure Leading to Shortcut Encoding
+Under SLA pressure or cost-reduction initiatives, stakeholders may have deliberately relaxed evaluation requirements and reflected this in the model, consciously or unconsciously encoding shortcuts. The weak `precedence` constraint (only requiring `R` before `C`) may reflect this pressure to minimize mandated steps.
+
+### Hypothesis E — Siloed Constraint Authorship
+Different teams (compliance, operations, IT) may have each authored subsets of the constraints independently. The compliance team added `existence: C` and `responded_existence: E  A`; the operations team added `noncoexistence: E  C` to handle edge cases. Without cross-team reconciliation, the conflict went undetected.
+
+---
+
+## 3. SQL-Based Verification Strategies
+
+### Query 1 — Claims Closed Without Any Evaluation
+Detects the primary anomaly in practice: traces where `C` occurred but `E` never did.
+
+```sql
+SELECT
+    c.claim_id,
+    c.customer_id,
+    c.claim_type,
+    c.claim_amount,
+    c.submission_date
+FROM claims c
+WHERE EXISTS (
+    SELECT 1
+    FROM claim_events ce
+    WHERE ce.claim_id = c.claim_id
+      AND ce.activity = 'C'
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce
+    WHERE ce.claim_id = c.claim_id
+      AND ce.activity = 'E'
+)
+ORDER BY c.submission_date DESC;
+```
+
+---
+
+### Query 2 — Claims Where Evaluate and Close Coexist
+Checks whether the `noncoexistence(E, C)` rule is actually violated in the real data, which would confirm the constraint is wrongly modeled.
+
+```sql
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    MIN(CASE WHEN ce.activity = 'E' THEN ce.timestamp END) AS eval_time,
+    MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) AS close_time
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id
+WHERE ce.activity IN ('E', 'C')
+GROUP BY c.claim_id, c.claim_type, c.claim_amount
+HAVING
+    COUNT(CASE WHEN ce.activity = 'E' THEN 1 END) > 0
+    AND COUNT(CASE WHEN ce.activity = 'C' THEN 1 END) > 0
+ORDER BY c.claim_id;
+```
+
+---
+
+### Query 3 — Claims Where Evaluation Occurred Without a Prior Assignment
+Verifies whether the `responded_existence(E  A)` intent holds: every claim that was evaluated must also have had an adjuster assigned.
+
+```sql
+SELECT
+    ce_eval.claim_id,
+    ce_eval.timestamp   AS evaluation_time,
+    ce_eval.resource    AS evaluator
+FROM claim_events ce_eval
+WHERE ce_eval.activity = 'E'
+AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce_assign
+    WHERE ce_assign.claim_id = ce_eval.claim_id
+      AND ce_assign.activity = 'A'
+      AND ce_assign.timestamp <= ce_eval.timestamp
+)
+ORDER BY ce_eval.claim_id;
+```
+
+---
+
+### Query 4 — Claims That Bypass the Complete Intended Process
+Identifies claims missing one or more required steps, exposing how broadly the process shortcuts are occurring.
+
+```sql
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    BOOL_OR(ce.activity = 'R') AS received,
+    BOOL_OR(ce.activity = 'A') AS assigned,
+    BOOL_OR(ce.activity = 'E') AS evaluated,
+    BOOL_OR(ce.activity = 'P') AS approved,
+    BOOL_OR(ce.activity = 'N') AS notified,
+    BOOL_OR(ce.activity = 'C') AS closed
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id
+GROUP BY c.claim_id, c.claim_type, c.claim_amount
+HAVING
+    NOT BOOL_OR(ce.activity = 'E')
+    OR NOT BOOL_OR(ce.activity = 'P')
+    OR NOT BOOL_OR(ce.activity = 'N')
+ORDER BY c.claim_id;
+```
+
+---
+
+### Query 5 — Claims Closed Without R Preceding C
+Validates whether the one ordering rule that does exist (`precedence: C requires R`) is respected.
+
+```sql
+SELECT ce_close.claim_id
+FROM claim_events ce_close
+WHERE ce_close.activity = 'C'
+AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce_recv
+    WHERE ce_recv.claim_id  = ce_close.claim_id
+      AND ce_recv.activity  = 'R'
+      AND ce_recv.timestamp < ce_close.timestamp
+)
+ORDER BY ce_close.claim_id;
+```
+
+---
+
+### Query 6 — Adjuster Assignment Audit: Assigned Adjuster vs. Actual Evaluator
+Checks whether the resource who evaluated a claim matches (or is traceable to) the adjuster assigned, uncovering unauthorized or untracked evaluations.
+
+```sql
+SELECT
+    ce_eval.claim_id,
+    ce_assign.resource      AS assigned_adjuster,
+    ce_eval.resource        AS actual_evaluator,
+    ce_assign.timestamp     AS assignment_time,
+    ce_eval.timestamp       AS evaluation_time
+FROM claim_events ce_eval
+JOIN claim_events ce_assign
+    ON ce_assign.claim_id = ce_eval.claim_id
+   AND ce_assign.activity  = 'A'
+WHERE ce_eval.activity = 'E'
+  AND ce_assign.resource IS DISTINCT FROM ce_eval.resource
+ORDER BY ce_eval.claim_id;
+```
+
+---
+
+### Query 7 — Volume Summary of Process Anomalies by Claim Type
+Provides an aggregate view of how frequently shortcuts occur across different claim categories, helping prioritize remediation.
+
+```sql
+SELECT
+    c.claim_type,
+    COUNT(DISTINCT c.claim_id)                                          AS total_claims,
+    COUNT(DISTINCT CASE WHEN NOT bool_agg.has_E THEN c.claim_id END)   AS missing_evaluation,
+    COUNT(DISTINCT CASE WHEN NOT bool_agg.has_P THEN c.claim_id END)   AS missing_approval,
+    COUNT(DISTINCT CASE WHEN NOT bool_agg.has_N THEN c.claim_id END)   AS missing_notification,
+    ROUND(
+        100.0 * COUNT(DISTINCT CASE WHEN NOT bool_agg.has_E THEN c.claim_id END)
+        / NULLIF(COUNT(DISTINCT c.claim_id), 0), 2
+    )                                                                   AS pct_skipped_evaluation
+FROM claims c
+JOIN (
+    SELECT
+        claim_id,
+        BOOL_OR(activity = 'E') AS has_E,
+        BOOL_OR(activity = 'P') AS has_P,
+        BOOL_OR(activity = 'N') AS has_N
+    FROM claim_events
+    GROUP BY claim_id
+) bool_agg ON bool_agg.claim_id = c.claim_id
+GROUP BY c.claim_type
+ORDER BY pct_skipped_evaluation DESC;
+```
+
+---
+
+## Summary Table
+
+| Anomaly | Root Cause | Verification Query |
+|---|---|---|
+| `existence(C)`  `noncoexistence(E,C)`  E is impossible | Semantic misuse of noncoexistence | Query 1, Query 2 |
+| `responded_existence(EA)` is vacuously true | E can never fire due to above contradiction | Query 3 |
+| `precedence(C,R)` allows RC with no middle steps | Insufficient ordering constraints | Query 4, Query 5 |
+| No constraints on P, N ordering | Incomplete model authorship | Query 4, Query 7 |
+| Evaluator  assigned adjuster | Responded existence enforces wrong direction | Query 6 |

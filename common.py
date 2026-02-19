@@ -247,6 +247,7 @@ MODELS_DICT = {
             "claude-4-sonnet-20250514",
             "claude-opus-4-1-20250805",
             "claude-sonnet-4-5-20250929",
+            "claude-sonnet-4-6",
             "claude-haiku-4-5-20251001",
             "claude-opus-4-5-20251101"
         }
@@ -522,6 +523,11 @@ MODELS_DICT = {
             "claude-sonnet-4-5-thinking-20250929": {
                 "provider": "claude",
                 "base_model": "claude-sonnet-4-5-20250929",
+                "thinking_tokens": 32000,
+            },
+            "claude-sonnet-4-6-thinking": {
+                "provider": "claude",
+                "base_model": "claude-sonnet-4-6",
                 "thinking_tokens": 32000,
             },
             "claude-4-opus-thinking-20250514": {

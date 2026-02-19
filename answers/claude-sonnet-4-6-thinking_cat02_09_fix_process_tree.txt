@@ -1,0 +1,141 @@
+# Fixing the Underfitting Procure-to-Pay Process Tree
+
+## 1. Issues with the Current Model
+
+The current model wraps five critical activities inside a `PARALLEL` (`AND`) operator, meaning they can execute in **any order** simultaneously. This creates several domain-logic violations:
+
+| Unwanted Behavior Allowed | Why It's Wrong |
+|---|---|
+| Pay Invoice before Receive Goods | You shouldn't pay before confirming goods arrived |
+| Match Invoice before Receive Invoice | Can't match an invoice that doesn't exist yet |
+| Receive Goods before Create PO | Goods can't be ordered without a Purchase Order |
+| Pay Invoice before Match Invoice | Payment must follow a successful 3-way match |
+| Match Invoice before Receive Goods | Matching requires goods receipt confirmation |
+
+The root cause is that **all 8 steps have strict causal dependencies** — each step either directly or transitively depends on prior steps completing first.
+
+---
+
+## 2. Corrected Process Tree Model
+
+```python
+from pm4py.objects.process_tree.obj import Operator, ProcessTree
+
+#  Define leaf activities 
+create_req    = ProcessTree(label="Create_Purchase_Requisition")
+approve_req   = ProcessTree(label="Approve_Purchase_Requisition")
+create_po     = ProcessTree(label="Create_Purchase_Order")
+receive_goods = ProcessTree(label="Receive_Goods")
+receive_invoice = ProcessTree(label="Receive_Invoice")
+match_invoice = ProcessTree(label="Match_Invoice_to_PO")
+pay_invoice   = ProcessTree(label="Pay_Invoice")
+close_case    = ProcessTree(label="Close_Case")
+
+#  Option A: Fully strict sequence (matches numbered spec exactly) 
+root = ProcessTree(
+    operator=Operator.SEQUENCE,
+    children=[
+        create_req,       # Step 1
+        approve_req,      # Step 2
+        create_po,        # Step 3
+        receive_goods,    # Step 4
+        receive_invoice,  # Step 5
+        match_invoice,    # Step 6
+        pay_invoice,      # Step 7
+        close_case        # Step 8
+    ]
+)
+
+#  Option B: Realistic variant — goods & invoice receipt can interleave 
+#   (Both MUST complete before matching; all else is strictly ordered)
+receive_block = ProcessTree(
+    operator=Operator.PARALLEL,        # Either order is acceptable...
+    children=[receive_goods,           # ...goods may arrive before invoice
+              receive_invoice]         # ...or invoice before goods
+)
+
+root_realistic = ProcessTree(
+    operator=Operator.SEQUENCE,
+    children=[
+        create_req,        # Step 1  
+        approve_req,        # Step 2    These four
+        create_po,          # Step 3    always in
+        receive_block,      # Steps 4+5 strict order
+        match_invoice,      # Step 6  
+        pay_invoice,        # Step 7
+        close_case          # Step 8
+    ]
+)
+```
+
+### Visual Structure
+
+**Option A — Fully Sequential:**
+```
+SEQUENCE
+ Create_Purchase_Requisition
+ Approve_Purchase_Requisition
+ Create_Purchase_Order
+ Receive_Goods
+ Receive_Invoice
+ Match_Invoice_to_PO
+ Pay_Invoice
+ Close_Case
+```
+
+**Option B — Realistic (recommended):**
+```
+SEQUENCE
+ Create_Purchase_Requisition
+ Approve_Purchase_Requisition
+ Create_Purchase_Order
+ PARALLEL
+    Receive_Goods
+    Receive_Invoice
+ Match_Invoice_to_PO
+ Pay_Invoice
+ Close_Case
+```
+
+---
+
+## 3. How the Fix Enforces Correct Behavior
+
+### Causal Dependency Chain
+
+```
+Create Req  Approve Req  Create PO  [Receive Goods  Receive Invoice]
+                                                     (both done)
+                                          Match Invoice to PO
+                                                    
+                                             Pay Invoice
+                                                    
+                                             Close Case
+```
+
+### Enforcement Table
+
+| Constraint | Enforced By | Mechanism |
+|---|---|---|
+| Requisition approved before PO created | Outer `SEQUENCE` | `approve_req` precedes `create_po` |
+| PO exists before goods/invoice received | Outer `SEQUENCE` | `create_po` precedes `receive_block` |
+| Both goods AND invoice received before matching | `PARALLEL` inside `SEQUENCE` | `PARALLEL` requires **all** children to complete; only then does the outer sequence advance to `match_invoice` |
+| Matching before payment | Outer `SEQUENCE` | `match_invoice` precedes `pay_invoice` |
+| Payment before case closure | Outer `SEQUENCE` | `pay_invoice` precedes `close_case` |
+| Cannot skip any step | `SEQUENCE` operator | No `XOR`/`LOOP` — every activity is mandatory |
+
+### Why the Parallel Block in Option B is Still Safe
+
+The `PARALLEL` node for **Receive Goods** and **Receive Invoice** is intentionally preserved because:
+- In real procurement, the supplier may send an invoice *before* or *after* physical delivery
+- However, because the `PARALLEL` node sits inside the outer `SEQUENCE`, **both must complete** before the process can advance to `Match_Invoice_to_PO` — preventing any premature payment
+
+### Behaviors Now Prevented
+
+```
+  Pay_Invoice    Receive_Goods          (payment before goods)
+  Match_Invoice    Receive_Invoice      (matching non-existent invoice)
+  Receive_Goods    Create_PO            (goods without an order)
+  Close_Case    Pay_Invoice             (closing before paying)
+  Skipping any activity entirely
+```

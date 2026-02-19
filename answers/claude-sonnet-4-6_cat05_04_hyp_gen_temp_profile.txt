@@ -1,0 +1,334 @@
+# Temporal Profile Anomaly Analysis: Insurance Claim Handling Process
+
+---
+
+## 1. Identified Anomalies
+
+### Anomaly 1: R  P (Receive to Approve) — Suspiciously Low Standard Deviation
+The average time from claim receipt to approval is approximately 25 hours (90,000 seconds), with a standard deviation of only 1 hour (3,600 seconds). In a realistic process where claims pass through assignment and evaluation before approval, the timing variability should be substantially higher due to differences in claim complexity, adjuster workload, and evaluation depth. The near-rigid consistency here is a red flag.
+
+### Anomaly 2: P  N (Approve to Notify) — Excessive Delay with High Variability
+A 7-day average (604,800 seconds) with a 2-day standard deviation (172,800 seconds) between approval and customer notification is operationally alarming. Notification should logically follow approval within hours, not days. The high variability further suggests this is not a deliberate policy but an inconsistent, possibly broken subprocess.
+
+### Anomaly 3: A  C (Assign to Close) — Premature Closure
+A 2-hour average between assignment and closure, with a 1-hour standard deviation, raises concerns that many claims are being closed without progressing through evaluation (E) and approval (P). This pattern suggests potential claim abandonment, improper case dismissal, or shortcuts being taken.
+
+### Anomaly 4: E  N (Evaluate to Notify) — Unrealistically Fast Transition
+Five minutes (300 seconds) on average between evaluation and notification, with a standard deviation of only 1 minute, suggests automated or scripted notification triggers that may be bypassing required intermediate steps such as approval (P). No human-reviewed approval process could consistently complete within this window.
+
+---
+
+## 2. Hypotheses for Each Anomaly
+
+### Anomaly 1: R  P Rigid Timing
+- **Batch approval automation:** An automated system may be scheduling approvals at fixed intervals (e.g., nightly batch jobs), creating artificial regularity that ignores actual evaluation outcomes.
+- **Rubber-stamping:** Adjusters may be approving claims without genuine evaluation, especially for low-value claims, producing a predictable processing cadence.
+- **Data entry backdating:** Timestamps may be entered retroactively in bulk, collapsing natural variability.
+
+### Anomaly 2: P  N Extended Delay
+- **Notification system backlog:** A manual or semi-automated notification queue may be severely understaffed or throttled, causing days-long delays.
+- **Notification contingent on unlogged dependencies:** An undocumented step (e.g., legal review, payment processing) may occur between approval and notification but is not captured in the event log.
+- **Regional or resource bottlenecks:** Certain adjusters or regional offices may lack the tooling or authority to issue notifications promptly.
+
+### Anomaly 3: A  C Premature Closure
+- **Duplicate claim dismissal:** Claims identified as duplicates or fraudulent may be fast-tracked to closure immediately after assignment, bypassing standard workflow.
+- **Adjuster error or system misuse:** Resources may be incorrectly closing claims in the system while actual processing continues off-system.
+- **Policy-driven fast closure:** Certain claim types (e.g., very low-value claims) may have an express-close policy that is not formally documented but widely practiced.
+
+### Anomaly 4: E  N Instant Notification
+- **Automated trigger misconfiguration:** An event-driven system may be firing notifications upon evaluation completion rather than approval completion, skipping the P step entirely.
+- **Step conflation:** Evaluation and approval may effectively be merged in practice for certain claim types, with notification automatically dispatched upon evaluation close, making the P activity merely a formality logged later.
+- **System clock or logging errors:** Notification events may be logged with incorrect timestamps derived from evaluation events.
+
+---
+
+## 3. SQL Verification Queries
+
+### Query 1: Claims Where R  P Interval Falls in an Unnaturally Narrow Band
+
+```sql
+-- Identify claims where Receive-to-Approve time deviates minimally from the mean,
+-- suggesting batch or automated approval. Flag those within ±1 hour of exactly 25 hours.
+
+SELECT
+    r.claim_id,
+    r.timestamp                          AS receive_time,
+    p.timestamp                          AS approve_time,
+    EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS r_to_p_seconds,
+    c.claim_type,
+    c.claim_amount,
+    p.resource                           AS approving_resource
+FROM
+    claim_events r
+    JOIN claim_events p
+        ON r.claim_id = p.claim_id
+       AND r.activity = 'R'
+       AND p.activity = 'P'
+    JOIN claims c
+        ON r.claim_id = c.claim_id
+WHERE
+    -- Within ±1 hour of exactly 25 hours (90000 seconds)
+    ABS(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) - 90000) <= 3600
+ORDER BY
+    r_to_p_seconds;
+```
+
+---
+
+### Query 2: Distribution Analysis of R  P Timing to Detect Batch Patterns
+
+```sql
+-- Bucket R-to-P intervals into 1-hour windows to visualize clustering
+-- that would suggest scheduled batch processing
+
+SELECT
+    width_bucket(
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)),
+        0, 172800, 48          -- 0 to 48 hours, 48 buckets (1-hour each)
+    )                          AS hour_bucket,
+    COUNT(*)                   AS claim_count,
+    MIN(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp))) / 3600.0 AS min_hours,
+    MAX(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp))) / 3600.0 AS max_hours,
+    AVG(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp))) / 3600.0 AS avg_hours
+FROM
+    claim_events r
+    JOIN claim_events p
+        ON r.claim_id = p.claim_id
+       AND r.activity = 'R'
+       AND p.activity = 'P'
+GROUP BY
+    hour_bucket
+ORDER BY
+    hour_bucket;
+```
+
+---
+
+### Query 3: Claims With Excessive P  N Delay, Correlated With Adjuster and Region
+
+```sql
+-- Find claims where approval-to-notification exceeds 3 days (threshold: mean - 2*STDEV = 3 days)
+-- and correlate with adjuster specialization and region
+
+SELECT
+    p.claim_id,
+    p.timestamp                              AS approve_time,
+    n.timestamp                              AS notify_time,
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400.0
+                                             AS p_to_n_days,
+    p.resource                               AS approving_resource,
+    n.resource                               AS notifying_resource,
+    adj.name                                 AS adjuster_name,
+    adj.specialization,
+    adj.region,
+    c.claim_type,
+    c.claim_amount
+FROM
+    claim_events p
+    JOIN claim_events n
+        ON p.claim_id = n.claim_id
+       AND p.activity = 'P'
+       AND n.activity = 'N'
+    JOIN claims c
+        ON p.claim_id = c.claim_id
+    LEFT JOIN adjusters adj
+        ON p.resource = adj.name             -- assuming resource maps to adjuster name
+WHERE
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) > 259200  -- > 3 days
+ORDER BY
+    p_to_n_days DESC;
+```
+
+---
+
+### Query 4: Aggregate P  N Delays by Region and Claim Type
+
+```sql
+-- Identify whether certain regions or claim types systematically produce long P-to-N delays
+
+SELECT
+    adj.region,
+    c.claim_type,
+    COUNT(*)                                              AS claim_count,
+    AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) / 86400.0
+                                                          AS avg_p_to_n_days,
+    STDDEV(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) / 86400.0
+                                                          AS stddev_p_to_n_days,
+    MAX(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) / 86400.0
+                                                          AS max_p_to_n_days
+FROM
+    claim_events p
+    JOIN claim_events n
+        ON p.claim_id = n.claim_id
+       AND p.activity = 'P'
+       AND n.activity = 'N'
+    JOIN claims c
+        ON p.claim_id = c.claim_id
+    LEFT JOIN adjusters adj
+        ON p.resource = adj.name
+GROUP BY
+    adj.region,
+    c.claim_type
+HAVING
+    COUNT(*) >= 5                                         -- minimum sample threshold
+ORDER BY
+    avg_p_to_n_days DESC;
+```
+
+---
+
+### Query 5: Claims Closed Shortly After Assignment Without Evaluation or Approval
+
+```sql
+-- Detect claims where A  C occurs within 3 hours and E/P activities are absent,
+-- indicating premature or improper closure
+
+SELECT
+    a.claim_id,
+    a.timestamp                              AS assign_time,
+    c_evt.timestamp                          AS close_time,
+    EXTRACT(EPOCH FROM (c_evt.timestamp - a.timestamp)) / 3600.0
+                                             AS a_to_c_hours,
+    a.resource                               AS assigned_resource,
+    cl.claim_type,
+    cl.claim_amount,
+    -- Count intermediate steps actually recorded
+    (SELECT COUNT(*) FROM claim_events mid
+     WHERE mid.claim_id = a.claim_id
+       AND mid.activity IN ('E', 'P')
+       AND mid.timestamp BETWEEN a.timestamp AND c_evt.timestamp
+    )                                        AS intermediate_steps_count
+FROM
+    claim_events a
+    JOIN claim_events c_evt
+        ON a.claim_id = c_evt.claim_id
+       AND a.activity = 'A'
+       AND c_evt.activity = 'C'
+    JOIN claims cl
+        ON a.claim_id = cl.claim_id
+WHERE
+    EXTRACT(EPOCH FROM (c_evt.timestamp - a.timestamp)) <= 10800  -- within 3 hours
+ORDER BY
+    a_to_c_hours ASC;
+```
+
+---
+
+### Query 6: Claims Where E  N Occurs Without a Preceding P Event
+
+```sql
+-- Identify claims where notification fires within 10 minutes of evaluation
+-- and no approval event exists between them, confirming approval bypass
+
+SELECT
+    e.claim_id,
+    e.timestamp                              AS eval_time,
+    n.timestamp                              AS notify_time,
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp))
+                                             AS e_to_n_seconds,
+    e.resource                               AS evaluator,
+    n.resource                               AS notifier,
+    cl.claim_type,
+    cl.claim_amount,
+    EXISTS (
+        SELECT 1
+        FROM claim_events p
+        WHERE p.claim_id = e.claim_id
+          AND p.activity = 'P'
+          AND p.timestamp BETWEEN e.timestamp AND n.timestamp
+    )                                        AS approval_exists_between
+FROM
+    claim_events e
+    JOIN claim_events n
+        ON e.claim_id = n.claim_id
+       AND e.activity = 'E'
+       AND n.activity = 'N'
+    JOIN claims cl
+        ON e.claim_id = cl.claim_id
+WHERE
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) <= 600  -- within 10 minutes
+ORDER BY
+    e_to_n_seconds ASC;
+```
+
+---
+
+### Query 7: Adjuster-Level Summary of Anomalous Timing Patterns
+
+```sql
+-- Score each adjuster by how many of their claims exhibit any of the four anomalies,
+-- enabling identification of individuals associated with irregular process execution
+
+WITH anomaly_flags AS (
+    SELECT
+        a_evt.resource                          AS adjuster_resource,
+        a_evt.claim_id,
+
+        -- Flag 1: R to P suspiciously narrow window
+        CASE WHEN ABS(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) - 90000) <= 3600
+             THEN 1 ELSE 0 END                  AS flag_rp_rigid,
+
+        -- Flag 2: P to N excessively long
+        CASE WHEN EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) > 259200
+             THEN 1 ELSE 0 END                  AS flag_pn_long,
+
+        -- Flag 3: A to C without intermediate steps
+        CASE WHEN EXTRACT(EPOCH FROM (c_evt.timestamp - a_evt.timestamp)) <= 10800
+             THEN 1 ELSE 0 END                  AS flag_ac_quick,
+
+        -- Flag 4: E to N within 10 minutes
+        CASE WHEN EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) <= 600
+             THEN 1 ELSE 0 END                  AS flag_en_instant
+
+    FROM claim_events a_evt
+    LEFT JOIN claim_events r
+        ON a_evt.claim_id = r.claim_id AND r.activity = 'R'
+    LEFT JOIN claim_events p
+        ON a_evt.claim_id = p.claim_id AND p.activity = 'P'
+    LEFT JOIN claim_events e
+        ON a_evt.claim_id = e.claim_id AND e.activity = 'E'
+    LEFT JOIN claim_events n
+        ON a_evt.claim_id = n.claim_id AND n.activity = 'N'
+    LEFT JOIN claim_events c_evt
+        ON a_evt.claim_id = c_evt.claim_id AND c_evt.activity = 'C'
+    WHERE
+        a_evt.activity = 'A'
+)
+SELECT
+    af.adjuster_resource,
+    adj.specialization,
+    adj.region,
+    COUNT(DISTINCT af.claim_id)              AS total_claims,
+    SUM(af.flag_rp_rigid)                   AS rigid_rp_count,
+    SUM(af.flag_pn_long)                    AS long_pn_count,
+    SUM(af.flag_ac_quick)                   AS quick_ac_count,
+    SUM(af.flag_en_instant)                 AS instant_en_count,
+    SUM(af.flag_rp_rigid + af.flag_pn_long
+      + af.flag_ac_quick + af.flag_en_instant)
+                                             AS total_anomaly_flags
+FROM
+    anomaly_flags af
+    LEFT JOIN adjusters adj
+        ON af.adjuster_resource = adj.name
+GROUP BY
+    af.adjuster_resource,
+    adj.specialization,
+    adj.region
+HAVING
+    COUNT(DISTINCT af.claim_id) >= 3        -- minimum claims threshold
+ORDER BY
+    total_anomaly_flags DESC;
+```
+
+---
+
+## Summary of Findings and Next Steps
+
+| Anomaly | Primary Signal | Recommended Action |
+|---|---|---|
+| R  P rigid timing | Low STDEV around 25-hour mark | Audit approval batch jobs; review automated approval rules |
+| P  N excessive delay | 7-day average, 2-day STDEV | Investigate notification queue; check for undocumented dependencies |
+| A  C premature closure | 2-hour average, missing E/P steps | Review closure authorization controls; audit adjuster behavior |
+| E  N instant notification | 5-minute average, missing P step | Verify notification trigger configuration; check if P is being skipped |
+
+The queries above enable targeted investigation at both the **claim level** (individual anomalous cases) and the **aggregate level** (patterns by adjuster, region, and claim type), providing a structured path from anomaly detection to root-cause identification.
