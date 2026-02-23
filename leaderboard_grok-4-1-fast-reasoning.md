@@ -62,6 +62,7 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 | claude-opus-4-5-thinking-20251101 | **41.0** | :x:                | :white_check_mark: | 6.1                  | **8.5**              | 5.8                  | 5.8                  | 5.8                  | 5.9                  | 3.2                  | **5.8**              |
 | gemini-2.5-pro-thinklow           | **41.0** | :x:                | :white_check_mark: | 7.0                  | 7.6                  | 5.0                  | 5.8                  | 5.8                  | 5.9                  | 3.7                  | **5.9**              |
 | o3-2025-04-16                     | **41.0** | :x:                | :white_check_mark: | 7.1                  | 7.3                  | 5.8                  | 5.9                  | 5.7                  | 5.4                  | 3.8                  | **5.9**              |
+| googlegemini-3.1-pro-preview      | **40.7** | :x:                | :white_check_mark: | 6.4                  | 8.3                  | 6.1                  | 4.8                  | 5.4                  | 5.5                  | 4.2                  | **5.9**              |
 | DeepSeek-R1-0528                  | **40.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 7.6                  | 5.3                  | 4.9                  | 6.2                  | 6.6                  | 4.4                  | 0.0                  |
 | chatgpt-4o-latest-2025-03-26      | **40.7** | :x:                | :x:                | 6.7                  | 6.5                  | 5.5                  | 5.8                  | 6.3                  | 5.7                  | 4.2                  | 5.6                  |
 | phi4-reasoning                    | **40.6** | :white_check_mark: | :white_check_mark: | 7.1                  | 7.4                  | 4.6                  | 6.0                  | 5.8                  | 5.9                  | 3.8                  | 0.0                  |
@@ -3787,6 +3788,70 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             |     5.2 |
 | cat08_04_resource_assign           |     8.4 |
 | cat08_05_task_schedul              |     7.1 |
+
+
+
+### googlegemini-3.1-pro-preview   => 40.7 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |   10    |
+| cat01_02_activity_context          |   10    |
+| cat01_03_high_level_events         |    8.4  |
+| cat01_04_sensor_recordings         |    8.4  |
+| cat01_05_merge_two_logs            |    2.5  |
+| cat01_06_system_logs               |    7.6  |
+| cat01_07_interv_to_pseudo_bpmn     |    8.4  |
+| cat01_08_tables_to_log             |    8.4  |
+| cat02_01_conformance_textual       |    9    |
+| cat02_02_conf_desiderata           |    8.4  |
+| cat02_03_anomaly_event_log         |    9    |
+| cat02_04_powl_anomaly_detection    |    9.6  |
+| cat02_05_two_powls_anomalies       |   10    |
+| cat02_06_root_cause_1              |    9.4  |
+| cat02_07_root_cause_2              |    8.4  |
+| cat02_08_underfitting_process_tree |   10    |
+| cat02_09_fix_process_tree          |    9.4  |
+| cat03_01_process_tree_generation   |    9    |
+| cat03_02_powl_generation           |   10    |
+| cat03_03_log_skeleton_generation   |    8.4  |
+| cat03_04_declare_generation        |    4    |
+| cat03_05_temp_profile_generation   |    3.07 |
+| cat03_06_petri_net_generation      |   10    |
+| cat03_07_process_tree_discovery    |    8.4  |
+| cat03_08_powl_discovery            |    8.4  |
+| cat04_01_pseudo_bpmn_description   |    8.4  |
+| cat04_02_pseudo_bpmn_open_question |    8.4  |
+| cat04_03_declare_open_question     |    7.6  |
+| cat04_04_declare_description       |    4.2  |
+| cat04_05_sql_filt_num_events       |    1    |
+| cat04_06_sql_filt_three_df         |   10    |
+| cat04_07_sql_filt_top_k_vars       |    8.4  |
+| cat05_01_hyp_generation_log        |    8.4  |
+| cat05_02_hyp_gen_powl              |    7.1  |
+| cat05_03_hyp_gen_declare           |    8.4  |
+| cat05_04_hyp_gen_temp_profile      |    2    |
+| cat05_05_question_gen_nlp          |    8.4  |
+| cat05_06_question_pseudo_bpmn      |   10    |
+| cat05_07_question_interview        |   10    |
+| cat06_01_bias_text                 |    8.8  |
+| cat06_02_bias_event_log            |    8.4  |
+| cat06_03_bias_powl                 |    8.4  |
+| cat06_04_bias_two_logs             |    8.4  |
+| cat06_05_bias_two_logs_2           |    8.4  |
+| cat06_06_bias_mitigation_declare   |    4    |
+| cat06_07_fair_unfair_powl          |    8.4  |
+| cat07_01_ocdfg                     |    9.6  |
+| cat07_02_bpmn_orders               |   10    |
+| cat07_03_bpmn_dispatch             |   10    |
+| cat07_04_causal_net                |    9.6  |
+| cat07_05_proclets                  |   10    |
+| cat07_06_perf_spectrum             |    9.6  |
+| cat08_01_queue_mining              |    8.4  |
+| cat08_02_instance_spanning         |    8.4  |
+| cat08_03_transport_opt             |    8.4  |
+| cat08_04_resource_assign           |    7.1  |
+| cat08_05_task_schedul              |    9.4  |
 
 
 

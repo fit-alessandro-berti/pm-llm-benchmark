@@ -348,7 +348,7 @@ MODELS_DICT = {
             "moonshotai/kimi-k2.5", "arcee-ai/trinity-large-preview:free",
             "stepfun/step-3.5-flash:free", "openrouter/aurora-alpha",
             "minimax/minimax-m2.5", "z-ai/glm-5", "qwen/qwen3-max-thinking",
-            "qwen/qwen3.5-397b-a17b"
+            "qwen/qwen3.5-397b-a17b", "google/gemini-3.1-pro-preview"
         }
     },
     "manual": {
