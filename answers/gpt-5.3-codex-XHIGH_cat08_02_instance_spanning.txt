@@ -1,0 +1,195 @@
+## 1) Identify instance-spanning constraints and quantify impact
+
+### A. Build an **enriched mining dataset** first
+From the raw event log, create activity intervals and state variables:
+
+- `service_time(activity) = COMPLETE - START`
+- `ready_time(next_activity) = COMPLETE(previous_activity)`
+- `waiting_time_before_activity = START(next_activity) - ready_time`
+
+Then enrich each waiting interval with facility-wide state at that time:
+
+- # busy cold-packing stations (out of 5)
+- open batch status per region (and batch age)
+- # active hazardous orders in Packing + QC
+- express arrivals / queue state / preemption events
+- resource calendars (shift, breaks)
+
+This turns a normal case-centric log into an instance-spanning analysis view (ideally object-centric: Order, Batch, Station, Staff).
+
+---
+
+### B. Formal detection + impact metrics per constraint
+
+| Constraint | How to identify in log | Core impact metrics |
+|---|---|---|
+| **Shared Cold-Packing** | For orders with `RequiresColdPacking=TRUE`, measure wait from Packing-ready to Packing-start; attribute to constraint when all 5 cold stations are occupied during that interval. | Avg/P90 cold-packing queue wait, queue length over time, cold-station utilization, % cold orders delayed, cold-order throughput/hour |
+| **Shipping Batching (region)** | For orders after QC complete, measure wait until Shipping Label Generation; attribute to batching if waiting occurs while order is “batch-ready” but batch not yet closed/triggered. | Batch formation time, oldest-order-in-batch age, batch size distribution, post-QC batch wait (avg/P95), % orders hitting max-wait threshold |
+| **Priority handling (Express)** | Detect events where express order jumps queue or preempts standard resource usage. If suspend/resume events aren’t logged, infer from abnormal standard service inflation + resource handovers at same timestamp window. | Express SLA attainment, # preemptions, added delay to standard due to express, starvation rate of standard orders, context-switch overhead |
+| **Hazmat concurrent limit (<=10 in Packing+QC)** | Reconstruct time series of active hazmat orders in Packing/QC from START/COMPLETE events. If hazmat order is ready but cannot start while active count is 10 => blocked by compliance cap. | % time at cap, blocked-start count, hazmat waiting due to cap, hazmat throughput/day, compliance violations (>10 should be zero) |
+
+---
+
+### C. Separate **within-instance** vs **between-instance** waiting
+Use a waiting-time decomposition:
+
+- **Within-instance**: caused by the order itself (rework, missing info, long handling/service time).
+- **Between-instance**: caused by other orders or global rules (shared resource contention, batching dependency, priority interruption, hazmat cap).
+
+Practical attribution logic:
+1. Compute waiting interval before each step.
+2. Overlay interval with system states:
+   - cold stations full?
+   - batch not yet released?
+   - hazmat cap reached?
+   - express priority blocking?
+3. Attribute each minute of wait to active blocking cause(s).  
+   (If multiple causes overlap, use precedence rules or proportional attribution.)
+
+This is the key to avoiding wrong conclusions like “Packing is slow” when the true issue is “Packing is waiting for shared capacity.”
+
+---
+
+## 2) Analyze interactions between constraints
+
+These constraints do not act independently; they amplify each other:
+
+1. **Express + Cold-Packing**
+   - Express cold orders can consume scarce cold stations first.
+   - Standard cold orders accumulate queue; downstream QC and shipping delays increase.
+
+2. **Batching + Express**
+   - If express joins normal batch logic, SLA risk rises.
+   - If express always bypasses batching, transport efficiency drops.  
+    Need hybrid policy, not all-or-nothing.
+
+3. **Hazmat cap + Priority**
+   - Even express hazmat cannot violate cap=10.
+   - If cap is saturated, express cannot be expedited as expected (policy conflict).
+
+4. **Hazmat + Batching**
+   - Hazmat delays upstream can cause missed regional batch windows, increasing post-QC waiting and variability.
+
+5. **Bottleneck propagation**
+   - A queue spike at cold-packing can shift congestion to QC, which can increase time spent near hazmat cap.
+
+Why this matters: optimizing one rule locally (e.g., more aggressive express preemption) can worsen total lead time and standard SLA. You need system-level optimization, not single-constraint tuning.
+
+---
+
+## 3) Constraint-aware optimization strategies (concrete)
+
+### Strategy 1 — **Dynamic cold-packing allocation + forecast-based dispatch**
+- **Addresses:** Shared cold-packing, express/cold interaction.
+- **Change:**  
+  - Dynamically convert selected standard stations to cold-capable during predicted peaks.  
+  - Reserve a small express cold capacity buffer only when express demand forecast exceeds threshold.  
+  - Use queue aging so standard cold orders are not starved.
+- **Data used:** 15–60 min demand forecast from historical arrival patterns (time of day, weekday, seasonality, promotions).
+- **Expected outcome:** Lower cold queue wait, smoother cold throughput, better express performance without heavily penalizing standard orders.
+
+---
+
+### Strategy 2 — **Hybrid batching logic (size + max-wait + cutoff aware)**
+- **Addresses:** Batching delays; batching/priority trade-off.
+- **Change:** Close region batch when **any** trigger fires:
+  1) batch size >= N, or  
+  2) oldest order wait >= T, or  
+  3) carrier cutoff near.
+  
+  Express orders either bypass or join micro-batches with tight max wait.
+- **Data used:** Historical cost-delay frontier by region (transport savings vs customer delay), arrival density by region.
+- **Expected outcome:** Large reduction in post-QC waiting while preserving most route optimization benefits.
+
+---
+
+### Strategy 3 — **Priority policy redesign (reduce disruptive preemption)**
+- **Addresses:** Priority handling impact on standard flow.
+- **Change:**  
+  - Replace frequent mid-task preemption with **boundary preemption** (finish current pack, then serve express first).  
+  - Add dedicated express “capacity slice” at bottlenecks (packing/QC) during peak windows.  
+  - Use anti-starvation rule for standard queue.
+- **Data used:** Measured preemption overhead, express arrival profile, SLA miss root causes.
+- **Expected outcome:** Express SLA remains high, but standard order delay variance and context-switch waste drop significantly.
+
+---
+
+### Strategy 4 — **Hazmat token-based WIP control across Packing + QC**
+- **Addresses:** Hazmat regulatory cap and throughput loss.
+- **Change:**  
+  - Implement digital semaphore of 10 hazmat slots across Packing+QC.  
+  - Release hazardous orders into Packing only when predicted downstream slot becomes available (pull control).  
+  - Optional: dedicate a hazmat QC lane/time window to reduce occupancy duration.
+- **Data used:** Real-time active hazmat count, predicted completion times for hazmat currently in system.
+- **Expected outcome:** Compliance preserved (zero violations), less stop-go blocking, better effective hazmat flow under fixed cap.
+
+---
+
+## 4) Simulation and validation before rollout
+
+Use a **discrete-event simulation (DES) digital twin** built from mined process behavior.
+
+### Model must explicitly include:
+- Finite resources (pickers, standard/cold packing stations, QC staff)
+- Queue disciplines (priority rules, aging, preemption policy)
+- Batch formation logic by region
+- Global hazmat cap across two activities
+- Time-varying arrivals (peak season patterns)
+- Activity-time distributions by order type (standard/express, cold/non-cold, hazmat)
+
+### Validation steps:
+1. Reproduce current-state KPIs from historical period:
+   - lead-time distribution (P50/P90/P95)
+   - queue lengths by step
+   - express SLA, standard SLA
+   - hazmat cap occupancy profile
+2. Calibrate until baseline error is acceptable.
+3. Run what-if scenarios:
+   - each strategy alone
+   - combinations (important due to interactions)
+   - peak stress scenarios
+4. Use multiple replications + confidence intervals (not one run).
+
+### Decision criteria:
+Choose policy bundle that improves end-to-end KPIs **and** keeps hard constraints intact (hazmat limit, express targets, batching economics).
+
+---
+
+## 5) Post-implementation monitoring (process mining dashboards)
+
+Set up a layered monitoring stack:
+
+### A. Outcome dashboard (business KPIs)
+- End-to-end lead time (P50/P90/P95)
+- On-time shipment rate
+- Express vs standard SLA attainment
+- Throughput/day and WIP
+
+### B. Constraint-specific dashboards
+1. **Cold-Packing Control**
+   - cold queue length, wait-to-start, utilization of cold stations, % cold orders delayed
+
+2. **Batching Efficiency**
+   - batch fill time, batch size, oldest order age, % batches closed by max-wait trigger
+
+3. **Priority Impact**
+   - preemption count/hour, added delay to standard from express events, starvation alerts
+
+4. **Hazmat Compliance/Flow**
+   - concurrent hazmat count timeline, % time at 9–10, blocked hazmat starts, violations (>10)
+
+### C. Interaction dashboard
+- Co-occurrence heatmap (e.g., express spikes + cold saturation + batch delay)
+- Delay attribution waterfall by cause and cause-combination
+
+### D. Conformance & drift
+- Rule conformance checks:
+  - hazmat <=10 always
+  - express max wait threshold
+  - batch max hold threshold
+- Drift detection to flag when behaviors regress during seasonal peaks
+
+---
+
+## Final note
+The best results will come from a **combined policy package** (not a single fix): dynamic cold capacity + hybrid batching + controlled priority + hazmat WIP governance, validated via simulation and continuously monitored with instance-spanning KPIs.

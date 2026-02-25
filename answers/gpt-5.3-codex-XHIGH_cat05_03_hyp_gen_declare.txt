@@ -1,0 +1,161 @@
+## 1) Anomalies in the DECLARE rules
+
+1. **`E` is effectively blocked from all compliant traces**  
+   - `existence(C)` forces every claim to have `C`.
+   - `noncoexistence(E, C)` forbids `E` and `C` together.  
+   - Combined effect: if `C` is mandatory, then `E` cannot appear in any valid case.
+
+2. **`responded_existence(E -> A)` becomes practically inert**  
+   Since `E` is implicitly excluded (point 1), this rule is mostly vacuously true and adds little control.
+
+3. **Model is under-constrained for core lifecycle logic**  
+   `init(R)` and `precedence(C <- R)` do not enforce the full progression. Paths like `R -> C` are allowed, skipping `A`, `E`, `P`, `N`.
+
+4. **Critical activities are unconstrained**  
+   No explicit requirement/order for `P` and `N`, so closure can happen without approval/notification.
+
+---
+
+## 2) Plausible hypotheses for why this happened
+
+- **Wrong template choice** (e.g., `noncoexistence` used where a positive relation was intended).
+- **Model merged from conflicting process variants** (fast-track vs full assessment path).
+- **Event logging/data extraction gaps** (evaluation events missing or mapped incorrectly).
+- **Case correlation issues** (events linked to wrong `claim_id`, splitting true traces).
+- **Policy drift** (rules changed operationally but constraints not aligned).
+- **Operational pressure/KPI bias** toward rapid closure, weakening control points.
+
+---
+
+## 3) SQL-based verification strategies
+
+### A) Claims where evaluation and closure both occur (to test the exclusion rule)
+```sql
+SELECT claim_id,
+       COUNT(*) FILTER (WHERE activity = 'E') AS e_count,
+       COUNT(*) FILTER (WHERE activity = 'C') AS c_count
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'C') > 0;
+```
+
+### B) Claims closed without any evaluation
+```sql
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'C') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'E') = 0;
+```
+
+### C) Evaluations with no assignment at all
+```sql
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'A') = 0;
+```
+
+### D) Evaluation occurring before first assignment
+```sql
+WITH first_a AS (
+  SELECT claim_id, MIN("timestamp") AS first_a_ts
+  FROM claim_events
+  WHERE activity = 'A'
+  GROUP BY claim_id
+),
+first_e AS (
+  SELECT claim_id, MIN("timestamp") AS first_e_ts
+  FROM claim_events
+  WHERE activity = 'E'
+  GROUP BY claim_id
+)
+SELECT e.claim_id, e.first_e_ts, a.first_a_ts
+FROM first_e e
+LEFT JOIN first_a a USING (claim_id)
+WHERE a.first_a_ts IS NULL OR e.first_e_ts < a.first_a_ts;
+```
+
+### E) First event not `R` (init rule check)
+```sql
+WITH ordered AS (
+  SELECT claim_id, activity, event_id, "timestamp",
+         ROW_NUMBER() OVER (
+           PARTITION BY claim_id
+           ORDER BY "timestamp", event_id
+         ) AS rn
+  FROM claim_events
+)
+SELECT claim_id, activity AS first_activity, "timestamp"
+FROM ordered
+WHERE rn = 1
+  AND activity <> 'R';
+```
+
+### F) Close events not preceded by receive (`R`)
+```sql
+SELECT c_ev.claim_id, c_ev.event_id, c_ev."timestamp"
+FROM claim_events c_ev
+WHERE c_ev.activity = 'C'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events r_ev
+    WHERE r_ev.claim_id = c_ev.claim_id
+      AND r_ev.activity = 'R'
+      AND (r_ev."timestamp", r_ev.event_id) < (c_ev."timestamp", c_ev.event_id)
+  );
+```
+
+### G) Evaluation done by unknown resource (not found in adjusters)
+```sql
+SELECT e.claim_id, e.event_id, e.resource
+FROM claim_events e
+LEFT JOIN adjusters a
+  ON a.name = e.resource
+  OR a.adjuster_id::text = e.resource
+WHERE e.activity = 'E'
+  AND a.adjuster_id IS NULL;
+```
+
+### H) Evaluation done by adjuster with specialization mismatch
+```sql
+SELECT e.claim_id, e.event_id, e.resource,
+       a.specialization, c.claim_type
+FROM claim_events e
+JOIN claims c ON c.claim_id = e.claim_id
+JOIN adjusters a
+  ON a.name = e.resource
+  OR a.adjuster_id::text = e.resource
+WHERE e.activity = 'E'
+  AND a.specialization <> split_part(c.claim_type, '_', 1);
+```
+
+### I) Evaluator differs from most recent assigned resource
+```sql
+WITH evals AS (
+  SELECT event_id, claim_id, "timestamp", resource AS evaluator
+  FROM claim_events
+  WHERE activity = 'E'
+)
+SELECT e.claim_id,
+       e.event_id AS eval_event_id,
+       e.evaluator,
+       a.event_id AS assign_event_id,
+       a.resource AS assigned_resource
+FROM evals e
+LEFT JOIN LATERAL (
+  SELECT event_id, resource
+  FROM claim_events a
+  WHERE a.claim_id = e.claim_id
+    AND a.activity = 'A'
+    AND (a."timestamp", a.event_id) <= (e."timestamp", e.event_id)
+  ORDER BY a."timestamp" DESC, a.event_id DESC
+  LIMIT 1
+) a ON TRUE
+WHERE a.event_id IS NULL
+   OR a.resource IS DISTINCT FROM e.evaluator;
+```
+
+If useful, I can also give you a single consolidated audit query that returns one row per claim with flags for each anomaly.

@@ -1,0 +1,241 @@
+### 1) Key temporal anomalies
+
+1. **R  P: avg ~25h, stdev ~1h**
+   - Very tight variance for a human-heavy process stage.
+   - Also suspicious relative to **R  E stdev = 8h** (variance should usually propagate downstream).
+
+2. **P  N: avg ~7 days, stdev ~2 days**
+   - Very long waiting time after approval.
+   - High spread suggests unstable operations (queue spikes, manual release waves, etc.).
+
+3. **A  C: avg ~2h**
+   - Closing soon after assignment may indicate skipped steps, cancellations, or non-standard closure paths.
+
+4. **E  N: avg ~5 min (stdev 1 min)**
+   - Very fast and very consistent; likely automation, event mislabeling, or alternate meaning of “N”.
+
+5. **Cross-metric inconsistency**
+   - If process is strictly `... E  P  N  C`, then very fast `E  N` conflicts with very slow `P  N`.
+   - Suggests missing/out-of-order events, parallel variants, or logging quality issues.
+
+---
+
+### 2) Plausible hypotheses
+
+- **Batch scheduling artifact**: approvals are stamped at fixed times (e.g., nightly), producing low `RP` variance.
+- **Notification backlog/manual queue**: approved claims wait in a communication queue, causing long/variable `PN`.
+- **Unmodeled fast-close path**: some claims are withdrawn/invalid and closed quickly after assignment.
+- **Activity code ambiguity**: `N` may represent different notification types (internal vs customer-facing).
+- **Data quality issues**: delayed data entry, timezone shifts, or backfilled timestamps.
+
+---
+
+### 3) SQL verification queries (PostgreSQL)
+
+#### Query A — Detect pair outliers using temporal-profile thresholds (zeta = 3)
+
+```sql
+WITH settings AS (
+  SELECT 3.0::numeric AS zeta
+),
+pair_profile(a1, a2, avg_sec, std_sec) AS (
+  VALUES
+    ('R','A',3600::numeric,600::numeric),
+    ('R','E',86400::numeric,28800::numeric),
+    ('R','P',90000::numeric,3600::numeric),
+    ('A','C',7200::numeric,3600::numeric),
+    ('E','N',300::numeric,60::numeric),
+    ('E','C',3600::numeric,3000::numeric),
+    ('P','N',604800::numeric,172800::numeric),
+    ('N','C',1800::numeric,300::numeric)
+),
+a1_events AS (
+  SELECT pp.a1, pp.a2, pp.avg_sec, pp.std_sec, ce.claim_id, MIN(ce.timestamp) AS a1_ts
+  FROM pair_profile pp
+  JOIN claim_events ce
+    ON ce.activity = pp.a1
+  GROUP BY pp.a1, pp.a2, pp.avg_sec, pp.std_sec, ce.claim_id
+),
+durations AS (
+  SELECT a.*, b.a2_ts,
+         EXTRACT(EPOCH FROM (b.a2_ts - a.a1_ts))::numeric AS actual_sec
+  FROM a1_events a
+  JOIN LATERAL (
+    SELECT MIN(ce2.timestamp) AS a2_ts
+    FROM claim_events ce2
+    WHERE ce2.claim_id = a.claim_id
+      AND ce2.activity = a.a2
+      AND ce2.timestamp > a.a1_ts
+  ) b ON b.a2_ts IS NOT NULL
+)
+SELECT d.claim_id, d.a1, d.a2,
+       d.actual_sec,
+       ROUND((d.actual_sec - d.avg_sec) / NULLIF(d.std_sec,0), 2) AS z_score,
+       c.claim_type, c.claim_amount
+FROM durations d
+JOIN claims c ON c.claim_id = d.claim_id
+CROSS JOIN settings s
+WHERE d.actual_sec < d.avg_sec - s.zeta * d.std_sec
+   OR d.actual_sec > d.avg_sec + s.zeta * d.std_sec
+ORDER BY ABS((d.actual_sec - d.avg_sec) / NULLIF(d.std_sec,0)) DESC;
+```
+
+---
+
+#### Query B — Find claims closed quickly after assignment and check skipped steps
+
+```sql
+WITH a_events AS (
+  SELECT claim_id, MIN(timestamp) AS a_ts
+  FROM claim_events
+  WHERE activity = 'A'
+  GROUP BY claim_id
+),
+ac AS (
+  SELECT a.claim_id, a.a_ts, c.c_ts,
+         EXTRACT(EPOCH FROM (c.c_ts - a.a_ts)) AS ac_sec
+  FROM a_events a
+  JOIN LATERAL (
+    SELECT MIN(timestamp) AS c_ts
+    FROM claim_events ce
+    WHERE ce.claim_id = a.claim_id
+      AND ce.activity = 'C'
+      AND ce.timestamp > a.a_ts
+  ) c ON c.c_ts IS NOT NULL
+)
+SELECT ac.claim_id,
+       ROUND(ac.ac_sec / 3600.0, 2) AS hours_assign_to_close,
+       cl.claim_type,
+       EXISTS (
+         SELECT 1 FROM claim_events e
+         WHERE e.claim_id = ac.claim_id
+           AND e.activity = 'E'
+           AND e.timestamp BETWEEN ac.a_ts AND ac.c_ts
+       ) AS has_evaluate_between,
+       EXISTS (
+         SELECT 1 FROM claim_events p
+         WHERE p.claim_id = ac.claim_id
+           AND p.activity = 'P'
+           AND p.timestamp BETWEEN ac.a_ts AND ac.c_ts
+       ) AS has_approve_between,
+       EXISTS (
+         SELECT 1 FROM claim_events n
+         WHERE n.claim_id = ac.claim_id
+           AND n.activity = 'N'
+           AND n.timestamp BETWEEN ac.a_ts AND ac.c_ts
+       ) AS has_notify_between
+FROM ac
+JOIN claims cl ON cl.claim_id = ac.claim_id
+WHERE ac.ac_sec <= 2 * 3600
+ORDER BY ac.ac_sec;
+```
+
+---
+
+#### Query C — Analyze long P  N delays by claim type and adjuster region
+
+```sql
+WITH p_events AS (
+  SELECT claim_id, MIN(timestamp) AS p_ts
+  FROM claim_events
+  WHERE activity = 'P'
+  GROUP BY claim_id
+),
+pn AS (
+  SELECT p.claim_id, p.p_ts, n.n_ts,
+         EXTRACT(EPOCH FROM (n.n_ts - p.p_ts)) AS pn_sec
+  FROM p_events p
+  JOIN LATERAL (
+    SELECT MIN(timestamp) AS n_ts
+    FROM claim_events ce
+    WHERE ce.claim_id = p.claim_id
+      AND ce.activity = 'N'
+      AND ce.timestamp > p.p_ts
+  ) n ON n.n_ts IS NOT NULL
+),
+first_assignment AS (
+  SELECT ce.claim_id, ce.resource,
+         ROW_NUMBER() OVER (PARTITION BY ce.claim_id ORDER BY ce.timestamp) AS rn
+  FROM claim_events ce
+  WHERE ce.activity = 'A'
+)
+SELECT cl.claim_type,
+       COALESCE(ad.region, 'UNKNOWN') AS region,
+       COUNT(*) AS claims_cnt,
+       ROUND(AVG(pn.pn_sec) / 3600.0, 2) AS avg_hours_p_to_n,
+       ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pn.pn_sec) / 3600.0, 2) AS median_hours_p_to_n,
+       SUM((pn.pn_sec > (604800 + 3 * 172800))::int) AS extreme_delay_cnt
+FROM pn
+JOIN claims cl ON cl.claim_id = pn.claim_id
+LEFT JOIN first_assignment fa ON fa.claim_id = pn.claim_id AND fa.rn = 1
+LEFT JOIN adjusters ad ON ad.name = fa.resource   -- if resource holds ID, join by adjuster_id instead
+GROUP BY cl.claim_type, COALESCE(ad.region, 'UNKNOWN')
+ORDER BY avg_hours_p_to_n DESC;
+```
+
+---
+
+#### Query D — Validate “too-fast” E  N and check approval ordering
+
+```sql
+WITH e_events AS (
+  SELECT claim_id, MIN(timestamp) AS e_ts
+  FROM claim_events
+  WHERE activity = 'E'
+  GROUP BY claim_id
+),
+en AS (
+  SELECT e.claim_id, e.e_ts, n.n_ts,
+         EXTRACT(EPOCH FROM (n.n_ts - e.e_ts)) AS en_sec
+  FROM e_events e
+  JOIN LATERAL (
+    SELECT MIN(timestamp) AS n_ts
+    FROM claim_events ce
+    WHERE ce.claim_id = e.claim_id
+      AND ce.activity = 'N'
+      AND ce.timestamp > e.e_ts
+  ) n ON n.n_ts IS NOT NULL
+)
+SELECT en.claim_id,
+       ROUND(en.en_sec / 60.0, 2) AS minutes_e_to_n,
+       CASE
+         WHEN EXISTS (
+           SELECT 1 FROM claim_events p
+           WHERE p.claim_id = en.claim_id
+             AND p.activity = 'P'
+             AND p.timestamp BETWEEN en.e_ts AND en.n_ts
+         ) THEN 'P_between_E_and_N'
+         WHEN EXISTS (
+           SELECT 1 FROM claim_events p
+           WHERE p.claim_id = en.claim_id
+             AND p.activity = 'P'
+             AND p.timestamp > en.n_ts
+         ) THEN 'P_after_N'
+         ELSE 'No_P_after_E'
+       END AS approval_pattern
+FROM en
+WHERE en.en_sec <= 10 * 60
+ORDER BY en.en_sec;
+```
+
+---
+
+#### Query E — Check for batching/backlog signature behind P  N delays
+
+```sql
+WITH daily AS (
+  SELECT date_trunc('day', timestamp) AS day,
+         SUM((activity = 'P')::int) AS approvals,
+         SUM((activity = 'N')::int) AS notifications
+  FROM claim_events
+  GROUP BY 1
+)
+SELECT day,
+       approvals,
+       notifications,
+       SUM(approvals - notifications) OVER (ORDER BY day) AS backlog_proxy
+FROM daily
+ORDER BY day;
+```
+
+If you want, I can also provide a **single dashboard-style SQL** that outputs all anomaly KPIs (rates, medians, z-score counts) in one result set.

@@ -420,6 +420,11 @@ MODELS_DICT = {
                 "base_model": "gpt-5.2-codex",
                 "reasoning_effort": "xhigh"
             },
+            "gpt-5.3-codex-XHIGH": {
+                "provider": "openai",
+                "base_model": "gpt-5.3-codex",
+                "reasoning_effort": "xhigh"
+            },
             "o3-pro-2025-06-10-HIGH": {
                 "provider": "openai",
                 "base_model": "o3-pro-2025-06-10",

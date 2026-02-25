@@ -1,0 +1,193 @@
+Great case.  
+(Assuming `claim_events.activity` uses codes `R/A/E/P/N/C`; if your log stores full names, just replace them.)
+
+## 1) Anomalies in the POWL model
+
+1. **Loop design is odd (`LOOP(E, P)`)**  
+   In loop semantics, this means roughly `E (P E)*`:
+   - At least one `E` is required.
+   - `P` can repeat, but each `P` is followed by another `E`.
+   - It can also end with `E` and **no final `P`**.  
+   This is unusual for claims, where approval is typically a final step before notification/closure.
+
+2. **Notification can be skipped (`XOR(N, skip)`)**  
+   Customer notification is optional in the model, which conflicts with the “ideal” flow where notification is mandatory.
+
+3. **Premature/independent closure (`A -> C` without `loop/xor -> C`)**  
+   Because `C` only depends on `A`, claim closure can happen before evaluation/approval/notification.
+
+4. **`C` is not a strict end-state**  
+   Since there is no `xor -> C` edge, `C` may happen and then other activities may still appear (depending on execution linearization), which is usually a process smell.
+
+---
+
+## 2) Plausible hypotheses
+
+- **Business-rule change partially implemented**  
+  E.g., introduced fast-track closures or exceptions, but model wasn’t fully redesigned.
+- **Miscommunication in process design**  
+  Ops/legal/customer-service may have different views on whether notification is mandatory.
+- **Technical/workflow issue**  
+  System may permit “close” action too early; or events are logged late/out of order.
+- **Mining/modeling artifact**  
+  If model was discovered from noisy/incomplete logs, missing events can create skip/XOR and odd loops.
+- **Activity semantics mismatch**  
+  `P` might actually include rework/review behavior, not strictly final approval.
+
+---
+
+## 3) How to verify with PostgreSQL (example queries)
+
+### A) Claims closed without evaluation or approval before close
+```sql
+WITH first_close AS (
+    SELECT claim_id, MIN("timestamp") AS close_ts
+    FROM claim_events
+    WHERE activity = 'C'
+    GROUP BY claim_id
+)
+SELECT fc.claim_id, fc.close_ts
+FROM first_close fc
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM claim_events e
+    WHERE e.claim_id = fc.claim_id
+      AND e.activity = 'E'
+      AND e."timestamp" <= fc.close_ts
+)
+   OR NOT EXISTS (
+    SELECT 1
+    FROM claim_events p
+    WHERE p.claim_id = fc.claim_id
+      AND p.activity = 'P'
+      AND p."timestamp" <= fc.close_ts
+);
+```
+
+### B) Claims where processing continues after first close (closure not terminal)
+```sql
+WITH first_close AS (
+    SELECT claim_id, MIN("timestamp") AS close_ts
+    FROM claim_events
+    WHERE activity = 'C'
+    GROUP BY claim_id
+)
+SELECT ce.claim_id, ce.activity, ce."timestamp", fc.close_ts
+FROM claim_events ce
+JOIN first_close fc USING (claim_id)
+WHERE ce."timestamp" > fc.close_ts
+  AND ce.activity IN ('E','P','N')
+ORDER BY ce.claim_id, ce."timestamp";
+```
+
+### C) Claims approved multiple times (loop symptom)
+```sql
+SELECT claim_id,
+       COUNT(*) FILTER (WHERE activity = 'P') AS approve_count,
+       COUNT(*) FILTER (WHERE activity = 'E') AS evaluate_count
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'P') > 1
+ORDER BY approve_count DESC;
+```
+
+### D) Notification skipped frequency
+```sql
+WITH per_claim AS (
+    SELECT claim_id,
+           COUNT(*) FILTER (WHERE activity = 'C') AS close_cnt,
+           COUNT(*) FILTER (WHERE activity = 'N') AS notify_cnt
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    COUNT(*) FILTER (WHERE close_cnt > 0) AS closed_claims,
+    COUNT(*) FILTER (WHERE close_cnt > 0 AND notify_cnt = 0) AS closed_without_notify,
+    ROUND(
+      100.0 * COUNT(*) FILTER (WHERE close_cnt > 0 AND notify_cnt = 0)
+      / NULLIF(COUNT(*) FILTER (WHERE close_cnt > 0), 0), 2
+    ) AS pct_closed_without_notify
+FROM per_claim;
+```
+
+### E) Check if anomaly rates changed over time (supports “policy change” hypothesis)
+```sql
+WITH first_close AS (
+    SELECT claim_id, MIN("timestamp") AS close_ts
+    FROM claim_events
+    WHERE activity = 'C'
+    GROUP BY claim_id
+),
+flags AS (
+    SELECT c.claim_id,
+           date_trunc('month', c.submission_date)::date AS month,
+           CASE
+             WHEN fc.claim_id IS NULL THEN NULL
+             WHEN EXISTS (
+                 SELECT 1 FROM claim_events e
+                 WHERE e.claim_id = c.claim_id
+                   AND e.activity = 'E'
+                   AND e."timestamp" <= fc.close_ts
+             )
+              AND EXISTS (
+                 SELECT 1 FROM claim_events p
+                 WHERE p.claim_id = c.claim_id
+                   AND p.activity = 'P'
+                   AND p."timestamp" <= fc.close_ts
+             )
+             THEN 0 ELSE 1
+           END AS close_without_full_review,
+           CASE
+             WHEN EXISTS (
+                 SELECT 1 FROM claim_events n
+                 WHERE n.claim_id = c.claim_id AND n.activity = 'N'
+             ) THEN 0 ELSE 1
+           END AS skipped_notification
+    FROM claims c
+    LEFT JOIN first_close fc ON fc.claim_id = c.claim_id
+)
+SELECT month,
+       AVG(close_without_full_review::numeric) AS rate_close_without_review,
+       AVG(skipped_notification::numeric)      AS rate_skipped_notification
+FROM flags
+WHERE close_without_full_review IS NOT NULL
+GROUP BY month
+ORDER BY month;
+```
+
+### F) Optional: correlate anomalies with adjuster assignment quality
+(If `claim_events.resource` stores adjuster name.)
+```sql
+WITH first_assignment AS (
+    SELECT DISTINCT ON (claim_id)
+           claim_id, resource AS assigned_adjuster
+    FROM claim_events
+    WHERE activity = 'A'
+    ORDER BY claim_id, "timestamp", event_id
+),
+loop_flag AS (
+    SELECT claim_id,
+           (COUNT(*) FILTER (WHERE activity='E') > 1
+            OR COUNT(*) FILTER (WHERE activity='P') > 1) AS has_loop_pattern
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    CASE
+      WHEN ad.adjuster_id IS NULL THEN 'unknown_adjuster'
+      WHEN lower(c.claim_type) LIKE lower(ad.specialization) || '%' THEN 'matched'
+      ELSE 'mismatch'
+    END AS assignment_quality,
+    COUNT(*) AS claims,
+    AVG(lf.has_loop_pattern::int)::numeric(6,3) AS loop_rate
+FROM claims c
+LEFT JOIN first_assignment fa ON fa.claim_id = c.claim_id
+LEFT JOIN adjusters ad ON ad.name = fa.assigned_adjuster
+LEFT JOIN loop_flag lf ON lf.claim_id = c.claim_id
+GROUP BY 1
+ORDER BY claims DESC;
+```
+
+---
+
+If you want, I can also give you **one consolidated SQL view** that outputs one row per claim with anomaly flags (`premature_close`, `missing_approval`, `missing_notification`, `multi_approval`, etc.).
