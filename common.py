@@ -345,6 +345,7 @@ MODELS_DICT = {
             "qwen/qwen3.5-35b-a3b",
             "qwen/qwen3.5-27b",
             "qwen/qwen3.5-122b-a10b",
+            "liquid/lfm-2-24b-a2b",
             "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1", "essentialai/rnj-1-instruct",
             "xiaomi/mimo-v2-flash:free", "minimax/minimax-m2.1", "z-ai/glm-4.7",
             "writer/palmyra-x5", "z-ai/glm-4.7-flash", "liquid/lfm-2.5-1.2b-thinking:free",
