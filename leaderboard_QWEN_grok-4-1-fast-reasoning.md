@@ -4,18 +4,21 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 
 | Model                         | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | OPT                  | :nerd_face: VI       |
 |:------------------------------|:---------|:-------------------|:-------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|:---------------------|
-| Qwen3-235B-A22B-Thinking-2507 | **43.9** | :white_check_mark: | :white_check_mark: | 6.8                  | 7.5                  | :mage_woman: **6.9** | 5.7                  | 5.8                  | :mage_woman: **6.3** | :mage_woman: **4.8** | :mage_woman: **0.0** |
-| qwen3.5-397b-a17b             | **43.0** | :white_check_mark: | :white_check_mark: | :mage_woman: **7.3** | :mage_woman: **8.0** | 6.6                  | 4.5                  | 5.9                  | **6.0**              | :mage_woman: **4.8** | :mage_woman: **0.0** |
+| qwen3.5-27b                   | **45.2** | :white_check_mark: | :white_check_mark: | 6.8                  | :mage_woman: **8.6** | 5.9                  | **6.2**              | **6.2**              | **6.7**              | :mage_woman: **4.8** | :mage_woman: **0.0** |
+| Qwen3-235B-A22B-Thinking-2507 | **43.9** | :white_check_mark: | :white_check_mark: | 6.8                  | 7.5                  | :mage_woman: **6.9** | 5.7                  | 5.8                  | 6.3                  | :mage_woman: **4.8** | :mage_woman: **0.0** |
+| qwen3.5-397b-a17b             | **43.0** | :white_check_mark: | :white_check_mark: | :mage_woman: **7.3** | 8.0                  | 6.6                  | 4.5                  | 5.9                  | 6.0                  | :mage_woman: **4.8** | :mage_woman: **0.0** |
+| qwen3.5-122b-a10b             | **42.6** | :white_check_mark: | :white_check_mark: | 6.5                  | 7.7                  | 5.6                  | 4.7                  | **6.3**              | :mage_woman: **7.0** | :mage_woman: **4.8** | :mage_woman: **0.0** |
 | qwen3-next-80b-a3b-thinking   | **41.8** | :white_check_mark: | :white_check_mark: | 6.7                  | 7.6                  | 5.1                  | 6.1                  | **6.2**              | 5.7                  | 4.3                  | :mage_woman: **0.0** |
-| qwen3-235b-a22b-07-25         | **41.4** | :white_check_mark: | :white_check_mark: | 6.6                  | :mage_woman: **8.0** | 3.6                  | :mage_woman: **6.4** | 6.1                  | **6.0**              | **4.7**              | :mage_woman: **0.0** |
+| qwen3-235b-a22b-07-25         | **41.4** | :white_check_mark: | :white_check_mark: | 6.6                  | 8.0                  | 3.6                  | :mage_woman: **6.4** | 6.1                  | 6.0                  | **4.7**              | :mage_woman: **0.0** |
+| qwen3.5-35b-a3b               | **40.8** | :white_check_mark: | :white_check_mark: | **7.1**              | 7.6                  | 4.1                  | 5.0                  | 6.1                  | 6.3                  | **4.7**              | :mage_woman: **0.0** |
 | qwen3-max-thinking            | **39.8** | :x:                | :x:                | 6.2                  | 6.6                  | 5.6                  | 5.2                  | :mage_woman: **6.4** | 5.9                  | 3.9                  | :mage_woman: **0.0** |
 | qwen3-max                     | **39.0** | :x:                | :x:                | 6.7                  | 6.8                  | 4.8                  | 5.9                  | 5.5                  | 5.3                  | 3.8                  | :mage_woman: **0.0** |
-| qwen34b-thinking-2507-q8_0    | **38.8** | :white_check_mark: | :white_check_mark: | 6.0                  | **7.7**              | 5.7                  | 4.5                  | 6.0                  | 5.3                  | 3.5                  | :mage_woman: **0.0** |
+| qwen34b-thinking-2507-q8_0    | **38.8** | :white_check_mark: | :white_check_mark: | 6.0                  | 7.7                  | 5.7                  | 4.5                  | 6.0                  | 5.3                  | 3.5                  | :mage_woman: **0.0** |
 | qwen3-next-80b-a3b-instruct   | **38.7** | :white_check_mark: | :x:                | 6.1                  | 6.9                  | 4.1                  | 5.4                  | **6.3**              | 5.5                  | 4.4                  | :mage_woman: **0.0** |
-| Qwen3-32B                     | **37.9** | :white_check_mark: | :white_check_mark: | 6.6                  | 6.8                  | 3.2                  | 5.9                  | 5.3                  | **6.0**              | 4.1                  | :mage_woman: **0.0** |
-| Qwen3-30B-A3B-2507-Thinking   | **37.6** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.2                  | 5.8                  | 4.6                  | 5.5                  | **6.0**              | 4.0                  | :mage_woman: **0.0** |
+| Qwen3-32B                     | **37.9** | :white_check_mark: | :white_check_mark: | 6.6                  | 6.8                  | 3.2                  | 5.9                  | 5.3                  | 6.0                  | 4.1                  | :mage_woman: **0.0** |
+| Qwen3-30B-A3B-2507-Thinking   | **37.6** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.2                  | 5.8                  | 4.6                  | 5.5                  | 6.0                  | 4.0                  | :mage_woman: **0.0** |
 | qwen38b                       | **37.3** | :white_check_mark: | :white_check_mark: | 5.8                  | 7.4                  | 3.4                  | 5.2                  | 5.9                  | 5.1                  | **4.5**              | :mage_woman: **0.0** |
-| Qwen3-14B                     | **37.1** | :white_check_mark: | :white_check_mark: | 6.3                  | 5.6                  | 4.0                  | 5.7                  | 5.9                  | **6.1**              | 3.6                  | :mage_woman: **0.0** |
+| Qwen3-14B                     | **37.1** | :white_check_mark: | :white_check_mark: | 6.3                  | 5.6                  | 4.0                  | 5.7                  | 5.9                  | 6.1                  | 3.6                  | :mage_woman: **0.0** |
 | QwQ-32B-Preview               | **34.9** | :white_check_mark: | :white_check_mark: | 5.9                  | 7.3                  | 4.2                  | 4.8                  | 4.4                  | 5.2                  | 3.2                  | :mage_woman: **0.0** |
 | qwen3-coder                   | **34.3** | :white_check_mark: | :x:                | 5.8                  | 5.3                  | 3.5                  | 5.2                  | 5.9                  | 4.5                  | 4.1                  | :mage_woman: **0.0** |
 | qwen3-30b-a3b-instruct-2507   | **34.2** | :white_check_mark: | :x:                | 5.7                  | 6.4                  | 3.3                  | 4.2                  | 5.9                  | 5.1                  | 3.6                  | :mage_woman: **0.0** |
@@ -29,6 +32,64 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 | qwen-qwq-32b-stepbystep       | **29.3** | :white_check_mark: | :white_check_mark: | 2.8                  | 6.0                  | 0.9                  | 5.5                  | 5.1                  | 5.2                  | 3.9                  | :mage_woman: **0.0** |
 | qwen31.7b                     | **20.6** | :white_check_mark: | :white_check_mark: | 3.1                  | 3.4                  | 1.1                  | 2.7                  | 3.5                  | 3.9                  | 2.9                  | :mage_woman: **0.0** |
 | qwen30.6b                     | **11.6** | :white_check_mark: | :white_check_mark: | 1.1                  | 2.9                  | 0.9                  | 1.4                  | 2.3                  | 2.0                  | 1.0                  | :mage_woman: **0.0** |
+
+### qwenqwen3.5-27b   => 45.2 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |    10   |
+| cat01_02_activity_context          |    10   |
+| cat01_03_high_level_events         |    10   |
+| cat01_04_sensor_recordings         |     4.2 |
+| cat01_05_merge_two_logs            |     8.9 |
+| cat01_06_system_logs               |     8.9 |
+| cat01_07_interv_to_pseudo_bpmn     |     8.6 |
+| cat01_08_tables_to_log             |     7.7 |
+| cat02_01_conformance_textual       |     8.9 |
+| cat02_02_conf_desiderata           |     7.4 |
+| cat02_03_anomaly_event_log         |    10   |
+| cat02_04_powl_anomaly_detection    |    10   |
+| cat02_05_two_powls_anomalies       |     9.5 |
+| cat02_06_root_cause_1              |    10   |
+| cat02_07_root_cause_2              |    10   |
+| cat02_08_underfitting_process_tree |    10   |
+| cat02_09_fix_process_tree          |    10   |
+| cat03_01_process_tree_generation   |     3.3 |
+| cat03_02_powl_generation           |     7.1 |
+| cat03_03_log_skeleton_generation   |    10   |
+| cat03_04_declare_generation        |    10   |
+| cat03_05_temp_profile_generation   |     8.2 |
+| cat03_06_petri_net_generation      |     2   |
+| cat03_07_process_tree_discovery    |    10   |
+| cat03_08_powl_discovery            |     8.2 |
+| cat04_01_pseudo_bpmn_description   |    10   |
+| cat04_02_pseudo_bpmn_open_question |     8.6 |
+| cat04_03_declare_open_question     |     8.2 |
+| cat04_04_declare_description       |     8.6 |
+| cat04_05_sql_filt_num_events       |     6.6 |
+| cat04_06_sql_filt_three_df         |    10   |
+| cat04_07_sql_filt_top_k_vars       |    10   |
+| cat05_01_hyp_generation_log        |     7.2 |
+| cat05_02_hyp_gen_powl              |     6.7 |
+| cat05_03_hyp_gen_declare           |    10   |
+| cat05_04_hyp_gen_temp_profile      |     8.6 |
+| cat05_05_question_gen_nlp          |    10   |
+| cat05_06_question_pseudo_bpmn      |    10   |
+| cat05_07_question_interview        |     9.5 |
+| cat06_01_bias_text                 |     9.5 |
+| cat06_02_bias_event_log            |     9.5 |
+| cat06_03_bias_powl                 |     9.3 |
+| cat06_04_bias_two_logs             |     9.3 |
+| cat06_05_bias_two_logs_2           |    10   |
+| cat06_06_bias_mitigation_declare   |     9.3 |
+| cat06_07_fair_unfair_powl          |    10   |
+| cat08_01_queue_mining              |     9.5 |
+| cat08_02_instance_spanning         |    10   |
+| cat08_03_transport_opt             |     9.3 |
+| cat08_04_resource_assign           |    10   |
+| cat08_05_task_schedul              |     9.5 |
+
+
 
 ### Qwen3-235B-A22B-Thinking-2507   => 43.9 points
 
@@ -146,6 +207,64 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 
 
 
+### qwenqwen3.5-122b-a10b   => 42.6 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |    10   |
+| cat01_02_activity_context          |     8.2 |
+| cat01_03_high_level_events         |    10   |
+| cat01_04_sensor_recordings         |     8.2 |
+| cat01_05_merge_two_logs            |     8.9 |
+| cat01_06_system_logs               |     2.5 |
+| cat01_07_interv_to_pseudo_bpmn     |     9.3 |
+| cat01_08_tables_to_log             |     7.7 |
+| cat02_01_conformance_textual       |    10   |
+| cat02_02_conf_desiderata           |     8.9 |
+| cat02_03_anomaly_event_log         |    10   |
+| cat02_04_powl_anomaly_detection    |    10   |
+| cat02_05_two_powls_anomalies       |    10   |
+| cat02_06_root_cause_1              |     1   |
+| cat02_07_root_cause_2              |     8.2 |
+| cat02_08_underfitting_process_tree |    10   |
+| cat02_09_fix_process_tree          |     8.6 |
+| cat03_01_process_tree_generation   |     8.2 |
+| cat03_02_powl_generation           |    10   |
+| cat03_03_log_skeleton_generation   |     6.6 |
+| cat03_04_declare_generation        |     8.6 |
+| cat03_05_temp_profile_generation   |     8.2 |
+| cat03_06_petri_net_generation      |    10   |
+| cat03_07_process_tree_discovery    |     1   |
+| cat03_08_powl_discovery            |     3.1 |
+| cat04_01_pseudo_bpmn_description   |    10   |
+| cat04_02_pseudo_bpmn_open_question |     1   |
+| cat04_03_declare_open_question     |     7.2 |
+| cat04_04_declare_description       |     1   |
+| cat04_05_sql_filt_num_events       |     8.2 |
+| cat04_06_sql_filt_three_df         |    10   |
+| cat04_07_sql_filt_top_k_vars       |    10   |
+| cat05_01_hyp_generation_log        |    10   |
+| cat05_02_hyp_gen_powl              |     8.2 |
+| cat05_03_hyp_gen_declare           |     8.9 |
+| cat05_04_hyp_gen_temp_profile      |     6.7 |
+| cat05_05_question_gen_nlp          |    10   |
+| cat05_06_question_pseudo_bpmn      |    10   |
+| cat05_07_question_interview        |     9.5 |
+| cat06_01_bias_text                 |    10   |
+| cat06_02_bias_event_log            |    10   |
+| cat06_03_bias_powl                 |    10   |
+| cat06_04_bias_two_logs             |    10   |
+| cat06_05_bias_two_logs_2           |     9.8 |
+| cat06_06_bias_mitigation_declare   |    10   |
+| cat06_07_fair_unfair_powl          |    10   |
+| cat08_01_queue_mining              |     9.5 |
+| cat08_02_instance_spanning         |     9.8 |
+| cat08_03_transport_opt             |     9.5 |
+| cat08_04_resource_assign           |     9.8 |
+| cat08_05_task_schedul              |     9.3 |
+
+
+
 ### qwenqwen3-next-80b-a3b-thinking   => 41.8 points
 
 | Question                           |   Score |
@@ -259,6 +378,64 @@ A score in the range **27-34** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             |     9.3 |
 | cat08_04_resource_assign           |     9.5 |
 | cat08_05_task_schedul              |    10   |
+
+
+
+### qwenqwen3.5-35b-a3b   => 40.8 points
+
+| Question                           |   Score |
+|:-----------------------------------|--------:|
+| cat01_01_case_id_inference         |    10   |
+| cat01_02_activity_context          |    10   |
+| cat01_03_high_level_events         |     9.5 |
+| cat01_04_sensor_recordings         |     8.2 |
+| cat01_05_merge_two_logs            |     9.3 |
+| cat01_06_system_logs               |     7.1 |
+| cat01_07_interv_to_pseudo_bpmn     |     8.6 |
+| cat01_08_tables_to_log             |     8.2 |
+| cat02_01_conformance_textual       |     8.9 |
+| cat02_02_conf_desiderata           |     8.2 |
+| cat02_03_anomaly_event_log         |    10   |
+| cat02_04_powl_anomaly_detection    |    10   |
+| cat02_05_two_powls_anomalies       |     8.2 |
+| cat02_06_root_cause_1              |    10   |
+| cat02_07_root_cause_2              |     1   |
+| cat02_08_underfitting_process_tree |     9.5 |
+| cat02_09_fix_process_tree          |    10   |
+| cat03_01_process_tree_generation   |     8.2 |
+| cat03_02_powl_generation           |    10   |
+| cat03_03_log_skeleton_generation   |     8.9 |
+| cat03_04_declare_generation        |     5.4 |
+| cat03_05_temp_profile_generation   |     2.2 |
+| cat03_06_petri_net_generation      |     3.1 |
+| cat03_07_process_tree_discovery    |     1   |
+| cat03_08_powl_discovery            |     2.2 |
+| cat04_01_pseudo_bpmn_description   |    10   |
+| cat04_02_pseudo_bpmn_open_question |     8.2 |
+| cat04_03_declare_open_question     |     1   |
+| cat04_04_declare_description       |     1   |
+| cat04_05_sql_filt_num_events       |    10   |
+| cat04_06_sql_filt_three_df         |    10   |
+| cat04_07_sql_filt_top_k_vars       |    10   |
+| cat05_01_hyp_generation_log        |     6.7 |
+| cat05_02_hyp_gen_powl              |     8.2 |
+| cat05_03_hyp_gen_declare           |    10   |
+| cat05_04_hyp_gen_temp_profile      |     6.7 |
+| cat05_05_question_gen_nlp          |    10   |
+| cat05_06_question_pseudo_bpmn      |    10   |
+| cat05_07_question_interview        |     9.5 |
+| cat06_01_bias_text                 |    10   |
+| cat06_02_bias_event_log            |    10   |
+| cat06_03_bias_powl                 |    10   |
+| cat06_04_bias_two_logs             |     9.5 |
+| cat06_05_bias_two_logs_2           |    10   |
+| cat06_06_bias_mitigation_declare   |     3.1 |
+| cat06_07_fair_unfair_powl          |    10   |
+| cat08_01_queue_mining              |    10   |
+| cat08_02_instance_spanning         |     8.2 |
+| cat08_03_transport_opt             |     9.3 |
+| cat08_04_resource_assign           |     9.5 |
+| cat08_05_task_schedul              |     9.5 |
 
 
 
