@@ -474,6 +474,10 @@ MODELS_DICT = {
                 "provider": "openai",
                 "base_model": "gpt-5-chat-latest"
             },
+            "gpt-5.3-chat-latest-2026-03-05": {
+                "provider": "openai",
+                "base_model": "gpt-5.3-chat-latest"
+            },
             "Qwen-3-32B-nothink": {
                 "provider": "deepinfra",
                 "base_model": "Qwen/Qwen3-32B",
@@ -571,6 +575,16 @@ MODELS_DICT = {
             "gemini-3-flash-preview-thinkhigh": {
                 "provider": "google",
                 "base_model": "gemini-3-flash-preview",
+                "thinking_tokens": 24576
+            },
+            "gemini-3.1-flash-lite-preview-nothink": {
+                "provider": "google",
+                "base_model": "gemini-3.1-flash-lite-preview",
+                "thinking_tokens": 0
+            },
+            "gemini-3.1-flash-lite-preview-thinkhigh": {
+                "provider": "google",
+                "base_model": "gemini-3.1-flash-lite-preview",
                 "thinking_tokens": 24576
             },
             "gemini-2.5-flash-09-2025-nothink": {
