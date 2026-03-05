@@ -1,0 +1,134 @@
+### Temporal Profile Anomaly Analysis
+
+Based on the provided temporal profile model, several statistical and logical irregularities have been identified within the insurance claim handling process. These deviations suggest potential systemic issues ranging from automation artifacts to operational bottlenecks.
+
+#### 1. Identified Statistical and Logical Anomalies
+
+*   **Receive to Approve (`R`  `P`):**
+    *   **Observation:** The average interval is approximately 25 hours (90,000 seconds), but the standard deviation is extremely low (1 hour).
+    *   **Issue:** A high mean with a very small variance indicates a rigid process. In a manual or semi-manual workflow involving multiple stakeholders (Receive, Assign, Evaluate), one would expect significant variability in duration due to workload fluctuations, holidays, or complexity of the claim. The consistency suggests an automated trigger or a forced scheduling constraint rather than natural process flow.
+
+*   **Approve to Notify (`P`  `N`):**
+    *   **Observation:** An average delay of 7 days (604,800 seconds) with a high standard deviation of roughly 2 days.
+    *   **Issue:** This represents a significant bottleneck. Following an approval, the notification phase is delayed by nearly a week in some cases and occurs almost immediately in others. This inconsistency points to a potential failure in the notification system or manual hand-off delays that are not consistent across all claims.
+
+*   **Evaluate to Notify (`E`  `N`):**
+    *   **Observation:** An average time of 5 minutes with a standard deviation of 1 minute.
+    *   **Issue:** This interval is unrealistically short for a human-to-human communication step (Evaluation followed by Notification). It implies that either the "Notify" event is system-generated automatically upon Evaluation completion without actual review, or the data recording timestamps are inaccurate/skewed.
+
+*   **Assign to Close (`A`  `C`):**
+    *   **Observation:** Claims are closed an average of 2 hours after being assigned.
+    *   **Issue:** This bypasses standard evaluation and approval steps. Closing a claim immediately after assignment without visible intermediate events suggests either premature administrative closure, fraud detection leading to immediate denial/close, or data entry errors where the "Close" event is logged before actual work is done.
+
+#### 2. Hypotheses for Anomalies
+
+*   **Systemic Automation vs. Manual Variance:**
+    *   The tight clustering in `R`  `P` suggests a rule engine might be auto-approving certain claim types (e.g., "home_insurance" with low amounts) without human intervention, eliminating natural variance.
+    *   The extremely fast `E`  `N` transition likely indicates that the notification system is triggered by a database trigger or API hook immediately after the evaluation status changes to "Ready," bypassing manual drafting time.
+
+*   **Operational Backlogs and Resource Constraints:**
+    *   The long and variable delay in `P`  `N` could be caused by a separate notification queue that only processes emails during business hours, leading to delays over weekends or holidays. It might also indicate that the "Notify" event is logged when the email is queued rather than when it is successfully delivered.
+    *   The short `A`  `C` interval may reflect claims being closed due to policy expiration or fraud flags immediately after assignment, without entering the standard workflow path.
+
+*   **Data Integrity and Timing Artifacts:**
+    *   Timestamps might be set at different system levels (e.g., server time vs. UTC), causing discrepancies that look like short intervals where none exist in reality.
+    *   Resource availability issues (e.g., adjuster `specialization` mismatch) could cause delays in `A`  `E`, though the model aggregates these into shorter overall windows if steps are skipped.
+
+#### 3. Verification Approaches using SQL Queries
+
+To validate these hypotheses, the following PostgreSQL queries should be executed against the `claim_events` table (joined with `claims` and `adjusters` where necessary). These queries isolate specific temporal patterns to confirm or refute the anomalies.
+
+**Query 1: Verify Tight Clustering in Receive-to-Approve (`R`  `P`)**
+*Objective:* Identify claims where the time from receipt to approval is suspiciously consistent, suggesting automation or forced scheduling.*
+
+```sql
+WITH claim_times AS (
+    SELECT 
+        claim_id,
+        MAX(CASE WHEN activity = 'R' THEN timestamp END) as t_receive,
+        MAX(CASE WHEN activity = 'P' THEN timestamp END) as t_approve
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT 
+    c.claim_id,
+    c.claim_amount,
+    EXTRACT(EPOCH FROM (ct.t_approve - ct.t_receive)) as seconds_r_to_p
+FROM claims c
+JOIN claim_times ct ON c.claim_id = ct.claim_id
+WHERE ct.t_receive IS NOT NULL 
+  AND ct.t_approve IS NOT NULL
+  AND ct.t_receive < ct.t_approve
+HAVING EXTRACT(EPOCH FROM (ct.t_approve - ct.t_receive)) <= 7200; -- Filter for under 2 hours
+```
+
+**Query 2: Investigate Backlogs in Approve-to-Notify (`P`  `N`)**
+*Objective:* Find claims where notification is significantly delayed after approval, potentially due to weekend delays or system queues.*
+
+```sql
+WITH claim_times AS (
+    SELECT 
+        claim_id,
+        MAX(CASE WHEN activity = 'P' THEN timestamp END) as t_approve,
+        MAX(CASE WHEN activity = 'N' THEN timestamp END) as t_notify
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT 
+    c.claim_type,
+    c.customer_id,
+    EXTRACT(EPOCH FROM (ct.t_notify - ct.t_approve)) / 3600.0 as hours_p_to_n
+FROM claims c
+JOIN claim_times ct ON c.claim_id = ct.claim_id
+WHERE ct.t_approve IS NOT NULL 
+  AND ct.t_notify IS NOT NULL
+  AND ct.t_approve < ct.t_notify
+ORDER BY (ct.t_notify - ct.t_approve) DESC
+LIMIT 10; -- Show top 10 longest delays
+```
+
+**Query 3: Detect Premature Closures (`A`  `C`) and Missing Steps**
+*Objective:* Identify claims that transition directly from Assignment to Closure without intermediate Evaluation or Approval events.*
+
+```sql
+SELECT 
+    claim_id,
+    customer_id,
+    adjusters.name as assigned_adjuster,
+    EXTRACT(EPOCH FROM (c.close_timestamp - c.assign_timestamp)) / 3600.0 as hours_a_to_c
+FROM claims c
+JOIN claim_events e_assign ON c.claim_id = e_assign.claim_id AND e_assign.activity = 'A'
+JOIN claim_events e_close ON c.claim_id = e_close.claim_id AND e_close.activity = 'C'
+LEFT JOIN claim_events e_eval ON c.claim_id = e_eval.claim_id AND e_eval.activity = 'E'
+LEFT JOIN claim_events e_approve ON c.claim_id = e_approve.claim_id AND e_approve.activity = 'P'
+JOIN adjusters a ON c.customer_id = a.adjuster_id -- Note: Schema says adjuster_id is in adjusters, need to link via events or claims if available. Assuming adjuster assigned via event resource or claim attribute. 
+WHERE e_close.assign_timestamp < e_close.close_timestamp -- Ensure timestamps are valid
+  AND e_eval.claim_id IS NULL -- No evaluation event found
+  AND e_approve.claim_id IS NULL; -- No approval event found
+```
+
+**Query 4: Correlate Anomalies with Adjuster or Region Segments**
+*Objective:* Determine if specific adjusters (`region`, `specialization`) are responsible for the timing irregularities.*
+
+```sql
+SELECT 
+    e.adjuster_id,
+    a.name as adjuster_name,
+    a.region,
+    COUNT(*) as total_claims,
+    AVG(EXTRACT(EPOCH FROM (e_notify.timestamp - e_approve.timestamp))) / 3600.0 as avg_delay_hours_p_to_n
+FROM claim_events e_approve
+JOIN claim_events e_notify ON e_approve.claim_id = e_notify.claim_id 
+    AND e_approve.activity = 'P' 
+    AND e_notify.activity = 'N'
+    AND e_approve.timestamp < e_notify.timestamp
+LEFT JOIN adjusters a ON e_approve.resource = a.name -- Assuming resource links to adjuster name, or via a join on claim_events.resource if available. Adjusting logic based on schema: adjusters table has id, but events have resource.
+-- Corrected Join Logic for Adjuster correlation
+JOIN claims c ON e_approve.claim_id = c.claim_id 
+LEFT JOIN adjusters a ON a.adjuster_id = -- Assuming resource or specific mapping needed. 
+    CASE WHEN EXISTS (SELECT 1 FROM claim_events e_assign WHERE e_assign.claim_id = c.claim_id AND e_assign.resource = a.name) THEN a.adjuster_id END
+GROUP BY a.adjuster_id, a.name, a.region
+HAVING COUNT(*) > 5; -- Filter for meaningful sample size
+```
+
+*Note on Query 4 Join Logic:* Since the schema defines `adjusters` by ID but `claim_events` has a `resource` column (likely adjuster name), the join should ideally be done via a lookup or assuming `resource` matches `name`. The query above assumes `resource` contains the adjuster's name. If `adjuster_id` is stored elsewhere, a mapping table would be required.
