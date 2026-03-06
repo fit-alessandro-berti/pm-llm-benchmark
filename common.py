@@ -270,6 +270,7 @@ MODELS_DICT = {
             "grok-2-1212", "grok-3", "grok-4-0709", "grok-code-fast-1",
             "grok-4-fast-reasoning", "grok-4-fast-non-reasoning",
             "grok-4-1-fast-reasoning", "grok-4-1-fast-non-reasoning",
+            "grok-4.20-experimental-beta-0304-reasoning", "grok-4.20-experimental-beta-0304-non-reasoning"
         }
     },
     "deepinfra": {
