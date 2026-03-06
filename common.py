@@ -270,7 +270,8 @@ MODELS_DICT = {
             "grok-2-1212", "grok-3", "grok-4-0709", "grok-code-fast-1",
             "grok-4-fast-reasoning", "grok-4-fast-non-reasoning",
             "grok-4-1-fast-reasoning", "grok-4-1-fast-non-reasoning",
-            "grok-4.20-experimental-beta-0304-reasoning", "grok-4.20-experimental-beta-0304-non-reasoning"
+            "grok-4.20-experimental-beta-0304-reasoning", "grok-4.20-experimental-beta-0304-non-reasoning",
+            "grok-4.20-multi-agent-experimental-beta-0304"
         }
     },
     "deepinfra": {
@@ -1280,7 +1281,7 @@ def query_text_simple(question_path, target_file, callback, question=None):
     if Shared.ADDED_TO_PROMPT is not None:
         question = question + " " + Shared.ADDED_TO_PROMPT
 
-    if "api.openai" in Shared.API_URL:
+    if "api.openai" in Shared.API_URL or ("api.x.ai" in Shared.API_URL and "multi-agent" in Shared.MODEL_NAME):
         try:
             response_message = query_text_simple_openai_new(question, Shared.API_URL, target_file)
         except:
@@ -1552,7 +1553,7 @@ def query_image_simple(question_path, target_file, callback, base64_image=None, 
     if base64_image is None:
         base64_image = encode_image(question_path)
 
-    if "api.openai" in Shared.API_URL:
+    if "api.openai" in Shared.API_URL or ("api.x.ai" in Shared.API_URL and "multi-agent" in Shared.MODEL_NAME):
         try:
             response_message = query_image_simple_openai_new(base64_image, Shared.API_URL, target_file, text)
         except:

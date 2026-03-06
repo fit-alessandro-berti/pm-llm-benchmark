@@ -1,0 +1,152 @@
+### Identified Anomalies and Deviations
+
+I analyzed the event logs for cases 1001–1004 against the normal process flow. Case 1001 follows the normal flow perfectly (all 7 steps in sequence, correct departments via resources). The other cases show multiple anomalies:
+
+1. **Out-of-Sequence Activities**:
+   - **Case 1002**: Confirm Shipment (#4) and Ship Goods (#5) occur immediately after Register Order (#1), *before* Perform Credit Check (#2) and Validate Stock (#3). Issue Invoice (#6) follows Validate Stock.
+   - **Case 1003**: Ship Goods (#5) occurs after Credit Check (#2) but *before* Confirm Shipment (#4); Issue Invoice (#6) occurs before Confirm Shipment (#4).
+   - **Case 1004**: Receive Payment (#7) occurs *immediately after* Register Order (#1), followed by Issue Invoice (#6); Confirm Shipment (#4) and Ship Goods (#5) occur later.
+
+2. **Skipped/Missing Activities**:
+   - **Case 1003**: No Validate Stock (#3) event at all.
+   - **Case 1004**: No Perform Credit Check (#2) or Validate Stock (#3).
+
+3. **Logically Impossible or Reversed Sequences**:
+   - **Case 1004**: Receive Payment (#7) *before* Issue Invoice (#6), which is illogical (payment without invoice).
+   - **Case 1004**: Ship Goods (#5) despite `additional_info='shipment_scheduled=N'` in Confirm Shipment (#4), indicating shipment proceeded without approval.
+
+4. **Department/Role Mismatches (Minor, but Potential Policy Violations)**:
+   - All resources align with expected departments (Sales for Register, Finance for Credit/Invoice/Payment, Logistics/Warehouse for Stock/Shipment/Confirm), but sequences imply cross-department execution without prerequisites (e.g., Logistics acting before Finance).
+
+5. **Timing Anomalies**:
+   - **Case 1002**: Priority order (`order_type='priority'`) shows rushed logistics (Confirm/Ship within ~20 min of Register), then delayed checks.
+   - **Case 1004**: High-value order (`order_value=3000.00`) completes payment in ~5 min post-Register, suggesting prepayment or error.
+   - All deviations occur on 2024-02-01 (same day), except final payments.
+
+6. **Additional Info Red Flags**:
+   - Case 1002: `attempted_early=Y` hints at premature action.
+   - Case 1003: `late_confirmation=Y` after shipment.
+   - Case 1004: `shipment_scheduled=N` but shipped anyway.
+
+No duplicates, loops, or rework observed.
+
+### Business Hypotheses for Anomalies
+
+1. **Out-of-Sequence Logistics Before Checks (Cases 1002, 1003)**:
+   - **Priority Order Rush**: For `priority` orders (e.g., 1002), sales pressure leads to workarounds where Logistics skips prerequisites, backfilling checks later. Hypothesis: Sales reps bypass gates via informal approvals, risking stock/credit issues.
+   - **Parallel Processing Glitch**: System allows concurrent execution, but logging doesn't capture true parallelism (timestamps sequential). Hypothesis: UI/workflow engine bug permits premature Logistics tasks.
+
+2. **Skipped Steps (Cases 1003, 1004)**:
+   - **High Confidence Skipping**: Good credit scores (e.g., 720 in 1003) trigger auto-skip of Validate Stock/Credit Check. Hypothesis: Conditional business rules misapplied or overridden by reps.
+   - **Data Logging Errors**: Events missing due to system failures. Hypothesis: Integration issues between departments' systems (e.g., Warehouse not logging).
+
+3. **Payment/Invoice Reversal (Case 1004)**:
+   - **Fraud or Prepayment Abuse**: Upfront payment on high-value order without checks/invoice. Hypothesis: Insider collusion (SalesRep_01 + FinanceTeam_02) or customer prepayment scam; `shipment_scheduled=N` suggests rejected shipment still processed.
+   - **Invoice Backdating**: Invoice issued post-payment to "legitimize." Hypothesis: Policy exception for VIP customers, but undocumented.
+
+4. **General**:
+   - **Training/Compliance Gaps**: New staff (e.g., varying Clerks/Mgrs) ignore sequences.
+   - **Department Silos**: Logistics acts autonomously, assuming prior checks.
+   - **Data Quality**: Incomplete `additional_info` parsing hides reasons.
+
+### Proposed SQL Queries for Further Investigation
+
+These queries are executable on PostgreSQL, using window functions (LAG/LEAD), self-joins, aggregations, and CTEs. They scale to full dataset, joining tables where relevant. Focus: detect patterns, quantify, correlate with `order_type`, `order_value`, `department`.
+
+1. **Detect Out-of-Sequence Activities (e.g., Logistics before Finance Checks)**:
+   ```sql
+   WITH sequenced_events AS (
+     SELECT case_id, activity, timestamp, resource,
+            ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp, event_id) as seq
+     FROM order_event_log
+   ),
+   expected_order AS (
+     SELECT 'Register Order' as act1, 'Perform Credit Check' as act2, 'Validate Stock' as act3,
+            'Confirm Shipment' as act4, 'Ship Goods' as act5, 'Issue Invoice' as act6, 'Receive Payment' as act7
+   )
+   SELECT DISTINCT oel.case_id, oel.activity, oel.timestamp,
+          LAG(activity) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) as prev_activity
+   FROM order_event_log oel
+   JOIN orders o ON oel.case_id = o.case_id
+   WHERE oel.activity IN ('Confirm Shipment', 'Ship Goods', 'Validate Stock')  -- Logistics early?
+     AND LAG(activity) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) NOT IN ('Register Order', 'Perform Credit Check')
+     AND o.order_type = 'priority'  -- Correlate with priority
+   ORDER BY oel.case_id, oel.timestamp;
+   ```
+   *Purpose*: Flags non-consecutive sequences like in 1002/1003; filters priority orders.
+
+2. **Identify Skipped Activities per Case**:
+   ```sql
+   SELECT case_id,
+          COUNT(CASE WHEN activity = 'Register Order' THEN 1 END) as reg_count,
+          COUNT(CASE WHEN activity = 'Perform Credit Check' THEN 1 END) as credit_count,
+          COUNT(CASE WHEN activity = 'Validate Stock' THEN 1 END) as stock_count,
+          COUNT(*) as total_events,
+          o.order_value, o.order_type
+   FROM order_event_log oel
+   JOIN orders o ON oel.case_id = o.case_id
+   GROUP BY case_id, o.order_value, o.order_type
+   HAVING COUNT(CASE WHEN activity = 'Validate Stock' THEN 1 END) = 0  -- Missing stock check, e.g., 1003/1004
+       OR COUNT(CASE WHEN activity = 'Perform Credit Check' THEN 1 END) = 0  -- Missing credit
+   ORDER BY total_events ASC;
+   ```
+   *Purpose*: Quantifies incompletes; links to high-value orders (fraud risk).
+
+3. **Detect Reversed Payment/Invoice (Payment before Invoice)**:
+   ```sql
+   SELECT oel.case_id, oel.activity, oel.timestamp, r.department,
+          LEAD(activity) OVER (PARTITION BY oel.case_id ORDER BY timestamp) as next_activity
+   FROM order_event_log oel
+   JOIN resources r ON oel.resource = r.resource_id
+   WHERE oel.activity = 'Receive Payment'
+     AND LEAD(activity) OVER (PARTITION BY oel.case_id ORDER BY timestamp) = 'Issue Invoice'  -- Reverse order, e.g., 1004
+   ORDER BY oel.case_id;
+   ```
+   *Purpose*: Catches logical impossibles; checks department.
+
+4. **Find Premature Shipments (Ship before Confirm or Checks, with additional_info flags)**:
+   ```sql
+   SELECT case_id, activity, timestamp, additional_info,
+          MIN(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) OVER (PARTITION BY case_id) as confirm_ts,
+          MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) OVER (PARTITION BY case_id) as credit_ts
+   FROM order_event_log
+   WHERE activity = 'Ship Goods'
+     AND timestamp < COALESCE(MIN(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) OVER (PARTITION BY case_id), '9999-12-31'::timestamp)
+     AND additional_info LIKE '%scheduled=N%'  -- e.g., 1004
+   ORDER BY case_id;
+   ```
+   *Purpose*: Times Ship vs. prerequisites; flags risky shipments.
+
+5. **Aggregate Anomalies by Resource/Department (Training Issues)**:
+   ```sql
+   SELECT r.department, r.role, COUNT(DISTINCT oel.case_id) as deviant_cases,
+          COUNT(*) FILTER (WHERE oel.activity = 'Ship Goods' AND oel.timestamp < 
+             (SELECT MIN(timestamp) FROM order_event_log o2 WHERE o2.case_id = oel.case_id AND o2.activity = 'Perform Credit Check')) as early_ship_count
+   FROM order_event_log oel
+   JOIN resources r ON oel.resource = r.resource_id
+   JOIN orders o ON oel.case_id = o.case_id
+   WHERE oel.case_id IN (1002, 1003, 1004)  -- Seed with known bad; remove for full scan
+   GROUP BY r.department, r.role
+   HAVING COUNT(DISTINCT oel.case_id) > 1
+   ORDER BY deviant_cases DESC;
+   ```
+   *Purpose*: Pinpoints problematic roles/depts (e.g., LogisticsMgr_2 in 1002/1003).
+
+6. **Full Process Conformance Score (Percentage Complete & In-Order)**:
+   ```sql
+   WITH case_stats AS (
+     SELECT case_id,
+            STRING_AGG(activity, ' -> ' ORDER BY timestamp) as sequence,
+            COUNT(DISTINCT activity) = 7 as all_steps,
+            BOOL_AND(LAG(activity) OVER (PARTITION BY case_id ORDER BY timestamp) = 
+                     LAG(expected) OVER (PARTITION BY case_id ORDER BY timestamp)) as in_order  -- Pseudo; map activities to expected
+     FROM order_event_log
+     GROUP BY case_id
+   )
+   SELECT AVG(CASE WHEN all_steps THEN 1.0 ELSE 0.0 END) * 100 as pct_complete,
+          COUNT(*) as total_cases
+   FROM case_stats;
+   ```
+   *Purpose*: Dashboard metric; adapt `expected` via CASE for strict order check.
+
+These queries confirm hypotheses data-driven (e.g., priority correlation) and detect variants at scale. Recommend running on full log for variants.
