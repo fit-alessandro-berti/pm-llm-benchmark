@@ -1,0 +1,387 @@
+### Main anomalies
+
+1. **R  P is unusually rigid**  
+   Average approval arrives about **25 hours after receipt**, with only **1 hour of standard deviation**. That is very tight for a process that should usually vary by claim complexity, adjuster load, and claim type.
+
+2. **P  N is very slow and unstable**  
+   Approval to notification averages **7 days**, with **2 days of deviation**. That suggests a major waiting phase after approval.
+
+3. **A  C is suspiciously short**  
+   Closing a claim on average **2 hours after assignment** raises the possibility that some claims are being closed without evaluation or approval.
+
+4. **E  N is almost immediate**  
+   Evaluation to notification averages only **5 minutes**, with very little variation. That often points to automation, timestamp granularity issues, or skipped controls.
+
+5. **The profile is internally inconsistent**  
+   If **E  N is very fast**, but **P  N is very slow**, then the process likely has:
+   - multiple hidden variants,
+   - inconsistent event semantics,
+   - missing events,
+   - or logging problems.
+
+---
+
+### Plausible explanations
+
+#### 1) R  P near-fixed delay
+- approvals happen in a **nightly or daily batch**
+- timestamps are **rounded or defaulted** by an integration
+- an SLA forces approval at a fixed threshold
+- many claims follow a **straight-through auto-approval path**
+
+#### 2) P  N long delay
+- customer notification is handled by a **separate queue/team**
+- approved claims wait for **manual review, letter generation, or outbound communication**
+- notifications are only sent on **business days**
+- a subset of regions, claim types, or resources has a **backlog**
+
+#### 3) A  C too fast
+- claims are being closed as **duplicates, withdrawals, or incomplete submissions**
+- some claims are **administratively closed**
+- E or P events are **not being logged**
+- claims are reassigned or canceled but the event trail does not show the full story
+
+#### 4) E  N too fast
+- notification is **auto-triggered** directly after evaluation
+- approval is being **skipped** or recorded later
+- both events are written in the **same transaction**
+- timestamps have low precision, making distinct steps look simultaneous
+
+#### 5) Cross-pattern inconsistency
+- there may be **two populations**:
+  - a fast automated path
+  - a slow manual path
+- `P` may mean **internal approval**, while `N` may mean **formal external communication**
+- event order may be wrong in the source system
+
+---
+
+## SQL verification queries
+
+The queries below use the **first occurrence of each activity per claim**.
+
+### Common helper view
+```sql
+CREATE TEMP VIEW claim_activity_firsts AS
+WITH ranked AS (
+    SELECT
+        ce.claim_id,
+        ce.activity,
+        ce.timestamp AS event_ts,
+        ce.resource,
+        ce.additional_info,
+        ROW_NUMBER() OVER (
+            PARTITION BY ce.claim_id, ce.activity
+            ORDER BY ce.timestamp
+        ) AS rn
+    FROM claim_events ce
+)
+SELECT
+    claim_id,
+    MAX(event_ts)        FILTER (WHERE activity = 'R' AND rn = 1) AS ts_r,
+    MAX(event_ts)        FILTER (WHERE activity = 'A' AND rn = 1) AS ts_a,
+    MAX(event_ts)        FILTER (WHERE activity = 'E' AND rn = 1) AS ts_e,
+    MAX(event_ts)        FILTER (WHERE activity = 'P' AND rn = 1) AS ts_p,
+    MAX(event_ts)        FILTER (WHERE activity = 'N' AND rn = 1) AS ts_n,
+    MAX(event_ts)        FILTER (WHERE activity = 'C' AND rn = 1) AS ts_c,
+    MAX(resource)        FILTER (WHERE activity = 'A' AND rn = 1) AS a_resource,
+    MAX(resource)        FILTER (WHERE activity = 'E' AND rn = 1) AS e_resource,
+    MAX(resource)        FILTER (WHERE activity = 'P' AND rn = 1) AS p_resource,
+    MAX(resource)        FILTER (WHERE activity = 'N' AND rn = 1) AS n_resource,
+    MAX(resource)        FILTER (WHERE activity = 'C' AND rn = 1) AS c_resource,
+    MAX(additional_info) FILTER (WHERE activity = 'C' AND rn = 1) AS c_info
+FROM ranked
+GROUP BY claim_id;
+```
+
+---
+
+### 1) Find claims whose delays are far outside the modeled profile
+This gives a general outlier list using a **3-sigma rule**.
+
+```sql
+WITH expected AS (
+    SELECT * FROM (
+        VALUES
+            ('R','A',  3600::numeric,   600::numeric),
+            ('R','E', 86400::numeric, 28800::numeric),
+            ('R','P', 90000::numeric,  3600::numeric),
+            ('A','C',  7200::numeric,  3600::numeric),
+            ('E','N',   300::numeric,    60::numeric),
+            ('E','C',  3600::numeric,  3000::numeric),
+            ('P','N',604800::numeric,172800::numeric),
+            ('N','C',  1800::numeric,   300::numeric)
+    ) AS t(act1, act2, avg_sec, sd_sec)
+),
+actual_pairs AS (
+    SELECT claim_id, 'R' AS act1, 'A' AS act2, EXTRACT(EPOCH FROM (ts_a - ts_r)) AS delta_sec
+    FROM claim_activity_firsts
+    WHERE ts_r IS NOT NULL AND ts_a IS NOT NULL AND ts_a >= ts_r
+
+    UNION ALL
+    SELECT claim_id, 'R', 'E', EXTRACT(EPOCH FROM (ts_e - ts_r))
+    FROM claim_activity_firsts
+    WHERE ts_r IS NOT NULL AND ts_e IS NOT NULL AND ts_e >= ts_r
+
+    UNION ALL
+    SELECT claim_id, 'R', 'P', EXTRACT(EPOCH FROM (ts_p - ts_r))
+    FROM claim_activity_firsts
+    WHERE ts_r IS NOT NULL AND ts_p IS NOT NULL AND ts_p >= ts_r
+
+    UNION ALL
+    SELECT claim_id, 'A', 'C', EXTRACT(EPOCH FROM (ts_c - ts_a))
+    FROM claim_activity_firsts
+    WHERE ts_a IS NOT NULL AND ts_c IS NOT NULL AND ts_c >= ts_a
+
+    UNION ALL
+    SELECT claim_id, 'E', 'N', EXTRACT(EPOCH FROM (ts_n - ts_e))
+    FROM claim_activity_firsts
+    WHERE ts_e IS NOT NULL AND ts_n IS NOT NULL AND ts_n >= ts_e
+
+    UNION ALL
+    SELECT claim_id, 'E', 'C', EXTRACT(EPOCH FROM (ts_c - ts_e))
+    FROM claim_activity_firsts
+    WHERE ts_e IS NOT NULL AND ts_c IS NOT NULL AND ts_c >= ts_e
+
+    UNION ALL
+    SELECT claim_id, 'P', 'N', EXTRACT(EPOCH FROM (ts_n - ts_p))
+    FROM claim_activity_firsts
+    WHERE ts_p IS NOT NULL AND ts_n IS NOT NULL AND ts_n >= ts_p
+
+    UNION ALL
+    SELECT claim_id, 'N', 'C', EXTRACT(EPOCH FROM (ts_c - ts_n))
+    FROM claim_activity_firsts
+    WHERE ts_n IS NOT NULL AND ts_c IS NOT NULL AND ts_c >= ts_n
+)
+SELECT
+    ap.claim_id,
+    c.claim_type,
+    ap.act1 || '->' || ap.act2 AS pair,
+    ROUND(ap.delta_sec::numeric, 0) AS actual_sec,
+    e.avg_sec,
+    e.sd_sec,
+    ROUND(((ap.delta_sec - e.avg_sec) / NULLIF(e.sd_sec, 0))::numeric, 2) AS zscore
+FROM actual_pairs ap
+JOIN expected e
+  ON e.act1 = ap.act1 AND e.act2 = ap.act2
+JOIN claims c
+  ON c.claim_id = ap.claim_id
+WHERE ABS((ap.delta_sec - e.avg_sec) / NULLIF(e.sd_sec, 0)) > 3
+ORDER BY ABS((ap.delta_sec - e.avg_sec) / NULLIF(e.sd_sec, 0)) DESC;
+```
+
+---
+
+### 2) Check whether R  P is caused by batching or fixed scheduling
+If approvals cluster at specific times or delay bins, that supports the “scheduled/batch approval” hypothesis.
+
+```sql
+SELECT
+    ROUND((EXTRACT(EPOCH FROM (ts_p - ts_r)) / 900.0)::numeric, 0) * 15 AS delay_minutes_bin,
+    EXTRACT(HOUR FROM ts_p) AS approval_hour,
+    EXTRACT(ISODOW FROM ts_p) AS approval_weekday,
+    COUNT(*) AS cases
+FROM claim_activity_firsts
+WHERE ts_r IS NOT NULL
+  AND ts_p IS NOT NULL
+  AND ts_p >= ts_r
+GROUP BY 1, 2, 3
+ORDER BY cases DESC, delay_minutes_bin
+LIMIT 25;
+```
+
+What to look for:
+- one or two dominant delay bins
+- approvals mostly at the same hour
+- weekday-only approval spikes
+
+---
+
+### 3) Check long P  N delays by claim type and region
+This tests whether delays are concentrated in particular business segments.
+
+> If `claim_events.resource` stores adjuster IDs instead of names, replace `a.name = caf.e_resource` with `a.adjuster_id::text = caf.e_resource`.
+
+```sql
+SELECT
+    c.claim_type,
+    COALESCE(a.region, 'UNKNOWN') AS region,
+    COUNT(*) AS cases,
+    ROUND(AVG(EXTRACT(EPOCH FROM (caf.ts_n - caf.ts_p)) / 86400.0)::numeric, 2) AS avg_pn_days,
+    COUNT(*) FILTER (WHERE caf.ts_n - caf.ts_p > INTERVAL '11 days') AS delayed_over_11_days
+FROM claim_activity_firsts caf
+JOIN claims c
+  ON c.claim_id = caf.claim_id
+LEFT JOIN adjusters a
+  ON a.name = caf.e_resource
+WHERE caf.ts_p IS NOT NULL
+  AND caf.ts_n IS NOT NULL
+  AND caf.ts_n >= caf.ts_p
+GROUP BY c.claim_type, COALESCE(a.region, 'UNKNOWN')
+ORDER BY delayed_over_11_days DESC, avg_pn_days DESC;
+```
+
+Useful follow-up:
+- if one region dominates, resource capacity is a likely cause
+- if one claim type dominates, business rules may differ for that type
+
+---
+
+### 4) Find claims closed very soon after assignment, without normal intermediate steps
+This tests whether A  C reflects premature or administrative closure.
+
+```sql
+WITH quick_close AS (
+    SELECT
+        caf.claim_id,
+        caf.ts_a,
+        caf.ts_c,
+        caf.c_info
+    FROM claim_activity_firsts caf
+    WHERE caf.ts_a IS NOT NULL
+      AND caf.ts_c IS NOT NULL
+      AND caf.ts_c >= caf.ts_a
+      AND caf.ts_c - caf.ts_a <= INTERVAL '2 hours'
+      AND NOT EXISTS (
+          SELECT 1
+          FROM claim_events ce
+          WHERE ce.claim_id = caf.claim_id
+            AND ce.activity IN ('E', 'P', 'N')
+            AND ce.timestamp >= caf.ts_a
+            AND ce.timestamp <= caf.ts_c
+      )
+)
+SELECT
+    qc.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    ROUND((EXTRACT(EPOCH FROM (qc.ts_c - qc.ts_a)) / 3600.0)::numeric, 2) AS hours_to_close,
+    qc.c_info AS close_info
+FROM quick_close qc
+JOIN claims c
+  ON c.claim_id = qc.claim_id
+ORDER BY hours_to_close, c.claim_amount DESC;
+```
+
+If many of these exist, check the closure reasons:
+
+```sql
+WITH quick_close AS (
+    SELECT
+        caf.claim_id,
+        caf.c_info
+    FROM claim_activity_firsts caf
+    WHERE caf.ts_a IS NOT NULL
+      AND caf.ts_c IS NOT NULL
+      AND caf.ts_c >= caf.ts_a
+      AND caf.ts_c - caf.ts_a <= INTERVAL '2 hours'
+      AND NOT EXISTS (
+          SELECT 1
+          FROM claim_events ce
+          WHERE ce.claim_id = caf.claim_id
+            AND ce.activity IN ('E', 'P', 'N')
+            AND ce.timestamp >= caf.ts_a
+            AND ce.timestamp <= caf.ts_c
+      )
+)
+SELECT
+    COALESCE(c_info, '(none)') AS close_info,
+    COUNT(*) AS cases
+FROM quick_close
+GROUP BY 1
+ORDER BY cases DESC;
+```
+
+---
+
+### 5) Check whether very fast E  N is concentrated in system accounts or specific claim types
+This tests the automation hypothesis.
+
+```sql
+SELECT
+    c.claim_type,
+    COALESCE(caf.n_resource, 'UNKNOWN') AS notify_resource,
+    COUNT(*) AS rapid_cases,
+    ROUND(AVG(EXTRACT(EPOCH FROM (caf.ts_n - caf.ts_e)))::numeric, 0) AS avg_en_seconds,
+    COUNT(*) FILTER (
+        WHERE caf.ts_p IS NULL OR caf.ts_p > caf.ts_n
+    ) AS without_prior_approval
+FROM claim_activity_firsts caf
+JOIN claims c
+  ON c.claim_id = caf.claim_id
+WHERE caf.ts_e IS NOT NULL
+  AND caf.ts_n IS NOT NULL
+  AND caf.ts_n >= caf.ts_e
+  AND caf.ts_n - caf.ts_e <= INTERVAL '5 minutes'
+GROUP BY c.claim_type, COALESCE(caf.n_resource, 'UNKNOWN')
+ORDER BY rapid_cases DESC, avg_en_seconds;
+```
+
+Strong signals:
+- one resource dominates rapid notifications
+- many cases have **no prior approval**
+- rapid cases are concentrated in one claim type
+
+---
+
+### 6) Test whether there are distinct path variants behind the inconsistent timings
+This helps confirm whether the process actually contains multiple populations.
+
+```sql
+SELECT
+    CASE
+        WHEN ts_n IS NULL THEN 'No notification'
+        WHEN ts_p IS NULL THEN 'Notify without approval event'
+        WHEN ts_p <= ts_n THEN 'Approval before notify'
+        ELSE 'Notify before approval'
+    END AS path_variant,
+    COUNT(*) AS cases,
+    ROUND((
+        AVG(EXTRACT(EPOCH FROM (ts_n - ts_e)) / 60.0)
+        FILTER (WHERE ts_e IS NOT NULL AND ts_n IS NOT NULL AND ts_n >= ts_e)
+    )::numeric, 2) AS avg_en_minutes,
+    ROUND((
+        AVG(EXTRACT(EPOCH FROM (ts_n - ts_p)) / 86400.0)
+        FILTER (WHERE ts_p IS NOT NULL AND ts_n IS NOT NULL AND ts_n >= ts_p)
+    )::numeric, 2) AS avg_pn_days
+FROM claim_activity_firsts
+GROUP BY 1
+ORDER BY cases DESC;
+```
+
+If you see large volumes in both:
+- `Approval before notify`
+- `Notify without approval event`
+
+then the temporal profile is probably mixing **different process variants**.
+
+---
+
+### 7) Optional sanity check for logging/order problems
+If timestamps are inconsistent, some anomalies may be instrumentation artifacts rather than real process behavior.
+
+```sql
+SELECT
+    claim_id,
+    ts_r, ts_a, ts_e, ts_p, ts_n, ts_c
+FROM claim_activity_firsts
+WHERE (ts_a IS NOT NULL AND ts_r IS NOT NULL AND ts_a < ts_r)
+   OR (ts_e IS NOT NULL AND ts_a IS NOT NULL AND ts_e < ts_a)
+   OR (ts_p IS NOT NULL AND ts_e IS NOT NULL AND ts_p < ts_e)
+   OR (ts_n IS NOT NULL AND ts_p IS NOT NULL AND ts_n < ts_p)
+   OR (ts_c IS NOT NULL AND ts_n IS NOT NULL AND ts_c < ts_n)
+ORDER BY claim_id;
+```
+
+---
+
+### Best next checks
+
+If I were prioritizing the investigation, I would start with:
+
+1. **Query 6** to see whether there are multiple path variants  
+2. **Query 4** to identify premature closures  
+3. **Query 3** to locate where the P  N delay is concentrated  
+4. **Query 2** to confirm whether R  P is artificially scheduled  
+
+If you want, I can also turn these into one compact anomaly-detection SQL script with parameterized thresholds.

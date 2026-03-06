@@ -1,0 +1,595 @@
+Below I’ll assume `claim_events.activity` stores the short labels `'R','A','E','P','N','C'`. If your log uses full names like `"Evaluate Claim"`, substitute those values.
+
+## 1) Anomalies in the POWL model
+
+### A. The loop is structurally suspicious
+The loop is defined as:
+
+```python
+loop = OperatorPOWL(operator=Operator.LOOP, children=[E, P])
+```
+
+In process-tree / POWL-style loop semantics, that is effectively:
+
+- do `E` once,
+- then optionally repeat `P` followed by `E` again,
+- i.e. language like: `E (P E)*`
+
+That creates several anomalies:
+
+- **Approval is optional**: the loop can end after just `E`
+- **Approval can repeat multiple times**
+- **If `P` occurs, it is typically followed by another `E`**
+- **The loop does not naturally end with `P`**, which is odd if “Approve Claim” is supposed to be the final decision before notification/closure
+
+So this is not really modeling a normal `E -> P` completion. It is modeling rework in a strange way.
+
+---
+
+### B. Customer notification is optional
+The XOR is:
+
+```python
+xor = OperatorPOWL(operator=Operator.XOR, children=[N, skip])
+```
+
+So after the loop, the model allows either:
+
+- `N` = notify customer, or
+- `skip` = no notification at all
+
+If notification is mandatory in the intended process, this is an anomaly.
+
+---
+
+### C. The partial order allows premature closing
+Top-level order:
+
+```python
+root.order.add_edge(R, A)
+root.order.add_edge(A, loop)
+root.order.add_edge(loop, xor)
+root.order.add_edge(A, C)
+```
+
+What is missing is as important as what is present:
+
+- there is **no edge `loop -> C`**
+- there is **no edge `xor -> C`**
+
+That means `C` is only constrained to happen **after `A`**, not after evaluation, approval, or notification.
+
+So the model may allow traces such as:
+
+- `R -> A -> C -> E`
+- `R -> A -> C -> E -> P -> E`
+- `R -> A -> E -> C -> N`
+
+Conceptually, that means **a claim can be closed before it has been properly evaluated, approved, or customer-notified**.
+
+---
+
+### D. Close may occur before notification
+Even if notification happens, the model does not force:
+
+- `N -> C`
+
+So notification could happen **after close**, which is usually not desired.
+
+---
+
+## 2) Hypotheses for why these anomalies exist
+
+## Hypothesis 1: Business rules changed, but the model was only partially updated
+Examples:
+
+- Claims may sometimes require **re-evaluation after approval** due to appeals, new evidence, fraud checks, or supervisor review
+- Some claims may be **closed without customer notification** because notification is handled externally
+- Some claims may be **administratively closed** before final resolution
+
+What may have happened:
+- someone tried to represent rework,
+- but encoded it as `LOOP(E, P)` instead of a cleaner decision/rework structure,
+- and added an early closure path for operational exceptions.
+
+---
+
+## Hypothesis 2: Miscommunication between business and process-modeling teams
+Examples:
+
+- Operations meant: `E -> P` with possible rework in rare cases
+- Modeler interpreted that as “approval can occur in a repeat loop”
+- Business assumed notification is mandatory
+- IT assumed it is optional because some departments send customer letters outside the workflow
+
+This often leads to:
+- mandatory steps modeled as optional
+- control flow that is too permissive
+- missing dependencies like `N -> C`
+
+---
+
+## Hypothesis 3: Technical/workflow-system issues created non-standard paths
+Examples:
+
+- Auto-close job closes claims after assignment due to timeout or stale status
+- Duplicate approval events appear because of retries or message reprocessing
+- Notification events are missing because they are generated in another system and not logged here
+
+Signs in the data would be:
+- anomaly spikes after a release date
+- anomalies concentrated in one `resource` or system account
+- duplicate timestamps / repeated events by the same resource
+
+---
+
+## Hypothesis 4: The modeling tool or analyst left the partial order under-constrained
+In partial-order models, if you omit precedence edges, you often allow more behavior than intended.
+
+So the issue may simply be:
+- the real process is fine,
+- but the model over-approximates it.
+
+Important diagnostic:
+- **If the database shows almost no such anomalous traces, the problem is likely the model, not operations.**
+
+---
+
+## Hypothesis 5: The event log is incomplete
+A missing `N` in `claim_events` may mean:
+
+- notification was skipped, or
+- notification happened in another application and was never logged here
+
+So “skipped notification” should be treated carefully unless you know logging is complete.
+
+---
+
+## 3) How to verify these hypotheses using the database
+
+A good first step is to build a per-claim summary.
+
+## Common CTE
+
+```sql
+WITH per_claim AS (
+    SELECT
+        claim_id,
+        COUNT(*) FILTER (WHERE activity = 'R') AS receive_cnt,
+        COUNT(*) FILTER (WHERE activity = 'A') AS assign_cnt,
+        COUNT(*) FILTER (WHERE activity = 'E') AS eval_cnt,
+        COUNT(*) FILTER (WHERE activity = 'P') AS approve_cnt,
+        COUNT(*) FILTER (WHERE activity = 'N') AS notify_cnt,
+        COUNT(*) FILTER (WHERE activity = 'C') AS close_cnt,
+
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS first_receive_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'A') AS first_assign_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS first_eval_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS first_approve_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS first_notify_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS first_close_ts,
+
+        MAX(timestamp) FILTER (WHERE activity = 'E') AS last_eval_ts,
+        MAX(timestamp) FILTER (WHERE activity = 'P') AS last_approve_ts,
+        MAX(timestamp) FILTER (WHERE activity = 'N') AS last_notify_ts,
+        MAX(timestamp) FILTER (WHERE activity = 'C') AS last_close_ts
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT *
+FROM per_claim;
+```
+
+You can reuse that CTE in the following checks.
+
+---
+
+## A. Claims closed without evaluation or approval
+
+This directly tests whether the premature closure allowed by the model happens in practice.
+
+```sql
+WITH per_claim AS (
+    SELECT
+        claim_id,
+        COUNT(*) FILTER (WHERE activity = 'E') AS eval_cnt,
+        COUNT(*) FILTER (WHERE activity = 'P') AS approve_cnt,
+        COUNT(*) FILTER (WHERE activity = 'C') AS close_cnt,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS first_close_ts
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    eval_cnt,
+    approve_cnt,
+    first_close_ts
+FROM per_claim
+WHERE close_cnt > 0
+  AND (eval_cnt = 0 OR approve_cnt = 0)
+ORDER BY first_close_ts;
+```
+
+### Interpretation
+- If many claims appear here, the anomalous path is not just theoretical.
+- If very few appear, the model may be too permissive but actual operations are mostly compliant.
+
+---
+
+## B. Claims closed before evaluation or approval occurred
+
+This checks sequence, not just existence.
+
+```sql
+WITH per_claim AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS first_eval_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS first_approve_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS first_close_ts
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    first_eval_ts,
+    first_approve_ts,
+    first_close_ts
+FROM per_claim
+WHERE first_close_ts IS NOT NULL
+  AND (
+      first_eval_ts IS NULL
+      OR first_close_ts < first_eval_ts
+      OR first_approve_ts IS NULL
+      OR first_close_ts < first_approve_ts
+  )
+ORDER BY first_close_ts;
+```
+
+### Interpretation
+These are the strongest candidates for “close happened too early.”
+
+---
+
+## C. Claims where notification was skipped or happened after closing
+
+```sql
+WITH per_claim AS (
+    SELECT
+        claim_id,
+        COUNT(*) FILTER (WHERE activity = 'N') AS notify_cnt,
+        COUNT(*) FILTER (WHERE activity = 'C') AS close_cnt,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS first_notify_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS first_close_ts
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    notify_cnt,
+    first_notify_ts,
+    first_close_ts
+FROM per_claim
+WHERE close_cnt > 0
+  AND (
+      notify_cnt = 0
+      OR first_close_ts < first_notify_ts
+  )
+ORDER BY first_close_ts;
+```
+
+### Interpretation
+- `notify_cnt = 0` suggests the XOR skip path may be real
+- `first_close_ts < first_notify_ts` suggests notification happened too late
+
+---
+
+## D. Claims approved multiple times
+
+This tests the loop/rework behavior.
+
+```sql
+SELECT
+    claim_id,
+    COUNT(*) AS approval_count
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY claim_id
+HAVING COUNT(*) > 1
+ORDER BY approval_count DESC, claim_id;
+```
+
+### Interpretation
+Multiple approvals could mean:
+- real rework / reconsideration,
+- duplicate event logging,
+- workflow retries,
+- model aligned to rare exceptions.
+
+---
+
+## E. Claims where approval is followed by another evaluation
+
+This is very important because it matches the odd `LOOP(E, P)` structure.
+
+```sql
+SELECT DISTINCT
+    p.claim_id
+FROM claim_events p
+JOIN claim_events e
+  ON e.claim_id = p.claim_id
+ AND p.activity = 'P'
+ AND e.activity = 'E'
+ AND (e.timestamp, e.event_id) > (p.timestamp, p.event_id)
+ORDER BY p.claim_id;
+```
+
+### Interpretation
+If this occurs often, then some kind of post-approval rework really exists.
+If it is rare, the loop may be an over-generalization.
+
+---
+
+## F. Claims whose last decision-like event was evaluation, not approval
+
+Because `LOOP(E, P)` tends to end on `E`, this query checks whether the log actually shows that behavior.
+
+```sql
+WITH per_claim AS (
+    SELECT
+        claim_id,
+        MAX(timestamp) FILTER (WHERE activity = 'E') AS last_eval_ts,
+        MAX(timestamp) FILTER (WHERE activity = 'P') AS last_approve_ts,
+        MAX(timestamp) FILTER (WHERE activity = 'C') AS last_close_ts
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    last_eval_ts,
+    last_approve_ts,
+    last_close_ts
+FROM per_claim
+WHERE last_close_ts IS NOT NULL
+  AND last_eval_ts IS NOT NULL
+  AND (last_approve_ts IS NULL OR last_eval_ts > last_approve_ts)
+ORDER BY last_close_ts;
+```
+
+### Interpretation
+If many claims close after an evaluation with no later approval, then the modeled loop may reflect actual behavior.
+If almost all claims end with approval, then the loop is probably mis-modeled.
+
+---
+
+## G. How frequently is customer notification skipped?
+
+You can measure this overall or by claim type.
+
+```sql
+WITH per_claim AS (
+    SELECT
+        claim_id,
+        COUNT(*) FILTER (WHERE activity = 'N') AS notify_cnt,
+        COUNT(*) FILTER (WHERE activity = 'C') AS close_cnt
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_type,
+    COUNT(*) FILTER (WHERE pc.close_cnt > 0) AS closed_claims,
+    COUNT(*) FILTER (WHERE pc.close_cnt > 0 AND pc.notify_cnt = 0) AS closed_without_notification,
+    ROUND(
+        100.0 * COUNT(*) FILTER (WHERE pc.close_cnt > 0 AND pc.notify_cnt = 0)
+        / NULLIF(COUNT(*) FILTER (WHERE pc.close_cnt > 0), 0),
+        2
+    ) AS pct_closed_without_notification
+FROM claims c
+JOIN per_claim pc
+  ON c.claim_id = pc.claim_id
+GROUP BY c.claim_type
+ORDER BY pct_closed_without_notification DESC;
+```
+
+### Interpretation
+- If one claim type has a much higher skip rate, that suggests a business-rule exception
+- If skip rates are uniformly high, notification may be happening outside this log
+
+---
+
+## H. Check whether anomalies started after a certain date
+
+This helps test the “partial rollout / rules change / system release” hypothesis.
+
+```sql
+WITH per_claim AS (
+    SELECT
+        claim_id,
+        COUNT(*) FILTER (WHERE activity = 'E') AS eval_cnt,
+        COUNT(*) FILTER (WHERE activity = 'P') AS approve_cnt,
+        COUNT(*) FILTER (WHERE activity = 'N') AS notify_cnt,
+        COUNT(*) FILTER (WHERE activity = 'C') AS close_cnt
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    date_trunc('month', c.submission_date) AS month,
+    COUNT(*) AS total_claims,
+    COUNT(*) FILTER (
+        WHERE pc.close_cnt > 0
+          AND (pc.eval_cnt = 0 OR pc.approve_cnt = 0 OR pc.notify_cnt = 0)
+    ) AS anomalous_claims,
+    ROUND(
+        100.0 * COUNT(*) FILTER (
+            WHERE pc.close_cnt > 0
+              AND (pc.eval_cnt = 0 OR pc.approve_cnt = 0 OR pc.notify_cnt = 0)
+        ) / NULLIF(COUNT(*), 0),
+        2
+    ) AS anomaly_rate_pct
+FROM claims c
+LEFT JOIN per_claim pc
+  ON c.claim_id = pc.claim_id
+GROUP BY 1
+ORDER BY 1;
+```
+
+### Interpretation
+A visible jump after a specific month strongly suggests:
+- deployment issue,
+- rule change,
+- organizational change.
+
+---
+
+## I. Check whether anomalies are concentrated in certain resources/systems
+
+This helps test the technical-error hypothesis.
+
+### Example: who performs premature closes?
+
+```sql
+WITH per_claim AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS first_eval_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS first_approve_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS first_close_ts
+    FROM claim_events
+    GROUP BY claim_id
+),
+premature_close AS (
+    SELECT claim_id
+    FROM per_claim
+    WHERE first_close_ts IS NOT NULL
+      AND (
+          first_eval_ts IS NULL
+          OR first_close_ts < first_eval_ts
+          OR first_approve_ts IS NULL
+          OR first_close_ts < first_approve_ts
+      )
+)
+SELECT
+    ce.resource,
+    COUNT(DISTINCT ce.claim_id) AS premature_close_claims
+FROM claim_events ce
+JOIN premature_close pc
+  ON ce.claim_id = pc.claim_id
+WHERE ce.activity = 'C'
+GROUP BY ce.resource
+ORDER BY premature_close_claims DESC;
+```
+
+### Interpretation
+- If one system account dominates, likely a workflow or integration problem
+- If a few human resources dominate, possibly training or local workarounds
+
+---
+
+## J. Check whether anomalies cluster by region or specialization
+
+Only do this if `claim_events.resource` can be matched to `adjusters.name` (or some other identifier).
+
+### Example: repeated approvals by adjuster region/specialization
+
+```sql
+WITH multi_approval AS (
+    SELECT claim_id
+    FROM claim_events
+    WHERE activity = 'P'
+    GROUP BY claim_id
+    HAVING COUNT(*) > 1
+)
+SELECT
+    a.region,
+    a.specialization,
+    COUNT(DISTINCT ma.claim_id) AS claims_with_multiple_approvals
+FROM multi_approval ma
+JOIN claim_events ce
+  ON ce.claim_id = ma.claim_id
+ AND ce.activity = 'P'
+JOIN adjusters a
+  ON a.name = ce.resource
+GROUP BY a.region, a.specialization
+ORDER BY claims_with_multiple_approvals DESC;
+```
+
+### Interpretation
+Concentration by region/specialization supports:
+- process differences across departments,
+- local interpretations of the rules,
+- coaching / training gaps.
+
+---
+
+## K. Reconstruct actual traces for manual inspection
+
+This is extremely useful once you identify suspicious claims.
+
+```sql
+SELECT
+    claim_id,
+    string_agg(
+        activity || '@' || to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS'),
+        ' -> ' ORDER BY timestamp, event_id
+    ) AS trace
+FROM claim_events
+GROUP BY claim_id
+ORDER BY claim_id;
+```
+
+Or restrict to anomalous cases by wrapping the anomaly query in a CTE and joining it.
+
+---
+
+## How to interpret results against the hypotheses
+
+### If anomalies are common in the database
+Then the model is likely reflecting real non-standard execution, and you need to determine whether that behavior is:
+- legitimate exceptions,
+- a broken workflow,
+- or undocumented process variation.
+
+### If anomalies are rare or absent in the database
+Then the process model is probably simply **too permissive**. The issue is likely:
+- poor modeling,
+- missing precedence constraints,
+- or tool misuse.
+
+### If anomalies appear suddenly after a date
+Think:
+- system release,
+- rule change,
+- migration,
+- integration bug.
+
+### If anomalies are concentrated by claim type / region / resource
+Think:
+- departmental miscommunication,
+- product-specific exceptions,
+- training issues,
+- local workaround behavior.
+
+---
+
+## Likely model fixes, if you later want to correct the POWL
+Since your current question is mainly about diagnosis, I’ll keep this short, but the likely fixes are:
+
+- Replace the odd loop with something that actually captures intended logic, e.g.:
+  - `R -> A -> E -> P -> N -> C`
+  - or a controlled rework structure where re-evaluation is explicit
+- Add strict order:
+  - `loop -> C` or better `P -> N -> C`
+- Make notification mandatory if business requires it
+- Add explicit rejection/cancellation paths if they exist in reality instead of using premature `C`
+
+---
+
+If you want, I can also turn this into a **single anomaly-detection SQL report** that returns one row per claim with flags like:
+
+- `closed_without_eval`
+- `closed_without_approval`
+- `closed_before_notification`
+- `multiple_approvals`
+- `approval_followed_by_eval`
+
+for easier auditing.

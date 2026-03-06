@@ -1,0 +1,490 @@
+Below is a structured assessment of the DECLARE model, followed by concrete hypotheses and PostgreSQL queries to investigate the issues in the event data.
+
+---
+
+## 1. Anomalies in the DECLARE model
+
+### A. Direct contradiction around `E` and `C`
+The model requires:
+
+- `existence(C)`: every case must contain `C`
+- `noncoexistence(E, C)`: `E` and `C` must never appear together
+
+Since every case must contain `C`, the `noncoexistence(E, C)` rule effectively forbids `E` from ever occurring in any compliant case.
+
+But the model also requires:
+
+- `responded_existence(E -> A)`: if `E` occurs, then `A` must occur
+
+This does not itself force `E`, but it suggests `E` is considered a legitimate activity. Combined with the intended process, this is clearly problematic because evaluation is part of the normal lifecycle, yet the model makes it impossible in any case that closes.
+
+### B. The model allows claims to close without assignment or evaluation
+The model contains:
+
+- `init(R)`: the first event must be `R`
+- `existence(C)`: `C` must occur
+- `precedence(C, R)`: `R` must occur before `C`
+
+These rules only ensure that claims start with receipt and eventually close, with receipt before closing. They do **not** require:
+
+- an assignment `A`
+- an evaluation `E`
+- an approval `P`
+- a notification `N`
+
+So the model permits traces like:
+
+- `R, C`
+- `R, A, C`
+- `R, P, C`
+
+That undermines the expected business process if evaluation, approval, and notification are supposed to be essential.
+
+### C. Weak control over assignment/evaluation relationship
+The only link involving assignment is:
+
+- `responded_existence(E -> A)`
+
+This means if evaluation happens, assignment must happen somewhere in the same trace. But it does **not** require:
+
+- assignment to occur before evaluation
+- exactly one assignment
+- the evaluator to match the assigned adjuster
+- every assigned claim to actually be evaluated
+
+So even if `E` were allowed, the model would permit odd traces such as:
+
+- `R, E, A, C`  
+if interpreted only as co-occurrence, depending on the exact semantics used in implementation
+
+That is weaker than typical operational logic.
+
+### D. Missing constraints for core business order
+The intended flow suggests a sequence:
+
+`R -> A -> E -> P -> N -> C`
+
+The model does not enforce the key sequencing relations between those steps. There is no requirement that:
+
+- `A` follows `R`
+- `E` follows `A`
+- `P` follows `E`
+- `N` follows `P`
+- `C` follows `N`
+
+As a result, many undesirable but model-compliant traces remain possible.
+
+### E. Semantic inconsistency with operational reality
+A process where claims always close but are not allowed to be evaluated is likely inconsistent with actual insurance operations. Even if some claims are auto-closed or withdrawn, making evaluation globally incompatible with closure is implactical for most claims handling settings.
+
+---
+
+## 2. Possible hypotheses for why these anomalies exist
+
+### A. Rule authoring error
+Someone may have intended a different relation, such as:
+
+- `E` must occur before `C`
+- `C` must not occur before `E`
+- `E` and some other activity should not coexist
+
+but mistakenly configured `noncoexistence(E, C)`.
+
+### B. Incomplete model evolution
+The process may have changed over time, but only some constraints were updated. For example:
+
+- a legacy rule forced closure in all cases
+- a newer rule tried to restrict certain evaluation scenarios
+- the two were never reconciled
+
+### C. Mining artifact from noisy or partial logs
+If the DECLARE model was discovered automatically from event logs, missing events or inconsistent logging could produce misleading constraints. Examples:
+
+- evaluations not logged for many claims
+- system-generated closures present in all traces
+- assignment or evaluation recorded in external tools not integrated into `claim_events`
+
+### D. Overgeneralization from exceptional cases
+The model may have been influenced by a subset of claims that are closed without investigation, such as duplicates, fraudulent submissions, or incomplete claims. A rule meant for exceptional paths may have been generalized to the whole process.
+
+### E. Misunderstanding of DECLARE semantics
+The modeler may have confused:
+
+- `responded existence`
+- `response`
+- `precedence`
+- `noncoexistence`
+
+A common issue is using a co-occurrence constraint when an ordering constraint was intended.
+
+### F. Organizational pressure favoring rapid closure
+If operational pressure emphasized fast resolution, the implemented model may have drifted toward allowing minimal traces ending in closure, even when that bypasses important control steps.
+
+### G. Data integration issues around human resources
+Because `resource` is a free-text field and there is no explicit event-to-adjuster foreign key, assignment/evaluation relationships may be difficult to validate. This can lead to weak or incorrect discovered constraints.
+
+---
+
+## 3. SQL-based verification strategies
+
+## 3.1 Claims closed without any evaluation
+
+This checks whether claims are being closed while skipping `E`.
+
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE EXISTS (
+    SELECT 1
+    FROM claim_events ce_close
+    WHERE ce_close.claim_id = c.claim_id
+      AND ce_close.activity = 'C'
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce_eval
+    WHERE ce_eval.claim_id = c.claim_id
+      AND ce_eval.activity = 'E'
+);
+```
+
+If this returns many rows, the process in practice may indeed allow closure without evaluation.
+
+---
+
+## 3.2 Claims where evaluation and closing both occur
+
+This checks whether traces violate the declared `noncoexistence(E, C)` rule.
+
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE EXISTS (
+    SELECT 1
+    FROM claim_events ce1
+    WHERE ce1.claim_id = c.claim_id
+      AND ce1.activity = 'E'
+)
+AND EXISTS (
+    SELECT 1
+    FROM claim_events ce2
+    WHERE ce2.claim_id = c.claim_id
+      AND ce2.activity = 'C'
+);
+```
+
+If this returns rows, then the noncoexistence rule does not reflect actual behavior.
+
+---
+
+## 3.3 Claims with evaluation but no assignment
+
+This tests whether `E -> A` is respected in practice.
+
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE EXISTS (
+    SELECT 1
+    FROM claim_events ce_eval
+    WHERE ce_eval.claim_id = c.claim_id
+      AND ce_eval.activity = 'E'
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce_assign
+    WHERE ce_assign.claim_id = c.claim_id
+      AND ce_assign.activity = 'A'
+);
+```
+
+Any returned rows suggest evaluation can happen without assignment.
+
+---
+
+## 3.4 Claims where assignment happens after evaluation
+
+This checks whether assignment is occurring too late.
+
+```sql
+WITH first_eval AS (
+    SELECT claim_id, MIN("timestamp") AS first_eval_ts
+    FROM claim_events
+    WHERE activity = 'E'
+    GROUP BY claim_id
+),
+first_assign AS (
+    SELECT claim_id, MIN("timestamp") AS first_assign_ts
+    FROM claim_events
+    WHERE activity = 'A'
+    GROUP BY claim_id
+)
+SELECT e.claim_id, a.first_assign_ts, e.first_eval_ts
+FROM first_eval e
+LEFT JOIN first_assign a
+    ON e.claim_id = a.claim_id
+WHERE a.first_assign_ts IS NULL
+   OR a.first_assign_ts > e.first_eval_ts;
+```
+
+This identifies claims where evaluation precedes assignment or assignment is absent.
+
+---
+
+## 3.5 Claims closed before evaluation
+
+This identifies traces where closure occurs before any evaluation, if both exist.
+
+```sql
+WITH first_eval AS (
+    SELECT claim_id, MIN("timestamp") AS first_eval_ts
+    FROM claim_events
+    WHERE activity = 'E'
+    GROUP BY claim_id
+),
+first_close AS (
+    SELECT claim_id, MIN("timestamp") AS first_close_ts
+    FROM claim_events
+    WHERE activity = 'C'
+    GROUP BY claim_id
+)
+SELECT cl.claim_id, cl.first_close_ts, ev.first_eval_ts
+FROM first_close cl
+JOIN first_eval ev
+  ON cl.claim_id = ev.claim_id
+WHERE cl.first_close_ts < ev.first_eval_ts;
+```
+
+This helps test whether process order is being violated.
+
+---
+
+## 3.6 Claims whose first event is not receipt
+
+This verifies whether `R` is actually the initial activity.
+
+```sql
+WITH ordered_events AS (
+    SELECT
+        claim_id,
+        activity,
+        "timestamp",
+        ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY "timestamp", event_id) AS rn
+    FROM claim_events
+)
+SELECT claim_id, activity AS first_activity, "timestamp"
+FROM ordered_events
+WHERE rn = 1
+  AND activity <> 'R';
+```
+
+Returned rows indicate violation of the intended initialization rule.
+
+---
+
+## 3.7 Claims that never close
+
+This checks whether closure is always present.
+
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce
+    WHERE ce.claim_id = c.claim_id
+      AND ce.activity = 'C'
+);
+```
+
+If rows appear, then the closure existence rule is not observed in the data.
+
+---
+
+## 3.8 Claims where close occurs without notification
+
+This checks a likely missing control point in the process.
+
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE EXISTS (
+    SELECT 1
+    FROM claim_events ce_close
+    WHERE ce_close.claim_id = c.claim_id
+      AND ce_close.activity = 'C'
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce_notify
+    WHERE ce_notify.claim_id = c.claim_id
+      AND ce_notify.activity = 'N'
+);
+```
+
+This reveals whether claims are being closed without customer notification.
+
+---
+
+## 3.9 Claims approved without evaluation
+
+This checks whether approval is bypassing assessment.
+
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE EXISTS (
+    SELECT 1
+    FROM claim_events ce_approve
+    WHERE ce_approve.claim_id = c.claim_id
+      AND ce_approve.activity = 'P'
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce_eval
+    WHERE ce_eval.claim_id = c.claim_id
+      AND ce_eval.activity = 'E'
+);
+```
+
+---
+
+## 3.10 Claims with the full intended path in correct order
+
+This helps quantify how often the desired process is actually followed.
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(CASE WHEN activity = 'R' THEN "timestamp" END) AS r_ts,
+        MIN(CASE WHEN activity = 'A' THEN "timestamp" END) AS a_ts,
+        MIN(CASE WHEN activity = 'E' THEN "timestamp" END) AS e_ts,
+        MIN(CASE WHEN activity = 'P' THEN "timestamp" END) AS p_ts,
+        MIN(CASE WHEN activity = 'N' THEN "timestamp" END) AS n_ts,
+        MIN(CASE WHEN activity = 'C' THEN "timestamp" END) AS c_ts
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT claim_id
+FROM event_times
+WHERE r_ts IS NOT NULL
+  AND a_ts IS NOT NULL
+  AND e_ts IS NOT NULL
+  AND p_ts IS NOT NULL
+  AND n_ts IS NOT NULL
+  AND c_ts IS NOT NULL
+  AND r_ts <= a_ts
+  AND a_ts <= e_ts
+  AND e_ts <= p_ts
+  AND p_ts <= n_ts
+  AND n_ts <= c_ts;
+```
+
+This can be compared against the total number of claims to assess process conformance.
+
+---
+
+## 3.11 Check whether evaluation is performed by an assigned adjuster
+
+Since the schema does not explicitly map assignment events to an adjuster ID, the best available approximation is to compare the `resource` recorded on evaluation events with known adjuster names.
+
+```sql
+SELECT ce.claim_id, ce.event_id, ce.resource, ce."timestamp"
+FROM claim_events ce
+LEFT JOIN adjusters a
+  ON ce.resource = a.name
+WHERE ce.activity = 'E'
+  AND a.adjuster_id IS NULL;
+```
+
+This finds evaluations executed by resources that do not match any registered adjuster.
+
+---
+
+## 3.12 Check whether assignment and evaluator specialization are aligned with claim type
+
+This is approximate because assignment details are stored as text and claim type naming may differ from specialization naming.
+
+```sql
+SELECT
+    ce.claim_id,
+    c.claim_type,
+    ce.resource AS evaluator_name,
+    a.specialization
+FROM claim_events ce
+JOIN claims c
+  ON ce.claim_id = c.claim_id
+LEFT JOIN adjusters a
+  ON ce.resource = a.name
+WHERE ce.activity = 'E'
+  AND (
+      a.adjuster_id IS NULL
+      OR (
+          (c.claim_type ILIKE '%home%' AND a.specialization NOT ILIKE '%home%')
+          OR
+          (c.claim_type ILIKE '%auto%' AND a.specialization NOT ILIKE '%auto%')
+      )
+  );
+```
+
+This flags evaluations performed either by unknown resources or by adjusters whose specialization seems inconsistent with the claim type.
+
+---
+
+## 3.13 Case-level activity profiles to inspect unusual patterns
+
+This gives a compact summary of each claim trace.
+
+```sql
+SELECT
+    claim_id,
+    STRING_AGG(activity, ' -> ' ORDER BY "timestamp", event_id) AS activity_trace
+FROM claim_events
+GROUP BY claim_id;
+```
+
+This is useful for manually reviewing anomalous paths such as:
+
+- `R -> C`
+- `R -> A -> C`
+- `R -> E -> C`
+- `R -> P -> C`
+
+---
+
+## 3.14 Frequency of suspicious trace patterns
+
+```sql
+WITH traces AS (
+    SELECT
+        claim_id,
+        STRING_AGG(activity, '' ORDER BY "timestamp", event_id) AS trace_compact
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT trace_compact, COUNT(*) AS cases
+FROM traces
+GROUP BY trace_compact
+ORDER BY cases DESC;
+```
+
+This shows whether problematic behaviors are rare exceptions or common variants.
+
+---
+
+## 4. Practical interpretation of investigation results
+
+A useful way to interpret the findings:
+
+- If many claims contain both `E` and `C`, then the noncoexistence rule is likely wrong.
+- If many claims close without `E`, the process may genuinely support early closure or the event log is incomplete.
+- If `E` often occurs without `A`, then assignment is either missing in logs or not operationally enforced.
+- If first events are often not `R`, then event capture may start late or the initialization rule is too strict.
+- If many claims follow `R -> C`, the model is capturing a highly simplified closure-driven process rather than the intended adjudication workflow.
+
+---
+
+## 5. Likely conclusion
+
+The strongest issue is that the model simultaneously requires closure in every case while forbidding closure from coexisting with evaluation. That makes evaluation incompatible with any completed claim, which is probably not the intended business behavior. The rest of the constraints are too weak to preserve a meaningful claim-handling lifecycle, so empirical validation against the event log is essential before trusting the model.

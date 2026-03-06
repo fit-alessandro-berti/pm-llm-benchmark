@@ -1,0 +1,396 @@
+Below is a structured review of the DECLARE model, along with plausible explanations and concrete PostgreSQL checks.
+
+## 1) Anomalies in the model
+
+### A. Evaluation is effectively ruled out
+The strongest issue is the combination of:
+
+- `existence(C)`  every trace must contain `C`
+- `noncoexistence(E, C)`  `E` and `C` cannot appear in the same trace
+
+Together, these imply that any compliant trace must contain `C` and therefore must **not** contain `E`.
+
+That makes evaluation incompatible with any completed claim, which breaks the expected lifecycle.
+
+**Consequence:** the model accepts traces like:
+
+- `R -> C`
+- `R -> A -> C`
+- `R -> P -> N -> C`
+
+but rejects traces that include both evaluation and closure.
+
+---
+
+### B. Essential middle steps are not enforced
+There is no rule making these steps mandatory:
+
+- `A` assign adjuster
+- `E` evaluate
+- `P` approve
+- `N` notify
+
+So the model permits claims to be closed while skipping key business activities.
+
+**Examples of traces that would still satisfy the model:**
+
+- `R -> C`
+- `R -> A -> C`
+- `R -> P -> C`
+- `R -> N -> C`
+
+That is much weaker than the intended flow.
+
+---
+
+### C. The `E`–`A` dependency is too weak, and may even be mis-specified
+The rule linking `E` and `A` is `responded_existence`. Even if interpreted in the favorable direction, it only says that if one activity occurs, the other must occur **somewhere** in the same trace. It does **not** guarantee the intended ordering `A` before `E`.
+
+So even without the `E`/`C` conflict, this rule would still allow undesirable behavior such as:
+
+- assignment after evaluation
+- assignment existing somewhere in the case but not actually supporting the evaluation step
+
+Also, because `E` is effectively excluded by the `E`/`C` conflict, this rule becomes largely irrelevant in practice.
+
+---
+
+### D. `precedence(C, R)` is too weak and is largely redundant
+The model already says `R` is the initial activity. Once `R` must be first, requiring `R` before `C` adds little.
+
+More importantly, this rule does **not** ensure that:
+
+- `C` comes after `A`, `E`, `P`, and `N`
+- `C` is the last step
+- the overall sequence follows the intended progression
+
+So closure is only loosely constrained.
+
+---
+
+### E. The model can reject normal-looking completed claims
+A trace such as:
+
+- `R -> A -> E -> P -> N -> C`
+
+looks like a perfectly reasonable claim lifecycle, but it violates `noncoexistence(E, C)`.
+
+That means the model is not just permissive in the wrong places; it is also restrictive against plausible real behavior.
+
+---
+
+## 2) Plausible reasons these anomalies appeared
+
+### A. Wrong constraint template selected
+A modeler may have chosen `noncoexistence(E, C)` when the intended rule was something like:
+
+- evaluation must happen before closure
+- closure must not happen before evaluation
+- evaluation and closure should not happen back-to-back without intermediate steps
+
+Using the wrong DECLARE template is a common source of these kinds of distortions.
+
+---
+
+### B. Constraint direction was inverted
+Binary constraints are easy to encode backwards. The `E`/`A` rule may have been intended to mean:
+
+- assignment must precede evaluation
+
+but was captured as a weaker or reversed dependency.
+
+---
+
+### C. The model may mix normal and exception handling into one global rule set
+Some claims may follow a fast-track or auto-close path, while others require full assessment. If rules from different variants were merged without scoping them properly, the result can be a globally inconsistent model.
+
+---
+
+### D. The model may have been mined from noisy or incomplete event logs
+If evaluation events are missing, recorded under another code, or logged inconsistently, discovery could infer that closure often happens without evaluation. That can produce constraints that reflect logging artifacts rather than real policy.
+
+---
+
+### E. Process changes were applied unevenly
+If operational rules evolved over time, older constraints may have remained in place while newer ones were added. That would explain why some rules imply a normal claim lifecycle while another rule makes a core step effectively impossible.
+
+---
+
+### F. Event semantics may be inconsistent
+Sometimes `C` means “administratively closed” rather than “fully processed.” If so, `C` may appear in cases that were never evaluated, while evaluated cases may be closed in a different way operationally. That semantic mismatch can produce misleading declarative rules.
+
+---
+
+## 3) SQL-based investigation strategies
+
+Assumption: event order is determined by `(timestamp, event_id)`.
+
+---
+
+### 3.1 Reconstruct actual trace variants
+This gives you the most common activity sequences in the log.
+
+```sql
+WITH traces AS (
+    SELECT
+        claim_id,
+        STRING_AGG(activity, '->' ORDER BY timestamp, event_id) AS trace
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    trace,
+    COUNT(*) AS claim_count
+FROM traces
+GROUP BY trace
+ORDER BY claim_count DESC, trace;
+```
+
+**Use it for:** spotting frequent paths like `R->C` or `R->A->C`.
+
+---
+
+### 3.2 Claims closed without any evaluation
+This checks whether the log contains cases that match the model’s problematic allowance.
+
+```sql
+SELECT
+    ce.claim_id,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'C') AS first_close_ts
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING COUNT(*) FILTER (WHERE ce.activity = 'C') > 0
+   AND COUNT(*) FILTER (WHERE ce.activity = 'E') = 0
+ORDER BY ce.claim_id;
+```
+
+**Use it for:** measuring how often claims are completed without evaluation.
+
+---
+
+### 3.3 Claims containing both evaluation and closure
+These cases violate the `noncoexistence(E, C)` rule.
+
+```sql
+SELECT
+    ce.claim_id,
+    COUNT(*) FILTER (WHERE ce.activity = 'E') AS eval_count,
+    COUNT(*) FILTER (WHERE ce.activity = 'C') AS close_count,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'E') AS first_eval_ts,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'C') AS first_close_ts
+FROM claim_events ce
+GROUP BY ce.claim_id
+HAVING COUNT(*) FILTER (WHERE ce.activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE ce.activity = 'C') > 0
+ORDER BY ce.claim_id;
+```
+
+**Use it for:** checking whether the rule is contradicting common real behavior.
+
+---
+
+### 3.4 Claims whose first event is not `R`
+This verifies the initialization rule.
+
+```sql
+WITH ordered_events AS (
+    SELECT
+        claim_id,
+        activity,
+        timestamp,
+        event_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY claim_id
+            ORDER BY timestamp, event_id
+        ) AS rn
+    FROM claim_events
+)
+SELECT
+    claim_id,
+    activity AS first_activity,
+    timestamp AS first_ts
+FROM ordered_events
+WHERE rn = 1
+  AND activity <> 'R'
+ORDER BY claim_id;
+```
+
+**Use it for:** finding cases that violate “receive claim must be first.”
+
+---
+
+### 3.5 Claims closed without a prior receive
+This checks the `precedence(C, R)` condition directly.
+
+```sql
+WITH first_points AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS first_r_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS first_c_ts
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    first_r_ts,
+    first_c_ts
+FROM first_points
+WHERE first_c_ts IS NOT NULL
+  AND (first_r_ts IS NULL OR first_r_ts > first_c_ts)
+ORDER BY claim_id;
+```
+
+**Use it for:** detecting cases where close happened before receive, or receive never happened.
+
+---
+
+### 3.6 Evaluations without assignment, or assignment happening too late
+This is stronger than simple co-occurrence and checks whether assignment actually precedes evaluation.
+
+```sql
+WITH first_steps AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'A') AS first_a_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS first_e_ts
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    first_a_ts,
+    first_e_ts
+FROM first_steps
+WHERE first_e_ts IS NOT NULL
+  AND (first_a_ts IS NULL OR first_a_ts > first_e_ts)
+ORDER BY claim_id;
+```
+
+**Use it for:** testing whether evaluations are happening without proper assignment.
+
+---
+
+### 3.7 Approvals or notifications happening without evaluation
+Since the model does not protect against this, it is worth checking directly.
+
+```sql
+SELECT
+    claim_id,
+    COUNT(*) FILTER (WHERE activity = 'P') AS approve_count,
+    COUNT(*) FILTER (WHERE activity = 'N') AS notify_count,
+    COUNT(*) FILTER (WHERE activity = 'E') AS eval_count
+FROM claim_events
+GROUP BY claim_id
+HAVING (COUNT(*) FILTER (WHERE activity = 'P') > 0
+        OR COUNT(*) FILTER (WHERE activity = 'N') > 0)
+   AND COUNT(*) FILTER (WHERE activity = 'E') = 0
+ORDER BY claim_id;
+```
+
+**Use it for:** finding cases where downstream actions happen without assessment.
+
+---
+
+### 3.8 Closed claims missing approval or notification
+If approval and notification are meant to be standard steps, this query highlights skipped steps before closure.
+
+```sql
+WITH first_steps AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS first_p_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS first_n_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS first_c_ts
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    first_p_ts,
+    first_n_ts,
+    first_c_ts
+FROM first_steps
+WHERE first_c_ts IS NOT NULL
+  AND (
+      first_p_ts IS NULL OR
+      first_n_ts IS NULL OR
+      first_p_ts > first_c_ts OR
+      first_n_ts > first_c_ts
+  )
+ORDER BY claim_id;
+```
+
+**Use it for:** checking whether closure routinely happens before customer communication or approval.
+
+---
+
+### 3.9 Activities occurring after closure
+If `C` is intended as the final step, there should be nothing after it.
+
+```sql
+WITH last_close AS (
+    SELECT
+        claim_id,
+        MAX(timestamp) AS last_close_ts
+    FROM claim_events
+    WHERE activity = 'C'
+    GROUP BY claim_id
+)
+SELECT
+    ce.claim_id,
+    ce.event_id,
+    ce.activity,
+    ce.timestamp
+FROM claim_events ce
+JOIN last_close lc
+  ON lc.claim_id = ce.claim_id
+WHERE ce.timestamp > lc.last_close_ts
+ORDER BY ce.claim_id, ce.timestamp, ce.event_id;
+```
+
+**Use it for:** checking whether “close” is really terminal.
+
+---
+
+### 3.10 Evaluate whether evaluation was performed by a valid adjuster
+If `resource` on `E` should be an adjuster name, this checks for unknown or mismatched evaluators.
+
+```sql
+SELECT
+    ce.claim_id,
+    ce.event_id,
+    ce.resource AS evaluator,
+    c.claim_type,
+    a.adjuster_id,
+    a.specialization
+FROM claim_events ce
+JOIN claims c
+  ON c.claim_id = ce.claim_id
+LEFT JOIN adjusters a
+  ON a.name = ce.resource
+WHERE ce.activity = 'E'
+  AND (
+      a.adjuster_id IS NULL OR
+      a.specialization <> split_part(c.claim_type, '_', 1)
+  )
+ORDER BY ce.claim_id, ce.timestamp, ce.event_id;
+```
+
+**Use it for:** identifying evaluations by non-adjusters or by adjusters with the wrong specialization.
+
+---
+
+## 4) What to look for in the results
+
+If the log shows many cases with both `E` and `C`, then the `noncoexistence(E, C)` rule is likely wrong.
+
+If the log shows many `R -> C` or `R -> A -> C` traces, then the process may genuinely contain shortcut paths, or the event log may be missing evaluation/approval/notification events.
+
+If evaluation often occurs without prior assignment, then the `E`–`A` dependency is either too weak or not aligned with execution reality.
+
+If approval/notification often occur without evaluation, the current model is missing key controls around decision quality.
+
+If you want, I can also turn this into:
+1. a corrected DECLARE model, or  
+2. a single SQL audit script that produces all anomaly counts in one report.

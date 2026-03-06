@@ -9,7 +9,7 @@ from common import query_text_simple, query_image_simple, callback_write, set_ap
 import common
 
 WAITING_TIME_RETRY = 15
-USE_MULTITHREADING = False
+USE_MULTITHREADING = True
 MAX_WORKERS = 50
 TIME_BETWEEN_ANSWERS = 0
 
@@ -140,7 +140,7 @@ if __name__ == "__main__":
         max_concurrent=50
     )
     
-    if False:
+    if True:
         e_m_name = common.clean_model_name(common.EVALUATING_MODEL_NAME)
         common.insert_api_keys()
 

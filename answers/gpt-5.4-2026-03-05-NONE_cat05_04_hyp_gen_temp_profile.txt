@@ -1,0 +1,548 @@
+Below is a structured assessment of the temporal anomalies, likely explanations, and concrete PostgreSQL queries to verify them.
+
+## 1. Anomalies in the temporal profile
+
+### A. `R -> P` is unusually rigid
+- **Average:** 90,000 seconds (~25 hours)
+- **STDEV:** 3,600 seconds (1 hour)
+
+This is suspicious because approval is usually influenced by claim complexity, claim type, adjuster workload, and documentation quality. A very tight spread suggests:
+- approvals may be executed in fixed daily batches,
+- timestamps may be system-generated rather than reflecting real work,
+- some intermediate variation is being hidden by process design or logging behavior.
+
+### B. `P -> N` is excessively long and highly variable
+- **Average:** 604,800 seconds (7 days)
+- **STDEV:** 172,800 seconds (2 days)
+
+A week-long delay between approval and customer notification is unusual in most claim-handling processes. The high variation suggests inconsistency:
+- some claims are notified quickly,
+- others wait much longer,
+- this may indicate backlog, manual intervention, or channel-dependent communication delays.
+
+### C. `A -> C` is too short
+- **Average:** 7,200 seconds (2 hours)
+- **STDEV:** 3,600 seconds (1 hour)
+
+Closing a claim only two hours after assignment is questionable, especially if evaluation and approval are expected steps. This may indicate:
+- fast-track closures,
+- withdrawn/invalid claims,
+- skipped process steps,
+- logging gaps.
+
+### D. `E -> N` is extremely short
+- **Average:** 300 seconds (5 minutes)
+- **STDEV:** 60 seconds
+
+Five minutes from evaluation to notification is very fast, especially if approval should occur before notification. This could mean:
+- notification is automated immediately after evaluation,
+- approval is skipped or implicit,
+- timestamps are recorded in bulk or at transaction commit time.
+
+### E. `E -> C` is short relative to the full process
+- **Average:** 3,600 seconds (1 hour)
+- **STDEV:** 3,000 seconds
+
+Closing one hour after evaluation may be plausible for trivial claims, but combined with the other patterns it may indicate:
+- a large group of claims are resolved through simplified workflows,
+- activities like approval and notification are omitted or compressed,
+- event sequencing may differ from the intended process.
+
+### F. Cross-pattern inconsistency
+Some timing relations do not fit a stable process narrative:
+- `E -> N` is 5 minutes,
+- but `P -> N` is 7 days.
+
+If approval typically comes before notification, then either:
+- many notifications occur before approval,
+- only some cases include approval,
+- event logging is inconsistent,
+- different claim populations are mixed together.
+
+---
+
+## 2. Hypotheses for why these anomalies exist
+
+### 1. Batch processing or scheduled jobs
+The rigid `R -> P` duration could be caused by:
+- nightly approval jobs,
+- SLA-based release windows,
+- timestamps assigned when records are committed rather than when work is done.
+
+### 2. Missing or skipped intermediate steps
+The short `A -> C` and `E -> N` intervals may mean:
+- some claims are closed without full evaluation/approval,
+- certain claim categories use abbreviated flows,
+- events are not consistently logged.
+
+### 3. Manual backlog after approval
+The long `P -> N` delay suggests:
+- customer communication is handled manually,
+- notifications depend on external systems,
+- there is a queue for outgoing communication,
+- staffing shortages create delays.
+
+### 4. Different process variants mixed together
+The model may combine:
+- home vs auto claims,
+- high-value vs low-value claims,
+- straight-through processing vs manual review,
+- regional handling differences.
+
+This would inflate some averages and distort process-wide timing expectations.
+
+### 5. Timestamp quality problems
+Possible issues include:
+- delayed data entry,
+- backfilled events,
+- copied timestamps,
+- timezone inconsistencies,
+- application logging at status update time rather than activity execution time.
+
+### 6. Resource-specific behavior
+Some adjusters or teams may:
+- close claims early,
+- delay notifications,
+- process only simple claims,
+- work in regional queues with different SLAs.
+
+### 7. Business-rule exceptions
+Some claims may legitimately:
+- close immediately after assignment if invalid or duplicate,
+- notify rapidly for automated outcomes,
+- wait for weekly outbound communication cycles after approval.
+
+---
+
+## 3. Verification queries
+
+## A. Find claims with `R -> P` duration outside the expected range
+
+Using a simple 3-sigma rule around the profile:
+- expected mean = 90,000
+- stdev = 3,600
+- lower = 79,200
+- upper = 100,800
+
+```sql
+WITH rp AS (
+    SELECT
+        r.claim_id,
+        r.timestamp AS r_time,
+        MIN(p.timestamp) AS p_time,
+        EXTRACT(EPOCH FROM (MIN(p.timestamp) - r.timestamp)) AS seconds_r_to_p
+    FROM claim_events r
+    JOIN claim_events p
+      ON p.claim_id = r.claim_id
+     AND p.activity = 'P'
+     AND p.timestamp > r.timestamp
+    WHERE r.activity = 'R'
+    GROUP BY r.claim_id, r.timestamp
+)
+SELECT *
+FROM rp
+WHERE seconds_r_to_p < 79200
+   OR seconds_r_to_p > 100800
+ORDER BY seconds_r_to_p;
+```
+
+Purpose:
+- identifies claims whose approval timing is unusually early or late compared with the very narrow profile.
+
+---
+
+## B. Check whether `R -> P` is concentrated around fixed times of day
+
+This tests the batch-processing hypothesis.
+
+```sql
+WITH rp AS (
+    SELECT
+        r.claim_id,
+        r.timestamp AS r_time,
+        MIN(p.timestamp) AS p_time
+    FROM claim_events r
+    JOIN claim_events p
+      ON p.claim_id = r.claim_id
+     AND p.activity = 'P'
+     AND p.timestamp > r.timestamp
+    WHERE r.activity = 'R'
+    GROUP BY r.claim_id, r.timestamp
+)
+SELECT
+    EXTRACT(HOUR FROM p_time) AS approval_hour,
+    COUNT(*) AS approvals
+FROM rp
+GROUP BY EXTRACT(HOUR FROM p_time)
+ORDER BY approval_hour;
+```
+
+If approvals cluster in one or two hours, that supports scheduled or batch approval behavior.
+
+---
+
+## C. Find claims with very long `P -> N` delays
+
+Using 3-sigma:
+- mean = 604,800
+- stdev = 172,800
+- upper threshold = 1,123,200 seconds (~13 days)
+
+```sql
+WITH pn AS (
+    SELECT
+        p.claim_id,
+        p.timestamp AS p_time,
+        MIN(n.timestamp) AS n_time,
+        EXTRACT(EPOCH FROM (MIN(n.timestamp) - p.timestamp)) AS seconds_p_to_n
+    FROM claim_events p
+    JOIN claim_events n
+      ON n.claim_id = p.claim_id
+     AND n.activity = 'N'
+     AND n.timestamp > p.timestamp
+    WHERE p.activity = 'P'
+    GROUP BY p.claim_id, p.timestamp
+)
+SELECT *
+FROM pn
+WHERE seconds_p_to_n > 1123200
+ORDER BY seconds_p_to_n DESC;
+```
+
+Purpose:
+- isolates extreme notification delays.
+
+---
+
+## D. Correlate long `P -> N` delays with claim type
+
+```sql
+WITH pn AS (
+    SELECT
+        p.claim_id,
+        EXTRACT(EPOCH FROM (MIN(n.timestamp) - p.timestamp)) AS seconds_p_to_n
+    FROM claim_events p
+    JOIN claim_events n
+      ON n.claim_id = p.claim_id
+     AND n.activity = 'N'
+     AND n.timestamp > p.timestamp
+    WHERE p.activity = 'P'
+    GROUP BY p.claim_id, p.timestamp
+)
+SELECT
+    c.claim_type,
+    COUNT(*) AS num_claims,
+    AVG(seconds_p_to_n) AS avg_seconds,
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY seconds_p_to_n) AS median_seconds
+FROM pn
+JOIN claims c
+  ON c.claim_id = pn.claim_id
+GROUP BY c.claim_type
+ORDER BY avg_seconds DESC;
+```
+
+Purpose:
+- checks whether certain claim types drive the delay.
+
+---
+
+## E. Correlate long `P -> N` delays with resources performing approval or notification
+
+```sql
+WITH pn AS (
+    SELECT
+        p.claim_id,
+        p.resource AS approval_resource,
+        MIN(n.timestamp) AS n_time,
+        EXTRACT(EPOCH FROM (MIN(n.timestamp) - p.timestamp)) AS seconds_p_to_n
+    FROM claim_events p
+    JOIN claim_events n
+      ON n.claim_id = p.claim_id
+     AND n.activity = 'N'
+     AND n.timestamp > p.timestamp
+    WHERE p.activity = 'P'
+    GROUP BY p.claim_id, p.timestamp, p.resource
+)
+SELECT
+    approval_resource,
+    COUNT(*) AS num_claims,
+    AVG(seconds_p_to_n) AS avg_seconds,
+    MAX(seconds_p_to_n) AS max_seconds
+FROM pn
+GROUP BY approval_resource
+HAVING COUNT(*) >= 5
+ORDER BY avg_seconds DESC;
+```
+
+Purpose:
+- identifies whether specific approval resources are associated with longer waits before notification.
+
+---
+
+## F. Find claims closed soon after assignment
+
+This directly tests the premature closure hypothesis.
+
+```sql
+WITH ac AS (
+    SELECT
+        a.claim_id,
+        a.timestamp AS a_time,
+        MIN(c.timestamp) AS c_time,
+        EXTRACT(EPOCH FROM (MIN(c.timestamp) - a.timestamp)) AS seconds_a_to_c
+    FROM claim_events a
+    JOIN claim_events c
+      ON c.claim_id = a.claim_id
+     AND c.activity = 'C'
+     AND c.timestamp > a.timestamp
+    WHERE a.activity = 'A'
+    GROUP BY a.claim_id, a.timestamp
+)
+SELECT *
+FROM ac
+WHERE seconds_a_to_c <= 7200
+ORDER BY seconds_a_to_c;
+```
+
+Purpose:
+- captures claims closed within 2 hours of assignment.
+
+---
+
+## G. Of claims closed quickly after assignment, check whether `E` or `P` is missing
+
+```sql
+WITH quick_ac AS (
+    SELECT
+        a.claim_id,
+        a.timestamp AS a_time,
+        MIN(c.timestamp) AS c_time
+    FROM claim_events a
+    JOIN claim_events c
+      ON c.claim_id = a.claim_id
+     AND c.activity = 'C'
+     AND c.timestamp > a.timestamp
+    WHERE a.activity = 'A'
+    GROUP BY a.claim_id, a.timestamp
+    HAVING EXTRACT(EPOCH FROM (MIN(c.timestamp) - a.timestamp)) <= 7200
+)
+SELECT
+    q.claim_id,
+    CASE WHEN EXISTS (
+        SELECT 1
+        FROM claim_events e
+        WHERE e.claim_id = q.claim_id
+          AND e.activity = 'E'
+          AND e.timestamp BETWEEN q.a_time AND q.c_time
+    ) THEN 1 ELSE 0 END AS has_evaluate,
+    CASE WHEN EXISTS (
+        SELECT 1
+        FROM claim_events p
+        WHERE p.claim_id = q.claim_id
+          AND p.activity = 'P'
+          AND p.timestamp BETWEEN q.a_time AND q.c_time
+    ) THEN 1 ELSE 0 END AS has_approve
+FROM quick_ac q
+ORDER BY q.claim_id;
+```
+
+Purpose:
+- verifies whether rapid closure cases are skipping expected steps.
+
+---
+
+## H. Find claims where notification follows evaluation almost immediately
+
+```sql
+WITH en AS (
+    SELECT
+        e.claim_id,
+        e.timestamp AS e_time,
+        MIN(n.timestamp) AS n_time,
+        EXTRACT(EPOCH FROM (MIN(n.timestamp) - e.timestamp)) AS seconds_e_to_n
+    FROM claim_events e
+    JOIN claim_events n
+      ON n.claim_id = e.claim_id
+     AND n.activity = 'N'
+     AND n.timestamp > e.timestamp
+    WHERE e.activity = 'E'
+    GROUP BY e.claim_id, e.timestamp
+)
+SELECT *
+FROM en
+WHERE seconds_e_to_n <= 300
+ORDER BY seconds_e_to_n;
+```
+
+Purpose:
+- surfaces cases matching the unusually short 5-minute pattern.
+
+---
+
+## I. Check whether approval occurs before notification in those fast `E -> N` cases
+
+```sql
+WITH en AS (
+    SELECT
+        e.claim_id,
+        e.timestamp AS e_time,
+        MIN(n.timestamp) AS n_time
+    FROM claim_events e
+    JOIN claim_events n
+      ON n.claim_id = e.claim_id
+     AND n.activity = 'N'
+     AND n.timestamp > e.timestamp
+    WHERE e.activity = 'E'
+    GROUP BY e.claim_id, e.timestamp
+    HAVING EXTRACT(EPOCH FROM (MIN(n.timestamp) - e.timestamp)) <= 300
+)
+SELECT
+    en.claim_id,
+    CASE WHEN EXISTS (
+        SELECT 1
+        FROM claim_events p
+        WHERE p.claim_id = en.claim_id
+          AND p.activity = 'P'
+          AND p.timestamp BETWEEN en.e_time AND en.n_time
+    ) THEN 1 ELSE 0 END AS approval_between_eval_and_notify
+FROM en
+ORDER BY en.claim_id;
+```
+
+Purpose:
+- checks whether notification is happening without an explicit approval event in between.
+
+---
+
+## J. Compare anomalies by claim type and amount band
+
+This tests whether process variants explain the pattern.
+
+```sql
+WITH durations AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        MIN(CASE WHEN ce.activity = 'R' THEN ce.timestamp END) AS r_time,
+        MIN(CASE WHEN ce.activity = 'A' THEN ce.timestamp END) AS a_time,
+        MIN(CASE WHEN ce.activity = 'E' THEN ce.timestamp END) AS e_time,
+        MIN(CASE WHEN ce.activity = 'P' THEN ce.timestamp END) AS p_time,
+        MIN(CASE WHEN ce.activity = 'N' THEN ce.timestamp END) AS n_time,
+        MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) AS c_time
+    FROM claims c
+    JOIN claim_events ce
+      ON ce.claim_id = c.claim_id
+    GROUP BY c.claim_id, c.claim_type, c.claim_amount
+)
+SELECT
+    claim_type,
+    CASE
+        WHEN claim_amount < 1000 THEN 'low'
+        WHEN claim_amount < 10000 THEN 'medium'
+        ELSE 'high'
+    END AS amount_band,
+    COUNT(*) AS num_claims,
+    AVG(EXTRACT(EPOCH FROM (p_time - r_time))) AS avg_r_to_p,
+    AVG(EXTRACT(EPOCH FROM (n_time - p_time))) AS avg_p_to_n,
+    AVG(EXTRACT(EPOCH FROM (c_time - a_time))) AS avg_a_to_c
+FROM durations
+GROUP BY
+    claim_type,
+    CASE
+        WHEN claim_amount < 1000 THEN 'low'
+        WHEN claim_amount < 10000 THEN 'medium'
+        ELSE 'high'
+    END
+ORDER BY claim_type, amount_band;
+```
+
+Purpose:
+- determines whether anomalies are concentrated in low-value or specific claim-type segments.
+
+---
+
+## K. Link anomalies to assigned adjuster and region
+
+Since `claim_events.resource` is varchar, a practical approximation is to match assignment resource to adjuster name.
+
+```sql
+WITH assign_close AS (
+    SELECT
+        a.claim_id,
+        a.resource AS assign_resource,
+        EXTRACT(EPOCH FROM (MIN(c.timestamp) - a.timestamp)) AS seconds_a_to_c
+    FROM claim_events a
+    JOIN claim_events c
+      ON c.claim_id = a.claim_id
+     AND c.activity = 'C'
+     AND c.timestamp > a.timestamp
+    WHERE a.activity = 'A'
+    GROUP BY a.claim_id, a.timestamp, a.resource
+)
+SELECT
+    ad.region,
+    ad.specialization,
+    COUNT(*) AS num_claims,
+    AVG(ac.seconds_a_to_c) AS avg_seconds_a_to_c
+FROM assign_close ac
+JOIN adjusters ad
+  ON ad.name = ac.assign_resource
+GROUP BY ad.region, ad.specialization
+ORDER BY avg_seconds_a_to_c;
+```
+
+Purpose:
+- tests whether rapid closure patterns cluster by region or specialization.
+
+---
+
+## L. Detect possible event-order violations
+
+This helps verify whether the problem is process behavior or timestamp/logging quality.
+
+```sql
+WITH pivoted AS (
+    SELECT
+        claim_id,
+        MIN(CASE WHEN activity = 'R' THEN timestamp END) AS r_time,
+        MIN(CASE WHEN activity = 'A' THEN timestamp END) AS a_time,
+        MIN(CASE WHEN activity = 'E' THEN timestamp END) AS e_time,
+        MIN(CASE WHEN activity = 'P' THEN timestamp END) AS p_time,
+        MIN(CASE WHEN activity = 'N' THEN timestamp END) AS n_time,
+        MIN(CASE WHEN activity = 'C' THEN timestamp END) AS c_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT *
+FROM pivoted
+WHERE (a_time IS NOT NULL AND r_time IS NOT NULL AND a_time < r_time)
+   OR (e_time IS NOT NULL AND a_time IS NOT NULL AND e_time < a_time)
+   OR (p_time IS NOT NULL AND e_time IS NOT NULL AND p_time < e_time)
+   OR (n_time IS NOT NULL AND p_time IS NOT NULL AND n_time < p_time)
+   OR (c_time IS NOT NULL AND n_time IS NOT NULL AND c_time < n_time);
+```
+
+Purpose:
+- finds ordering violations that could explain contradictory timing patterns.
+
+---
+
+## 4. What to look for in the query results
+
+- **If `R -> P` times cluster at exact intervals**: likely batch scheduling or synthetic timestamps.
+- **If long `P -> N` delays correlate with certain claim types or resources**: likely operational bottlenecks rather than random noise.
+- **If many quick `A -> C` cases lack `E` or `P`**: process steps are being skipped or not logged.
+- **If `E -> N` is fast and `P` is missing or later**: notification may be automated prematurely, or event order is inconsistent.
+- **If anomalies are concentrated by region/specialization**: local staffing or workflow differences are likely.
+- **If event-order violations are common**: investigate data quality before interpreting the temporal profile as a true process issue.
+
+## 5. Summary
+
+The most notable issues are:
+- a suspiciously fixed approval timing (`R -> P`),
+- a very long and inconsistent delay from approval to notification (`P -> N`),
+- unusually fast closure after assignment (`A -> C`),
+- and near-immediate notification after evaluation (`E -> N`).
+
+These patterns point to a combination of possible batch behavior, skipped or unlogged steps, process variants, bottlenecks, and timestamp quality issues. The SQL above can be used to isolate affected claims and determine whether the anomalies are driven by claim type, adjuster behavior, region, or poor event logging.
