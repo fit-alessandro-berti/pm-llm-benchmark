@@ -14,7 +14,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "claude-sonnet-4-5-thinking-20250929" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "qwen3.5:4b" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "grok-4-1-fast-reasoning" if len(sys.argv) < 3 else sys.argv[2]
@@ -297,7 +297,7 @@ MODELS_DICT = {
             "phi4-mini-reasoning", "phi4-reasoning", "phi4-reasoning:plus",
             "qwen3:4b-instruct-2507-q8_0", "qwen3:4b-thinking-2507-q8_0",
             "granite4:micro", "granite4:micro-h", "granite4:tiny-h", "granite4:small-h",
-            "ibm/granite4:350m-h", "ibm/granite4:1b-h"
+            "ibm/granite4:350m-h", "ibm/granite4:1b-h", "qwen3.5:4b", "qwen3.5:9b"
         }
     },
     "qwen": {
@@ -703,7 +703,7 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "gemini-3", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "nemotron-3-nano-30b-a3b", "minimax-m2.1", "glm-4.7", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5", "qwen3-max-thinking", "qwen3.5"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "gemini-3", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "nemotron-3-nano-30b-a3b", "minimax-m2.1", "glm-4.7", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5", "qwen3-max-thinking", "qwen3.5-35b", "qwen3.5-397b", "qwen3.5-122b", "qwen3.5-27b"]
 
     for p in patterns:
         if p in m_name:
@@ -716,7 +716,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous", "qwen3-next-80b-a3b-thinking", "nemotron-nano-9b-v2-thinking", "nemotron-3-nano-30b-a3b", "deepseek-v3.2-exp-thinking", "deepseek-v3.2-thinking", "deepseek-v3.2-speciale-thinking", "nemotron-super-49b-v1.5-thinking", "kimi-k2-thinking", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "glm", "minimax-m2.1", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5", "qwen3.5"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous", "qwen3-next-80b-a3b-thinking", "nemotron-nano-9b-v2-thinking", "nemotron-3-nano-30b-a3b", "deepseek-v3.2-exp-thinking", "deepseek-v3.2-thinking", "deepseek-v3.2-speciale-thinking", "nemotron-super-49b-v1.5-thinking", "kimi-k2-thinking", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "glm", "minimax-m2.1", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5", "qwen3.5-35b", "qwen3.5-397b", "qwen3.5-122b", "qwen3.5-27b"]:
         if p in model_name and not ("deepseek-v3" in model_name and not ("-reasoner" in model_name or "-thinking" in model_name)):
             if (not "qwen3" in model_name) or ("qwen3" in model_name and not ("nstruct" in model_name or "coder" in model_name or "max" in model_name)):
                 return True

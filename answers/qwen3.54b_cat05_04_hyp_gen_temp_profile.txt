@@ -1,0 +1,102 @@
+### 1. Identified Anomalies in Temporal Profile Model
+
+The following pairs of activities exhibit statistical characteristics inconsistent with standard process flow stability:
+
+*   **Receive to Approve (R  P):** The standard deviation is disproportionately low compared to the mean (1 hour vs. 25 hours). In a human-centric workflow, approval times should naturally vary based on claim complexity. A near-zero variance suggests an automated rule or rigid schedule is enforcing approval timing rather than organic decision-making.
+*   **Evaluate to Notify (E  N):** The average duration is only 5 minutes with a standard deviation of 1 minute. This implies that "notification" occurs almost instantaneously after evaluation, which contradicts typical business rules where customer notification involves communication channels and manual handling.
+*   **Approve to Notify (P  N):** There is a significant discrepancy between the mean duration (7 days) and the high standard deviation (2 days). While some claims take longer, the variance suggests inconsistent SLA enforcement or potential bottlenecks in the post-approval notification queue that are not consistently managed.
+*   **Assign to Close (A  C):** The average time is 2 hours with a standard deviation of 1 hour. This duration is extremely short for a process that typically involves evaluation and approval steps. It suggests claims may be bypassing necessary review stages or being closed prematurely without full adjudication.
+
+### 2. Hypotheses on Anomalous Behavior
+
+Based on the identified statistical irregularities, the following hypotheses explain potential root causes:
+
+*   **Rigid Automation (R  P):** The low standard deviation for Receive-to-Approve suggests a system-level constraint or an automated approval script is being applied to specific claim types (e.g., "home_insurance" vs. "auto_insurance") regardless of the adjuster's input. This may indicate a lack of human judgment in the workflow or a policy error where approvals are time-boxed artificially.
+*   **Notification Latency Issues (P  N):** The high variance and long average for Approve-to-Notify suggest that while some claims are notified promptly, others face significant delays due to manual backlogs, resource constraints, or a disconnected notification system. This inconsistency may lead to customer dissatisfaction during the post-decision phase.
+*   **Premature Closure (A  C):** The rapid closure after assignment implies that certain claims might not require full evaluation and approval before closing. This could indicate fraud risk where low-value claims are closed immediately without review, or it suggests a "fast-track" process exists but is not fully documented in the schema.
+*   **Data Logging vs. Action (E  N):** The 5-minute gap between Evaluate and Notify might reflect an automated system that logs status updates instantly rather than sending actual customer notifications. Alternatively, it could indicate that the "Notify" step is being skipped or merged with other steps for high-priority claims.
+
+### 3. Verification Approaches Using SQL Queries
+
+The following PostgreSQL queries can be used to validate these anomalies by calculating actual time deltas against expected thresholds derived from the profile model.
+
+**Query 1: Identify Claims Deviating from Expected R  P Timing**
+This query calculates the time difference between Receive and Approve events per claim and flags those where the deviation exceeds a calculated threshold (Mean ± 3*Stdev).
+
+```sql
+WITH claim_r_p_times AS (
+    SELECT 
+        c.claim_id,
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS duration_seconds,
+        -- Calculate expected bounds based on profile: Mean = 90000, Stdev = 3600
+        90000 - (3 * 3600) AS lower_bound,
+        90000 + (3 * 3600) AS upper_bound
+    FROM claim_events e
+    JOIN claims c ON e.claim_id = c.claim_id
+    JOIN claim_events p ON p.claim_id = e.claim_id AND p.activity = 'P' 
+        AND p.timestamp > e.timestamp
+    JOIN claim_events r ON r.claim_id = e.claim_id AND r.activity = 'R' 
+        AND r.timestamp < e.timestamp
+    WHERE e.activity = 'R'
+      AND e.claim_id IN (SELECT claim_id FROM claim_events WHERE activity = 'P')
+),
+flagged_claims AS (
+    SELECT * FROM claim_r_p_times
+    WHERE duration_seconds < lower_bound OR duration_seconds > upper_bound
+)
+SELECT * FROM flagged_claims;
+```
+
+**Query 2: Correlate A  C Anomalies with Adjuster Specialization**
+This query checks for claims closing within the anomalous timeframe (A  C) and correlates them with adjuster details to see if specific regions or specializations trigger rapid closures.
+
+```sql
+SELECT 
+    c.claim_id,
+    a.name AS adjuster_name,
+    e.assign_timestamp,
+    c.close_timestamp,
+    EXTRACT(EPOCH FROM (c.close_timestamp - e.assign_timestamp)) AS duration_seconds
+FROM claim_events e
+JOIN claims c ON e.claim_id = c.claim_id
+JOIN adjusters a ON e.resource = a.adjuster_id
+WHERE e.activity = 'A' 
+  AND c.close_timestamp > e.assign_timestamp
+  -- Check for A -> C transition (assuming C is the last event)
+  AND EXISTS (SELECT 1 FROM claim_events ce WHERE ce.claim_id = c.claim_id AND ce.activity = 'C' AND ce.timestamp > e.assign_timestamp)
+  -- Filter for suspiciously short duration (< 4 hours to be conservative given 2h avg + 1h stdev)
+  AND EXTRACT(EPOCH FROM (c.close_timestamp - e.assign_timestamp)) < 14400;
+```
+
+**Query 3: Detect P  N Backlogs and Check Customer Segments**
+This query identifies claims where the notification to close gap is significantly longer than expected and filters by customer region or claim type to determine if specific segments suffer from delays.
+
+```sql
+WITH p_n_times AS (
+    SELECT 
+        c.claim_id,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS duration_seconds,
+        -- Profile stats: Mean = 604800 (7d), Stdev = 172800 (2d)
+        604800 + (3 * 172800) AS upper_bound_threshold
+    FROM claim_events e
+    JOIN claims c ON e.claim_id = c.claim_id
+    JOIN adjusters a ON e.resource = a.adjuster_id
+    JOIN claim_events p ON p.claim_id = e.claim_id AND p.activity = 'P' 
+        AND p.timestamp < n.timestamp
+    JOIN claim_events n ON n.claim_id = e.claim_id AND n.activity = 'N'
+    WHERE e.activity = 'P'
+      -- Ensure P -> N is the sequence (assuming chronological order)
+      AND EXISTS (SELECT 1 FROM claim_events ce WHERE ce.claim_id = c.claim_id AND ce.activity = 'C' AND ce.timestamp > n.timestamp)
+),
+anomalies AS (
+    SELECT * FROM p_n_times 
+    WHERE duration_seconds > upper_bound_threshold
+)
+SELECT 
+    a.claim_type,
+    a.region,
+    COUNT(*) AS anomaly_count
+FROM anomalies a
+JOIN claims c ON a.claim_id = c.claim_id
+GROUP BY a.claim_type, a.region;
+```

@@ -1,0 +1,144 @@
+### Anomaly Analysis Report
+
+Based on the provided `order_event_log` data compared against the **Assumed Normal Process Flow**, three distinct orders (Case IDs 1002, 1003, and 1004) exhibit significant deviations from standard operational procedures. These anomalies suggest potential process bypasses, system logic errors, or data integrity issues.
+
+---
+
+### 1. Identified Anomalies & Hypotheses
+
+#### **Case 1002 (Priority Order)**
+*   **Anomaly:** The `Perform Credit Check` (Event 11) occurs at `09:10:00`, which is **after** `Ship Goods` (Event 10, `08:40:00`) and `Confirm Shipment` (Event 9, `08:25:00`).
+*   **Hypothesis:**
+    *   **Process Bypass:** The system may have auto-approved the Priority order without running standard credit checks to speed up processing. This is a high-risk financial control failure.
+    *   **Log Migration Error:** It is possible that event records were inserted into the database out of chronological or logical order during an ETL process, rather than reflecting actual operational sequence errors.
+
+#### **Case 1003 (Standard Order)**
+*   **Anomaly:** The `Validate Stock` and `Confirm Shipment` steps are completely missing between `Register Order` and `Ship Goods`. Later, a `late_confirmation=Y` flag appears on the re-ordered `Confirm Shipment`.
+*   **Hypothesis:**
+    *   **Partial Logging:** The warehouse system may have processed the goods physically but failed to log intermediate validation steps due to an interface failure.
+    *   **Manual Override:** A human agent manually shipped goods without triggering the automated workflow, resulting in a "late" confirmation record that is out of sync with physical movement.
+
+#### **Case 1004 (Standard Order)**
+*   **Anomaly:** `Receive Payment` (Event 22) occurs at `09:05:00`, while `Issue Invoice` (Event 23) occurs later at `09:20:00`. Additionally, `Confirm Shipment` has `shipment_scheduled=N`, yet `Ship Goods` (Event 25) still occurred.
+*   **Hypothesis:**
+    *   **System Logic Flaw:** The billing/payment module was triggered before the invoicing module finalized the order details. This is a critical financial compliance risk (invoicing for goods not yet confirmed).
+    *   **Data Corruption:** The `additional_info` fields might be incorrect (e.g., payment amount received but invoice ID generated late), suggesting a synchronization issue between the Payment Gateway and the ERP system.
+
+---
+
+### 2. Proposed SQL Queries to Investigate
+
+The following queries are designed for PostgreSQL to investigate these hypotheses by joining `order_event_log`, `orders`, and `resources` tables.
+
+#### **Query 1: Detect Credit Check Sequence Violations**
+*Purpose:* Identify orders where the Credit Check happened after Shipment or Invoice steps (Case 1002 scenario).
+
+```sql
+SELECT 
+    ol.case_id,
+    ol.activity AS anomaly_activity,
+    o.order_type,
+    o.order_value,
+    ol.timestamp,
+    r.department,
+    r.role
+FROM order_event_log ol
+JOIN orders o ON ol.case_id = o.case_id
+JOIN resources r ON ol.resource = r.resource_id
+WHERE 
+    ol.activity IN ('Perform Credit Check', 'Validate Stock')
+    AND EXISTS (
+        SELECT 1 FROM order_event_log later_events
+        WHERE later_events.case_id = ol.case_id
+          AND later_events.event_id > ol.event_id
+          AND later_events.activity IN ('Confirm Shipment', 'Ship Goods', 'Issue Invoice')
+    )
+ORDER BY ol.case_id, ol.timestamp;
+```
+
+#### **Query 2: Detect Payment Before Invoice Anomaly**
+*Purpose:* Identify orders where the customer was paid before an invoice was issued (Case 1004 scenario).
+
+```sql
+SELECT 
+    ol.case_id,
+    o.order_value,
+    MAX(ol.timestamp) AS max_timestamp_activity,
+    MIN(ol.timestamp) AS min_timestamp_activity
+FROM order_event_log ol
+JOIN orders o ON ol.case_id = o.case_id
+WHERE 
+    ol.activity IN ('Receive Payment', 'Issue Invoice')
+GROUP BY ol.case_id, o.order_value
+HAVING 
+    MAX(ol.timestamp) > MIN(ol.timestamp) -- Just grouping logic for reference, need specific check below
+ORDER BY ol.case_id;
+
+-- Corrected Logic to find Pay before Inv specifically:
+SELECT 
+    ol.case_id,
+    o.order_type,
+    CASE 
+        WHEN t_pay < t_inv THEN 'Payment Before Invoice'
+        ELSE 'Normal Order'
+    END AS sequence_status
+FROM (
+    SELECT case_id, MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS t_pay
+    FROM order_event_log
+    WHERE activity IN ('Receive Payment')
+    GROUP BY case_id
+) t_pay
+JOIN (
+    SELECT case_id, MAX(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS t_inv
+    FROM order_event_log
+    WHERE activity IN ('Issue Invoice')
+    GROUP BY case_id
+) t_inv ON t_pay.case_id = t_inv.case_id
+WHERE t_pay.t_pay < t_inv.t_inv; -- This finds the specific anomaly
+```
+
+#### **Query 3: Identify Missing Intermediate Steps**
+*Purpose:* Find orders that skip standard steps (Validate Stock, Confirm Shipment) between Registration and Shipping.
+
+```sql
+SELECT 
+    ol.case_id,
+    o.order_type,
+    COUNT(DISTINCT CASE WHEN ol.activity IN ('Validate Stock', 'Confirm Shipment') THEN 1 END) AS missing_steps_count
+FROM order_event_log ol
+JOIN orders o ON ol.case_id = o.case_id
+WHERE ol.event_id > 4 -- Assuming Event 4 is Confirm Shipment in normal flow, checking gaps
+AND NOT EXISTS (
+    SELECT 1 FROM order_event_log intermediate_events
+    WHERE intermediate_events.case_id = ol.case_id
+      AND intermediate_events.activity IN ('Validate Stock', 'Confirm Shipment')
+      AND intermediate_events.event_id < ol.event_id -- Check if step happened earlier
+)
+GROUP BY ol.case_id, o.order_type
+HAVING missing_steps_count > 0;
+```
+
+#### **Query 4: Correlate Anomalies with Order Priority and Department**
+*Purpose:* Determine if "Priority" orders are more prone to skipping Credit Checks (Case 1002).
+
+```sql
+SELECT 
+    o.order_type,
+    r.role,
+    COUNT(*) AS total_events,
+    COUNT(CASE WHEN ol.activity = 'Perform Credit Check' AND EXISTS (
+        SELECT 1 FROM order_event_log later
+        WHERE later.case_id = ol.case_id 
+          AND later.event_id > ol.event_id 
+          AND later.activity IN ('Confirm Shipment', 'Ship Goods')
+    ) THEN 1 END) AS skipped_credit_checks
+FROM order_event_log ol
+JOIN orders o ON ol.case_id = o.case_id
+JOIN resources r ON ol.resource = r.resource_id
+GROUP BY o.order_type, r.role;
+```
+
+### 3. Recommended Next Steps
+1.  **Audit Logs:** Review the application logs for Case 1002 and 1004 to see if an exception handler skipped a workflow step intentionally.
+2.  **Data Integrity Check:** Run a checksum on `order_event_log` timestamps to rule out ETL/Database synchronization issues causing out-of-order records.
+3.  **Policy Review:** If the Credit Check was bypassed due to "Priority" status, this requires an immediate review of the credit approval policy to ensure risk compliance is maintained.
