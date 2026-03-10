@@ -20,7 +20,7 @@ def write_leaderboard_if_enabled(create_leaderboard):
         overall_table.write_evaluation(".", extra=True)
 
 
-def evaluate_model_threaded(m, create_leaderboard=True):
+def evaluate_model_threaded(m):
     """Evaluate a single model in a thread."""
     try:
         # Check and mark model as being processed
@@ -34,7 +34,6 @@ def evaluate_model_threaded(m, create_leaderboard=True):
             if "__init" not in m.lower():
                 print(f"Processing model: {m}")
                 evalscript.perform_evaluation(m)
-                write_leaderboard_if_enabled(create_leaderboard)
                 return True
             return False
         finally:
@@ -48,7 +47,7 @@ def evaluate_model_threaded(m, create_leaderboard=True):
         return False
 
 
-def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True, create_leaderboard=True):
+def perform_mass_eval(use_multithreading=True, max_workers=3, create_leaderboard=True):
     answers = os.listdir("answers")
     answers_models = Counter([x.split("_cat")[0] for x in answers])
     # answers_models = {x: y for x, y in answers_models.items() if y >= 44}
@@ -63,7 +62,8 @@ def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True
     ordered, referenced = get_ordered_references_llms(".")
     ordered = ordered + referenced
     ordered = [clean_model_name(x) for x in ordered]
-    answer_models_keys.sort(key=lambda x: (ordered.index(x) if x in ordered else sys.maxsize, x))
+    order_index = {model: index for index, model in enumerate(ordered)}
+    answer_models_keys.sort(key=lambda x: (order_index.get(x, sys.maxsize), x))
 
     answer_models_keys = [x for x in answer_models_keys if evaluations_models[x] != answers_models[x]]
     answer_models_keys.sort(key=lambda x: (0 if answers_models[x] - evaluations_models[x] < 10 else 1,
@@ -71,10 +71,6 @@ def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True
                                            answers_models[x] - evaluations_models[x],
                                            x.lower()))
     print(answer_models_keys)
-
-    if initial_write:
-        write_leaderboard_if_enabled(create_leaderboard)
-        pass
 
     changed = False
     
@@ -86,7 +82,7 @@ def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True
                 # Check if model is already being processed before submitting
                 with MODEL_PROCESSING_LOCK:
                     if m not in PROCESSING_MODELS:
-                        future = executor.submit(evaluate_model_threaded, m, create_leaderboard)
+                        future = executor.submit(evaluate_model_threaded, m)
                         futures.append((m, future))
                     else:
                         print(f"Model {m} already in processing queue, skipping")
@@ -105,10 +101,10 @@ def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True
             if "__init" not in m.lower():
                 print(m)
                 evalscript.perform_evaluation(m)
-                write_leaderboard_if_enabled(create_leaderboard)
                 changed = True
 
-    write_leaderboard_if_enabled(create_leaderboard)
+    if changed:
+        write_leaderboard_if_enabled(create_leaderboard)
 
     return changed
 
@@ -136,7 +132,7 @@ if __name__ == "__main__":
 
     use_multithreading = True  # Set to False to use original single-threaded behavior
     max_model_workers = 15  # Number of models to process in parallel
-    create_leaderboard = False  # Set to False to skip leaderboard generation
+    create_leaderboard = True  # Set to False to skip leaderboard generation
 
     for i in range(iterations):
         print(f"\n=== Iteration {i+1} ===")
@@ -146,7 +142,6 @@ if __name__ == "__main__":
         
         changed = perform_mass_eval(use_multithreading=use_multithreading, 
                                    max_workers=max_model_workers,
-                                   initial_write=(i == 0),
                                    create_leaderboard=create_leaderboard)
         
         if not changed:
