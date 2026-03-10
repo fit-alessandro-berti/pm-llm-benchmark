@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import json
-import re
 from datetime import datetime
 import numpy as np
 from scipy import stats

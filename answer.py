@@ -2,8 +2,7 @@ import os
 import traceback
 import time
 import sys
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from common import query_text_simple, query_image_simple, callback_write, set_api_key, is_visual_model, MODELS_DICT, \
     query_text_simple_with_rate_limit, query_image_simple_with_rate_limit, RATE_LIMITER, configure_rate_limiter
 import common

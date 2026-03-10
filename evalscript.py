@@ -2,7 +2,6 @@ import os
 import traceback
 import time
 import datetime
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from utils import forge_eval_prompt
 from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simple, query_image_simple, callback_write, \
