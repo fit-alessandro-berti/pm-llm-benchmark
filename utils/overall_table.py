@@ -1,8 +1,6 @@
 import os
-import pandas as pd
 import json
-from collections import Counter
-from utils.table_per_model import execute_script
+from utils.table_per_model import execute_script, index_evaluation_files, render_markdown_table
 from common import EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, is_open_source, is_large_reasoning_model, force_custom_evaluation_lrm, is_excluded_from_table
 
 
@@ -69,14 +67,45 @@ def manage_file_name(file_name, rec_depth=0):
     return file_name
 
 
+def round_model_scores(this_json):
+    for score_key in ("score_c1", "score_c2", "score_c3", "score_c4", "score_c5",
+                      "score_c6", "score_c7", "score_c8", "score_c9", "score_c10"):
+        this_json[score_key] = round(this_json[score_key], 1)
+    return this_json
+
+
+def model_is_allowed(model_name, allowed_models):
+    if allowed_models is None:
+        return True
+    if model_name in allowed_models:
+        return True
+    return any(model_name in candidate or candidate in model_name for candidate in allowed_models)
+
+
+def build_model_results(evaluation_folder):
+    responses_by_model = index_evaluation_files(evaluation_folder)
+    model_results = {}
+
+    for model_name, responses in responses_by_model.items():
+        if len(responses) < 44 or is_excluded_from_table(model_name):
+            continue
+        rendered_table, this_json = execute_script(evaluation_folder, model_name, responses=responses)
+        model_results[model_name] = {
+            "response_count": len(responses),
+            "table": rendered_table.split("==OVERALL SCORES==")[0].rstrip(),
+            "scores": round_model_scores(this_json),
+        }
+
+    return model_results
+
+
 def execute(evaluation_folder, target_file, include_closed_source=True, require_vision=False,
             require_reasoning=False, require_reasoning_custom=False, require_not_reasoning=False,
-            leaderboard_title="Overall Leaderboard", reg_expr=None, json_file=None, allowed_models=None):
-    files = os.listdir(evaluation_folder)
-    models = Counter([f.split("_cat")[0] for f in files if not "__init__" in f])
-    models = {x: y for x, y in models.items() if y >= 44 and not is_excluded_from_table(x)}
+            leaderboard_title="Overall Leaderboard", reg_expr=None, json_file=None, allowed_models=None,
+            model_results=None):
+    if model_results is None:
+        model_results = build_model_results(evaluation_folder)
 
-    temp = {}
     results = []
     all_jsons = {}
 
@@ -91,41 +120,17 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     max_c9 = 0.0
     max_c10 = 0.0
 
-    for m in models:
-        # If a whitelist of models is provided, skip everything else
-        if allowed_models is not None:
-            if m in allowed_models:
-                pass
-            else:
-                found = False
-                for m2 in allowed_models:
-                    if m in m2 or m2 in m:
-                        found = True
-                        break
-
-                if not found:
-                    continue
-
+    for m, model_data in model_results.items():
+        if not model_is_allowed(m, allowed_models):
+            continue
         if (include_closed_source or is_open_source(m)) and \
                 (not require_reasoning or (is_large_reasoning_model(m) and
                                            (not require_reasoning_custom or force_custom_evaluation_lrm(m)))) and \
                 (not require_not_reasoning or not is_large_reasoning_model(m)):
             if reg_expr is None or reg_expr.lower() in m.lower():
-                res, this_json = execute_script(evaluation_folder, m)
-
-                this_json["score_c1"] = round(this_json["score_c1"], 1)
-                this_json["score_c2"] = round(this_json["score_c2"], 1)
-                this_json["score_c3"] = round(this_json["score_c3"], 1)
-                this_json["score_c4"] = round(this_json["score_c4"], 1)
-                this_json["score_c5"] = round(this_json["score_c5"], 1)
-                this_json["score_c6"] = round(this_json["score_c6"], 1)
-                this_json["score_c7"] = round(this_json["score_c7"], 1)
-                this_json["score_c8"] = round(this_json["score_c8"], 1)
-                this_json["score_c9"] = round(this_json["score_c9"], 1)
-                this_json["score_c10"] = round(this_json["score_c10"], 1)
+                this_json = model_data["scores"]
 
                 if this_json["score_c7"] > 0 or not require_vision:
-                    temp[m] = res
                     max_c1 = max(max_c1, this_json["score_c1"])
                     max_c2 = max(max_c2, this_json["score_c2"])
                     max_c3 = max(max_c3, this_json["score_c3"])
@@ -139,10 +144,11 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
                     all_jsons[m] = this_json
 
-    for m in temp:
-        res = temp[m]
+    for m, model_data in model_results.items():
+        if m not in all_jsons:
+            continue
         this_json = all_jsons[m]
-        table = res.split("==OVERALL SCORES==")[0]
+        table = model_data["table"]
 
         score_c1 = format_numb_in_table(this_json["score_c1"], max_c1)
         score_c2 = format_numb_in_table(this_json["score_c2"], max_c2)
@@ -155,19 +161,32 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
         score_c9 = format_numb_in_table(this_json["score_c9"], max_c9)
         score_c10 = format_numb_in_table(this_json["score_c10"], max_c10)
 
-        results.append((m, this_json["score_textual"], this_json["total_score"], table, score_c1, score_c2, score_c3,
-                        score_c4, score_c5, score_c6, score_c7, score_c8, score_c9, score_c10))
+        results.append({
+            "model": m,
+            "score_textual": this_json["score_textual"],
+            "total_score": this_json["total_score"],
+            "table": table,
+            "raw_scores": (
+                this_json["score_c1"], this_json["score_c2"], this_json["score_c3"], this_json["score_c4"],
+                this_json["score_c5"], this_json["score_c6"], this_json["score_c7"], this_json["score_c8"],
+                this_json["score_c9"], this_json["score_c10"]
+            ),
+            "formatted_scores": (score_c1, score_c2, score_c3, score_c4, score_c5, score_c6, score_c7, score_c8, score_c9, score_c10),
+        })
 
-    # NOTE: this keeps the original sorting logic, including the use of this_json
-    results.sort(key=lambda x: (
-        x[1], x[2], this_json["score_c1"], this_json["score_c2"], this_json["score_c3"], this_json["score_c4"],
-        this_json["score_c5"], x[0]), reverse=True)
+    results.sort(
+        key=lambda x: (
+            x["score_textual"], x["total_score"], x["raw_scores"][0], x["raw_scores"][1], x["raw_scores"][2],
+            x["raw_scores"][3], x["raw_scores"][4], x["model"]
+        ),
+        reverse=True,
+    )
 
     overall_table = []
 
     target_len = 33
-    for m in results:
-        m_n = manage_file_name(m[0])
+    for result in results:
+        m_n = manage_file_name(result["model"])
         if len(m_n) > target_len:
             spli = m_n.split("-")
             news = ""
@@ -182,52 +201,45 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
                 i = i + 1
             m_n = news[0:min(target_len+1, len(news))]
 
-        average = float(m[1]) / 4.6
-
-        if m[1] == m[2]:
-            entry = {"Model": m_n, "Score": "**%.1f**" % (m[1]),
-                     "OS": format_is_open_source(m[0]), "LRM": format_is_lrm(m[0]),
-                     "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C8": m[11], "C7": m[10]}
-        else:
-            entry = {"Model": m_n, "Score": "**%.1f**" % (m[1]),
-                     "OS": format_is_open_source(m[0]), "LRM": format_is_lrm(m[0]),
-                     "C1": m[4], "C2": m[5], "C3": m[6], "C4": m[7], "C5": m[8], "C6": m[9], "C8": m[11], "C7": m[10]}
+        formatted_scores = result["formatted_scores"]
+        entry = {"Model": m_n, "Score": "**%.1f**" % (result["score_textual"]),
+                 "OS": format_is_open_source(result["model"]), "LRM": format_is_lrm(result["model"]),
+                 "C1": formatted_scores[0], "C2": formatted_scores[1], "C3": formatted_scores[2],
+                 "C4": formatted_scores[3], "C5": formatted_scores[4], "C6": formatted_scores[5],
+                 "C8": formatted_scores[7], "C7": formatted_scores[6]}
         overall_table.append(entry)
 
     if json_file is not None:
-        F = open(json_file, "w")
-        json.dump(overall_table, F)
-        F.close()
+        with open(json_file, "w") as handler:
+            json.dump(overall_table, handler)
 
-    overall_table = pd.DataFrame(overall_table)
-    lsttta = ["Model", "Score", "OS", "LRM", "PCo", "CC", "PMo", "PQ", "HG", "FA", "OPT", ":nerd_face: VI"]
-    if len(overall_table) > 0:
-        overall_table.columns = lsttta
-    else:
-        overall_table = pd.DataFrame({x: [] for x in lsttta})
-
-    overall_table = overall_table.to_markdown(index=False)
+    headers = ["Model", "Score", "OS", "LRM", "PCo", "CC", "PMo", "PQ", "HG", "FA", "OPT", ":nerd_face: VI"]
+    rows = [
+        [entry["Model"], entry["Score"], entry["OS"], entry["LRM"], entry["C1"], entry["C2"], entry["C3"],
+         entry["C4"], entry["C5"], entry["C6"], entry["C8"], entry["C7"]]
+        for entry in overall_table
+    ]
+    overall_table_markdown = render_markdown_table(headers, rows)
 
     output = []
     output.append(
         "A score in the range **27-34** is considered **sufficient**; a score in the range **34-38** is considered **fair**; a score in the range **38-44** is considered **good**; and a score **>44** is considered **excellent**.")
 
     output.append("## %s (1-shot; %s used as a judge)" % (leaderboard_title, EVALUATING_MODEL_NAME))
-    output.append(overall_table)
+    output.append(overall_table_markdown)
 
-    for m in results:
-        output.append("### %s   => %.1f points" % (m[0], m[1]))
-        output.append(m[3])
+    for result in results:
+        output.append("### %s   => %.1f points" % (result["model"], result["score_textual"]))
+        output.append(result["table"])
 
     output = "\n\n".join(output)
 
     if target_file is not None:
-        F = open(target_file, "w")
-        F.write(output)
-        F.close()
+        with open(target_file, "w") as handler:
+            handler.write(output)
         print("wrote", target_file)
 
-    return output, all_jsons, [m[0] for m in results]
+    return output, all_jsons, [result["model"] for result in results]
 
 
 def get_suffix_name(e_m_name):
@@ -241,6 +253,7 @@ def write_evaluation(base_path, extra=True):
     e_m_name = clean_model_name(EVALUATING_MODEL_NAME)
     base_evaluation_path = get_base_evaluation_path(EVALUATING_MODEL_NAME)
     evaluation_folder = os.path.join(base_path, base_evaluation_path)
+    model_results = build_model_results(evaluation_folder)
 
     # Main overall leaderboard
     execute(
@@ -250,6 +263,7 @@ def write_evaluation(base_path, extra=True):
         require_vision=False,
         leaderboard_title="Overall Leaderboard",
         json_file=os.path.join(base_path, "hallucinations/leaderboard_stats.md"),
+        model_results=model_results,
     )
 
     # --- New: small models leaderboard based on hallucinations/model_info.json ---
@@ -282,18 +296,19 @@ def write_evaluation(base_path, extra=True):
                 require_vision=False,
                 leaderboard_title="Small Models (<5B) Leaderboard",
                 allowed_models=small_models,
+                model_results=model_results,
             )
 
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_lrms_cot_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
-                require_vision=False, require_reasoning=True, require_reasoning_custom=True, leaderboard_title="Large Reasoning Models Leaderboard (Models with CoT)")
+                require_vision=False, require_reasoning=True, require_reasoning_custom=True, leaderboard_title="Large Reasoning Models Leaderboard (Models with CoT)", model_results=model_results)
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_nolrms_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True,
-                require_vision=False, require_not_reasoning=True, leaderboard_title="Base LLMs Leaderboard")
+                require_vision=False, require_not_reasoning=True, leaderboard_title="Base LLMs Leaderboard", model_results=model_results)
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=False,
-                require_vision=False, leaderboard_title="Open-Source Leaderboard")
+                require_vision=False, leaderboard_title="Open-Source Leaderboard", model_results=model_results)
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_os_nolrms_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=False,
-                require_vision=False, require_not_reasoning=True, leaderboard_title="Base Open-Source LLMs Leaderboard")
+                require_vision=False, require_not_reasoning=True, leaderboard_title="Base Open-Source LLMs Leaderboard", model_results=model_results)
         execute(evaluation_folder, os.path.join(base_path, "leaderboard_QWEN_" + get_suffix_name(e_m_name) + ".md"), include_closed_source=True, require_vision=False,
-                leaderboard_title="QWEN Leaderboard", reg_expr="qwen")
+                leaderboard_title="QWEN Leaderboard", reg_expr="qwen", model_results=model_results)
 
 
 if __name__ == "__main__":
