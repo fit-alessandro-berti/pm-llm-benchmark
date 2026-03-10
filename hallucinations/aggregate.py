@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-import os
-import json
 import argparse
 import csv
+import json
+import os
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 # Define the fixed category ordering
 CATEGORY_KEYS = [
@@ -28,174 +30,188 @@ CATEGORY_GROUPS = {
     "4": [k for k in CATEGORY_KEYS if k.startswith("4")],
 }
 
+CATEGORY_TEMPLATE = {k: 0 for k in CATEGORY_KEYS}
+GROUP_KEYS = tuple(CATEGORY_GROUPS.keys())
+HALLUCINATION_NAMES = {
+    "1a_instruction_override": "1a. Instruction Override",
+    "1b_context_omission": "1b. Context Omission",
+    "1c_prompt_contradiction": "1c. Prompt Contradiction",
+    "2a_concept_fabrication": "2a. Concept Fabrication",
+    "2b_spurious_numeric": "2b. Spurious Numeric",
+    "2c_false_citation": "2c. False Citation",
+    "3a_unsupported_leap": "3a. Unsupported Leap",
+    "3b_self_contradiction": "3b. Self Contradiction",
+    "3c_circular_reasoning": "3c. Circular Reasoning",
+    "4a_syntax_error": "4a. Syntax Error",
+    "4b_model_semantics_breach": "4b. Model Semantics Breach",
+    "4c_visual_descr_mismatch": "4c. Visual Description Mismatch",
+}
+
+
+def extract_pm_category(filename_parts):
+    for part in filename_parts[1:]:
+        if part.startswith("cat"):
+            return part
+    return None
+
+
+def load_report(report_entry):
+    filename, path = report_entry
+    filename_parts = filename.split("_")
+    model_name = filename_parts[0]
+    pm_cat = extract_pm_category(filename_parts)
+
+    try:
+        with open(path, "r", encoding="utf-8") as handler:
+            data = json.load(handler)
+    except Exception:
+        return None
+
+    return (
+        model_name,
+        pm_cat,
+        data.get("totals", {}).get("hallucinations_overall", 0),
+        data.get("categories", {}),
+    )
+
 
 def aggregate_reports(output_dir):
     summary = {}
-    # Also collect data for PM-LLM categories
-    pm_llm_data = {}  # Structure: {hallucination_cat: {pm_cat: count}}
-    
-    for fname in os.listdir(output_dir):
-        path = os.path.join(output_dir, fname)
-        if not os.path.isfile(path):
+    pm_llm_data = defaultdict(lambda: defaultdict(int))
+    report_entries = [(entry.name, entry.path) for entry in os.scandir(output_dir) if entry.is_file()]
+    max_workers = min(32, max(1, (os.cpu_count() or 1) * 2))
+
+    if len(report_entries) < 200:
+        report_iter = map(load_report, report_entries)
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            report_iter = executor.map(load_report, report_entries, chunksize=64)
+            report_iter = list(report_iter)
+
+    for report in report_iter:
+        if report is None:
             continue
-        model_name = fname.split('_', 1)[0]
-        
-        # Extract PM-LLM category from filename (e.g., cat01, cat02, etc.)
-        parts = fname.split('_')
-        pm_cat = None
-        for part in parts:
-            if part.startswith('cat'):
-                pm_cat = part
-                break
-        
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        except Exception:
-            continue
+
+        model_name, pm_cat, total, categories = report
+
         if model_name not in summary:
             summary[model_name] = {
-                'total_hallucinations': 0,
-                'by_category': {k: 0 for k in CATEGORY_KEYS}
+                "total_hallucinations": 0,
+                "by_category": CATEGORY_TEMPLATE.copy(),
+                "group_totals": {group: 0 for group in GROUP_KEYS},
             }
-        total = data.get('totals', {}).get('hallucinations_overall', 0)
-        summary[model_name]['total_hallucinations'] += total
-        
-        # Aggregate hallucination data
-        for cat, details in data.get('categories', {}).items():
-            count = details.get('count', 0)
-            if cat in summary[model_name]['by_category']:
-                summary[model_name]['by_category'][cat] += count
-            
-            # Aggregate for PM-LLM category table
-            if pm_cat and count > 0:
-                if cat not in pm_llm_data:
-                    pm_llm_data[cat] = {}
-                if pm_cat not in pm_llm_data[cat]:
-                    pm_llm_data[cat][pm_cat] = 0
+
+        model_summary = summary[model_name]
+        model_summary["total_hallucinations"] += total
+        by_category = model_summary["by_category"]
+        group_totals = model_summary["group_totals"]
+
+        for cat, details in categories.items():
+            if cat not in by_category:
+                continue
+
+            count = details.get("count", 0)
+            if count <= 0:
+                continue
+
+            by_category[cat] += count
+            group_totals[cat[0]] += count
+
+            if pm_cat:
                 pm_llm_data[cat][pm_cat] += count
-    
+
     return summary, pm_llm_data
 
 
 def write_pm_llm_category_table(pm_llm_data, output_file='pm_llm_category_table.md'):
     """Write a Markdown table with PM-LLM categories as columns and hallucination types as rows."""
-    # Get all PM-LLM categories present in the data
     all_pm_cats = set()
     for hall_cat in pm_llm_data.values():
         all_pm_cats.update(hall_cat.keys())
-    
-    # Sort PM-LLM categories
+
     pm_cats_sorted = sorted(all_pm_cats)
-    
-    # Define readable names for hallucination categories
-    hallucination_names = {
-        "1a_instruction_override": "1a. Instruction Override",
-        "1b_context_omission": "1b. Context Omission",
-        "1c_prompt_contradiction": "1c. Prompt Contradiction",
-        "2a_concept_fabrication": "2a. Concept Fabrication",
-        "2b_spurious_numeric": "2b. Spurious Numeric",
-        "2c_false_citation": "2c. False Citation",
-        "3a_unsupported_leap": "3a. Unsupported Leap",
-        "3b_self_contradiction": "3b. Self Contradiction",
-        "3c_circular_reasoning": "3c. Circular Reasoning",
-        "4a_syntax_error": "4a. Syntax Error",
-        "4b_model_semantics_breach": "4b. Model Semantics Breach",
-        "4c_visual_descr_mismatch": "4c. Visual Description Mismatch"
-    }
-    
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write('# PM-LLM Benchmark Hallucination Analysis\n\n')
-        f.write('Aggregated hallucination counts across all LLMs, organized by PM-LLM benchmark categories.\n\n')
-        
-        # Write table header
-        header = ['Hallucination Type'] + [cat.upper() for cat in pm_cats_sorted] + ['Total']
-        f.write('| ' + ' | '.join(header) + ' |\n')
-        f.write('| ' + ' | '.join(['---'] * len(header)) + ' |\n')
-        
-        # Write data rows
-        for hall_cat in CATEGORY_KEYS:
-            row = [hallucination_names.get(hall_cat, hall_cat)]
-            row_total = 0
-            
-            for pm_cat in pm_cats_sorted:
-                count = pm_llm_data.get(hall_cat, {}).get(pm_cat, 0)
-                row.append(str(count))
-                row_total += count
-            
-            row.append(str(row_total))
-            f.write('| ' + ' | '.join(row) + ' |\n')
-        
-        # Write totals row
-        f.write('| **Total** |')
-        grand_total = 0
+
+    lines = [
+        '# PM-LLM Benchmark Hallucination Analysis',
+        '',
+        'Aggregated hallucination counts across all LLMs, organized by PM-LLM benchmark categories.',
+        '',
+    ]
+
+    header = ['Hallucination Type'] + [cat.upper() for cat in pm_cats_sorted] + ['Total']
+    lines.append('| ' + ' | '.join(header) + ' |')
+    lines.append('| ' + ' | '.join(['---'] * len(header)) + ' |')
+
+    pm_cat_totals = {pm_cat: 0 for pm_cat in pm_cats_sorted}
+    grand_total = 0
+
+    for hall_cat in CATEGORY_KEYS:
+        row = [HALLUCINATION_NAMES.get(hall_cat, hall_cat)]
+        row_total = 0
+        counts_for_category = pm_llm_data.get(hall_cat, {})
+
         for pm_cat in pm_cats_sorted:
-            col_total = sum(pm_llm_data.get(hall_cat, {}).get(pm_cat, 0) 
-                          for hall_cat in CATEGORY_KEYS)
-            f.write(f' **{col_total}** |')
-            grand_total += col_total
-        f.write(f' **{grand_total}** |\n')
+            count = counts_for_category.get(pm_cat, 0)
+            row.append(str(count))
+            row_total += count
+            pm_cat_totals[pm_cat] += count
+
+        row.append(str(row_total))
+        grand_total += row_total
+        lines.append('| ' + ' | '.join(row) + ' |')
+
+    total_row = ['**Total**'] + [f'**{pm_cat_totals[pm_cat]}**' for pm_cat in pm_cats_sorted] + [f'**{grand_total}**']
+    lines.append('| ' + ' | '.join(total_row) + ' |')
+
+    with open(output_file, 'w', encoding='utf-8') as handler:
+        handler.write('\n'.join(lines) + '\n')
     
     print(f"PM-LLM category table written to {output_file}")
 
 def write_reports(summary,
-                  pm_llm_data,
-                  output_dir,
                   report_name_md='hallucination_report.md',
                   report_name_csv='hallucination_report.csv'):
-    # Sort models by raw total hallucinations ascending
-    sorted_models = sorted(summary.items(),
-                           key=lambda x: x[1]['total_hallucinations'])
+    sorted_models = sorted(summary.items(), key=lambda item: item[1]['total_hallucinations'])
 
-    # Prepare headers for the overall reports
     headers = ['Model', 'Total'] + CATEGORY_KEYS
+    markdown_lines = [
+        '# Hallucination Summary Report',
+        '',
+        '| ' + ' | '.join(headers) + ' |',
+        '| ' + ' | '.join(['---'] * len(headers)) + ' |',
+    ]
+    csv_rows = []
 
-    # === Write Markdown report (absolute counts) ===
+    for model, data in sorted_models:
+        category_counts = [data['by_category'].get(cat, 0) for cat in CATEGORY_KEYS]
+        markdown_lines.append('| ' + ' | '.join([model, str(data['total_hallucinations']), *map(str, category_counts)]) + ' |')
+        csv_rows.append([model, data['total_hallucinations'], *category_counts])
+
     md_path = report_name_md
     with open(md_path, 'w', encoding='utf-8') as md:
-        md.write('# Hallucination Summary Report\n\n')
-        md.write('| ' + ' | '.join(headers) + ' |\n')
-        md.write('| ' + ' | '.join(['---'] * len(headers)) + ' |\n')
-        for model, data in sorted_models:
-            row = [model, str(data['total_hallucinations'])]
-            for cat in CATEGORY_KEYS:
-                row.append(str(data['by_category'].get(cat, 0)))
-            md.write('| ' + ' | '.join(row) + ' |\n')
+        md.write('\n'.join(markdown_lines) + '\n')
     print(f"Markdown report written to {md_path}")
 
-    # === Write CSV report (absolute counts) ===
     csv_path = report_name_csv
     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(headers)
-        for model, data in sorted_models:
-            row = [model, data['total_hallucinations']]
-            for cat in CATEGORY_KEYS:
-                row.append(data['by_category'].get(cat, 0))
-            writer.writerow(row)
+        writer.writerows(csv_rows)
     print(f"CSV report written to {csv_path}")
 
-    # === Write separate CSVs for each top‑level category group ===
     base, _ = os.path.splitext(report_name_csv)
     for group, keys in CATEGORY_GROUPS.items():
-        # Now put the group total right after the model
         grp_headers = ['Model', f'Category_{group}_Total'] + keys
         csv_grp_path = f"{base}_category{group}.csv"
 
-        # Sort by this group's total
-        sorted_by_group = sorted(
-            summary.items(),
-            key=lambda x: sum(x[1]['by_category'].get(k, 0) for k in keys)
-        )
+        sorted_by_group = sorted(summary.items(), key=lambda item: item[1]['group_totals'][group])
 
         with open(csv_grp_path, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(grp_headers)
             for model, data in sorted_by_group:
                 counts = [data['by_category'].get(k, 0) for k in keys]
-                total_grp = sum(counts)
-                # Write: Model, Total_for_this_group, sub-category counts...
-                writer.writerow([model, total_grp, *counts])
+                writer.writerow([model, data['group_totals'][group], *counts])
         print(f"Category {group} CSV report written to {csv_grp_path}")
 
 
@@ -230,8 +246,6 @@ def main():
     args = parser.parse_args()
     summary, pm_llm_data = aggregate_reports(args.output_dir)
     write_reports(summary,
-                  pm_llm_data,
-                  args.output_dir,
                   args.report_name_md,
                   args.report_name_csv)
     write_pm_llm_category_table(pm_llm_data, args.pm_llm_table)
