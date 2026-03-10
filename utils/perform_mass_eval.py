@@ -3,7 +3,7 @@ import sys
 import threading
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 import evalscript
 from common import EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, get_ordered_references_llms, \
     RATE_LIMITER, configure_rate_limiter
@@ -15,7 +15,12 @@ MODEL_PROCESSING_LOCK = threading.Lock()
 PROCESSING_MODELS = set()
 
 
-def evaluate_model_threaded(m):
+def write_leaderboard_if_enabled(create_leaderboard):
+    if create_leaderboard:
+        overall_table.write_evaluation(".", extra=True)
+
+
+def evaluate_model_threaded(m, create_leaderboard=True):
     """Evaluate a single model in a thread."""
     try:
         # Check and mark model as being processed
@@ -29,7 +34,7 @@ def evaluate_model_threaded(m):
             if "__init" not in m.lower():
                 print(f"Processing model: {m}")
                 evalscript.perform_evaluation(m)
-                overall_table.write_evaluation(".", extra=True)
+                write_leaderboard_if_enabled(create_leaderboard)
                 return True
             return False
         finally:
@@ -43,7 +48,7 @@ def evaluate_model_threaded(m):
         return False
 
 
-def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True):
+def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True, create_leaderboard=True):
     answers = os.listdir("answers")
     answers_models = Counter([x.split("_cat")[0] for x in answers])
     # answers_models = {x: y for x, y in answers_models.items() if y >= 44}
@@ -68,7 +73,7 @@ def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True
     print(answer_models_keys)
 
     if initial_write:
-        overall_table.write_evaluation(".", extra=True)
+        write_leaderboard_if_enabled(create_leaderboard)
         pass
 
     changed = False
@@ -81,7 +86,7 @@ def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True
                 # Check if model is already being processed before submitting
                 with MODEL_PROCESSING_LOCK:
                     if m not in PROCESSING_MODELS:
-                        future = executor.submit(evaluate_model_threaded, m)
+                        future = executor.submit(evaluate_model_threaded, m, create_leaderboard)
                         futures.append((m, future))
                     else:
                         print(f"Model {m} already in processing queue, skipping")
@@ -100,10 +105,10 @@ def perform_mass_eval(use_multithreading=True, max_workers=3, initial_write=True
             if "__init" not in m.lower():
                 print(m)
                 evalscript.perform_evaluation(m)
-                overall_table.write_evaluation(".", extra=True)
+                write_leaderboard_if_enabled(create_leaderboard)
                 changed = True
 
-    overall_table.write_evaluation(".", extra=True)
+    write_leaderboard_if_enabled(create_leaderboard)
 
     return changed
 
@@ -128,17 +133,21 @@ if __name__ == "__main__":
 
     iterations = sys.maxsize
     # iterations = 1
-    
+
     use_multithreading = True  # Set to False to use original single-threaded behavior
     max_model_workers = 15  # Number of models to process in parallel
+    create_leaderboard = False  # Set to False to skip leaderboard generation
 
     for i in range(iterations):
         print(f"\n=== Iteration {i+1} ===")
         print(f"Multi-threading enabled: {use_multithreading}")
         print(f"Rate limiter stats: {RATE_LIMITER.get_stats()}")
+        print(f"Leaderboard creation enabled: {create_leaderboard}")
         
         changed = perform_mass_eval(use_multithreading=use_multithreading, 
-                                   max_workers=max_model_workers, initial_write=(i == 0))
+                                   max_workers=max_model_workers,
+                                   initial_write=(i == 0),
+                                   create_leaderboard=create_leaderboard)
         
         if not changed:
             print("No changes detected, waiting before next iteration...")

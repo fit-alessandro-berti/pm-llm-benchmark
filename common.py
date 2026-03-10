@@ -14,7 +14,7 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "qwen3.5:4b" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "inception/mercury-2" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
 EVALUATING_MODEL_NAME = "grok-4-1-fast-reasoning" if len(sys.argv) < 3 else sys.argv[2]
@@ -354,7 +354,8 @@ MODELS_DICT = {
             "moonshotai/kimi-k2.5", "arcee-ai/trinity-large-preview:free",
             "stepfun/step-3.5-flash:free", "openrouter/aurora-alpha",
             "minimax/minimax-m2.5", "z-ai/glm-5", "qwen/qwen3-max-thinking",
-            "qwen/qwen3.5-397b-a17b", "google/gemini-3.1-pro-preview"
+            "qwen/qwen3.5-397b-a17b", "google/gemini-3.1-pro-preview",
+            "inception/mercury-2"
         }
     },
     "manual": {
@@ -980,7 +981,7 @@ def query_text_simple_generic(question, api_url, target_file):
         # Decide if we want streaming
         streaming_enabled = False
         streaming_enabled = Shared.PAYLOAD_REASONING_EFFORT is None
-        if "stral" in Shared.MODEL_NAME.lower():
+        if "stral" in Shared.MODEL_NAME.lower() or "mercury" in Shared.MODEL_NAME.lower():
             streaming_enabled = False
 
         if streaming_enabled:
