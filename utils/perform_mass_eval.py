@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor
 import evalscript
 from common import EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, get_ordered_references_llms, \
     RATE_LIMITER, configure_rate_limiter
-from utils import overall_table
 
 
 # Global lock for preventing duplicate model processing
@@ -17,6 +16,7 @@ PROCESSING_MODELS = set()
 
 def write_leaderboard_if_enabled(create_leaderboard):
     if create_leaderboard:
+        from utils import overall_table
         overall_table.write_evaluation(".", extra=True)
 
 

@@ -673,15 +673,40 @@ def is_excluded_from_table(model_name):
     return False
 
 
-def get_ordered_references_llms(base_path="."):
+def _load_ordered_llms_from_leaderboard_stats(base_path="."):
+    stats_path = os.path.join(base_path, "hallucinations", "leaderboard_stats.md")
     try:
-        from utils import overall_table
-        output, all_jsons, ordered_llms = overall_table.execute(os.path.join(base_path, "evaluation-grok41-fast"),
-                                                                None, include_closed_source=True, require_vision=False,
-                                                                leaderboard_title="Overall Leaderboard")
-    except:
-        traceback.print_exc()
-        ordered_llms = []
+        with open(stats_path, "r", encoding="utf-8") as handler:
+            data = json.load(handler)
+        ordered_llms = [
+            clean_model_name(entry["Model"])
+            for entry in data
+            if isinstance(entry, dict) and entry.get("Model")
+        ]
+        return ordered_llms
+    except Exception:
+        return []
+
+
+def _load_ordered_llms_from_evaluations(base_path="."):
+    evaluation_folder = os.path.join(base_path, "evaluation-grok41-fast")
+    try:
+        files = os.listdir(evaluation_folder)
+    except Exception:
+        return []
+
+    models = Counter([f.split("_cat")[0] for f in files if "__init__" not in f])
+    ordered_llms = sorted(
+        (model for model, count in models.items() if count >= 44 and not is_excluded_from_table(model)),
+        key=lambda model: (-models[model], model.lower())
+    )
+    return ordered_llms
+
+
+def get_ordered_references_llms(base_path="."):
+    ordered_llms = _load_ordered_llms_from_leaderboard_stats(base_path)
+    if not ordered_llms:
+        ordered_llms = _load_ordered_llms_from_evaluations(base_path)
 
     referenced_llms = set()
     for provider in MODELS_DICT:

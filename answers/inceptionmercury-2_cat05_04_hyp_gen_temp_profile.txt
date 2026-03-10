@@ -1,0 +1,195 @@
+**Anomalies in the temporal profile**
+
+| Activity pair | Avg (seconds) | STDEV (seconds) | Why it looks odd |
+|---------------|---------------|----------------|------------------|
+| **R  P** (Receive  Approve) | 9000025h | 36001h | Very tight spread for a long interval – suggests a forced or automated deadline rather than a natural handoff. |
+| **P  N** (Approve  Notify) | 6048007d | 1728002d | Extremely long wait after approval, with a huge variance – could hide a backlog or occasional bypass. |
+| **A  C** (Assign  Close) | 72002h | 36001h | Closing almost immediately after assignment, without a visible evaluation step, hints at premature closures or shortcuts. |
+| **E  N** (Evaluate  Notify) | 3005min | 601min | Notification almost instantly after evaluation – may indicate an automated “push” that skips manual review or that the evaluate step is a placeholder. |
+| **R  E** (Receive  Evaluate) | 864001d | 288008h | Reasonable, but the downstream RP interval is far shorter than RE+EP, which is inconsistent. |
+| **N  C** (Notify  Close) | 180030min | 3005min | Very tight window – could be normal, but combined with the other anomalies it may be part of an accelerated “closeout” path. |
+
+---
+
+### Possible explanations
+
+1. **Automated approval rules** – A rule that autoapproves claims after a fixed time (e.g., 24h) would produce a narrow RP spread while still allowing a long, variable PN lag if the notification step is manual.
+2. **Batchoriented notification** – Approvals may be queued and only sent out in daily or weekly batches, creating the 7day average and large variance for PN.
+3. **Premature closure shortcuts** – Some adjusters or systems may close a claim immediately after assignment (AC) when the claim is deemed trivial, or when a “quickclose” flag is set.
+4. **Missing or merged events** – The evaluate step could be performed by the same system that later notifies, collapsing EN into a few seconds; alternatively, some evaluation records may be missing, making the interval appear artificially short.
+5. **Resource constraints** – Certain regions or adjuster teams might be overloaded, causing long PN delays, while others operate on a fasttrack path (RP, EN).
+6. **Dataentry errors** – Incorrect timestamps (e.g., clock drift or default values) could shrink intervals (RP) or inflate others (PN).
+
+---
+
+### Verification SQL queries
+
+All queries assume the `claim_events` table contains one row per event per claim and that timestamps are stored in UTC.
+
+#### 1. General helper: extract ordered events per claim
+
+```sql
+WITH ordered_events AS (
+    SELECT
+        claim_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp) AS seq
+    FROM claim_events
+)
+SELECT * FROM ordered_events;
+```
+
+#### 2. Claims where **R  P** exceeds the expected range ( >3×STDEV)
+
+```sql
+WITH rp AS (
+    SELECT
+        r.claim_id,
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS secs
+    FROM claim_events r
+    JOIN claim_events p
+      ON r.claim_id = p.claim_id
+     AND r.activity = 'R'
+     AND p.activity = 'P'
+)
+SELECT *
+FROM rp
+WHERE secs > 90000 + 3*3600      -- > avg + 3*STDEV
+   OR secs < 90000 - 3*3600;     -- < avg - 3*STDEV
+```
+
+#### 3. Claims where **P  N** is unusually long ( >avg+2×STDEV)
+
+```sql
+WITH pn AS (
+    SELECT
+        p.claim_id,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS secs
+    FROM claim_events p
+    JOIN claim_events n
+      ON p.claim_id = n.claim_id
+     AND p.activity = 'P'
+     AND n.activity = 'N'
+)
+SELECT *
+FROM pn
+WHERE secs > 604800 + 2*172800;   -- > avg + 2*STDEV
+```
+
+#### 4. Claims closed within 30minutes after assignment (A  C) – possible premature closures
+
+```sql
+WITH ac AS (
+    SELECT
+        a.claim_id,
+        EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) AS secs
+    FROM claim_events a
+    JOIN claim_events c
+      ON a.claim_id = c.claim_id
+     AND a.activity = 'A'
+     AND c.activity = 'C'
+)
+SELECT *
+FROM ac
+WHERE secs <= 1800;   -- 30 minutes
+```
+
+#### 5. Claims where **E  N** is under 2minutes – may indicate automated push
+
+```sql
+WITH en AS (
+    SELECT
+        e.claim_id,
+        EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS secs
+    FROM claim_events e
+    JOIN claim_events n
+      ON e.claim_id = n.claim_id
+     AND e.activity = 'E'
+     AND n.activity = 'N'
+)
+SELECT *
+FROM en
+WHERE secs <= 120;   -- 2 minutes
+```
+
+#### 6. Correlate **P  N** delays with adjuster region and claim type
+
+```sql
+WITH pn AS (
+    SELECT
+        p.claim_id,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS secs,
+        p.resource AS approver_resource
+    FROM claim_events p
+    JOIN claim_events n
+      ON p.claim_id = n.claim_id
+     AND p.activity = 'P'
+     AND n.activity = 'N'
+)
+SELECT
+    a.region,
+    c.claim_type,
+    COUNT(*) AS total_claims,
+    AVG(pn.secs) AS avg_delay_secs,
+    STDDEV(pn.secs) AS stddev_delay_secs
+FROM pn
+JOIN claims c ON pn.claim_id = c.claim_id
+JOIN adjusters a ON pn.approver_resource = a.adjuster_id::text   -- assuming resource stores adjuster_id
+GROUP BY a.region, c.claim_type
+ORDER BY avg_delay_secs DESC
+LIMIT 10;
+```
+
+#### 7. Identify claims where the **full sequence** deviates from the model (using Zscore)
+
+```sql
+WITH diffs AS (
+    SELECT
+        ce.claim_id,
+        MAX(CASE WHEN ce.activity = 'R' THEN ce.timestamp END) AS r_ts,
+        MAX(CASE WHEN ce.activity = 'A' THEN ce.timestamp END) AS a_ts,
+        MAX(CASE WHEN ce.activity = 'E' THEN ce.timestamp END) AS e_ts,
+        MAX(CASE WHEN ce.activity = 'P' THEN ce.timestamp END) AS p_ts,
+        MAX(CASE WHEN ce.activity = 'N' THEN ce.timestamp END) AS n_ts,
+        MAX(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) AS c_ts
+    FROM claim_events ce
+    GROUP BY ce.claim_id
+)
+SELECT
+    claim_id,
+    (EXTRACT(EPOCH FROM (a_ts - r_ts)) - 3600) / 600   AS z_r_a,
+    (EXTRACT(EPOCH FROM (p_ts - r_ts)) - 90000) / 3600 AS z_r_p,
+    (EXTRACT(EPOCH FROM (c_ts - a_ts)) - 7200) / 3600 AS z_a_c,
+    (EXTRACT(EPOCH FROM (n_ts - p_ts)) - 604800) / 172800 AS z_p_n
+FROM diffs
+WHERE ABS((EXTRACT(EPOCH FROM (a_ts - r_ts)) - 3600) / 600)   > 3
+   OR ABS((EXTRACT(EPOCH FROM (p_ts - r_ts)) - 90000) / 3600) > 3
+   OR ABS((EXTRACT(EPOCH FROM (c_ts - a_ts)) - 7200) / 3600) > 3
+   OR ABS((EXTRACT(EPOCH FROM (n_ts - p_ts)) - 604800) / 172800) > 3;
+```
+
+#### 8. Spot claims that **skip** the evaluation step (no “E” event) but still move from A  P  N  C
+
+```sql
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.submission_date
+FROM claims c
+LEFT JOIN claim_events e
+  ON c.claim_id = e.claim_id
+ AND e.activity = 'E'
+WHERE e.event_id IS NULL
+  AND EXISTS (SELECT 1 FROM claim_events a WHERE a.claim_id = c.claim_id AND a.activity = 'A')
+  AND EXISTS (SELECT 1 FROM claim_events p WHERE p.claim_id = c.claim_id AND p.activity = 'P')
+  AND EXISTS (SELECT 1 FROM claim_events n WHERE n.claim_id = c.claim_id AND n.activity = 'N')
+  AND EXISTS (SELECT 1 FROM claim_events cl WHERE cl.claim_id = c.claim_id AND cl.activity = 'C');
+```
+
+These queries let you:
+
+* Flag individual claims that breach the expected timing windows.
+* Quantify how often each anomaly occurs.
+* Relate timing outliers to adjuster region, claim type, or specific resources.
+* Detect structural deviations (e.g., missing evaluation) that may be driving the observed temporal oddities.
