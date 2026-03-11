@@ -3,7 +3,6 @@ import json
 import os
 import glob
 import ast
-from difflib import SequenceMatcher
 
 # Read leaderboard stats
 with open('leaderboard_stats.md', 'r') as f:
@@ -22,39 +21,24 @@ for file in output_files:
 print(f"Found {len(real_model_names)} unique real model names in output directory")
 print(f"Found {len(leaderboard_data)} models in leaderboard")
 
-# Create mapping from beautified to real names using approximate string matching
+# Create mapping using exact model-name matches only.
 beautified_to_real = {}
 
 
-def normalize_string(s):
-    """Normalize string for comparison"""
-    return s.lower().replace('-', '').replace('_', '').replace(' ', '').replace('.', '')
+def prune_orphaned_entries(data, valid_model_names, json_name):
+    """Drop metadata entries for models that no longer have a corresponding output."""
+    orphaned_models = sorted(set(data) - valid_model_names)
+    for model_name in orphaned_models:
+        del data[model_name]
+        print(f"Removed orphaned entry from {json_name}: {model_name}")
 
-
-def get_similarity(s1, s2):
-    """Get similarity score between two strings"""
-    return SequenceMatcher(None, normalize_string(s1), normalize_string(s2)).ratio()
+    return orphaned_models
 
 
 for entry in leaderboard_data:
     beautified = entry['Model']
-
-    best_match = None
-    best_score = 0
-
-    for real in real_model_names:
-        score = get_similarity(beautified, real)
-
-        if score > best_score:
-            best_score = score
-            best_match = real
-
-    # Use a threshold to ensure reasonable matches
-    if best_score > 0.6:
-        beautified_to_real[beautified] = best_match
-        print(f"Matched: {beautified} -> {best_match} (score: {best_score:.3f})")
-    else:
-        print(f"No match found for: {beautified} (best score: {best_score:.3f})")
+    if beautified in real_model_names:
+        beautified_to_real[beautified] = beautified
 
 print(f"\nMatched {len(beautified_to_real)} out of {len(leaderboard_data)} models")
 
@@ -80,6 +64,8 @@ for entry in leaderboard_data:
         is_os = entry['OS'] == ':white_check_mark:'
         model_is_os[real_name] = is_os
 
+matched_model_names = set(model_scores)
+
 # Handle model_date.json (publication dates)
 model_date = {}
 if os.path.exists('model_date.json'):
@@ -94,9 +80,12 @@ if os.path.exists('model_info.json'):
         model_info = json.load(f)
     print(f"Loaded existing model_info.json with {len(model_info)} entries")
 
-# IMPORTANT FIX: Add ALL models from output directory, not just matched ones
-# This ensures every model in the output directory gets an entry
-for real_name in real_model_names:
+# Remove stale metadata for models that do not have a matched leaderboard entry.
+pruned_model_date = prune_orphaned_entries(model_date, matched_model_names, 'model_date.json')
+pruned_model_info = prune_orphaned_entries(model_info, matched_model_names, 'model_info.json')
+
+# Ensure every matched model gets an entry.
+for real_name in matched_model_names:
     if real_name not in model_date:
         model_date[real_name] = ""
         print(f"Added new model to model_date: {real_name}")
@@ -104,17 +93,6 @@ for real_name in real_model_names:
     if real_name not in model_info:
         model_info[real_name] = []
         print(f"Added new model to model_info: {real_name}")
-
-# Also ensure models from leaderboard that were matched are included
-# (This handles cases where a model appears in leaderboard but not in output dir)
-for real_name in model_scores.keys():
-    if real_name not in model_date:
-        model_date[real_name] = ""
-        print(f"Added matched model to model_date: {real_name}")
-
-    if real_name not in model_info:
-        model_info[real_name] = []
-        print(f"Added matched model to model_info: {real_name}")
 
 # Write JSON files
 with open('model_scores.json', 'w') as f:
@@ -137,20 +115,6 @@ with open('model_info.json', 'w') as f:
     json.dump(model_info, f, indent=2, sort_keys=True)
     print(f"Updated model_info.json with {len(model_info)} entries")
 
-# Print unmatched models for debugging
-unmatched_leaderboard = [entry['Model'] for entry in leaderboard_data if entry['Model'] not in beautified_to_real]
-if unmatched_leaderboard:
-    print(f"\nUnmatched leaderboard models ({len(unmatched_leaderboard)}):")
-    for model in unmatched_leaderboard:
-        print(f"  - {model}")
-
-# Print models in output that weren't matched to leaderboard
-unmatched_output = real_model_names - set(model_scores.keys())
-if unmatched_output:
-    print(f"\nModels in output not matched to leaderboard ({len(unmatched_output)}):")
-    for model in sorted(unmatched_output):
-        print(f"  - {model}")
-
 # Print which models need manual updates
 new_models_date = [model for model in model_date.keys() if model_date[model] == ""]
 new_models_info = [model for model in model_info.keys() if model_info[model] == []]
@@ -164,3 +128,9 @@ if new_models_info:
     print(f"\nModels needing info ({len(new_models_info)} models):")
     for model in sorted(new_models_info):
         print(f"  - {model}")
+
+if pruned_model_date:
+    print(f"\nRemoved {len(pruned_model_date)} orphaned model_date.json entries")
+
+if pruned_model_info:
+    print(f"Removed {len(pruned_model_info)} orphaned model_info.json entries")
