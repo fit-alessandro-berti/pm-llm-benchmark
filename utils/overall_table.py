@@ -287,7 +287,7 @@ def write_evaluation(base_path, extra=True):
         model_info = {}
         small_models = set()
 
-    if True and (extra and "grok-4-1-fast" in e_m_name):
+    if True and (extra and "gpt-5.4" in e_m_name):
         if len(small_models) > 0:
             execute(
                 evaluation_folder,
