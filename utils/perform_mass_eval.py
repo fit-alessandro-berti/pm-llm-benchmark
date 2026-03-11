@@ -198,7 +198,7 @@ if __name__ == "__main__":
         
         changed = perform_mass_eval(use_multithreading=use_multithreading, 
                                    max_workers=max_model_workers,
-                                   create_leaderboard=create_leaderboard)
+                                   create_leaderboard=create_leaderboard, min_leaderboard_score=43.95)
         
         if not changed:
             print("No changes detected, waiting before next iteration...")

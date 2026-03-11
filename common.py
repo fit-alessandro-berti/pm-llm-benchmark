@@ -14,10 +14,10 @@ import sys
 from typing import Dict, Any
 
 # the model used to respond to the questions
-ANSWERING_MODEL_NAME = "inception/mercury-2" if len(sys.argv) < 3 else sys.argv[1]
+ANSWERING_MODEL_NAME = "grok-4-0709" if len(sys.argv) < 3 else sys.argv[1]
 
 # judge model
-EVALUATING_MODEL_NAME = "grok-4-1-fast-reasoning" if len(sys.argv) < 3 else sys.argv[2]
+EVALUATING_MODEL_NAME = "gpt-5.4" if len(sys.argv) < 3 else sys.argv[2]
 
 
 class RateLimiter:
@@ -184,10 +184,10 @@ class Shared:
     MODEL_NAME = None
     ALIAS_MODEL_NAME = None
     MAX_REQUESTED_TOKENS = 32000
-    API_URL = "https://api.x.ai/v1/"
+    # API_URL = "https://api.x.ai/v1/"
     # API_URL = "https://openrouter.ai/api/v1/"
     # API_URL = "https://generativelanguage.googleapis.com/v1beta/"
-    # API_URL = "https://api.openai.com/v1/"
+    API_URL = "https://api.openai.com/v1/"
     # API_URL = "http://137.226.117.70:11434/v1/"
     # API_URL = "https://api.deepinfra.com/v1/openai/"
     # API_URL = "https://api.mistral.ai/v1/"
@@ -624,7 +624,7 @@ def set_api_key(type_key):
     else:
         #judge_api_key_path = "judge_api_key.txt" if os.path.exists("judge_api_key.txt") else "../judge_api_key.txt"
         #Shared.API_KEY = open(judge_api_key_path, "r").read().strip()
-        Shared.API_KEY = os.environ["GROK_API_KEY"]
+        Shared.API_KEY = os.environ["OPENAI_API_KEY"]
         Shared.MODEL_NAME = EVALUATING_MODEL_NAME
         Shared.ALIAS_MODEL_NAME = Shared.MODEL_NAME
 
@@ -725,6 +725,10 @@ def query_text_simple_openai_new(question, api_url, target_file):
 
     if Shared.PAYLOAD_REASONING_EFFORT:
         payload["reasoning"] = {"effort": Shared.PAYLOAD_REASONING_EFFORT}
+
+    if EVALUATING_MODEL_NAME == Shared.MODEL_NAME:
+        if EVALUATING_MODEL_NAME == "gpt-5.4":
+            payload["reasoning"] = {"effort": "medium"}
 
     if Shared.SYSTEM_PROMPT is not None:
         payload["instructions"] = Shared.SYSTEM_PROMPT
