@@ -223,8 +223,8 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gpt-4o-2024-11-20", "gpt-3.5-turbo",
-            "gpt-4-turbo-2024-04-09", "o1-2024-12-17",
-            "o3-mini-2025-01-31", "gpt-4.1-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13",
+            "gpt-4-turbo-2024-04-09",
+            "gpt-4.1-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13",
             "gpt-5-nano-2025-08-07", "gpt-5-mini-2025-08-07",
         }
     },
@@ -313,15 +313,14 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick",
-            "ai21/jamba-large-1.7", "qwen/qwen3-max",
+            "ai21/jamba-large-1.7",
             "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking",
-            "liquid/lfm2-8b-a1b",
             "allenai/olmo-3-7b-think", "allenai/olmo-3-7b-instruct",
-            "qwen/qwen3.5-35b-a3b", "qwen/qwen3.5-27b", "qwen/qwen3.5-122b-a10b", "liquid/lfm-2-24b-a2b",
+            "qwen/qwen3.5-35b-a3b", "qwen/qwen3.5-27b", "qwen/qwen3.5-122b-a10b",
             "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1",
             "writer/palmyra-x5", "z-ai/glm-4.7-flash",
             "moonshotai/kimi-k2.5",
-            "minimax/minimax-m2.5", "z-ai/glm-5", "qwen/qwen3-max-thinking",
+            "minimax/minimax-m2.5", "z-ai/glm-5",
             "qwen/qwen3.5-397b-a17b", "google/gemini-3.1-pro-preview",
             "inception/mercury-2"
         }
@@ -333,11 +332,6 @@ MODELS_DICT = {
             "o4-mini-2025-04-16-HIGH": {
                 "provider": "openai",
                 "base_model": "o4-mini-2025-04-16",
-                "reasoning_effort": "high"
-            },
-            "gpt-5.1-2025-11-13-HIGH": {
-                "provider": "openai",
-                "base_model": "gpt-5.1-2025-11-13",
                 "reasoning_effort": "high"
             },
             "gpt-5.2-2025-12-11-NONE": {
@@ -368,11 +362,6 @@ MODELS_DICT = {
             "gpt-5.4-2026-03-05-XHIGH": {
                 "provider": "openai",
                 "base_model": "gpt-5.4-2026-03-05",
-                "reasoning_effort": "xhigh"
-            },
-            "gpt-5.1-codex-max-XHIGH": {
-                "provider": "openai",
-                "base_model": "gpt-5.1-codex-max",
                 "reasoning_effort": "xhigh"
             },
             "gpt-5.2-codex-XHIGH": {
