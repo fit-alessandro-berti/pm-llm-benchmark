@@ -223,7 +223,7 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
     output = []
     output.append(
-        "A score in the range **20-25** is considered **sufficient**; a score in the range **25-30** is considered **fair**; a score in the range **30-35** is considered **good**; and a score **>44** is considered **excellent**.")
+        "A score in the range **20-25** is considered **sufficient**; a score in the range **25-30** is considered **fair**; a score in the range **30-37** is considered **good**; and a score **>37** is considered **excellent**.")
 
     output.append("## %s (1-shot; %s used as a judge)" % (leaderboard_title, EVALUATING_MODEL_NAME))
     output.append(overall_table_markdown)
