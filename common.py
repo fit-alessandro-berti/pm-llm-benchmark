@@ -251,9 +251,8 @@ MODELS_DICT = {
         "api_url": "https://api.mistral.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "mistral-small-2506", "devstral-medium-2507", "mistral-medium-2508",
-            "magistral-small-2509", "magistral-medium-2509", "ministral-3b-2512",
-            "ministral-8b-2512", "ministral-14b-2512", "mistral-large-2512"
+            "mistral-small-2506", "mistral-medium-2508",
+            "ministral-3b-2512", "ministral-8b-2512", "ministral-14b-2512", "mistral-large-2512"
         }
     },
     "grok": {
@@ -279,15 +278,11 @@ MODELS_DICT = {
         "models": {
             "falcon3:10b-instruct-q8_0", "falcon3:7b-instruct-q8_0",
             "falcon3:3b-instruct-q8_0",
-            "olmo2:7b-1124-instruct-q8_0", "exaone-deep:32b-fp16",
-            "exaone-deep:7.8b-fp16", "exaone-deep:2.4b-fp16",
-            "gemma3:27b-it-q8_0", "gemma3:12b-it-q8_0", "gemma3:4b-it-q8_0",
-            "gemma3:1b-it-q8_0",
-            "granite3.3", "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b",
-            "phi4-mini-reasoning", "phi4-reasoning", "phi4-reasoning:plus",
+            "exaone-deep:32b-fp16", "exaone-deep:7.8b-fp16", "exaone-deep:2.4b-fp16",
+            "phi4-reasoning", "phi4-reasoning:plus",
             "qwen3:4b-instruct-2507-q8_0", "qwen3:4b-thinking-2507-q8_0",
             "granite4:micro", "granite4:micro-h", "granite4:tiny-h", "granite4:small-h",
-            "ibm/granite4:350m-h", "ibm/granite4:1b-h", "qwen3.5:4b", "qwen3.5:9b"
+            "qwen3.5:4b", "qwen3.5:9b"
         }
     },
     "qwen": {
@@ -320,10 +315,10 @@ MODELS_DICT = {
             "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick",
             "ai21/jamba-large-1.7", "qwen/qwen3-max",
             "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking",
-            "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b",
+            "liquid/lfm2-8b-a1b",
             "allenai/olmo-3-7b-think", "allenai/olmo-3-7b-instruct",
             "qwen/qwen3.5-35b-a3b", "qwen/qwen3.5-27b", "qwen/qwen3.5-122b-a10b", "liquid/lfm-2-24b-a2b",
-            "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1", "essentialai/rnj-1-instruct",
+            "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1",
             "writer/palmyra-x5", "z-ai/glm-4.7-flash",
             "moonshotai/kimi-k2.5",
             "minimax/minimax-m2.5", "z-ai/glm-5", "qwen/qwen3-max-thinking",
@@ -466,26 +461,6 @@ MODELS_DICT = {
                 "provider": "google",
                 "base_model": "gemini-3.1-flash-lite-preview",
                 "thinking_tokens": 24576
-            },
-            "gemini-2.5-flash-09-2025-nothink": {
-                "provider": "google",
-                "base_model": "gemini-2.5-flash-preview-09-2025",
-                "thinking_tokens": 0
-            },
-            "gemini-2.5-flash-09-2025-thinkhigh": {
-                "provider": "google",
-                "base_model": "gemini-2.5-flash-preview-09-2025",
-                "thinking_tokens": 24576
-            },
-            "gemini-2.5-flash-lite-09-2025-thinkhigh": {
-                "provider": "google",
-                "base_model": "gemini-2.5-flash-lite-preview-09-2025",
-                "thinking_tokens": 24576
-            },
-            "gemini-2.5-flash-lite-09-2025-nothink": {
-                "provider": "google",
-                "base_model": "gemini-2.5-flash-lite-preview-09-2025",
-                "thinking_tokens": 0
             },
             "gemini-2.5-pro-thinklow": {
                 "provider": "google",
@@ -1509,7 +1484,7 @@ def clean_model_name(m_name):
 
 
 def get_base_evaluation_path(model_name):
-    return "evaluation-grok41-fast" if ("grok-4.1-fast" in model_name or "grok-4-1-fast" in model_name) else "evaluation-" + clean_model_name(model_name).split("-exp")[0].split("-preview")[0]
+    return "evaluation-grok41-fast" if ("grok-4.1-fast" in model_name or "grok-4-1-fast" in model_name) else "evaluation-" + clean_model_name(model_name)
 
 
 def configure_rate_limiter(requests_per_minute=60, requests_per_hour=1000,
