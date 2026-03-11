@@ -263,7 +263,7 @@ if __name__ == '__main__':
         description="Process .txt files through OpenAI API with JSON validation"
     )
     parser.add_argument(
-        '--input_dir', type=str, default='../evaluation-grok41-fast',
+        '--input_dir', type=str, default='../evaluation-gpt-5.4',
         help='Path to the input directory containing .txt files'
     )
     parser.add_argument(
@@ -271,7 +271,7 @@ if __name__ == '__main__':
         help='Path to the directory for saving output .txt files'
     )
     parser.add_argument(
-        '--max_threads', type=int, default=10,
+        '--max_threads', type=int, default=60,
         help='Maximum number of concurrent threads'
     )
     args = parser.parse_args()
