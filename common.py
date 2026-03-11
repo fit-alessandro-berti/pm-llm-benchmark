@@ -223,11 +223,9 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gpt-4o-2024-11-20", "gpt-3.5-turbo",
-            "gpt-4-turbo-2024-04-09", "o1-2024-12-17", "gpt-4o-mini-2024-07-18",
-            "o3-mini-2025-01-31", "gpt-4.1-2025-04-14", "gpt-4.1-mini-2025-04-14",
-            "gpt-4.1-nano-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13",
-            "o3-pro-2025-06-10", "gpt-5-nano-2025-08-07", "gpt-5-mini-2025-08-07",
-            "gpt-5-2025-08-07", "gpt-5-pro-2025-10-06"
+            "gpt-4-turbo-2024-04-09", "o1-2024-12-17",
+            "o3-mini-2025-01-31", "gpt-4.1-2025-04-14", "o3-2025-04-16", "gpt-4o-2024-05-13",
+            "gpt-5-nano-2025-08-07", "gpt-5-mini-2025-08-07",
         }
     },
     "google": {
@@ -235,16 +233,13 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gemini-1.5-pro-002", "gemini-2.0-flash", "gemini-2.0-flash-lite",
-            "gemma-3n-e4b-it", "gemini-3-pro-preview"
+            "gemini-3-pro-preview"
         }
     },
     "claude": {
         "api_url": "https://api.anthropic.com/v1/",
         "api_key": "sk-",
         "models": {
-            "claude-3-7-sonnet-20250219",
-            "claude-4-opus-20250514",
-            "claude-4-sonnet-20250514",
             "claude-opus-4-1-20250805",
             "claude-sonnet-4-5-20250929",
             "claude-sonnet-4-6",
@@ -256,9 +251,7 @@ MODELS_DICT = {
         "api_url": "https://api.mistral.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "pixtral-large-2411", "pixtral-12b-2409", "ministral-3b-2410",
-            "mistral-large-2411", "mistral-small-2506",
-            "mistral-medium-2505", "devstral-medium-2507", "mistral-medium-2508",
+            "mistral-small-2506", "devstral-medium-2507", "mistral-medium-2508",
             "magistral-small-2509", "magistral-medium-2509", "ministral-3b-2512",
             "ministral-8b-2512", "ministral-14b-2512", "mistral-large-2512"
         }
@@ -267,8 +260,7 @@ MODELS_DICT = {
         "api_url": "https://api.x.ai/v1/",
         "api_key": "sk-",
         "models": {
-            "grok-2-1212", "grok-3", "grok-4-0709", "grok-code-fast-1",
-            "grok-4-fast-reasoning", "grok-4-fast-non-reasoning",
+            "grok-3", "grok-4-0709", "grok-code-fast-1",
             "grok-4-1-fast-reasoning", "grok-4-1-fast-non-reasoning",
             "grok-4.20-experimental-beta-0304-reasoning", "grok-4.20-experimental-beta-0304-non-reasoning",
             "grok-4.20-multi-agent-experimental-beta-0304"
@@ -278,11 +270,7 @@ MODELS_DICT = {
         "api_url": "https://api.deepinfra.com/v1/openai/",
         "api_key": "sk-",
         "models": {
-            "nvidia/Llama-3.1-Nemotron-70B-Instruct",
-            "microsoft/phi-4",
-            "deepseek-ai/DeepSeek-V3-0324", "deepseek-ai/DeepSeek-V3",
-            "Qwen/Qwen3-32B", "Qwen/Qwen3-14B",
-            "deepseek-ai/DeepSeek-R1-0528", "deepseek-ai/DeepSeek-V3.1"
+            "microsoft/phi-4"
         }
     },
     "ollama_local": {
@@ -317,14 +305,12 @@ MODELS_DICT = {
         "api_url": "https://api.perplexity.ai/",
         "api_key": "sk-",
         "models": {
-            "sonar-reasoning-pro", "sonar-pro", "r1-1776"
         }
     },
     "groq": {
         "api_url": "https://api.groq.com/openai/v1/",
         "api_key": "sk-",
         "models": {
-
         }
     },
     "openrouter": {
@@ -332,19 +318,14 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick",
-            "inception/mercury", "baidu/ernie-4.5-300b-a47b",
-            "qwen/qwen3-coder", "z-ai/glm-4.5", "z-ai/glm-4.5-air", "qwen/qwen3-30b-a3b-instruct-2507",
-            "ai21/jamba-large-1.7", "moonshotai/kimi-k2-0905", "qwen/qwen3-max",
+            "ai21/jamba-large-1.7", "qwen/qwen3-max",
             "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking",
-            "openai/gpt-5-codex", "z-ai/glm-4.6", "baidu/ernie-4.5-21b-a3b-thinking",
             "liquid/lfm-2.2-6b", "liquid/lfm2-8b-a1b",
-            "moonshotai/kimi-k2-thinking", "allenai/olmo-3-7b-think", "allenai/olmo-3-7b-instruct",
+            "allenai/olmo-3-7b-think", "allenai/olmo-3-7b-instruct",
             "qwen/qwen3.5-35b-a3b", "qwen/qwen3.5-27b", "qwen/qwen3.5-122b-a10b", "liquid/lfm-2-24b-a2b",
             "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1", "essentialai/rnj-1-instruct",
-            "minimax/minimax-m2.1", "z-ai/glm-4.7",
-            "writer/palmyra-x5", "z-ai/glm-4.7-flash", "liquid/lfm-2.5-1.2b-thinking:free",
-            "moonshotai/kimi-k2.5", "arcee-ai/trinity-large-preview:free",
-            "stepfun/step-3.5-flash:free",
+            "writer/palmyra-x5", "z-ai/glm-4.7-flash",
+            "moonshotai/kimi-k2.5",
             "minimax/minimax-m2.5", "z-ai/glm-5", "qwen/qwen3-max-thinking",
             "qwen/qwen3.5-397b-a17b", "google/gemini-3.1-pro-preview",
             "inception/mercury-2"
@@ -354,39 +335,9 @@ MODELS_DICT = {
         "api_url": "http://0.0.0.0:1000/v1/",
         "api_key": "sk-",
         "models": {
-            "claude-3-5-sonnet-20241022": {
-                "provider": "claude",
-                "base_model": "claude-3-5-sonnet-20241022",
-                "max_tokens": 8192
-            },
-            "claude-3-opus-20240229": {
-                "provider": "claude",
-                "base_model": "claude-3-5-sonnet-20241022",
-                "max_tokens": 4096
-            },
-            "claude-3-5-haiku-20241022": {
-                "provider": "claude",
-                "base_model": "claude-3-5-sonnet-20241022",
-                "max_tokens": 8192
-            },
-            "nvidia/llama-3.3-nemotron-super-49b-v1-thinkenab": {
-                "provider": "nvidia",
-                "base_model": "nvidia/llama-3.3-nemotron-super-49b-v1",
-                "system_prompt": "detailed thinking on"
-            },
-            "o3-mini-20250131-HIGH": {
-                "provider": "openai",
-                "base_model": "o3-mini-2025-01-31",
-                "reasoning_effort": "high"
-            },
             "o4-mini-2025-04-16-HIGH": {
                 "provider": "openai",
                 "base_model": "o4-mini-2025-04-16",
-                "reasoning_effort": "high"
-            },
-            "gpt-5-2025-08-07-HIGH": {
-                "provider": "openai",
-                "base_model": "gpt-5-2025-08-07",
                 "reasoning_effort": "high"
             },
             "gpt-5.1-2025-11-13-HIGH": {
@@ -439,74 +390,13 @@ MODELS_DICT = {
                 "base_model": "gpt-5.3-codex",
                 "reasoning_effort": "xhigh"
             },
-            "o3-pro-2025-06-10-HIGH": {
-                "provider": "openai",
-                "base_model": "o3-pro-2025-06-10",
-                "reasoning_effort": "high"
-            },
-            "o3-2025-04-16-search": {
-                "provider": "openai",
-                "base_model": "o3-2025-04-16",
-                "tools": [{"type": "web_search"}]
-            },
-            "o3-2025-04-16-codeinterpr": {
-                "provider": "openai",
-                "base_model": "o3-2025-04-16",
-                "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}]
-            },
-            "o3-pro-2025-06-10-search": {
-                "provider": "openai",
-                "base_model": "o3-pro-2025-06-10",
-                "tools": [{"type": "web_search"}]
-            },
-            "o3-pro-2025-06-10-codeinterpr": {
-                "provider": "openai",
-                "base_model": "o3-pro-2025-06-10",
-                "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}]
-            },
-            "o4-mini-2025-04-16-search-HIGH": {
-                "provider": "openai",
-                "base_model": "o4-mini-2025-04-16",
-                "tools": [{"type": "web_search"}],
-                "reasoning_effort": "high"
-            },
-            "o4-mini-2025-04-16-codeinterpr-HIGH": {
-                "provider": "openai",
-                "base_model": "o4-mini-2025-04-16",
-                "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}],
-                "reasoning_effort": "high"
-            },
-            "gpt-5-chat-latest-2025-08-22": {
-                "provider": "openai",
-                "base_model": "gpt-5-chat-latest"
-            },
             "gpt-5.3-chat-latest-2026-03-05": {
                 "provider": "openai",
                 "base_model": "gpt-5.3-chat-latest"
             },
-            "Qwen-3-32B-nothink": {
-                "provider": "deepinfra",
-                "base_model": "Qwen/Qwen3-32B",
-                "added_to_prompt": " /no_think"
-            },
-            "Qwen-3-14B-nothink": {
-                "provider": "deepinfra",
-                "base_model": "Qwen/Qwen3-14B",
-                "added_to_prompt": " /no_think"
-            },
             "nousresearch/hermes-4-70b": {
                 "provider": "openrouter",
                 "base_model": "nousresearch/hermes-4-70b",
-                "added_to_payload": {"reasoning": {"enabled": True}}
-            },
-            "nvidia/nemotron-nano-9b-v2-thinking": {
-                "provider": "openrouter",
-                "base_model": "nvidia/nemotron-nano-9b-v2",
-                "added_to_payload": {"reasoning": {"enabled": True}}
-            },
-            "nvidia/nemotron-3-nano-30b-a3b-thinking": {
-                "provider": "openrouter",
-                "base_model": "nvidia/nemotron-3-nano-30b-a3b:free",
                 "added_to_payload": {"reasoning": {"enabled": True}}
             },
             "nvidia/llama-3.3-nemotron-super-49b-v1.5-thinking": {
@@ -529,16 +419,6 @@ MODELS_DICT = {
                 "base_model": "prime-intellect/intellect-3",
                 "added_to_payload": {"reasoning": {"enabled": True}}
             },
-            "claude-3-7-sonnet-thinkhigh-20250219": {
-                "provider": "claude",
-                "base_model": "claude-3-7-sonnet-20250219",
-                "thinking_tokens": 98304
-            },
-            "claude-4-sonnet-thinking-20250514": {
-                "provider": "claude",
-                "base_model": "claude-4-sonnet-20250514",
-                "thinking_tokens": 32000,
-            },
             "claude-sonnet-4-5-thinking-20250929": {
                 "provider": "claude",
                 "base_model": "claude-sonnet-4-5-20250929",
@@ -548,12 +428,6 @@ MODELS_DICT = {
                 "provider": "claude",
                 "base_model": "claude-sonnet-4-6",
                 "thinking_tokens": 32000,
-            },
-            "claude-4-opus-thinking-20250514": {
-                "provider": "claude",
-                "base_model": "claude-4-opus-20250514",
-                "thinking_tokens": 16000,
-                "max_tokens": 16000
             },
             "claude-opus-4-1-thinking-20250805": {
                 "provider": "claude",
@@ -613,26 +487,6 @@ MODELS_DICT = {
                 "base_model": "gemini-2.5-flash-lite-preview-09-2025",
                 "thinking_tokens": 0
             },
-            "gemini-2.5-flash-nothink": {
-                "provider": "google",
-                "base_model": "gemini-2.5-flash",
-                "thinking_tokens": 0
-            },
-            "gemini-2.5-flash-thinkhigh": {
-                "provider": "google",
-                "base_model": "gemini-2.5-flash",
-                "thinking_tokens": 24576
-            },
-            "gemini-2.5-flash-lite-thinkhigh": {
-                "provider": "google",
-                "base_model": "gemini-2.5-flash-lite-preview-06-17",
-                "thinking_tokens": 24576
-            },
-            "gemini-2.5-flash-lite-nothink": {
-                "provider": "google",
-                "base_model": "gemini-2.5-flash-lite-preview-06-17",
-                "thinking_tokens": 0
-            },
             "gemini-2.5-pro-thinklow": {
                 "provider": "google",
                 "base_model": "gemini-2.5-pro",
@@ -642,11 +496,6 @@ MODELS_DICT = {
                 "provider": "google",
                 "base_model": "gemini-2.5-pro",
                 "thinking_tokens": 32768
-            },
-            "nvidia/llama-3.1-nemotron-ultra-253b-v1-thinkenab": {
-                "provider": "nvidia",
-                "base_model": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
-                "system_prompt": "detailed thinking on"
             }
         }
     }

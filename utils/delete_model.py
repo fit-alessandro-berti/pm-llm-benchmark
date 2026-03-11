@@ -16,7 +16,7 @@ def do_deletion(base_path, original_name):
 
 
 if __name__ == "__main__":
-    original_name = "DeepSeek-V3.1-Reasoner_"
+    original_name = "microsoftWizardLM-2-8x22B_"
 
     if not original_name.endswith("_"):
         raise Exception("original_name must terminate with _")
