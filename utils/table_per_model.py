@@ -107,7 +107,7 @@ def execute_script(evaluation_folder, model_name, responses=None):
         if needs_custom_evaluation:
             numb0 = numb
             diff = 10.0 - numb0
-            factor = 1.15
+            factor = 1.11
             diff = round(diff * factor, 1)
             numb = max(1.0, 10.0 - diff)
 
