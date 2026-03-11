@@ -489,6 +489,40 @@ def _load_ordered_llms_from_leaderboard_stats(base_path="."):
         return []
 
 
+def _parse_leaderboard_score(raw_score):
+    if isinstance(raw_score, (int, float)):
+        return float(raw_score)
+
+    if isinstance(raw_score, str):
+        cleaned = raw_score.replace("**", "").strip()
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0.0
+
+    return 0.0
+
+
+def _load_ordered_llm_scores_from_leaderboard_stats(base_path="."):
+    stats_path = os.path.join(base_path, "hallucinations", "leaderboard_stats.md")
+    try:
+        with open(stats_path, "r", encoding="utf-8") as handler:
+            data = json.load(handler)
+
+        ordered_llms_with_scores = []
+        for entry in data:
+            if not isinstance(entry, dict) or not entry.get("Model"):
+                continue
+
+            ordered_llms_with_scores.append(
+                (clean_model_name(entry["Model"]), _parse_leaderboard_score(entry.get("Score", 0)))
+            )
+
+        return ordered_llms_with_scores
+    except Exception:
+        return []
+
+
 def _load_ordered_llms_from_evaluations(base_path="."):
     evaluation_folder = os.path.join(base_path, "evaluation-grok41-fast")
     try:
@@ -505,19 +539,32 @@ def _load_ordered_llms_from_evaluations(base_path="."):
 
 
 def get_ordered_references_llms(base_path="."):
-    ordered_llms = _load_ordered_llms_from_leaderboard_stats(base_path)
-    if not ordered_llms:
-        ordered_llms = _load_ordered_llms_from_evaluations(base_path)
+    ordered_llms_with_scores, referenced_llms_with_scores = get_ordered_references_llms_with_scores(base_path)
+    ordered_llms = [model_name for model_name, _ in ordered_llms_with_scores]
+    referenced_llms = [model_name for model_name, _ in referenced_llms_with_scores]
+    return ordered_llms, referenced_llms
 
+
+def get_ordered_references_llms_with_scores(base_path="."):
+    ordered_llms_with_scores = _load_ordered_llm_scores_from_leaderboard_stats(base_path)
+    if not ordered_llms_with_scores:
+        ordered_llms_with_scores = [
+            (model_name, 0.0) for model_name in _load_ordered_llms_from_evaluations(base_path)
+        ]
+
+    ordered_llms = {model_name for model_name, _ in ordered_llms_with_scores}
     referenced_llms = set()
     for provider in MODELS_DICT:
         info = MODELS_DICT[provider]
         referenced_llms = referenced_llms.union(info["models"])
-    referenced_llms = {x for x in referenced_llms if not is_excluded_from_table(x)}
-    referenced_llms = [clean_model_name(x) for x in referenced_llms if
-                       clean_model_name(x) not in ordered_llms]
+    referenced_llms = sorted(
+        clean_model_name(model_name)
+        for model_name in referenced_llms
+        if not is_excluded_from_table(model_name) and clean_model_name(model_name) not in ordered_llms
+    )
+    referenced_llms_with_scores = [(model_name, 0.0) for model_name in referenced_llms]
 
-    return ordered_llms, referenced_llms
+    return ordered_llms_with_scores, referenced_llms_with_scores
 
 
 def is_visual_model(model_name):
