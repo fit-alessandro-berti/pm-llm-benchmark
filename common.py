@@ -374,6 +374,11 @@ MODELS_DICT = {
                 "base_model": "gpt-5.3-codex",
                 "reasoning_effort": "xhigh"
             },
+            "grok-4.20-heavy": {
+                "provider": "grok",
+                "base_model": "grok-4.20-multi-agent-experimental-beta-0304",
+                "reasoning_effort": "high"
+            },
             "gpt-5.3-chat-latest-2026-03-05": {
                 "provider": "openai",
                 "base_model": "gpt-5.3-chat-latest"
