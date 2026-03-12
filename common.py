@@ -322,7 +322,8 @@ MODELS_DICT = {
             "moonshotai/kimi-k2.5",
             "minimax/minimax-m2.5", "z-ai/glm-5",
             "qwen/qwen3.5-397b-a17b", "google/gemini-3.1-pro-preview",
-            "inception/mercury-2"
+            "inception/mercury-2",
+            "openrouter/healer-alpha", "openrouter/hunter-alpha"
         }
     },
     "manual": {
@@ -573,7 +574,7 @@ def get_ordered_references_llms_with_scores(base_path="."):
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium", "grok-4", "horizon", "gpt-5", "sonoma", "polaris-alpha", "sherlock", "ministral-3b-2512", "ministral-8b-2512", "ministral-14b-2512", "mistral-large-2512"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium", "grok-4", "horizon", "gpt-5", "sonoma", "polaris-alpha", "sherlock", "ministral-3b-2512", "ministral-8b-2512", "ministral-14b-2512", "mistral-large-2512", "healer-alpha"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
@@ -863,7 +864,7 @@ def query_text_simple_generic(question, api_url, target_file):
         # Decide if we want streaming
         streaming_enabled = False
         streaming_enabled = Shared.PAYLOAD_REASONING_EFFORT is None
-        if "stral" in Shared.MODEL_NAME.lower() or "mercury" in Shared.MODEL_NAME.lower():
+        if "stral" in Shared.MODEL_NAME.lower() or "mercury" in Shared.MODEL_NAME.lower() or "alpha" in Shared.MODEL_NAME.lower():
             streaming_enabled = False
 
         if streaming_enabled:
@@ -1261,7 +1262,7 @@ def query_image_simple_generic(base64_image, api_url, target_file, text):
 
     payload.update(get_llm_specific_settings())
 
-    streaming_enabled = True
+    streaming_enabled = "healer-alpha" not in Shared.MODEL_NAME.lower()
 
     if streaming_enabled:
         payload["stream"] = True

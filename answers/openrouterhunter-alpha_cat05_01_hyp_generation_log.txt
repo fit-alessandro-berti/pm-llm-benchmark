@@ -1,0 +1,268 @@
+I'll analyze the event log data for anomalies, hypothesize their causes, and propose SQL queries to investigate further.
+
+## Anomaly Analysis
+
+### **Case 1002: Process Sequence Violation**
+**Anomaly:** Credit Check and Stock Validation occurred AFTER Shipment Confirmation and Shipping.
+- **Evidence:** Confirm Shipment (08:25)  Ship Goods (08:40)  Perform Credit Check (09:10)
+- **Risk:** Shipping goods before credit approval risks non-payment; shipping before stock validation risks overselling
+
+### **Case 1003: Missing Critical Step + Sequence Violation**
+**Anomalies:**
+1. **Missing "Validate Stock" activity** - Warehouse stock wasn't verified before shipping
+2. **Shipped before shipment confirmation** - Ship Goods (09:10) occurred before Confirm Shipment (09:45)
+3. **Late confirmation** - `additional_info` shows "late_confirmation=Y"
+
+### **Case 1004: Extreme Process Bypass**
+**Anomalies:**
+1. **Payment received immediately after order** (09:00  09:05) - before any verification
+2. **Missing Credit Check and Stock Validation** - Entire verification phases skipped
+3. **Shipment scheduled = N** - Yet goods were still shipped (tracking_id present)
+
+### **Cross-Case Observations**
+- **Case 1002** had `attempted_early=Y` in shipment confirmation
+- **Case 1004** was the only order where payment came before invoice
+- Resources show specialization: `WarehouseClerk_3` appears in both out-of-sequence cases (1002, 1003)
+
+## Hypotheses for Anomalies
+
+### **1. System Integration Issues**
+- **Hypothesis:** Disconnected systems between sales, warehouse, and finance could explain out-of-order events
+- **Evidence:** Case 1002 shows logistics acting independently of finance/warehouse systems
+
+### **2. Policy Bypass for Priority/High-Value Orders**
+- **Hypothesis:** Employees may skip verification steps for expedited processing
+- **Evidence:** Case 1002 is "priority" type; Case 1004 is highest value ($3000)
+- **Risk:** Revenue recognition issues, compliance violations
+
+### **3. Training/Process Understanding Gaps**
+- **Hypothesis:** Staff may not understand required sequence or its importance
+- **Evidence:** Different resources show similar violations (LogisticsMgr_2 in cases 1002, 1003)
+
+### **4. Manual Override Capabilities**
+- **Hypothesis:** System allows manual event recording out of sequence
+- **Evidence:** All anomalous cases have logical events but incorrect ordering
+
+## Proposed SQL Investigation Queries
+
+### **Query 1: Identify All Process Sequence Violations**
+```sql
+-- Find cases where shipment activities occurred before credit/stock checks
+WITH event_sequences AS (
+    SELECT 
+        case_id,
+        MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) as credit_check_time,
+        MAX(CASE WHEN activity = 'Validate Stock' THEN timestamp END) as stock_check_time,
+        MAX(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) as confirm_shipment_time,
+        MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) as ship_goods_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT 
+    case_id,
+    credit_check_time,
+    stock_check_time,
+    confirm_shipment_time,
+    ship_goods_time,
+    CASE 
+        WHEN confirm_shipment_time < credit_check_time THEN 'Shipment before credit check'
+        WHEN confirm_shipment_time < stock_check_time THEN 'Shipment before stock validation'
+        WHEN ship_goods_time < confirm_shipment_time THEN 'Shipping before confirmation'
+        WHEN ship_goods_time < credit_check_time THEN 'Shipping before credit check'
+        WHEN ship_goods_time < stock_check_time THEN 'Shipping before stock validation'
+    END as violation_type
+FROM event_sequences
+WHERE 
+    (confirm_shipment_time < credit_check_time OR 
+     confirm_shipment_time < stock_check_time OR
+     ship_goods_time < confirm_shipment_time OR
+     ship_goods_time < credit_check_time OR
+     ship_goods_time < stock_check_time)
+ORDER BY case_id;
+```
+
+### **Query 2: Detect Missing Critical Activities**
+```sql
+-- Identify cases missing one or more required activities
+WITH required_activities AS (
+    SELECT unnest(ARRAY[
+        'Register Order',
+        'Perform Credit Check', 
+        'Validate Stock',
+        'Confirm Shipment',
+        'Ship Goods',
+        'Issue Invoice',
+        'Receive Payment'
+    ]) as activity
+),
+case_activities AS (
+    SELECT DISTINCT 
+        case_id,
+        activity
+    FROM order_event_log
+)
+SELECT 
+    r.case_id,
+    string_agg(missing.activity, ', ') as missing_activities,
+    COUNT(missing.activity) as missing_count
+FROM (SELECT DISTINCT case_id FROM order_event_log) r
+CROSS JOIN required_activities req
+LEFT JOIN case_activities ca ON r.case_id = ca.case_id AND req.activity = ca.activity
+WHERE ca.activity IS NULL
+GROUP BY r.case_id
+HAVING COUNT(ca.activity) < 7
+ORDER BY missing_count DESC, r.case_id;
+```
+
+### **Query 3: Analyze Resource Behavior Patterns**
+```sql
+-- Find resources frequently involved in anomalous processes
+WITH anomalous_cases AS (
+    -- Using the violation detection from Query 1
+    SELECT DISTINCT case_id 
+    FROM event_sequences 
+    WHERE credit_check_time > confirm_shipment_time 
+       OR stock_check_time > confirm_shipment_time
+       OR confirm_shipment_time > ship_goods_time
+),
+resource_anomalies AS (
+    SELECT 
+        oel.resource,
+        r.role,
+        r.department,
+        COUNT(DISTINCT oel.case_id) as total_cases,
+        COUNT(DISTINCT ac.case_id) as anomalous_cases,
+        ROUND(COUNT(DISTINCT ac.case_id)::DECIMAL / COUNT(DISTINCT oel.case_id) * 100, 2) as anomaly_rate
+    FROM order_event_log oel
+    LEFT JOIN anomalous_cases ac ON oel.case_id = ac.case_id
+    LEFT JOIN resources r ON oel.resource = r.resource_id
+    GROUP BY oel.resource, r.role, r.department
+    HAVING COUNT(DISTINCT ac.case_id) > 0
+)
+SELECT *
+FROM resource_anomalies
+ORDER BY anomaly_rate DESC, total_cases DESC;
+```
+
+### **Query 4: Investigate Payment Timing Anomalies**
+```sql
+-- Find cases where payment timing deviates significantly from norm
+WITH payment_timing AS (
+    SELECT 
+        oel.case_id,
+        o.order_value,
+        o.order_type,
+        MIN(CASE WHEN activity = 'Register Order' THEN timestamp END) as order_time,
+        MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) as invoice_time,
+        MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) as payment_time,
+        EXTRACT(EPOCH FROM (
+            MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) - 
+            MIN(CASE WHEN activity = 'Register Order' THEN timestamp END)
+        )) / 3600 as order_to_payment_hours
+    FROM order_event_log oel
+    JOIN orders o ON oel.case_id = o.case_id
+    GROUP BY oel.case_id, o.order_value, o.order_type
+    HAVING MIN(CASE WHEN activity = 'Register Order' THEN timestamp END) IS NOT NULL
+       AND MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) IS NOT NULL
+)
+SELECT 
+    case_id,
+    order_type,
+    order_value,
+    order_time,
+    invoice_time,
+    payment_time,
+    order_to_payment_hours,
+    CASE 
+        WHEN payment_time < invoice_time THEN 'Payment before invoice'
+        WHEN order_to_payment_hours < 1 THEN 'Suspiciously fast payment'
+        WHEN order_to_payment_hours > 72 THEN 'Unusually slow payment'
+    END as timing_anomaly
+FROM payment_timing
+WHERE 
+    (payment_time < invoice_time OR 
+     order_to_payment_hours < 1 OR 
+     order_to_payment_hours > 72)
+ORDER BY order_to_payment_hours;
+```
+
+### **Query 5: Correlate Anomalies with Order Characteristics**
+```sql
+-- Check if anomalies correlate with order type, value, or customer
+WITH case_anomalies AS (
+    SELECT 
+        case_id,
+        MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) as credit_check_time,
+        MAX(CASE WHEN activity = 'Validate Stock' THEN timestamp END) as stock_check_time,
+        MAX(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) as confirm_shipment_time,
+        MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) as ship_goods_time,
+        MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) as payment_time,
+        MAX(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) as invoice_time
+    FROM order_event_log
+    GROUP BY case_id
+),
+anomaly_flags AS (
+    SELECT 
+        case_id,
+        CASE WHEN confirm_shipment_time < credit_check_time THEN 1 ELSE 0 END as ship_before_credit,
+        CASE WHEN confirm_shipment_time < stock_check_time THEN 1 ELSE 0 END as ship_before_stock,
+        CASE WHEN ship_goods_time < confirm_shipment_time THEN 1 ELSE 0 END as goods_before_confirm,
+        CASE WHEN payment_time < invoice_time THEN 1 ELSE 0 END as pay_before_invoice,
+        CASE WHEN credit_check_time IS NULL THEN 1 ELSE 0 END as missing_credit_check,
+        CASE WHEN stock_check_time IS NULL THEN 1 ELSE 0 END as missing_stock_check
+    FROM case_anomalies
+)
+SELECT 
+    o.order_type,
+    o.order_value,
+    COUNT(*) as total_orders,
+    SUM(af.ship_before_credit) as ship_before_credit_count,
+    SUM(af.ship_before_stock) as ship_before_stock_count,
+    SUM(af.goods_before_confirm) as goods_before_confirm_count,
+    SUM(af.pay_before_invoice) as pay_before_invoice_count,
+    SUM(af.missing_credit_check) as missing_credit_check_count,
+    SUM(af.missing_stock_check) as missing_stock_check_count,
+    ROUND(AVG(o.order_value), 2) as avg_order_value
+FROM orders o
+JOIN anomaly_flags af ON o.case_id = af.case_id
+GROUP BY o.order_type, o.order_value
+HAVING SUM(af.ship_before_credit + af.ship_before_stock + af.goods_before_confirm + 
+           af.pay_before_invoice + af.missing_credit_check + af.missing_stock_check) > 0
+ORDER BY o.order_value DESC;
+```
+
+### **Query 6: Temporal Pattern Analysis**
+```sql
+-- Identify if anomalies cluster in specific time periods
+SELECT 
+    DATE_TRUNC('day', timestamp) as day,
+    COUNT(DISTINCT case_id) as total_cases,
+    COUNT(DISTINCT CASE 
+        WHEN activity IN ('Ship Goods', 'Confirm Shipment') 
+        AND EXISTS (
+            SELECT 1 
+            FROM order_event_log oel2 
+            WHERE oel2.case_id = order_event_log.case_id 
+            AND oel2.activity IN ('Perform Credit Check', 'Validate Stock')
+            AND oel2.timestamp > order_event_log.timestamp
+        ) 
+        THEN case_id 
+    END) as sequence_violation_cases,
+    ROUND(COUNT(DISTINCT CASE 
+        WHEN activity IN ('Ship Goods', 'Confirm Shipment') 
+        AND EXISTS (
+            SELECT 1 
+            FROM order_event_log oel2 
+            WHERE oel2.case_id = order_event_log.case_id 
+            AND oel2.activity IN ('Perform Credit Check', 'Validate Stock')
+            AND oel2.timestamp > order_event_log.timestamp
+        ) 
+        THEN case_id 
+    END)::DECIMAL / COUNT(DISTINCT case_id) * 100, 2) as violation_percentage
+FROM order_event_log
+GROUP BY DATE_TRUNC('day', timestamp)
+HAVING COUNT(DISTINCT case_id) > 5
+ORDER BY violation_percentage DESC;
+```
+
+These queries provide a comprehensive framework for investigating the anomalies I identified. They move from specific pattern detection to broader correlation analysis, helping determine whether these are isolated incidents or systemic issues requiring process changes or system modifications.

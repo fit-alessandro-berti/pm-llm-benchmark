@@ -1,0 +1,159 @@
+## 1. Anomaly Identification
+
+The DECLARE model contains fundamental contradictions that prevent it from representing a valid insurance claims process:
+
+**Primary Contradiction:**
+- **Existence constraint** requires every trace to contain "C" (Close Claim) with 100% support and confidence
+- **Noncoexistence constraint** forbids "E" (Evaluate Claim) and "C" from coexisting in any trace
+- **Responded Existence constraint** requires that if "E" occurs, "A" (Assign Adjuster) must also occur
+
+This creates a logical impossibility: 
+- Any trace containing "E" cannot contain "C" (violating the existence constraint)
+- Any trace without "E" must still contain "C" (satisfying existence but missing evaluation)
+- But the responded existence constraint for "E" would be irrelevant if "E" never occurs
+
+**Secondary Issues:**
+1. **Missing Critical Activities:** The model doesn't enforce "P" (Approve) or "N" (Notify), allowing claims to be closed without approval or customer notification
+2. **Incomplete Sequencing:** Only "C" has a precedence constraint requiring "R" (Receive), but there's no ordering enforcement for the middle activities (AEPN)
+3. **Init/Existence Mismatch:** Starting with "R" and requiring "C" doesn't guarantee the intermediate steps occur
+
+## 2. Hypotheses for Anomaly Origins
+
+**Hypothesis 1: Policy Fragmentation**
+Different departments created constraints independently:
+- Claims department insisted on evaluation before approval
+- Management mandated rapid closure targets, creating conflicting pressure
+- Legal required closure for all claims (existence constraint)
+
+**Hypothesis 2: Model Evolution Artifacts**
+The constraints were built incrementally:
+- Initial model only required receipt and closure (fast processing)
+- Later added evaluation requirements without removing closure mandate
+- Noncoexistence constraint might have been intended as "should not co-occur frequently" but was implemented as absolute prohibition
+
+**Hypothesis 3: Data-Driven Misinterpretation**
+The model was mined from historical data where:
+- Evaluation was often skipped during high-volume periods
+- Early closure without evaluation appeared as a common pattern
+- Automated discovery misinterpreted correlation as causation
+
+**Hypothesis 4: Regulatory Compliance Theater**
+The organization needs to appear compliant while actually:
+- Closing claims quickly to meet metrics (existence of C)
+- Having evaluation in place for audits (responded existence of E)
+- But the two rarely occur together in practice (noncoexistence)
+
+**Hypothesis 5: System Implementation Limitations**
+Technical constraints created logical impossibilities:
+- Database triggers prevent simultaneous evaluation and closure
+- Legacy system required closure before evaluation could be recorded
+- Migration issues created duplicate or conflicting constraint definitions
+
+## 3. SQL Verification Queries
+
+**Query 1: Find claims closed without evaluation (violates intended flow)**
+```sql
+SELECT c.claim_id, c.claim_amount, c.claim_type,
+       COUNT(CASE WHEN ce.activity = 'R' THEN 1 END) as receive_count,
+       COUNT(CASE WHEN ce.activity = 'C' THEN 1 END) as close_count,
+       COUNT(CASE WHEN ce.activity = 'E' THEN 1 END) as evaluate_count
+FROM claims c
+LEFT JOIN claim_events ce ON c.claim_id = ce.claim_id
+GROUP BY c.claim_id, c.claim_amount, c.claim_type
+HAVING COUNT(CASE WHEN ce.activity = 'C' THEN 1 END) > 0
+   AND COUNT(CASE WHEN ce.activity = 'E' THEN 1 END) = 0
+ORDER BY c.claim_amount DESC;
+```
+
+**Query 2: Identify traces where evaluation and closing coexist (violates noncoexistence)**
+```sql
+SELECT ce.claim_id, 
+       MIN(CASE WHEN ce.activity = 'E' THEN ce.timestamp END) as eval_time,
+       MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) as close_time,
+       EXTRACT(EPOCH FROM (MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) - 
+                           MIN(CASE WHEN ce.activity = 'E' THEN ce.timestamp END)))/3600 as hours_between
+FROM claim_events ce
+WHERE ce.activity IN ('E', 'C')
+GROUP BY ce.claim_id
+HAVING COUNT(DISTINCT ce.activity) = 2
+ORDER BY hours_between;
+```
+
+**Query 3: Check if evaluation always follows assignment**
+```sql
+WITH claim_sequences AS (
+  SELECT claim_id, activity, timestamp,
+         LAG(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) as prev_activity
+  FROM claim_events
+  WHERE activity IN ('A', 'E')
+)
+SELECT claim_id,
+       COUNT(*) as total_sequences,
+       SUM(CASE WHEN activity = 'E' AND prev_activity = 'A' THEN 1 ELSE 0 END) as correct_sequences,
+       SUM(CASE WHEN activity = 'E' AND prev_activity != 'A' THEN 1 ELSE 0 END) as incorrect_sequences
+FROM claim_sequences
+GROUP BY claim_id
+HAVING SUM(CASE WHEN activity = 'E' AND prev_activity != 'A' THEN 1 ELSE 0 END) > 0;
+```
+
+**Query 4: Measure constraint violation frequency over time**
+```sql
+WITH monthly_stats AS (
+  SELECT DATE_TRUNC('month', c.submission_date) as month,
+         COUNT(DISTINCT c.claim_id) as total_claims,
+         COUNT(DISTINCT CASE WHEN EXISTS (
+           SELECT 1 FROM claim_events ce 
+           WHERE ce.claim_id = c.claim_id AND ce.activity = 'C'
+         ) THEN c.claim_id END) as closed_claims,
+         COUNT(DISTINCT CASE WHEN EXISTS (
+           SELECT 1 FROM claim_events ce 
+           WHERE ce.claim_id = c.claim_id AND ce.activity = 'E'
+         ) THEN c.claim_id END) as evaluated_claims,
+         COUNT(DISTINCT CASE WHEN EXISTS (
+           SELECT 1 FROM claim_events ce1
+           JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+           WHERE ce1.claim_id = c.claim_id 
+             AND ce1.activity = 'E' AND ce2.activity = 'C'
+         ) THEN c.claim_id END) as both_eval_and_close
+  FROM claims c
+  GROUP BY DATE_TRUNC('month', c.submission_date)
+)
+SELECT month,
+       total_claims,
+       closed_claims,
+       evaluated_claims,
+       both_eval_and_close,
+       ROUND(100.0 * closed_claims / total_claims, 2) as closure_rate,
+       ROUND(100.0 * both_eval_and_close / closed_claims, 2) as eval_before_close_rate
+FROM monthly_stats
+ORDER BY month;
+```
+
+**Query 5: Check for missing activities in complete flows**
+```sql
+WITH required_activities AS (
+  SELECT 'R' as activity UNION SELECT 'A' UNION SELECT 'E' 
+  UNION SELECT 'P' UNION SELECT 'N' UNION SELECT 'C'
+),
+claim_activities AS (
+  SELECT DISTINCT claim_id, activity FROM claim_events
+)
+SELECT r.activity,
+       COUNT(DISTINCT c.claim_id) as claims_with_activity,
+       COUNT(DISTINCT all_claims.claim_id) as total_claims,
+       ROUND(100.0 * COUNT(DISTINCT c.claim_id) / COUNT(DISTINCT all_claims.claim_id), 2) as presence_percentage
+FROM required_activities r
+CROSS JOIN (SELECT DISTINCT claim_id FROM claims) all_claims
+LEFT JOIN claim_activities c ON all_claims.claim_id = c.claim_id AND r.activity = c.activity
+GROUP BY r.activity
+ORDER BY presence_percentage;
+```
+
+These queries would reveal:
+- Whether claims are actually being closed without evaluation
+- How frequently evaluation and closure co-occur despite the constraint
+- Whether the intended sequence is being followed
+- Temporal trends in constraint violations
+- Which activities are most commonly missing from processes
+
+The results would indicate whether the model anomalies reflect actual process deviations or merely theoretical contradictions in the model specification.

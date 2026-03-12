@@ -4,16 +4,16 @@ Aggregated hallucination counts across all LLMs, organized by PM-LLM benchmark c
 
 | Hallucination Type | CAT01 | CAT02 | CAT03 | CAT04 | CAT05 | CAT06 | CAT07 | CAT08 | Total |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1a. Instruction Override | 285 | 99 | 309 | 144 | 176 | 116 | 3 | 42 | 1174 |
-| 1b. Context Omission | 871 | 791 | 518 | 683 | 913 | 759 | 252 | 1291 | 6078 |
-| 1c. Prompt Contradiction | 141 | 77 | 136 | 75 | 27 | 57 | 13 | 29 | 555 |
-| 2a. Concept Fabrication | 344 | 197 | 237 | 537 | 151 | 246 | 196 | 440 | 2348 |
-| 2b. Spurious Numeric | 354 | 472 | 386 | 266 | 219 | 212 | 104 | 976 | 2989 |
-| 2c. False Citation | 3 | 11 | 4 | 23 | 5 | 43 | 3 | 17 | 109 |
-| 3a. Unsupported Leap | 1342 | 1480 | 1188 | 1273 | 1140 | 1446 | 525 | 1284 | 9678 |
-| 3b. Self Contradiction | 261 | 146 | 277 | 154 | 57 | 121 | 9 | 64 | 1089 |
+| 1a. Instruction Override | 292 | 102 | 315 | 145 | 181 | 120 | 3 | 42 | 1200 |
+| 1b. Context Omission | 878 | 815 | 528 | 696 | 931 | 768 | 255 | 1310 | 6181 |
+| 1c. Prompt Contradiction | 141 | 78 | 137 | 77 | 28 | 57 | 13 | 29 | 560 |
+| 2a. Concept Fabrication | 347 | 198 | 241 | 550 | 154 | 248 | 200 | 454 | 2392 |
+| 2b. Spurious Numeric | 361 | 476 | 392 | 269 | 226 | 217 | 106 | 1000 | 3047 |
+| 2c. False Citation | 3 | 11 | 4 | 23 | 5 | 43 | 3 | 18 | 110 |
+| 3a. Unsupported Leap | 1361 | 1509 | 1209 | 1292 | 1172 | 1473 | 536 | 1311 | 9863 |
+| 3b. Self Contradiction | 266 | 149 | 287 | 157 | 59 | 125 | 10 | 65 | 1118 |
 | 3c. Circular Reasoning | 1 | 2 | 3 | 2 | 1 | 0 | 0 | 3 | 12 |
-| 4a. Syntax Error | 83 | 29 | 198 | 83 | 204 | 82 | 7 | 91 | 777 |
-| 4b. Model Semantics Breach | 194 | 97 | 689 | 348 | 202 | 213 | 73 | 38 | 1854 |
-| 4c. Visual Description Mismatch | 114 | 33 | 56 | 81 | 40 | 15 | 319 | 21 | 679 |
-| **Total** | **3993** | **3434** | **4001** | **3669** | **3135** | **3310** | **1504** | **4296** | **27342** |
+| 4a. Syntax Error | 83 | 29 | 201 | 84 | 208 | 82 | 7 | 93 | 787 |
+| 4b. Model Semantics Breach | 197 | 98 | 702 | 356 | 209 | 217 | 75 | 39 | 1893 |
+| 4c. Visual Description Mismatch | 117 | 33 | 59 | 81 | 42 | 15 | 327 | 21 | 695 |
+| **Total** | **4047** | **3500** | **4078** | **3732** | **3216** | **3365** | **1535** | **4385** | **27858** |

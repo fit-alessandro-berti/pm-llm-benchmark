@@ -1,0 +1,261 @@
+# Analysis of Temporal Profile Anomalies in Insurance Claim Processing
+
+## Identified Anomalies in the Temporal Profile Model
+
+**1. Receive to Approve (RP): Suspiciously Low Standard Deviation**
+- **Average time**: 25 hours (90,000 seconds)
+- **Standard deviation**: 1 hour (3,600 seconds)
+- **Anomaly**: The coefficient of variation (stdev/mean) is only 4%, indicating extremely consistent timing that doesn't align with the natural variability of human-driven processes like claim evaluation.
+
+**2. Approve to Notify (PN): Excessively Long and Variable Delay**
+- **Average time**: 7 days (604,800 seconds)
+- **Standard deviation**: 2 days (172,800 seconds)
+- **Anomaly**: The standard deviation is 34% of the mean, showing high variability. A 7-day average notification delay after approval is unusually long for customer communications.
+
+**3. Assign to Close (AC): Potentially Premature Closure**
+- **Average time**: 2 hours (7,200 seconds)
+- **Standard deviation**: 1 hour (3,600 seconds)
+- **Anomaly**: Closing claims within 2 hours of assignment suggests either automated closures or bypassing of standard evaluation procedures.
+
+**4. Evaluate to Notify (EN): Unrealistically Fast Transition**
+- **Average time**: 5 minutes (300 seconds)
+- **Standard deviation**: 1 minute (60 seconds)
+- **Anomaly**: A 5-minute window between evaluation completion and customer notification is too quick for proper decision communication, especially if approval is required.
+
+## Hypotheses for Anomalies
+
+### Hypothesis 1: Automated Approval Triggers
+The consistent RP timing suggests automated approval rules may be triggering based on:
+- Fixed time thresholds (e.g., claims under $X auto-approve after 25 hours)
+- Batch processing that runs on a rigid schedule
+- Lack of manual review for certain claim categories
+
+### Hypothesis 2: Notification System Bottlenecks
+The PN delay indicates:
+- Manual notification processes that operate in batches
+- Email/SMS system backlogs or scheduling issues
+- Dependency on unavailable customer contact information
+- Regulatory requirements for approval waiting periods
+
+### Hypothesis 3: Process Skipping or Bypassing
+The AC and EN anomalies suggest:
+- "Express" claim handling for certain adjusters or regions
+- System errors that prematurely close claims
+- Adjusters closing claims without completing required steps
+- Automated workflows that skip intermediate steps under specific conditions
+
+### Hypothesis 4: Resource Constraints or Misalignment
+- Adjusters specializing in certain claim types causing bottlenecks
+- Regional differences in staffing affecting processing times
+- Seasonal or time-of-day patterns in claim submission and processing
+
+## Verification Approaches Using SQL Queries
+
+### Query 1: Identify Claims with Abnormal RP Timing
+```sql
+-- Find claims where RP timing deviates significantly from the model
+WITH rp_timing AS (
+    SELECT 
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        a.name AS adjuster_name,
+        a.specialization,
+        a.region,
+        EXTRACT(EPOCH FROM (ep.timestamp - er.timestamp)) AS time_seconds,
+        (90000 - 2*3600) AS lower_bound,  -- Average minus 2 standard deviations
+        (90000 + 2*3600) AS upper_bound   -- Average plus 2 standard deviations
+    FROM claims c
+    JOIN claim_events er ON c.claim_id = er.claim_id AND er.activity = 'R'
+    JOIN claim_events ep ON c.claim_id = ep.claim_id AND ep.activity = 'P'
+    LEFT JOIN adjusters a ON ep.resource = a.adjuster_id::TEXT
+    WHERE ep.timestamp > er.timestamp
+)
+SELECT 
+    claim_id,
+    claim_type,
+    claim_amount,
+    adjuster_name,
+    specialization,
+    region,
+    time_seconds,
+    CASE 
+        WHEN time_seconds < lower_bound THEN 'Too Fast'
+        WHEN time_seconds > upper_bound THEN 'Too Slow'
+        ELSE 'Normal'
+    END AS timing_status
+FROM rp_timing
+WHERE time_seconds < lower_bound OR time_seconds > upper_bound
+ORDER BY ABS(time_seconds - 90000) DESC
+LIMIT 50;
+```
+
+### Query 2: Analyze PN Delays by Resource and Region
+```sql
+-- Examine extreme PN delays and correlate with adjusters and regions
+WITH pn_delays AS (
+    SELECT 
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        a.name AS assigner_name,
+        a.region AS adjuster_region,
+        EXTRACT(EPOCH FROM (en.timestamp - ep.timestamp)) / 86400.0 AS days_delay,
+        CASE 
+            WHEN EXTRACT(EPOCH FROM (en.timestamp - ep.timestamp)) / 86400.0 > 14 THEN 'Extreme (>2 weeks)'
+            WHEN EXTRACT(EPOCH FROM (en.timestamp - ep.timestamp)) / 86400.0 > 7 THEN 'High (1-2 weeks)'
+            ELSE 'Normal'
+        END AS delay_category
+    FROM claims c
+    JOIN claim_events ep ON c.claim_id = ep.claim_id AND ep.activity = 'P'
+    JOIN claim_events en ON c.claim_id = en.claim_id AND en.activity = 'N'
+    LEFT JOIN adjusters a ON ep.resource = a.adjuster_id::TEXT
+    WHERE en.timestamp > ep.timestamp
+)
+SELECT 
+    assigner_name,
+    adjuster_region,
+    claim_type,
+    COUNT(*) AS total_claims,
+    AVG(days_delay) AS avg_delay_days,
+    MAX(days_delay) AS max_delay_days,
+    COUNT(CASE WHEN delay_category IN ('Extreme (>2 weeks)', 'High (1-2 weeks)') 
+         THEN 1 END) AS delayed_count
+FROM pn_delays
+GROUP BY assigner_name, adjuster_region, claim_type
+HAVING COUNT(CASE WHEN delay_category IN ('Extreme (>2 weeks)', 'High (1-2 weeks)') 
+             THEN 1 END) > 0
+ORDER BY delayed_count DESC
+LIMIT 25;
+```
+
+### Query 3: Investigate Premature Claim Closures (AC)
+```sql
+-- Identify claims closed quickly after assignment, potentially skipping evaluation
+WITH ac_closures AS (
+    SELECT 
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        a.name AS adjuster_name,
+        a.specialization,
+        a.region,
+        EXTRACT(EPOCH FROM (ec.timestamp - ea.timestamp)) / 3600.0 AS hours_to_close,
+        EXISTS (
+            SELECT 1 FROM claim_events ee 
+            WHERE ee.claim_id = c.claim_id 
+            AND ee.activity = 'E' 
+            AND ee.timestamp BETWEEN ea.timestamp AND ec.timestamp
+        ) AS has_evaluation,
+        EXISTS (
+            SELECT 1 FROM claim_events ep 
+            WHERE ep.claim_id = c.claim_id 
+            AND ep.activity = 'P' 
+            AND ep.timestamp BETWEEN ea.timestamp AND ec.timestamp
+        ) AS has_approval
+    FROM claims c
+    JOIN claim_events ea ON c.claim_id = ea.claim_id AND ea.activity = 'A'
+    JOIN claim_events ec ON c.claim_id = ec.claim_id AND ec.activity = 'C'
+    LEFT JOIN adjusters a ON ea.resource = a.adjuster_id::TEXT
+    WHERE ec.timestamp > ea.timestamp
+    AND EXTRACT(EPOCH FROM (ec.timestamp - ea.timestamp)) / 3600.0 <= 4  -- Closed within 4 hours
+)
+SELECT 
+    adjuster_name,
+    specialization,
+    region,
+    claim_type,
+    COUNT(*) AS quick_closure_count,
+    AVG(claim_amount) AS avg_claim_amount,
+    COUNT(CASE WHEN NOT has_evaluation AND NOT has_approval THEN 1 END) AS skipped_both_steps,
+    COUNT(CASE WHEN NOT has_evaluation THEN 1 END) AS skipped_evaluation
+FROM ac_closures
+GROUP BY adjuster_name, specialization, region, claim_type
+HAVING COUNT(*) >= 3  -- Focus on patterns with at least 3 occurrences
+ORDER BY skipped_both_steps DESC, quick_closure_count DESC;
+```
+
+### Query 4: Correlate EN Speed with Missing Steps
+```sql
+-- Check if 5-minute EN transitions indicate skipped approval steps
+WITH en_transitions AS (
+    SELECT 
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        a.name AS evaluator_name,
+        a.specialization,
+        EXTRACT(EPOCH FROM (en.timestamp - ee.timestamp)) AS seconds_to_notify,
+        EXISTS (
+            SELECT 1 FROM claim_events ep 
+            WHERE ep.claim_id = c.claim_id 
+            AND ep.activity = 'P' 
+            AND ep.timestamp BETWEEN ee.timestamp AND en.timestamp
+        ) AS has_approval_between,
+        EXTRACT(EPOCH FROM (en.timestamp - ee.timestamp)) - 300 AS deviation_from_avg  -- Deviation from 5-minute average
+    FROM claims c
+    JOIN claim_events ee ON c.claim_id = ee.claim_id AND ee.activity = 'E'
+    JOIN claim_events en ON c.claim_id = en.claim_id AND en.activity = 'N'
+    LEFT JOIN adjusters a ON ee.resource = a.adjuster_id::TEXT
+    WHERE en.timestamp > ee.timestamp
+    AND EXTRACT(EPOCH FROM (en.timestamp - ee.timestamp)) <= 600  -- Within 10 minutes
+)
+SELECT 
+    evaluator_name,
+    specialization,
+    claim_type,
+    COUNT(*) AS fast_transition_count,
+    AVG(seconds_to_notify) AS avg_seconds,
+    COUNT(CASE WHEN NOT has_approval_between THEN 1 END) AS skipped_approval,
+    AVG(deviation_from_avg) AS avg_deviation_seconds,
+    COUNT(CASE WHEN has_approval_between THEN 1 END) AS with_approval
+FROM en_transitions
+GROUP BY evaluator_name, specialization, claim_type
+HAVING COUNT(*) >= 3
+ORDER BY fast_transition_count DESC;
+```
+
+### Query 5: Temporal Pattern Analysis by Time of Day/Day of Week
+```sql
+-- Analyze if anomalies follow temporal patterns (batch processing indicators)
+WITH temporal_patterns AS (
+    SELECT 
+        EXTRACT(HOUR FROM ep.timestamp) AS approval_hour,
+        EXTRACT(DOW FROM ep.timestamp) AS approval_day_of_week,
+        COUNT(*) AS approval_count,
+        AVG(EXTRACT(EPOCH FROM (en.timestamp - ep.timestamp))) AS avg_pn_delay_seconds,
+        STDDEV(EXTRACT(EPOCH FROM (en.timestamp - ep.timestamp))) AS stdev_pn_delay_seconds
+    FROM claim_events ep
+    JOIN claim_events en ON ep.claim_id = en.claim_id 
+    WHERE ep.activity = 'P' 
+    AND en.activity = 'N'
+    AND en.timestamp > ep.timestamp
+    GROUP BY EXTRACT(HOUR FROM ep.timestamp), EXTRACT(DOW FROM ep.timestamp)
+    HAVING COUNT(*) > 10
+)
+SELECT 
+    approval_hour,
+    CASE approval_day_of_week 
+        WHEN 0 THEN 'Sunday'
+        WHEN 1 THEN 'Monday'
+        WHEN 2 THEN 'Tuesday'
+        WHEN 3 THEN 'Wednesday'
+        WHEN 4 THEN 'Thursday'
+        WHEN 5 THEN 'Friday'
+        WHEN 6 THEN 'Saturday'
+    END AS day_of_week,
+    approval_count,
+    ROUND(avg_pn_delay_seconds / 3600.0, 2) AS avg_delay_hours,
+    ROUND(stdev_pn_delay_seconds / 3600.0, 2) AS stdev_delay_hours
+FROM temporal_patterns
+ORDER BY approval_day_of_week, approval_hour;
+```
+
+These verification approaches will help identify whether the temporal anomalies represent:
+- Systemic process design choices
+- Resource allocation issues
+- Automation gaps or inefficiencies
+- Data quality problems
+- Regional or categorical variations
+
+The queries are designed to move from identifying individual anomalous claims to uncovering broader patterns that explain the deviations observed in the temporal profile model.
