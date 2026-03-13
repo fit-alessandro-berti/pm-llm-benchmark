@@ -181,7 +181,7 @@ if __name__ == "__main__":
     evalscript = get_evalscript_module()
     # Enable multi-threading in evalscript
     evalscript.Shared.USE_MULTITHREADING = True
-    evalscript.Shared.MAX_WORKERS = 50
+    evalscript.Shared.MAX_WORKERS = 75
 
     iterations = sys.maxsize
     # iterations = 1

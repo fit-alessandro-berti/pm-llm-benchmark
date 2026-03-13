@@ -13,7 +13,7 @@ import common
 class Shared:
     MASS_EVAL = True
     USE_MULTITHREADING = True
-    MAX_WORKERS = 60
+    MAX_WORKERS = 75
 
 
 def files_modified_last_hour(folder_path, m_name):

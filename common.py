@@ -269,7 +269,7 @@ MODELS_DICT = {
         "api_url": "https://api.deepinfra.com/v1/openai/",
         "api_key": "sk-",
         "models": {
-            "microsoft/phi-4"
+            "microsoft/phi-4", "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B"
         }
     },
     "ollama_local": {
