@@ -183,12 +183,13 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
     )
 
     overall_table = []
+    leaderboard_stats = []
 
     target_len = 33
     for result in results:
-        m_n = manage_file_name(result["model"])
-        if len(m_n) > target_len:
-            spli = m_n.split("-")
+        display_model_name = manage_file_name(result["model"])
+        if len(display_model_name) > target_len:
+            spli = display_model_name.split("-")
             news = ""
             i = 0
             while i < len(spli):
@@ -199,19 +200,20 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
                 else:
                     break
                 i = i + 1
-            m_n = news[0:min(target_len+1, len(news))]
+            display_model_name = news[0:min(target_len+1, len(news))]
 
         formatted_scores = result["formatted_scores"]
-        entry = {"Model": m_n, "Score": "**%.1f**" % (result["score_textual"]),
+        entry = {"Model": display_model_name, "Score": "**%.1f**" % (result["score_textual"]),
                  "OS": format_is_open_source(result["model"]), "LRM": format_is_lrm(result["model"]),
                  "C1": formatted_scores[0], "C2": formatted_scores[1], "C3": formatted_scores[2],
                  "C4": formatted_scores[3], "C5": formatted_scores[4], "C6": formatted_scores[5],
                  "C8": formatted_scores[7], "C7": formatted_scores[6]}
         overall_table.append(entry)
+        leaderboard_stats.append({**entry, "Model": result["model"]})
 
     if json_file is not None:
         with open(json_file, "w") as handler:
-            json.dump(overall_table, handler)
+            json.dump(leaderboard_stats, handler)
 
     headers = ["Model", "Score", "OS", "LRM", "PCo", "CC", "PMo", "PQ", "HG", "FA", "OPT", ":nerd_face: VI"]
     rows = [
@@ -243,9 +245,6 @@ def execute(evaluation_folder, target_file, include_closed_source=True, require_
 
 
 def get_suffix_name(e_m_name):
-    if "grok-4-fast" in e_m_name:
-        return "grok-4-fast"
-
     return e_m_name.split("-exp")[0].split("-preview")[0]
 
 
