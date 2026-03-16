@@ -323,7 +323,8 @@ MODELS_DICT = {
             "minimax/minimax-m2.5", "z-ai/glm-5",
             "qwen/qwen3.5-397b-a17b", "google/gemini-3.1-pro-preview",
             "inception/mercury-2",
-            "openrouter/healer-alpha", "openrouter/hunter-alpha"
+            "openrouter/healer-alpha", "openrouter/hunter-alpha",
+            "z-ai/glm-5-turbo"
         }
     },
     "manual": {
