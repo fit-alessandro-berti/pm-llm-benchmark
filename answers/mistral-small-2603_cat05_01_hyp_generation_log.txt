@@ -1,0 +1,266 @@
+Here are the key anomalies and undesirable behaviors in the event logs, along with hypotheses about their causes and potential SQL queries to investigate them further:
+
+---
+
+### **1. Missing Activities in Process Flow**
+**Anomaly:**
+- **Case 1002**: Skips "Perform Credit Check" and "Validate Stock" before "Confirm Shipment".
+- **Case 1003**: Skips "Validate Stock" before "Ship Goods".
+- **Case 1004**: Skips all steps except "Register Order", "Receive Payment", "Issue Invoice", and "Ship Goods".
+
+**Hypotheses:**
+- Policy violations (e.g., urgent orders bypassing checks).
+- System errors (e.g., missing events due to logging failures).
+- Manual overrides by privileged users (e.g., managers forcing shipments).
+
+**SQL Queries to Investigate:**
+```sql
+-- Check for cases where critical activities are missing
+SELECT o.case_id, o.order_type, o.order_value,
+       COUNT(CASE WHEN oel.activity = 'Perform Credit Check' THEN 1 END) AS credit_check_count,
+       COUNT(CASE WHEN oel.activity = 'Validate Stock' THEN 1 END) AS stock_validation_count,
+       COUNT(CASE WHEN oel.activity = 'Confirm Shipment' THEN 1 END) AS shipment_confirmation_count
+FROM orders o
+LEFT JOIN order_event_log oel ON o.case_id = oel.case_id
+GROUP BY o.case_id, o.order_type, o.order_value
+HAVING COUNT(CASE WHEN oel.activity IN ('Perform Credit Check', 'Validate Stock', 'Confirm Shipment') THEN 1 END) < 3;
+```
+
+```sql
+-- Check for cases where "Ship Goods" happens before "Confirm Shipment"
+SELECT oel.case_id
+FROM order_event_log oel
+WHERE oel.activity = 'Ship Goods'
+  AND EXISTS (
+    SELECT 1
+    FROM order_event_log oel2
+    WHERE oel2.case_id = oel.case_id
+      AND oel2.activity = 'Confirm Shipment'
+      AND oel2.timestamp > oel.timestamp
+  );
+```
+
+---
+
+### **2. Out-of-Order Activities**
+**Anomaly:**
+- **Case 1003**: "Ship Goods" happens before "Confirm Shipment".
+- **Case 1004**: "Receive Payment" happens before "Issue Invoice".
+
+**Hypotheses:**
+- Data entry errors (timestamps incorrectly logged).
+- Process bypasses (e.g., goods shipped without confirmation).
+- Fraudulent activities (e.g., receiving payment before invoice).
+
+**SQL Queries to Investigate:**
+```sql
+-- Find cases where activities occur out of the expected order
+WITH activity_order AS (
+  SELECT
+    'Register Order' AS activity,
+    1 AS expected_order
+  UNION ALL SELECT 'Perform Credit Check', 2
+  UNION ALL SELECT 'Validate Stock', 3
+  UNION ALL SELECT 'Confirm Shipment', 4
+  UNION ALL SELECT 'Ship Goods', 5
+  UNION ALL SELECT 'Issue Invoice', 6
+  UNION ALL SELECT 'Receive Payment', 7
+)
+SELECT oel.case_id, oel.activity, oel.timestamp,
+       ao.expected_order,
+       LAG(ao.expected_order) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) AS prev_expected_order
+FROM order_event_log oel
+JOIN activity_order ao ON oel.activity = ao.activity
+WHERE oel.activity IN ('Ship Goods', 'Receive Payment', 'Confirm Shipment')
+  AND LAG(ao.expected_order) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) > ao.expected_order;
+```
+
+---
+
+### **3. Early Shipments (Before Confirmation)**
+**Anomaly:**
+- **Case 1002**: "Confirm Shipment" happens after "Ship Goods".
+- **Case 1004**: "Ship Goods" happens without a prior "Confirm Shipment".
+
+**Hypotheses:**
+- Logistics errors (e.g., goods shipped prematurely).
+- Policy violations (e.g., ignoring shipment confirmation).
+
+**SQL Queries to Investigate:**
+```sql
+-- Cases where "Ship Goods" happens without a prior "Confirm Shipment"
+SELECT oel.case_id
+FROM order_event_log oel
+WHERE oel.activity = 'Ship Goods'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM order_event_log oel2
+    WHERE oel2.case_id = oel.case_id
+      AND oel2.activity = 'Confirm Shipment'
+      AND oel2.timestamp < oel.timestamp
+  );
+```
+
+```sql
+-- Check for "Ship Goods" events with "late_confirmation=Y" in additional_info
+SELECT oel.case_id, oel.timestamp AS ship_goods_time,
+       MAX(oel2.timestamp) AS latest_confirm_shipment_time
+FROM order_event_log oel
+JOIN order_event_log oel2 ON oel.case_id = oel2.case_id
+WHERE oel.activity = 'Ship Goods'
+  AND oel2.activity = 'Confirm Shipment'
+  AND oel2.timestamp > oel.timestamp
+GROUP BY oel.case_id, oel.timestamp;
+```
+
+---
+
+### **4. Credit Check Bypasses**
+**Anomaly:**
+- **Case 1002**: "Perform Credit Check" happens after "Ship Goods".
+- **Case 1004**: No "Perform Credit Check" at all.
+
+**Hypotheses:**
+- High-priority orders bypassing credit checks.
+- System failures in logging credit checks.
+- Manual overrides by managers.
+
+**SQL Queries to Investigate:**
+```sql
+-- Cases where "Perform Credit Check" happens after "Ship Goods"
+SELECT oel.case_id
+FROM order_event_log oel
+WHERE oel.activity = 'Perform Credit Check'
+  AND EXISTS (
+    SELECT 1
+    FROM order_event_log oel2
+    WHERE oel2.case_id = oel.case_id
+      AND oel2.activity = 'Ship Goods'
+      AND oel2.timestamp < oel.timestamp
+  );
+```
+
+```sql
+-- Cases with no "Perform Credit Check" at all
+SELECT o.case_id, o.order_type, o.order_value
+FROM orders o
+LEFT JOIN order_event_log oel ON o.case_id = oel.case_id
+WHERE oel.case_id IS NULL
+   OR NOT EXISTS (
+     SELECT 1
+     FROM order_event_log oel2
+     WHERE oel2.case_id = o.case_id
+       AND oel2.activity = 'Perform Credit Check'
+   );
+```
+
+---
+
+### **5. Resource Role Violations**
+**Anomaly:**
+- **Case 1001**: "WarehouseClerk_3" performs "Ship Goods" (expected: "WarehouseClerk").
+- **Case 1004**: "FinanceTeam_02" performs "Receive Payment" (expected: "Cashier").
+
+**Hypotheses:**
+- Role misassignments (e.g., clerks performing manager tasks).
+- Shared accounts (e.g., "FinanceTeam_02" used by multiple users).
+
+**SQL Queries to Investigate:**
+```sql
+-- Check for activities performed by resources outside their expected roles
+SELECT oel.case_id, oel.activity, oel.resource,
+       r.role AS resource_role, r.department
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+WHERE
+  (oel.activity = 'Ship Goods' AND r.role != 'Warehouse Staff') OR
+  (oel.activity = 'Receive Payment' AND r.role != 'Cashier') OR
+  (oel.activity = 'Confirm Shipment' AND r.role != 'Logistics Manager');
+```
+
+---
+
+### **6. High-Value Orders with No Credit Check**
+**Anomaly:**
+- **Case 1004**: Order value = $3000, but no "Perform Credit Check".
+
+**Hypotheses:**
+- Policy violations (e.g., high-value orders bypassing credit checks).
+- System errors (e.g., credit check not logged).
+
+**SQL Queries to Investigate:**
+```sql
+-- High-value orders (e.g., > $2000) with no credit check
+SELECT o.case_id, o.order_value, o.order_type
+FROM orders o
+LEFT JOIN order_event_log oel ON o.case_id = oel.case_id
+WHERE o.order_value > 2000
+  AND NOT EXISTS (
+    SELECT 1
+    FROM order_event_log oel2
+    WHERE oel2.case_id = o.case_id
+      AND oel2.activity = 'Perform Credit Check'
+  );
+```
+
+---
+
+### **7. Payment Before Invoice**
+**Anomaly:**
+- **Case 1004**: "Receive Payment" happens before "Issue Invoice".
+
+**Hypotheses:**
+- Fraudulent activities (e.g., receiving payment before invoice).
+- Data entry errors (timestamps incorrectly logged).
+
+**SQL Queries to Investigate:**
+```sql
+-- Cases where "Receive Payment" happens before "Issue Invoice"
+SELECT oel.case_id
+FROM order_event_log oel
+WHERE oel.activity = 'Receive Payment'
+  AND EXISTS (
+    SELECT 1
+    FROM order_event_log oel2
+    WHERE oel2.case_id = oel.case_id
+      AND oel2.activity = 'Issue Invoice'
+      AND oel2.timestamp > oel.timestamp
+  );
+```
+
+---
+
+### **8. Duplicate or Missing Event IDs**
+**Anomaly:**
+- Event IDs are not sequential (e.g., gaps in `event_id` for a `case_id`).
+
+**Hypotheses:**
+- Logging failures (e.g., events not recorded).
+- Data corruption.
+
+**SQL Queries to Investigate:**
+```sql
+-- Check for gaps in event_id sequence per case_id
+WITH numbered_events AS (
+  SELECT
+    case_id,
+    event_id,
+    activity,
+    ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY event_id) AS expected_event_id
+  FROM order_event_log
+)
+SELECT case_id, event_id, activity,
+       expected_event_id,
+       event_id - expected_event_id AS gap
+FROM numbered_events
+WHERE event_id != expected_event_id
+ORDER BY case_id, event_id;
+```
+
+---
+
+### **Next Steps for Investigation**
+1. **Manual Review**: Check the `additional_info` column for clues (e.g., `late_confirmation=Y`, `attempted_early=Y`).
+2. **User Interviews**: Talk to resources involved in anomalous cases (e.g., SalesRep_02, LogisticsMgr_2).
+3. **Policy Audit**: Verify if the process flow matches documented policies.
+4. **System Logs**: Check application logs for errors during event logging.
