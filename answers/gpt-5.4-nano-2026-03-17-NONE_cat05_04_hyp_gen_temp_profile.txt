@@ -1,0 +1,346 @@
+## 1) Anomalies in the temporal profile model
+
+Given the intended sequence **R  A  E  P  N  C**, the following modeled pairs look inconsistent or suspicious:
+
+1. **R  P (Receive to Approve): (AVG 90000s, STDEV 3600s)**
+   - The STDEV is **very small ( 1 hour)** relative to the mean (~25 hours).
+   - This suggests approval is happening on a **nearly fixed schedule** (e.g., batch job at a set time next day) or the timestamps for intermediate steps may be **mis-ordered/derived**, rather than reflecting true event timing.
+
+2. **P  N (Approve to Notify): (AVG 604800s, STDEV 172800s)**
+   - Mean  **7 days** with SD  **2 days** is unusually large and variable.
+   - This indicates a **major waiting stage** or irregular process behavior: sometimes notify is delayed (backlog/compliance holds), sometimes it may occur earlier/later than expected.
+
+3. **E  N (Evaluate to Notify): (AVG 300s, STDEV 60s)**
+   - Only **~5 minutes** on average with SD **~1 minute** is extremely fast for “Evaluate  Notify”.
+   - This often indicates that either:
+     - the process is **skipping P** for some cases (notify triggered right after evaluation), or
+     - the “P” step is recorded inconsistently (wrong timestamps / wrong activity mapping), or
+     - “Evaluate” timestamps actually represent a different sub-step.
+
+4. **A  C (Assign to Close): (AVG 7200s, STDEV 3600s)** *without consistently observed E/P*
+   - If “Close” occurs on average **~2 hours** after assign, but your event stream usually includes **E and P**, that implies some claims may be:
+     - **prematurely closed**, or
+     - **missing/merged events** (E/P not recorded), or
+     - handled via a “fast track” path that the model didn’t stratify.
+
+5. **E  C: (AVG 3600s, STDEV 3000s)**
+   - Mean  **1 hour** but SD  **50 minutes** is broad.
+   - Suggests **mixed populations**: some claims close quickly after evaluation, others take much longer—possibly due to claim complexity or exception handling.
+
+---
+
+## 2) Hypotheses for why these anomalies might exist
+
+1. **Batch/scheduled automation driving fixed delays**
+   - The very low SD for **RP** suggests a **deterministic scheduler** (e.g., approvals generated in a daily batch at a fixed cutoff time), or an ETL pipeline that stamps P times in a rigid way.
+
+2. **Event recording inconsistencies / wrong activity classification**
+   - If **N happens ~5 minutes after E**, it may mean:
+     - approvals are not recorded properly for those cases,
+     - “Notify” is being triggered off evaluation completion rather than approval completion, or
+     - timestamps are being written with incorrect activity labels.
+
+3. **Backlog or operational constraints between P and N**
+   - The large mean and SD for **PN** can come from:
+     - manual review/queueing before notification,
+     - customer-contact effort scheduling,
+     - compliance/legal holds,
+     - regional staffing differences.
+
+4. **Fast-track closure path / missing steps**
+   - **AC ~2 hours** implies either:
+     - a subset of claims follows a “straight-through” path (limited evaluation/approval), or
+     - events **E/P** are missing, not logged, or stored under different activity codes.
+
+5. **Mixed claim types or complexity not modeled**
+   - Broad variability for **EC** can reflect multiple workflows:
+     - simple claims that close quickly,
+     - complex claims that require additional investigation (possibly encoded as different resources or additional activity types not in the fixed 6-step model).
+
+---
+
+## 3) Verification approaches using SQL (PostgreSQL)
+
+Below are practical queries to (a) find candidate anomalous claims, (b) quantify distribution by segments, and (c) check whether steps are being skipped/mis-ordered.
+
+> Assumption: `claim_events` has multiple rows per claim and `activity` is coded exactly as: **R,A,E,P,N,C**.
+
+### A. Compute actual times for key pairs and flag outliers
+
+#### 1) Find claims with “RP” near fixed delay (low variability) / or unusually consistent
+```sql
+WITH times AS (
+  SELECT
+    ce1.claim_id,
+    EXTRACT(EPOCH FROM (MIN(ceP.timestamp) - MIN(ceR.timestamp))) AS r_to_p_seconds
+  FROM claim_events ceR
+  JOIN claim_events ceP
+    ON ceP.claim_id = ceR.claim_id
+   AND ceR.activity = 'R'
+   AND ceP.activity = 'P'
+   AND ceP.timestamp >= ceR.timestamp
+  GROUP BY ce1.claim_id
+)
+SELECT
+  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY r_to_p_seconds) AS median_seconds,
+  AVG(r_to_p_seconds) AS avg_seconds,
+  STDDEV_SAMP(r_to_p_seconds) AS stdev_seconds,
+  COUNT(*) AS n_claims
+FROM times;
+```
+
+#### 2) Flag individual claims where “EN” is extremely fast (suggest skip of P or mislabel)
+```sql
+WITH en AS (
+  SELECT
+    ceE.claim_id,
+    MIN(ceN.timestamp) AS n_ts,
+    MIN(ceE.timestamp) AS e_ts
+  FROM claim_events ceE
+  JOIN claim_events ceN
+    ON ceN.claim_id = ceE.claim_id
+   AND ceE.activity = 'E'
+   AND ceN.activity = 'N'
+   AND ceN.timestamp >= ceE.timestamp
+  GROUP BY ceE.claim_id
+)
+SELECT
+  claim_id,
+  EXTRACT(EPOCH FROM (n_ts - e_ts)) AS e_to_n_seconds
+FROM en
+WHERE EXTRACT(EPOCH FROM (n_ts - e_ts)) < 600  -- <10 minutes (adjust threshold)
+ORDER BY e_to_n_seconds ASC
+LIMIT 200;
+```
+
+#### 3) Flag claims where “PN” is excessively long
+```sql
+WITH pn AS (
+  SELECT
+    ceP.claim_id,
+    MIN(ceN.timestamp) AS n_ts,
+    MIN(ceP.timestamp) AS p_ts
+  FROM claim_events ceP
+  JOIN claim_events ceN
+    ON ceN.claim_id = ceP.claim_id
+   AND ceP.activity = 'P'
+   AND ceN.activity = 'N'
+   AND ceN.timestamp >= ceP.timestamp
+  GROUP BY ceP.claim_id
+)
+SELECT
+  claim_id,
+  EXTRACT(EPOCH FROM (n_ts - p_ts)) AS p_to_n_seconds
+FROM pn
+WHERE EXTRACT(EPOCH FROM (n_ts - p_ts)) > 86400 * 5  -- >5 days
+ORDER BY p_to_n_seconds DESC
+LIMIT 200;
+```
+
+#### 4) Flag claims where “AC” is very fast (possible premature closure / missing events)
+```sql
+WITH ac AS (
+  SELECT
+    ceA.claim_id,
+    MIN(ceC.timestamp) AS c_ts,
+    MIN(ceA.timestamp) AS a_ts
+  FROM claim_events ceA
+  JOIN claim_events ceC
+    ON ceC.claim_id = ceA.claim_id
+   AND ceA.activity = 'A'
+   AND ceC.activity = 'C'
+   AND ceC.timestamp >= ceA.timestamp
+  GROUP BY ceA.claim_id
+)
+SELECT
+  claim_id,
+  EXTRACT(EPOCH FROM (c_ts - a_ts)) AS a_to_c_seconds
+FROM ac
+WHERE EXTRACT(EPOCH FROM (c_ts - a_ts)) < 3*3600  -- <3 hours
+ORDER BY a_to_c_seconds ASC
+LIMIT 200;
+```
+
+---
+
+### B. Check whether expected steps are missing/skipped (core for EN fast and AC fast)
+
+#### 1) Claims where N occurs before P (strong indicator of wrong ordering or skipped approval)
+```sql
+SELECT
+  ceN.claim_id,
+  MIN(ceP.timestamp) AS p_ts,
+  MIN(ceN.timestamp) AS n_ts
+FROM claim_events ceN
+LEFT JOIN claim_events ceP
+  ON ceP.claim_id = ceN.claim_id
+ AND ceP.activity = 'P'
+ AND ceP.timestamp >= ceN.timestamp
+WHERE ceN.activity = 'N'
+GROUP BY ceN.claim_id
+HAVING MIN(ceP.timestamp) IS NULL;  -- no P after N
+```
+
+#### 2) Claims that have E and N but have no P at all
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE EXISTS (
+  SELECT 1 FROM claim_events ce
+  WHERE ce.claim_id = c.claim_id AND ce.activity = 'E'
+)
+AND EXISTS (
+  SELECT 1 FROM claim_events ce
+  WHERE ce.claim_id = c.claim_id AND ce.activity = 'N'
+)
+AND NOT EXISTS (
+  SELECT 1 FROM claim_events ce
+  WHERE ce.claim_id = c.claim_id AND ce.activity = 'P'
+)
+LIMIT 200;
+```
+
+#### 3) Claims closed very quickly after assignment AND missing E or P
+```sql
+WITH quick_close AS (
+  SELECT
+    ceA.claim_id,
+    MIN(ceC.timestamp) AS c_ts,
+    MIN(ceA.timestamp) AS a_ts
+  FROM claim_events ceA
+  JOIN claim_events ceC
+    ON ceC.claim_id = ceA.claim_id
+   AND ceA.activity = 'A'
+   AND ceC.activity = 'C'
+   AND ceC.timestamp >= ceA.timestamp
+  GROUP BY ceA.claim_id
+)
+SELECT qc.claim_id
+FROM quick_close qc
+WHERE EXTRACT(EPOCH FROM (qc.c_ts - qc.a_ts)) < 3*3600
+AND (
+  NOT EXISTS (SELECT 1 FROM claim_events ce WHERE ce.claim_id = qc.claim_id AND ce.activity = 'E')
+  OR NOT EXISTS (SELECT 1 FROM claim_events ce WHERE ce.claim_id = qc.claim_id AND ce.activity = 'P')
+)
+LIMIT 200;
+```
+
+---
+
+### C. Segment the anomalies by adjuster/resource/claim_type/region
+
+#### 1) Does EN fast cluster by resource?
+```sql
+WITH en AS (
+  SELECT
+    ceE.claim_id,
+    ceE.resource AS e_resource,
+    MIN(ceN.timestamp) AS n_ts,
+    MIN(ceE.timestamp) AS e_ts
+  FROM claim_events ceE
+  JOIN claim_events ceN
+    ON ceN.claim_id = ceE.claim_id
+   AND ceE.activity = 'E'
+   AND ceN.activity = 'N'
+   AND ceN.timestamp >= ceE.timestamp
+  GROUP BY ceE.claim_id, ceE.resource
+)
+SELECT
+  e_resource,
+  COUNT(*) AS n_claims,
+  AVG(EXTRACT(EPOCH FROM (n_ts - e_ts))) AS avg_seconds,
+  STDDEV_SAMP(EXTRACT(EPOCH FROM (n_ts - e_ts))) AS stdev_seconds
+FROM en
+WHERE EXTRACT(EPOCH FROM (n_ts - e_ts)) < 600
+GROUP BY e_resource
+ORDER BY n_claims DESC;
+```
+
+#### 2) Does PN delay cluster by resource or adjuster region?
+(If `resource` maps to adjuster_id, you can join; otherwise use `resource` directly.)
+```sql
+SELECT
+  ceP.resource AS p_resource,
+  COUNT(*) AS n_claims,
+  AVG(EXTRACT(EPOCH FROM (ceN.timestamp - ceP.timestamp))) AS avg_seconds
+FROM claim_events ceP
+JOIN claim_events ceN
+  ON ceN.claim_id = ceP.claim_id
+ AND ceP.activity = 'P'
+ AND ceN.activity = 'N'
+ AND ceN.timestamp >= ceP.timestamp
+WHERE ceP.activity = 'P'
+GROUP BY ceP.resource
+HAVING AVG(EXTRACT(EPOCH FROM (ceN.timestamp - ceP.timestamp))) > 86400 * 3
+ORDER BY avg_seconds DESC;
+```
+
+---
+
+### D. Quantify “fixed schedule” behavior for RP
+
+If R and P timestamps are aligned to batch cutoffs, you’ll often see P times occur at specific clock minutes/hours.
+
+```sql
+WITH rp AS (
+  SELECT
+    ceR.claim_id,
+    MIN(ceR.timestamp) AS r_ts,
+    MIN(ceP.timestamp) AS p_ts
+  FROM claim_events ceR
+  JOIN claim_events ceP
+    ON ceP.claim_id = ceR.claim_id
+   AND ceR.activity = 'R'
+   AND ceP.activity = 'P'
+   AND ceP.timestamp >= ceR.timestamp
+  GROUP BY ceR.claim_id
+)
+SELECT
+  EXTRACT(HOUR FROM p_ts) AS p_hour,
+  EXTRACT(MINUTE FROM p_ts) AS p_minute,
+  COUNT(*) AS n_claims
+FROM rp
+GROUP BY 1,2
+ORDER BY n_claims DESC
+LIMIT 20;
+```
+
+A strong concentration in a few (hour, minute) buckets supports a batch/automation explanation.
+
+---
+
+### E. Validate the intended order statistically (global sanity checks)
+
+#### 1) Percent of claims where N happens after P
+```sql
+SELECT
+  AVG(CASE WHEN EXISTS (
+    SELECT 1
+    FROM claim_events ceP, claim_events ceN
+    WHERE ceP.claim_id = c.claim_id
+      AND ceN.claim_id = c.claim_id
+      AND ceP.activity = 'P'
+      AND ceN.activity = 'N'
+      AND ceP.timestamp <= ceN.timestamp
+  ) THEN 1 ELSE 0 END)::float AS pct_n_after_p
+FROM claims c;
+```
+
+#### 2) Percent where C happens after A (trivial but checks timestamp ordering)
+```sql
+SELECT
+  AVG(CASE WHEN EXISTS (
+    SELECT 1
+    FROM claim_events ceA, claim_events ceC
+    WHERE ceA.claim_id = c.claim_id
+      AND ceC.claim_id = c.claim_id
+      AND ceA.activity = 'A'
+      AND ceC.activity = 'C'
+      AND ceA.timestamp <= ceC.timestamp
+  ) THEN 1 ELSE 0 END)::float AS pct_c_after_a
+FROM claims c;
+```
+
+---
+
+If you want, I can tailor the “outlier” thresholds (e.g., using Z-score / ZETA directly from the model) by writing SQL that computes z = (observed-avg)/stdev per pair and filters on |z| > ZETA.

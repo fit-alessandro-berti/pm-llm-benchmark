@@ -1,0 +1,265 @@
+## 1) Anomalies in the DECLARE constraints
+
+1) **Logical contradiction: `noncoexistence(E, C)` vs the intended flow**
+- The model enforces **`noncoexistence`** between **E (Evaluate)** and **C (Close)**, meaning traces containing **E** should not contain **C**.
+- But the intended business process is **E  …  C** (evaluation should happen before closure). This makes the model internally inconsistent with the expected end-to-end lifecycle.
+
+2) **End-to-end lifecycle is undermined: closure can occur even when evaluation should be part of the process**
+- The model has **`existence(C)`** (every trace has a close).
+- It does **not** require **E** to occur at all (only constrains what must happen *if* E occurs via `responded_existence`).
+- This allows traces that are effectively **R  C** (or other partial sequences) without evaluation (and without approval/notification), which contradicts the “ideal” process flow.
+
+3) **Missing enforcement for critical steps (`P`, `N`)**
+- There are **no constraints** requiring **P (Approve)** or **N (Notify)**, nor any ordering constraints involving them.
+- Practically, this can allow closure without approval/notification, again diverging from the intended flow.
+
+4) **Closure positioning is not guaranteed**
+- `existence(C)` only states that **C happens somewhere** in the trace; it does **not** ensure it is the **last** step.
+- So even if C exists, subsequent events could still occur after closure (an “after-close” anomaly).
+
+---
+
+## 2) Hypotheses for why these anomalies exist
+
+1) **Wrong DECLARE template used or parameter side flipped**
+- The model may have mistakenly used **`noncoexistence(E, C)`** where the intended constraint was something like:
+  - `precedence(E, C)` (E must occur before C), or
+  - `response(E, C)` / `chain_response(E, C)` (if E happens then C must happen after it).
+
+2) **Activity-code mapping issues**
+- The recorded `activity` values in `claim_events` might not align perfectly with the intended semantic mapping (e.g., “E” could represent a different event than “Evaluate” in some logs, or “C” could represent an internal state change not equivalent to “Close”).
+
+3) **Process variation or fast-track cases were not modeled as branching**
+- Some claims may be closed without evaluation/approval/notification (fraud detection, immediate denial, administrative closure).
+- The model might have “overgeneralized” such behavior into a global constraint (like noncoexistence), rather than modeling conditional branches.
+
+4) **Model was edited/constructed manually with incorrect certainty (support/confidence)**
+- If support/confidence were set to **1.0** without being derived from actual traces, the model would appear “perfect” while contradicting real behavior.
+
+5) **Event logging inconsistencies / incomplete traces**
+- “E” events may be missing from some traces due to instrumentation gaps, while “C” is always logged—making it *look* like E and C should not coexist, even if logically they do in most real cases.
+
+---
+
+## 3) Verification approaches (SQL on `claims`, `claim_events`, `adjusters`)
+
+> Assumption: each `claim_id` corresponds to one trace; ordering is based on `claim_events."timestamp"`.
+
+### A) Per-claim activity presence + first/last activity
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    bool_or(activity = 'R') AS has_r,
+    bool_or(activity = 'A') AS has_a,
+    bool_or(activity = 'E') AS has_e,
+    bool_or(activity = 'P') AS has_p,
+    bool_or(activity = 'N') AS has_n,
+    bool_or(activity = 'C') AS has_c,
+    min("timestamp") FILTER (WHERE activity='R') AS t_r,
+    min("timestamp") FILTER (WHERE activity='A') AS t_a,
+    min("timestamp") FILTER (WHERE activity='E') AS t_e,
+    min("timestamp") FILTER (WHERE activity='P') AS t_p,
+    min("timestamp") FILTER (WHERE activity='N') AS t_n,
+    min("timestamp") FILTER (WHERE activity='C') AS t_c
+  FROM claim_events
+  GROUP BY claim_id
+),
+first_last AS (
+  SELECT claim_id, first_activity, last_activity
+  FROM (
+    SELECT
+      claim_id,
+      activity AS first_activity,
+      NULL::text AS last_activity,
+      row_number() OVER (PARTITION BY claim_id ORDER BY "timestamp" ASC) AS rn_asc,
+      row_number() OVER (PARTITION BY claim_id ORDER BY "timestamp" DESC) AS rn_desc
+    FROM claim_events
+  ) x
+  -- transform: pick the first activity and last activity via conditional aggregation
+),
+fl AS (
+  SELECT
+    claim_id,
+    max(activity) FILTER (WHERE rn_asc = 1)  AS first_activity,
+    max(activity) FILTER (WHERE rn_desc = 1) AS last_activity
+  FROM (
+    SELECT
+      claim_id,
+      activity,
+      row_number() OVER (PARTITION BY claim_id ORDER BY "timestamp" ASC)  AS rn_asc,
+      row_number() OVER (PARTITION BY claim_id ORDER BY "timestamp" DESC) AS rn_desc
+    FROM claim_events
+  ) y
+  GROUP BY claim_id
+)
+SELECT
+  c.claim_id,
+  c.customer_id,
+  p.has_r, p.has_a, p.has_e, p.has_p, p.has_n, p.has_c,
+  fl.first_activity,
+  fl.last_activity,
+  p.t_r, p.t_e, p.t_c
+FROM claims c
+LEFT JOIN per_claim p ON p.claim_id = c.claim_id
+LEFT JOIN fl ON fl.claim_id = c.claim_id
+ORDER BY c.claim_id;
+```
+
+---
+
+### B) Does `existence(C)` hold? (Claims missing a close event)
+```sql
+WITH per_claim AS (
+  SELECT claim_id, bool_or(activity='C') AS has_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT c.claim_id
+FROM claims c
+LEFT JOIN per_claim p ON p.claim_id = c.claim_id
+WHERE COALESCE(p.has_c, false) = false;
+```
+
+---
+
+### C) Does `init(R)` hold? (First logged event is not R)
+```sql
+WITH ordered AS (
+  SELECT
+    claim_id,
+    activity,
+    row_number() OVER (PARTITION BY claim_id ORDER BY "timestamp" ASC) AS rn_asc
+  FROM claim_events
+)
+SELECT o.claim_id, o.activity AS first_activity
+FROM ordered o
+WHERE o.rn_asc = 1
+  AND o.activity <> 'R';
+```
+
+---
+
+### D) Does `noncoexistence(E, C)` hold? (E and C both occur in the same claim)
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    bool_or(activity='E') AS has_e,
+    bool_or(activity='C') AS has_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id
+FROM per_claim
+WHERE has_e = true AND has_c = true;
+```
+
+---
+
+### E) Does `responded_existence(E, A)` hold? (E occurs without any A)
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    bool_or(activity='E') AS has_e,
+    bool_or(activity='A') AS has_a
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id
+FROM per_claim
+WHERE has_e = true AND has_a = false;
+```
+
+---
+
+### F) Does `precedence(C, [R])` hold? (Any C without an earlier R)
+This checks each **C** event for existence of an **R** earlier in time.
+```sql
+SELECT DISTINCT cce.claim_id
+FROM claim_events cce
+WHERE cce.activity = 'C'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events re
+    WHERE re.claim_id = cce.claim_id
+      AND re.activity = 'R'
+      AND re."timestamp" < cce."timestamp"
+  );
+```
+
+---
+
+### G) Intended-step diagnostic: Closed claims without evaluation (E)
+(This is not directly the noncoexistence test, but it checks the “skip E” behavior.)
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    bool_or(activity='E') AS has_e,
+    bool_or(activity='C') AS has_c
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id
+FROM per_claim
+WHERE has_c = true AND has_e = false;
+```
+
+---
+
+### H) Intended-step diagnostic: E occurs only after close (E not earlier than C)
+Checks claims where there exists a C event that has **no earlier** E.
+```sql
+SELECT DISTINCT ceC.claim_id
+FROM claim_events ceC
+WHERE ceC.activity = 'C'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events ceE
+    WHERE ceE.claim_id = ceC.claim_id
+      AND ceE.activity = 'E'
+      AND ceE."timestamp" < ceC."timestamp"
+  );
+```
+
+---
+
+### I) Missing steps diagnostic: Close without approval/notification
+```sql
+WITH per_claim AS (
+  SELECT
+    claim_id,
+    bool_or(activity='C') AS has_c,
+    bool_or(activity='P') AS has_p,
+    bool_or(activity='N') AS has_n
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id
+FROM per_claim
+WHERE has_c = true AND (has_p = false OR has_n = false);
+```
+
+---
+
+### J) (Optional) Adjuster consistency checks for A-events
+If `claim_events.resource` stores the adjuster’s `name`:
+```sql
+SELECT
+  ce.claim_id,
+  c.claim_type,
+  ce.resource AS event_resource,
+  a.specialization,
+  a.region
+FROM claim_events ce
+JOIN claims c ON c.claim_id = ce.claim_id
+LEFT JOIN adjusters a ON a.name = ce.resource
+WHERE ce.activity = 'A'
+  AND a.adjuster_id IS NULL;
+```
+
+---
+
+If you tell me how `claim_events.resource` maps to `adjusters` (name vs adjuster_id), I can tailor the adjuster-specialization check to validate whether A is performed by the correct type of adjuster.

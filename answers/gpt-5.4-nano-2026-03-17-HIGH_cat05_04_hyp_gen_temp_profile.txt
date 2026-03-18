@@ -1,0 +1,490 @@
+## Anomalies in the temporal profile model
+
+1. **R  P is unusually “tight”**
+   - Model: average  **90,000s (25h)**, STDEV  **3,600s (1h)**
+   - Why it’s suspicious: a real-world approval step usually has more variability than 1 hour. This can indicate **system-scheduled/derived timestamps** (e.g., P logged at a deterministic offset from R) or **batching/automation**.
+
+2. **P  N is unusually long and variable**
+   - Model: average  **604,800s (7 days)**, STDEV  **172,800s (2 days)**
+   - Why it’s suspicious: notification likely reflects **manual work queues**, customer availability constraints, or **backlogs**, producing long gaps. The high variability suggests **inconsistent execution paths**.
+
+3. **A  C is suspiciously fast**
+   - Model: average  **7,200s (2h)**, STDEV  **3,600s (1h)**
+   - Why it’s suspicious: the intended flow is R  A  E  P  N  C. Seeing many cases where **Close occurs soon after Assign** suggests either:
+     - **skipped steps** (E/P missing), or
+     - **premature/mistaken closure logging**.
+
+4. **E  N is extremely fast**
+   - Model: average  **300s (5 minutes)**, STDEV  **60s (1 minute)**
+   - Why it’s suspicious: notification should typically depend on approval (P). A 5-minute average suggests **skipped P**, **timestamp conflation**, or **automated notifications** fired immediately after evaluation even if approval hasn’t completed.
+
+---
+
+## Hypotheses for why these anomalies exist
+
+- **Derived/templated event timestamps**
+  - Some activities (especially **P**) may be written with an artificial delay from **R** (or rounded to a schedule), shrinking STDEV and creating apparent regularity.
+
+- **Process steps being skipped or not reliably logged**
+  - Cases with **A  C** (quick close) and **E  N** (quick notify) may reflect missing **E/P** events between them, or events occurring in an unexpected order.
+
+- **Stage-specific queues or operational bottlenecks**
+  - Long **P  N** gaps may come from notification teams, contact center availability, mail/email throttling, or customer verification requirements.
+
+- **Multiple execution paths**
+  - The same activity pair may follow different paths depending on **claim_type**, **region**, **adjuster specialization**, or **resource**. This can inflate variability (P  N) or create apparent tightness (R  P).
+
+- **Timestamp quality / integration effects**
+  - Events might be imported from different systems with inconsistent latencies, causing artificially short or long measured intervals.
+
+---
+
+## Verification using SQL queries (PostgreSQL)
+
+> Notes:
+> - These queries compute, per claim, the **first occurrence of the second activity after the first** activity.
+> - If your `claim_events.resource` contains a name rather than an id, adjust the join to `adjusters` accordingly.
+
+### 1) Empirical stats for **R  P**
+```sql
+WITH e AS (
+  SELECT claim_id, activity, "timestamp", resource
+  FROM claim_events
+  WHERE activity IN ('R','P')
+),
+r AS (
+  SELECT claim_id, "timestamp" AS ts_r, resource AS res_r
+  FROM e
+  WHERE activity = 'R'
+)
+SELECT
+  COUNT(*) AS claim_count,
+  AVG(EXTRACT(EPOCH FROM (p.ts_p - r.ts_r))) AS avg_seconds,
+  STDDEV_SAMP(EXTRACT(EPOCH FROM (p.ts_p - r.ts_r))) AS stdev_seconds,
+  MIN(EXTRACT(EPOCH FROM (p.ts_p - r.ts_r))) AS min_seconds,
+  MAX(EXTRACT(EPOCH FROM (p.ts_p - r.ts_r))) AS max_seconds,
+  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (p.ts_p - r.ts_r))) AS p50,
+  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (p.ts_p - r.ts_r))) AS p90
+FROM r
+JOIN LATERAL (
+  SELECT "timestamp" AS ts_p
+  FROM e
+  WHERE e.claim_id = r.claim_id
+    AND e.activity = 'P'
+    AND e."timestamp" > r.ts_r
+  ORDER BY e."timestamp" ASC
+  LIMIT 1
+) p ON TRUE;
+```
+
+### 2) Empirical stats for **P  N**
+```sql
+WITH e AS (
+  SELECT claim_id, activity, "timestamp", resource
+  FROM claim_events
+  WHERE activity IN ('P','N')
+),
+p AS (
+  SELECT claim_id, "timestamp" AS ts_p, resource AS res_p
+  FROM e
+  WHERE activity = 'P'
+)
+SELECT
+  COUNT(*) AS claim_count,
+  AVG(EXTRACT(EPOCH FROM (n.ts_n - p.ts_p))) AS avg_seconds,
+  STDDEV_SAMP(EXTRACT(EPOCH FROM (n.ts_n - p.ts_p))) AS stdev_seconds,
+  MIN(EXTRACT(EPOCH FROM (n.ts_n - p.ts_p))) AS min_seconds,
+  MAX(EXTRACT(EPOCH FROM (n.ts_n - p.ts_p))) AS max_seconds,
+  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (n.ts_n - p.ts_p))) AS p50,
+  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (n.ts_n - p.ts_p))) AS p90
+FROM p
+JOIN LATERAL (
+  SELECT "timestamp" AS ts_n
+  FROM e
+  WHERE e.claim_id = p.claim_id
+    AND e.activity = 'N'
+    AND e."timestamp" > p.ts_p
+  ORDER BY e."timestamp" ASC
+  LIMIT 1
+) n ON TRUE;
+```
+
+### 3) Empirical stats for **A  C**
+```sql
+WITH e AS (
+  SELECT claim_id, activity, "timestamp"
+  FROM claim_events
+  WHERE activity IN ('A','C')
+),
+a AS (
+  SELECT claim_id, "timestamp" AS ts_a
+  FROM e
+  WHERE activity = 'A'
+)
+SELECT
+  COUNT(*) AS claim_count,
+  AVG(EXTRACT(EPOCH FROM (c.ts_c - a.ts_a))) AS avg_seconds,
+  STDDEV_SAMP(EXTRACT(EPOCH FROM (c.ts_c - a.ts_a))) AS stdev_seconds,
+  MIN(EXTRACT(EPOCH FROM (c.ts_c - a.ts_a))) AS min_seconds,
+  MAX(EXTRACT(EPOCH FROM (c.ts_c - a.ts_a))) AS max_seconds,
+  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (c.ts_c - a.ts_a))) AS p50,
+  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (c.ts_c - a.ts_a))) AS p90
+FROM a
+JOIN LATERAL (
+  SELECT "timestamp" AS ts_c
+  FROM e
+  WHERE e.claim_id = a.claim_id
+    AND e.activity = 'C'
+    AND e."timestamp" > a.ts_a
+  ORDER BY e."timestamp" ASC
+  LIMIT 1
+) c ON TRUE;
+```
+
+### 4) Empirical stats for **E  N**
+```sql
+WITH e AS (
+  SELECT claim_id, activity, "timestamp"
+  FROM claim_events
+  WHERE activity IN ('E','N')
+),
+ev AS (
+  SELECT claim_id, "timestamp" AS ts_e
+  FROM e
+  WHERE activity = 'E'
+)
+SELECT
+  COUNT(*) AS claim_count,
+  AVG(EXTRACT(EPOCH FROM (n.ts_n - ev.ts_e))) AS avg_seconds,
+  STDDEV_SAMP(EXTRACT(EPOCH FROM (n.ts_n - ev.ts_e))) AS stdev_seconds,
+  MIN(EXTRACT(EPOCH FROM (n.ts_n - ev.ts_e))) AS min_seconds,
+  MAX(EXTRACT(EPOCH FROM (n.ts_n - ev.ts_e))) AS max_seconds,
+  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (n.ts_n - ev.ts_e))) AS p50,
+  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (n.ts_n - ev.ts_e))) AS p90
+FROM ev
+JOIN LATERAL (
+  SELECT "timestamp" AS ts_n
+  FROM e
+  WHERE e.claim_id = ev.claim_id
+    AND e.activity = 'N'
+    AND e."timestamp" > ev.ts_e
+  ORDER BY e."timestamp" ASC
+  LIMIT 1
+) n ON TRUE;
+```
+
+---
+
+### 5) Check if **R  P** looks “scheduled” (quantization / near-fixed offsets)
+```sql
+WITH e AS (
+  SELECT claim_id, activity, "timestamp"
+  FROM claim_events
+  WHERE activity IN ('R','P')
+),
+r AS (
+  SELECT claim_id, "timestamp" AS ts_r
+  FROM e WHERE activity='R'
+)
+SELECT
+  -- hour-quantized delay bucket
+  FLOOR(EXTRACT(EPOCH FROM (p.ts_p - r.ts_r)) / 3600) AS delay_hours_floor,
+  COUNT(*) AS claim_count,
+  AVG(EXTRACT(EPOCH FROM (p.ts_p - r.ts_r)) / 3600) AS avg_delay_hours_in_bucket
+FROM r
+JOIN LATERAL (
+  SELECT "timestamp" AS ts_p
+  FROM e
+  WHERE e.claim_id = r.claim_id
+    AND e.activity = 'P'
+    AND e."timestamp" > r.ts_r
+  ORDER BY e."timestamp" ASC
+  LIMIT 1
+) p ON TRUE
+GROUP BY 1
+ORDER BY claim_count DESC
+LIMIT 20;
+```
+
+---
+
+### 6) Find claims where **E  N** is suspiciously fast AND **P is missing between them**
+(Example threshold: N within 10 minutes after E.)
+```sql
+WITH e AS (
+  SELECT claim_id, activity, "timestamp"
+  FROM claim_events
+  WHERE activity IN ('E','P','N')
+),
+ev AS (
+  SELECT claim_id, "timestamp" AS ts_e
+  FROM e WHERE activity='E'
+)
+SELECT
+  ev.claim_id,
+  ev.ts_e,
+  n.ts_n,
+  EXTRACT(EPOCH FROM (n.ts_n - ev.ts_e)) AS seconds_e_to_n
+FROM ev
+JOIN LATERAL (
+  SELECT "timestamp" AS ts_n
+  FROM e
+  WHERE e.claim_id = ev.claim_id
+    AND e.activity='N'
+    AND e."timestamp" > ev.ts_e
+  ORDER BY e."timestamp" ASC
+  LIMIT 1
+) n ON TRUE
+WHERE n.ts_n <= ev.ts_e + INTERVAL '10 minutes'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM e p
+    WHERE p.claim_id = ev.claim_id
+      AND p.activity='P'
+      AND p."timestamp" > ev.ts_e
+      AND p."timestamp" < n.ts_n
+  )
+ORDER BY seconds_e_to_n ASC
+LIMIT 200;
+```
+
+---
+
+### 7) Find claims where **A  C** is suspiciously fast AND **E/P are missing between them**
+(Example threshold: C within 1 hour after A.)
+```sql
+WITH e AS (
+  SELECT claim_id, activity, "timestamp"
+  FROM claim_events
+  WHERE activity IN ('A','E','P','C')
+),
+a AS (
+  SELECT claim_id, "timestamp" AS ts_a
+  FROM e WHERE activity='A'
+)
+SELECT
+  a.claim_id,
+  a.ts_a,
+  c.ts_c,
+  EXTRACT(EPOCH FROM (c.ts_c - a.ts_a)) AS seconds_a_to_c
+FROM a
+JOIN LATERAL (
+  SELECT "timestamp" AS ts_c
+  FROM e
+  WHERE e.claim_id = a.claim_id
+    AND e.activity='C'
+    AND e."timestamp" > a.ts_a
+  ORDER BY e."timestamp" ASC
+  LIMIT 1
+) c ON TRUE
+WHERE c.ts_c <= a.ts_a + INTERVAL '1 hour'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM e mid
+    WHERE mid.claim_id = a.claim_id
+      AND mid.activity IN ('E','P')
+      AND mid."timestamp" > a.ts_a
+      AND mid."timestamp" < c.ts_c
+  )
+ORDER BY seconds_a_to_c ASC
+LIMIT 200;
+```
+
+---
+
+### 8) Find claims where **P  N** is excessively long, and compare with **P  C**
+(Example threshold: PN > 13 days  mean + 3*stdev from the model.)
+```sql
+WITH e AS (
+  SELECT claim_id, activity, "timestamp"
+  FROM claim_events
+  WHERE activity IN ('P','N','C')
+),
+p AS (
+  SELECT claim_id, "timestamp" AS ts_p
+  FROM e WHERE activity='P'
+),
+np AS (
+  SELECT
+    p.claim_id, p.ts_p,
+    n.ts_n
+  FROM p
+  JOIN LATERAL (
+    SELECT "timestamp" AS ts_n
+    FROM e
+    WHERE e.claim_id=p.claim_id AND e.activity='N' AND e."timestamp" > p.ts_p
+    ORDER BY e."timestamp" ASC
+    LIMIT 1
+  ) n ON TRUE
+),
+cp AS (
+  SELECT
+    np.claim_id, np.ts_p, np.ts_n,
+    c.ts_c
+  FROM np
+  JOIN LATERAL (
+    SELECT "timestamp" AS ts_c
+    FROM e
+    WHERE e.claim_id=np.claim_id AND e.activity='C' AND e."timestamp" > np.ts_p
+    ORDER BY e."timestamp" ASC
+    LIMIT 1
+  ) c ON TRUE
+)
+SELECT
+  claim_id,
+  ts_p, ts_n, ts_c,
+  EXTRACT(EPOCH FROM (ts_n - ts_p)) AS seconds_p_to_n,
+  EXTRACT(EPOCH FROM (ts_c - ts_p)) AS seconds_p_to_c
+FROM cp
+WHERE ts_n > ts_p + INTERVAL '13 days'
+ORDER BY seconds_p_to_n DESC
+LIMIT 200;
+```
+
+---
+
+### 9) Detect ordering violations (e.g., N before P, C before N)
+```sql
+SELECT
+  c.claim_id,
+  MAX(CASE WHEN ce.activity='P' THEN ce."timestamp" END) AS ts_p,
+  MAX(CASE WHEN ce.activity='N' THEN ce."timestamp" END) AS ts_n,
+  MAX(CASE WHEN ce.activity='C' THEN ce."timestamp" END) AS ts_c,
+  MAX(CASE WHEN ce.activity='E' THEN ce."timestamp" END) AS ts_e,
+  MAX(CASE WHEN ce.activity='A' THEN ce."timestamp" END) AS ts_a
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id
+GROUP BY c.claim_id
+HAVING
+  -- Notify happens before approval
+  (MAX(CASE WHEN ce.activity='N' THEN ce."timestamp" END) IS NOT NULL
+   AND MAX(CASE WHEN ce.activity='P' THEN ce."timestamp" END) IS NOT NULL
+   AND MAX(CASE WHEN ce.activity='N' THEN ce."timestamp" END) < MAX(CASE WHEN ce.activity='P' THEN ce."timestamp" END))
+  OR
+  -- Close happens before notification
+  (MAX(CASE WHEN ce.activity='C' THEN ce."timestamp" END) IS NOT NULL
+   AND MAX(CASE WHEN ce.activity='N' THEN ce."timestamp" END) IS NOT NULL
+   AND MAX(CASE WHEN ce.activity='C' THEN ce."timestamp" END) < MAX(CASE WHEN ce.activity='N' THEN ce."timestamp" END));
+```
+
+---
+
+### 10) Correlate **E  N quick** anomalies with claim_type and adjuster/resource (via P or E performer)
+```sql
+WITH e AS (
+  SELECT claim_id, activity, "timestamp", resource
+  FROM claim_events
+  WHERE activity IN ('E','P','N')
+),
+ev AS (
+  SELECT claim_id, "timestamp" AS ts_e, resource AS res_e
+  FROM e WHERE activity='E'
+),
+anoms AS (
+  SELECT
+    ev.claim_id, ev.ts_e, ev.res_e,
+    n.ts_n
+  FROM ev
+  JOIN LATERAL (
+    SELECT "timestamp" AS ts_n
+    FROM e
+    WHERE e.claim_id=ev.claim_id AND e.activity='N' AND e."timestamp" > ev.ts_e
+    ORDER BY e."timestamp" ASC
+    LIMIT 1
+  ) n ON TRUE
+  WHERE n.ts_n <= ev.ts_e + INTERVAL '10 minutes'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM e p
+      WHERE p.claim_id=ev.claim_id AND p.activity='P'
+        AND p."timestamp" > ev.ts_e AND p."timestamp" < n.ts_n
+    )
+)
+SELECT
+  cl.claim_type,
+  anoms.res_e AS evaluation_resource,
+  COUNT(*) AS quick_eval_to_notify_missing_approval
+FROM anoms
+JOIN claims cl ON cl.claim_id = anoms.claim_id
+GROUP BY cl.claim_type, anoms.res_e
+ORDER BY quick_eval_to_notify_missing_approval DESC;
+```
+
+---
+
+### 11) Correlate **P  N long** anomalies with claim_type and region (approver performer)
+```sql
+WITH e AS (
+  SELECT claim_id, activity, "timestamp", resource
+  FROM claim_events
+  WHERE activity IN ('P','N')
+),
+p AS (
+  SELECT claim_id, "timestamp" AS ts_p, resource AS res_p
+  FROM e WHERE activity='P'
+),
+pn AS (
+  SELECT
+    p.claim_id, p.ts_p, p.res_p,
+    n.ts_n
+  FROM p
+  JOIN LATERAL (
+    SELECT "timestamp" AS ts_n
+    FROM e
+    WHERE e.claim_id=p.claim_id AND e.activity='N' AND e."timestamp" > p.ts_p
+    ORDER BY e."timestamp" ASC
+    LIMIT 1
+  ) n ON TRUE
+)
+SELECT
+  cl.claim_type,
+  a.region,
+  pn.res_p AS approver_resource,
+  COUNT(*) AS long_p_to_n_claims
+FROM pn
+JOIN claims cl ON cl.claim_id = pn.claim_id
+LEFT JOIN adjusters a
+  ON a.adjuster_id::text = pn.res_p
+   OR a.name ILIKE pn.res_p
+WHERE pn.ts_n > pn.ts_p + INTERVAL '13 days'
+GROUP BY cl.claim_type, a.region, pn.res_p
+ORDER BY long_p_to_n_claims DESC;
+```
+
+---
+
+### 12) Check if **A  C fast** anomalies are actually missing E and P entirely
+```sql
+WITH e AS (
+  SELECT claim_id, activity, "timestamp"
+  FROM claim_events
+  WHERE activity IN ('A','E','P','C')
+),
+a AS (
+  SELECT claim_id, "timestamp" AS ts_a
+  FROM e WHERE activity='A'
+)
+SELECT
+  a.claim_id,
+  a.ts_a,
+  c.ts_c,
+  EXTRACT(EPOCH FROM (c.ts_c - a.ts_a)) AS seconds_a_to_c,
+  -- flags for presence anywhere (not just between)
+  EXISTS (SELECT 1 FROM e x WHERE x.claim_id=a.claim_id AND x.activity='E') AS has_any_e,
+  EXISTS (SELECT 1 FROM e x WHERE x.claim_id=a.claim_id AND x.activity='P') AS has_any_p
+FROM a
+JOIN LATERAL (
+  SELECT "timestamp" AS ts_c
+  FROM e
+  WHERE e.claim_id=a.claim_id AND e.activity='C' AND e."timestamp" > a.ts_a
+  ORDER BY e."timestamp" ASC
+  LIMIT 1
+) c ON TRUE
+WHERE c.ts_c <= a.ts_a + INTERVAL '1 hour'
+ORDER BY seconds_a_to_c ASC
+LIMIT 200;
+```
+
+---
+
+If you want, I can adapt the SQL thresholds to your exact **ZETA** rule (e.g., flag abs(z) > ZETA) and/or adjust the “first subsequent event” logic to “any eventual occurrence within the claim” depending on how your temporal model is defined.

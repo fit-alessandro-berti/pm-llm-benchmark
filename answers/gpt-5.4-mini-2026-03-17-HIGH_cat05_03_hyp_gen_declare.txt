@@ -1,0 +1,220 @@
+## 1) Anomalies in the DECLARE model
+
+### A. Mandatory closure conflicts with evaluation
+- `existence(C)` requires every trace to contain a **Close** event.
+- `noncoexistence(E, C)` forbids **Evaluate** and **Close** from appearing in the same trace.
+
+Taken together, that means any closed claim cannot be evaluated, which is inconsistent with the expected claim lifecycle.
+
+### B. Assignment becomes effectively impossible in valid traces
+- `responded_existence(E, ["A"])` ties **E** and **A** together by co-occurrence.
+- Since **E** cannot coexist with **C**, and **C** is mandatory, any trace containing **A** also becomes invalid indirectly.
+
+So the model does not just block evaluation; it also blocks assignment in compliant traces.
+
+### C. The model allows an overly short path
+- The only strong structural requirements are:
+  - traces start with `R`
+  - traces contain `C`
+  - `C` must come after `R`
+
+This still allows a very short lifecycle like `R -> C`, which skips assignment, evaluation, approval, and notification.
+
+### D. The intended order is not actually enforced
+- `responded_existence(E, ["A"])` does **not** guarantee that `A` happens before `E`.
+- It only suggests co-occurrence.
+- So even if the contradiction above were removed, the model still would not encode the intended flow precisely.
+
+---
+
+## 2) Possible reasons the model ended up this way
+
+### A. Wrong DECLARE template chosen
+A relation meant to say “evaluation happens before closure” may have been encoded as `noncoexistence(E, C)` by mistake.
+
+### B. Policy updates were merged inconsistently
+A newer rule may have required mandatory closure, while an older rule still blocked evaluation from appearing with closure.
+
+### C. Process mining noise or incomplete event extraction
+If the event log was incomplete or labels were mapped incorrectly, the mined model could reflect missing evaluation/assignment records rather than the real process.
+
+### D. Over-simplification for speed or exception handling
+The model may have been intentionally compressed to support faster handling, which can lead to direct receive-to-close behavior and omission of intermediate steps.
+
+### E. Wrong abstraction level
+The model may describe a subset of claims or exception cases rather than the standard claim handling process, but was applied too broadly.
+
+---
+
+## 3) SQL-based investigation strategies
+
+### 3.1 Inspect the trace shapes
+See the actual event sequences per claim:
+
+```sql
+SELECT
+    claim_id,
+    STRING_AGG(activity, ' -> ' ORDER BY timestamp, event_id) AS trace
+FROM claim_events
+GROUP BY claim_id
+ORDER BY claim_id;
+```
+
+This quickly shows whether traces look like `R -> A -> E -> P -> N -> C` or collapse to `R -> C`.
+
+---
+
+### 3.2 Find claims that were closed without evaluation
+Checks the most direct violation of the real process:
+
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE EXISTS (
+    SELECT 1
+    FROM claim_events e
+    WHERE e.claim_id = c.claim_id
+      AND e.activity = 'C'
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events e
+    WHERE e.claim_id = c.claim_id
+      AND e.activity = 'E'
+);
+```
+
+---
+
+### 3.3 Find claims where evaluation and closing coexist
+Checks the explicit conflict implied by the model:
+
+```sql
+SELECT DISTINCT e1.claim_id
+FROM claim_events e1
+JOIN claim_events e2
+  ON e1.claim_id = e2.claim_id
+WHERE e1.activity = 'E'
+  AND e2.activity = 'C';
+```
+
+If you want to see the order too:
+
+```sql
+SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS first_evaluation,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS first_closure
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'C') > 0;
+```
+
+---
+
+### 3.4 Find evaluations that happen before assignment
+This checks whether the process order is respected:
+
+```sql
+WITH first_events AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'A') AS first_assign,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS first_eval
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT claim_id, first_assign, first_eval
+FROM first_events
+WHERE first_eval IS NOT NULL
+  AND (first_assign IS NULL OR first_eval < first_assign);
+```
+
+---
+
+### 3.5 Check whether evaluation is performed by the assigned adjuster
+This assumes `claim_events.resource` stores the person performing the activity and that assignments and evaluations should match.
+
+```sql
+WITH evals AS (
+    SELECT claim_id, event_id, timestamp, resource AS eval_resource
+    FROM claim_events
+    WHERE activity = 'E'
+)
+SELECT
+    e.claim_id,
+    e.timestamp AS eval_time,
+    e.eval_resource,
+    a.assign_resource
+FROM evals e
+LEFT JOIN LATERAL (
+    SELECT ce.resource AS assign_resource
+    FROM claim_events ce
+    WHERE ce.claim_id = e.claim_id
+      AND ce.activity = 'A'
+      AND (ce.timestamp, ce.event_id) <= (e.timestamp, e.event_id)
+    ORDER BY ce.timestamp DESC, ce.event_id DESC
+    LIMIT 1
+) a ON true
+WHERE a.assign_resource IS DISTINCT FROM e.eval_resource;
+```
+
+This flags cases where the evaluator is not the last assigned adjuster before the evaluation.
+
+---
+
+### 3.6 Check whether assigned resources are valid adjusters and match specialization
+If `resource` stores the adjuster name, this verifies assignment quality:
+
+```sql
+SELECT
+    ce.claim_id,
+    ce.timestamp,
+    ce.resource,
+    a.adjuster_id,
+    a.specialization,
+    c.claim_type
+FROM claim_events ce
+JOIN claims c
+  ON c.claim_id = ce.claim_id
+LEFT JOIN adjusters a
+  ON LOWER(a.name) = LOWER(ce.resource)
+WHERE ce.activity = 'A'
+  AND (
+      a.adjuster_id IS NULL
+      OR (
+          c.claim_type ILIKE '%home%' AND a.specialization <> 'home'
+      )
+      OR (
+          c.claim_type ILIKE '%auto%' AND a.specialization <> 'auto'
+      )
+  );
+```
+
+If your system stores adjuster IDs instead of names in `resource`, adapt the join accordingly.
+
+---
+
+### 3.7 Detect direct receive-to-close shortcuts
+This identifies claims that bypass the intermediate stages:
+
+```sql
+SELECT claim_id
+FROM (
+    SELECT
+        claim_id,
+        BOOL_OR(activity = 'R') AS has_r,
+        BOOL_OR(activity = 'C') AS has_c,
+        BOOL_OR(activity IN ('A', 'E', 'P', 'N')) AS has_middle_steps
+    FROM claim_events
+    GROUP BY claim_id
+) s
+WHERE has_r
+  AND has_c
+  AND NOT has_middle_steps;
+```
+
+---
+
+If you want, I can also turn these into a single diagnostic SQL script that outputs one anomaly report per claim.

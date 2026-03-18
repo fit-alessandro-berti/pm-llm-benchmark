@@ -1,0 +1,517 @@
+## 1) Process Discovery and Conformance Checking
+
+### 1.1 Preprocess & integrate data into a unified event log
+
+**Goal:** transform heterogeneous source data (GPS, scanner, dispatch, maintenance) into one or more *process-mining-ready event logs* with consistent timestamps, activity labels, and *case definitions*.
+
+#### A. Decide the “case” granularity (often use 2 views)
+1. **Vehicle-day case (V-Day):**  
+   Used to analyze routing, driving phases, idling, detours, maintenance interruptions, and depot return.
+   - Case ID: `VehicleID + Date` (e.g., `V12-20241205`)
+2. **Package/shipment case (P):**  
+   Used to analyze delivery lifecycle: planned stop  arrival  success/fail  depart  potentially re-attempt.
+   - Case ID: `PackageID` (or package attempt ID if reattempts are separate)
+
+> In practice, many logistics process mining projects use **both** logs: vehicle-day for operational flow, package-level for delivery outcome and customer punctuality.
+
+#### B. Normalize timestamps and entities
+- **Time alignment:** ensure consistent timezone handling across systems.
+- **Deduplication / ordering:** multiple GPS pings may map to one “moving” segment; scanner events may have duplicates or late uploads.
+- **Vehicle/driver identity mapping:** confirm how vehicle-day relates to driver assignment changes.
+
+#### C. Derive standardized activities from raw telemetry
+
+**From GPS (vehicle telemetry):**
+- Build **state transitions**:
+  - `Moving`, `Idle`, `Engine Off`, `Ignition On`, etc.
+- Create **travel segments** and **dwell time**:
+  - A “travel activity” = leaving one geofence and reaching the next.
+  - A “dwell/service delay” = stationary within a stop zone for N minutes.
+- Detect **traffic/slow conditions**:
+  - e.g., `Low Speed Detected` when speed stays below a threshold for a sustained period.
+- Map location to semantic places via **geofencing**:
+  - Depot, Customer Stop IDs, Maintenance Area (if known), “Unknown/unplanned stop”.
+
+**From driver handheld scanners:**
+- Use milestone events as **ground-truth service boundaries**:
+  - `Scan at Depot`, `Arrive Customer`, `Delivery Success`, `Delivery Failed (Attempted)`, `Depart Customer`
+- If GPS arrival is inconsistent, prefer **scanner timestamps** for service start/end and use GPS for travel/idle within the segment.
+
+**From dispatch system (planned plan):**
+- Convert planned route into an **expected activity sequence**:
+  - e.g., `Depart Depot  Service Stop 1  Service Stop 2  ...  Return Depot`
+- Include expected time windows and/or scheduled times (if available):
+  - store planned ETA or time-window constraints at each stop.
+
+**From maintenance logs:**
+- Insert maintenance as activities in the vehicle-day log:
+  - `Planned Maintenance Start/End`
+  - `Unscheduled Repair Start/End`
+  - Then treat the repair period as a “resource unavailability” (vehicle not available for deliveries).
+
+#### D. Integrate into an event log format
+Each event record should contain at least:
+- `case_id` (Vehicle-day or Package)
+- `activity` (standard label)
+- `timestamp` (event time)
+- attributes: `vehicle_id`, `driver_id`, `package_id/stop_id`, `speed stats`, `geo_zone`, `delay_reason` (if inferred), `maintenance_flag`
+
+#### E. Key challenges you will likely encounter
+- **Activity labeling ambiguity:** GPS doesn’t explicitly say “stop reached”; geofences/nearest-stop matching must be robust.
+- **Missing or irregular scanner data:** failed or offline scanners can create gaps.
+- **Time granularity & noise:** low-speed events may be transient; idle could be “traffic stop” vs “waiting for customer”.
+- **Non-comparable planning vs reality:** dispatch may be stop-sequence planned, while actual has merged/unplanned stops.
+- **“Activity explosion” risk:** if you use every GPS state change as an activity, process mining becomes noisy—better to aggregate into meaningful events.
+
+---
+
+### 1.2 Discover the actual end-to-end delivery process
+
+**Process discovery** answers: *What actually happens? In what order and with what timing?*
+
+#### A. Discovery goals for Speedy Parcels
+For **vehicle-day**:
+- `Depart Depot`
+- drive-to-stop segments
+- customer service cycles
+- unplanned stops
+- traffic/slow events
+- maintenance interruptions
+- `Arrive Depot` / end shift
+
+For **package**:
+- `Planned for attempt n`
+- `Arrive Customer`
+- `Delivery Success` OR `Delivery Failed`
+- `Depart Customer`
+- (if failed) `Next attempt scheduled/created`
+
+#### B. Use appropriate discovery techniques
+- **Control-flow discovery** (sequence/order of activities):
+  - discover a model (e.g., Petri net / BPMN-like) from observed traces
+- **Variant discovery**:
+  - group cases into route “variants” (dominant sequences)
+- **Performance-aware discovery**:
+  - incorporate timing (average durations, percentiles) for each transition
+
+#### C. Visualizations that matter operationally
+- **Process map + frequency:** which transitions happen most often
+- **Loop detection:** repeated “attempt delivery” loops for failed deliveries
+- **Sojourn-time heatmaps:** where time is spent (travel vs service vs waiting vs maintenance)
+- **Case comparison overlays:** compare variants with different punctuality outcomes
+
+---
+
+### 1.3 Conformance checking vs planned dispatch routes
+
+**Goal:** measure how far reality deviates from the planned route/plan structure.
+
+#### A. Build a “planned model” from dispatch
+- The dispatch route gives expected ordering (and possibly expected time windows).
+- Create an expected activity sequence:
+  - `Depart Depot  Service Stop 1  ...  Return Depot`
+- Include expected constraints (optional but valuable):
+  - latest acceptable arrival times per stop
+
+#### B. Apply alignment-based conformance checking
+Use techniques like **trace alignment** (token-based replay / alignment) to map actual traces onto the planned model and compute:
+- **missing activities** (planned stop not serviced)
+- **extra activities** (unplanned stops, detours, unexpected maintenance-related activity)
+- **sequence deviations** (order swapped, skipped then later serviced)
+- **timing deviations** (arrived much earlier/later than expected window/ETA)
+
+#### C. Deviations to explicitly look for
+- **Sequence deviations**
+  - stops serviced out of planned order
+  - return-to-depot before all stops done
+- **Unplanned stops**
+  - “unknown stop”, extra customer visits, or potential parking/errand stops
+- **Stop skipping or postponement**
+  - stop not scanned as serviced in that vehicle-day
+- **Timing deviations**
+  - lateness accumulation: early stops on-time  later stop lateness “spillover”
+  - long dwell/wait at customers
+- **Maintenance deviations**
+  - unplanned repairs causing route truncation or re-sequencing
+- **Delivery outcome deviations**
+  - higher-than-planned failure rate on certain routes/times
+
+**Outputs:** conformance metrics at two levels:
+- trace-level (per vehicle-day/package attempt)
+- activity/transition-level (which planned transitions are most violated)
+
+---
+
+## 2) Performance Analysis and Bottleneck Identification
+
+### 2.1 Define KPIs aligned with punctuality and cost
+
+Below are core KPIs that can be computed from the integrated event log.
+
+#### A. Delivery punctuality
+1. **On-Time Delivery Rate (OTD)**
+   - % of deliveries with `ArrivalCustomer` (or `DeliverySuccess`) within customer time window.
+   - From package scanner events + dispatch time windows.
+
+2. **Late Arrival Severity**
+   - Average minutes late: `max(0, actual_arrival - latest_window_end)`.
+
+3. **Delivery Attempt Success Rate**
+   - `#DeliverySuccess / #DeliveryAttempted`
+
+#### B. Time & efficiency
+4. **Average Time per Stop**
+   - Service time = `DepartCustomer - ArriveCustomer` (scanner-based).
+5. **Travel Time per Segment**
+   - Travel time between consecutive serviced stops or geofenced areas.
+6. **Travel-to-Service Ratio**
+   - total travel time / total service time per vehicle-day or per route variant.
+   - Helps identify “too much driving / too little productive service”.
+
+7. **Waiting/Idling Time**
+   - Idle in geofenced region near customers or depot:
+   - derived from GPS state transitions (vehicle `Idle` while within customer geofence).
+
+8. **Idling from Traffic/Slowdowns**
+   - count and duration of `Low Speed Detected` episodes, possibly split by daypart.
+
+#### C. Failure and rework
+9. **Failed Delivery Rate**
+   - `#DeliveryFailed / #DeliveryAttempted`
+10. **Re-attempt Loop Count**
+   - for each package: number of attempts before success.
+
+#### D. Vehicle utilization & maintenance impact
+11. **Vehicle Utilization Rate**
+   - productive time: service time + travel between stops
+   - divided by total shift time (or driving time).
+12. **Maintenance Downtime**
+   - `MaintenanceEnd - MaintenanceStart`, split by planned vs unscheduled.
+
+13. **Fuel Consumption per km / per package**
+   - If fuel is not directly logged, approximate via:
+     - engine on duration, typical consumption curves, or derive from telematics if available.
+   - Otherwise use proxies:
+     - `engine-on time`, `total distance`, `low-speed duration` (stop-and-go increases consumption)
+
+#### E. Shift-level operational cost proxies
+14. **Cost proxy score**
+   - Weighted sum of:
+     - late deliveries (penalty)
+     - maintenance downtime
+     - total travel distance
+     - unscheduled repair count
+
+> You can start with what’s computable reliably (time, distance, downtime, success/failure). Fuel can be added if telemetry exists.
+
+---
+
+### 2.2 Techniques to identify bottlenecks
+
+A “bottleneck” is not only “slow”—it’s where **time/cost accumulates** and constrains throughput (deliveries completed).
+
+#### A. Timing bottleneck discovery (activity/transition-level)
+- **Performance spectrum / handover analysis**
+  - identify transitions with largest average waiting or largest variance:
+    - e.g., `Arrive Customer  Depart Customer` often dominates for specific stops
+- **Sojourn-time & delay decomposition**
+  - split case time into:
+    - travel time, service time, waiting time, maintenance downtime
+- **Bottleneck by transition frequency × impact**
+  - a stop visited often with moderate delay can outweigh a rare extreme delay.
+
+#### B. Bottleneck by resource and context
+- **Driver bottlenecks**
+  - compare dwell time distributions and failure rates per driver
+- **Vehicle type bottlenecks**
+  - maintenance frequency or recurring low-speed episodes by vehicle model
+- **Route/variant bottlenecks**
+  - route variants with high conformance deviation often correlate with late deliveries
+- **Time-of-day / day-of-week bottlenecks**
+  - build a “delay heatmap” by hour and geofence zone
+
+#### C. Quantifying impact
+For each identified bottleneck, quantify:
+- **Contribution to lateness**:
+  - how much of late delivery minutes are “explained” by delay segments
+- **Counterfactual impact (simulation-lite)**
+  - e.g., “if this activity duration reduced by X%, how many more deliveries would fall within time windows?”
+- **Throughput loss**
+  - deliveries completed per vehicle-hour during that segment
+
+---
+
+## 3) Root Cause Analysis for Inefficiencies
+
+The key is to move from *where delays occur*  *why they occur* by comparing patterns across variants and linking them to explanatory drivers.
+
+### 3.1 Candidate root cause hypotheses (mapped to process mining questions)
+
+1. **Suboptimal route planning**
+   - Are certain routes systematically reordered or deviated from plan?
+2. **Inaccurate travel time estimations**
+   - Is late arrival correlated with travel-time variance or predictable slow zones?
+3. **Traffic congestion patterns**
+   - Do low-speed episodes cluster around certain geofences and dayparts?
+4. **High variability of service time at customers**
+   - Are there stops with wide service-time spread? (waiting at door, customer not ready)
+5. **Maintenance breakdown frequency during shifts**
+   - Do unscheduled repairs cause route truncation and cascading lateness?
+6. **Driver behavior/skill differences**
+   - Do some drivers have higher dwell time or failure rate even on similar routes?
+7. **Failed delivery causes re-attempt loops**
+   - Do failures concentrate on specific stops/areas/time windows?
+
+### 3.2 Analyses to validate root causes using process mining
+
+#### A. Variant analysis (high vs low performers)
+- Split cases/variants by outcome:
+  - **High punctuality** vs **low punctuality**
+  - **High success** vs **high failure**
+- Compare:
+  - which activity order differs (sequence deviations)
+  - which transition durations increase (performance differences)
+  - which context attributes differ (time of day, driver, vehicle, route)
+
+This often reveals “structural” causes (route plan not followed due to repeated detours).
+
+#### B. Correlate delay segments with traffic/telemetry indicators
+- Link `Low Speed Detected` episodes to:
+  - subsequent lateness at next stops
+  - increased idling time inside customer geofences
+- If you have external traffic (optional), validate:
+  - delays match recurring congestion corridors.
+
+#### C. Dwell time + failure-loop analysis at customer stops
+- For each stop_id:
+  - distribution of `DepartCustomer - ArriveCustomer`
+  - failure rate and time-of-day dependence
+- Identify:
+  - stops with **high mean dwell** (e.g., parking/search time)
+  - stops with **high failure** (customer absence, access issues)
+
+#### D. Maintenance impact analysis
+- Compare vehicle-days with:
+  - planned maintenance vs unscheduled repair
+- Evaluate:
+  - lateness “recovery” ability (does delay persist or is schedule regained?)
+  - number of delivery stops affected and conformance degradation after maintenance
+
+#### E. Driver profiling (controlled comparisons)
+- Compare drivers on similar routes and times (to reduce confounding).
+- Look for:
+  - higher idle time, longer service time, higher failure rate
+- If driver routes differ, normalize by route variant first (process mining supports grouped comparisons).
+
+---
+
+## 4) Data-Driven Optimization Strategies (at least 3)
+
+Below are **5 concrete strategies**; any 3+ would already be a strong improvement program.
+
+---
+
+### Strategy 1: Dynamic (re-optimized) routing and re-sequencing during execution
+**Targets:** recurring traffic/low-speed bottlenecks and conformance deviations (order changes).  
+**Root causes addressed:** inaccurate ETA/travel time estimates; congestion patterns not captured in static plans.  
+
+**How process mining informs it:**
+- Use discovered variants to identify:
+  - which route segments consistently trigger late arrival
+  - where sequence deviations happen (the “detour triggers”)
+- Build a “delay transition map”:
+  - transitions with worst timing and highest frequency in late variants
+
+**Implementation idea:**
+- At runtime, re-optimize remaining stops using:
+  - discovered historical travel-time distributions by geofence + time-of-day
+  - real-time speed/traffic signals from GPS/telematics
+- Allow “micro-reordering” of next stops within constraints (time windows + capacity).
+
+**Expected KPI impacts:**
+-  On-Time Delivery Rate
+-  Late Arrival Severity
+-  Travel-to-Service ratio (less wasted circulation)
+-  Cascading lateness to later stops
+
+---
+
+### Strategy 2: Territory/route sequencing optimization based on historical stop performance
+**Targets:** inefficient stop order and high failure/dwell hotspots.  
+**Root causes addressed:** poor territory assignment; time-window misalignment; repeated parking/access delays at certain areas.  
+
+**How process mining informs it:**
+- Stop-level analysis:
+  - identify geofences with high dwell time and/or high failure rate
+- Variant clustering:
+  - which route variants correlate with success and low dwell
+- Reconstruct effective “real sequences” from high-performing cases (what worked in practice)
+
+**Implementation idea:**
+- Rebuild dispatch planning using:
+  - historical service-time distributions per stop type/area
+  - clustering customers into better-performing spatial-temporal territories
+- Add rules:
+  - schedule “high parking complexity” areas earlier (when driver time is less constrained)
+  - cluster stops with similar time-window patterns
+
+**Expected KPI impacts:**
+-  On-Time Delivery Rate
+-  Average time per stop / waiting time
+-  Failed delivery rate (if failure hotspots are rescheduled into better time-of-day execution windows)
+
+---
+
+### Strategy 3: Time-window management + proactive customer communication to reduce failed deliveries
+**Targets:** Delivery failures and re-attempt loops (wasted travel + idle time).  
+**Root causes addressed:** customer not home / not ready; late arrival beyond window; insufficient pre-delivery notice.
+
+**How process mining informs it:**
+- Package-level looping analysis:
+  - quantify failure rates by stop_id, area, and time-of-day
+- Determine “failure-attempt timing”:
+  - does failure spike when arrival is consistently too late (or too early, if that matters)?
+- Identify stop classes:
+  - those with long dwell time but still fail  access/parking issue
+  - those with short dwell then fail  customer absence/incorrect entry procedure
+
+**Implementation idea:**
+- Introduce operational playbooks by stop class:
+  - For high “not home” zones: earlier notification and specific delivery instructions
+  - For high “access/parking” zones: required entry steps + designated parking guidance to drivers
+- If feasible: adjust delivery windows or apply “hold/re-schedule” rules to reduce wasted attempts.
+
+**Expected KPI impacts:**
+-  Failed Delivery Rate
+-  Re-attempt loop count
+-  Total travel time per successful delivery
+- Improved OTD (fewer cascading delays)
+
+---
+
+### Strategy 4: Predictive maintenance scheduling using usage patterns and disruption impact
+**Targets:** unscheduled repairs and maintenance-induced route truncation.  
+**Root causes addressed:** maintenance timing not aligned with failure risk; vehicles break under high-stress usage patterns.
+
+**How process mining informs it:**
+- Compare:
+  - unscheduled repair episodes vs preceding vehicle behavior (low speed frequency, idle-heavy driving, sustained driving hours)
+- Identify:
+  - which vehicle-days tend to precede breakdowns
+- Measure:
+  - “maintenance downtime cost” in terms of stops missed/lateness after repair
+
+**Implementation idea:**
+- Shift from calendar-based maintenance to risk-based:
+  - trigger maintenance when telemetry/usage indicators cross thresholds
+- Plan maintenance windows for periods least damaging to route completion.
+
+**Expected KPI impacts:**
+-  Unscheduled maintenance frequency
+-  Maintenance downtime impact
+-  Vehicle utilization
+-  Late deliveries caused by mid-route breakdowns
+
+---
+
+### Strategy 5: Targeted driver coaching using process-mined behavior patterns
+**Targets:** driver-driven inefficiencies (excess dwell, avoidable failures, excessive idling).  
+**Root causes addressed:** skill gaps; inconsistent execution; inefficient parking/stop procedures.
+
+**How process mining informs it:**
+- Driver benchmarking normalized by route variant:
+  - compare service time variance, idle time at customer geofences, and failure rates
+- Identify “execution patterns”:
+  - drivers who systematically arrive but keep long dwell time before depart
+  - drivers who show higher conformance deviations
+
+**Implementation idea:**
+- Create training modules per driver/driver group:
+  - customer approach + parking workflow
+  - scan discipline (reduce missing/late scans)
+  - failure resolution protocol (correct reattempt scheduling)
+
+**Expected KPI impacts:**
+-  Average service + waiting time
+-  Failed Delivery Rate
+- Improved OTD consistency
+
+---
+
+## 5) Operational Constraints and Continuous Monitoring
+
+### 5.1 Accounting for real constraints (working hours, capacity, time windows)
+
+Any optimization must be feasible under:
+- **Driver working hours / labor regulations**
+  - Use vehicle-day case to compute shift start/end and ensure re-optimized routes do not exceed allowable durations.
+  - If re-sequencing increases travel time, it may still be infeasible even if it improves OTD.
+- **Vehicle capacity**
+  - Dispatch provides capacity and assigned packages.
+  - When re-optimizing remaining stops (Strategy 1), preserve package-to-vehicle assignments unless you explicitly allow transfer.
+- **Customer time windows**
+  - Conformance checking already measures violations; use that as input constraints.
+  - In dynamic routing, prioritize feasibility:
+    - do not reorder beyond time-window viability; allow slack only where historically recovered.
+- **Maintenance unavailability**
+  - Treat maintenance windows as “resource down” events and constrain route planning accordingly.
+
+**Practical approach:**  
+Use process mining results to build *constraint-aware rules* (or optimization objectives) rather than “pure” unconstrained route optimization.
+
+---
+
+### 5.2 Continuous monitoring dashboard plan (post-implementation)
+
+**Goal:** ensure improvements are sustained and quickly detect regressions.
+
+#### A. Monitoring layers (recommended)
+1. **Operational control dashboard (daily/shift level)**
+2. **Route/variant performance dashboard (weekly)**
+3. **Driver/vehicle health dashboard (weekly/monthly)**
+
+#### B. Key metrics & process views to track
+**Punctuality**
+- OTD by route variant, driver, and time-of-day
+- Average minutes late (and 90th percentile)
+- Conformance deviation score vs planned
+
+**Time & cost proxies**
+- Travel time vs service time ratio
+- Waiting/idle time distribution at customers
+- Count/duration of low-speed episodes by geofence
+
+**Delivery outcomes**
+- Failed delivery rate by stop class and time-of-day
+- Re-attempt loop count
+
+**Maintenance & reliability**
+- Unscheduled repair rate
+- Maintenance downtime and time-to-recovery (how much lateness persists after repair)
+
+**Exception management**
+- Unplanned stops frequency
+- “Unknown location” events (indicates scanning/GPS issues or routing anomalies)
+
+#### C. Drift and regression detection
+- Compare post-change distributions to baseline:
+  - sudden increase in dwell time or failure rate in a previously good zone
+- Monitor conformance:
+  - are deviations increasing because routing logic changed or because traffic changed?
+
+#### D. Feedback loop
+- Every 2–4 weeks, re-run discovery/conformance to update:
+  - travel-time distributions (for dynamic routing)
+  - stop class risk profiles (for communication/failure mitigation)
+  - predictive maintenance thresholds
+
+---
+
+## Summary: How the program delivers value
+- **Process mining** will turn raw multi-source logs into a coherent view of *actual delivery behavior* (discovery) and deviations from dispatch plans (conformance).
+- **Performance analysis** will pinpoint where time and cost accumulate (bottlenecks).
+- **Root cause analyses** will validate hypotheses by comparing variants, correlating with telemetry, and isolating driver/route/stop impacts.
+- **Data-driven strategies** (dynamic routing, route/territory optimization, failure reduction via time-window + comms, predictive maintenance, and targeted driver coaching) directly target the observed inefficiencies.
+- **Continuous monitoring** ensures optimizations remain effective under evolving conditions (traffic, customer behavior, vehicle wear).
+
+If you want, I can also propose a concrete **data model/event-log schema** (activity naming conventions, case definitions, and how to derive “travel” and “service” events) tailored to the exact fields you have in each system.

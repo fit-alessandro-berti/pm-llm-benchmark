@@ -1,0 +1,218 @@
+## 1) Anomalies (conflicts / unintended execution paths)
+
+Given model constraints:
+
+- **init:** `R`
+- **existence:** `C`
+- **responded_existence:** `E` requires an `A` in the `activities` list
+- **precedence:** `C` requires an `R`
+- **noncoexistence:** `E` must **not** coexist with `C` (i.e., no `E` when `C` occurs / or `E` with `C` is forbidden)
+
+### A. Direct logical contradiction: `E` cannot coexist with `C`, but `C` is guaranteed
+- The model enforces **eventual presence of `C`** for every trace (`existence: C` with support/confidence 1).
+- It also enforces **noncoexistence between `E` and `C`** (`noncoexistence: E ... activities: ["C"]`).
+- Therefore, any trace that includes `E` would be invalid, but the intended process flow includes `E` (Evaluate Claim) before `C` (Close Claim).
+
+**Net effect:** the model can only be consistent if `E` never happens, which undermines the “ideal” flow.
+
+### B. “Responded existence” ties `E` to `A`, but the model still allows (or forces) `E` to be absent
+- `responded_existence: E ... activities: ["A"]` means: if `E` happens, `A` must have happened (in the same trace / corresponding response semantics).
+- However, due to the contradiction in (A), `E` must effectively be absent (otherwise it conflicts with guaranteed `C`).
+
+**Net effect:** the `E -> A` dependency becomes irrelevant in practice, because `E` is prevented from occurring.
+
+### C. Closure (`C`) is required, but evaluation is effectively prohibited
+- Intended flow says: `R -> A -> E -> P -> N -> C`.
+- Current constraints:
+  - Force `C` to exist.
+  - Forbid `E` together with `C`.
+  - Require that `C` comes after `R`.
+- This permits a degenerate trace like `R ... C` with **no evaluation**, which is likely not what you want operationally.
+
+### D. Possible precedence semantics mismatch (depending on DECLARE interpretation)
+- `precedence: C ... activities: ["R"]` suggests `C` cannot occur before `R`.
+- That is consistent with the intended flow, but combined with the above constraints it still allows skipping the rest of the pipeline (`A`, `E`, `P`, `N`).
+
+---
+
+## 2) Hypotheses for why these anomalies exist
+
+1. **Business logic mis-modeled during constraint authoring**
+   - The `noncoexistence(E, C)` constraint may have been added accidentally when the intent was something else (e.g., *precedence* of `E` before `C`, or *response* `E -> C`, or *absence of C before E*).
+   - In other words: `noncoexistence` is likely used incorrectly where `precedence`/`response`/`succession` should have been used.
+
+2. **Incremental policy changes not reflected consistently**
+   - Perhaps there was a policy shift like “do not evaluate if auto-approved” or “auto-close without evaluation,” and only some constraints were updated.
+   - But support/confidence=1 hints the observed log perfectly matches the flawed constraint pattern, suggesting a systemic mismatch rather than rare exceptions.
+
+3. **Data quality / event recording issues**
+   - If `E` events are missing due to instrumentation problems (e.g., evaluation not logged, wrong activity codes, or inconsistent `activity` values), then the mined/derived model may interpret `E` as incompatible with `C`—not because it truly isn’t done, but because it isn’t observed.
+   - Similarly, if `C` is always present (as logs are reliably written on closure) and `E` is sporadically missing, it could force a learned/constructed noncoexistence.
+
+4. **Encoding or mapping errors of activity labels**
+   - If `E` and `C` labels were swapped or truncated (e.g., evaluation recorded under a different code), the constraint learner/author could incorrectly infer contradictions.
+
+5. **Over-constraint due to “support/confidence” assumptions**
+   - If the model is built to be perfectly fitting for a subset of traces (or from a filtered dataset), constraints can become contradictory when generalized.
+   - Example: “In the filtered dataset, traces never contain both `E` and `C`,” leading to `noncoexistence`, but in the full dataset the intended workflow holds.
+
+6. **Performance-driven workflow shortcuts not intended as exceptions**
+   - If operational reality allows closure without evaluation for certain claim types (e.g., low amount straight-through processing), the model might be trying to capture that.  
+   - However, the intended process flow given suggests `E` should generally be present before `C`, so this mismatch is still a red flag.
+
+---
+
+## 3) Verification approaches (SQL investigations)
+
+> Assumptions:
+> - `claim_events.activity` uses exactly the codes `R, A, E, P, N, C` (as in your model).
+> - “Trace” corresponds to a single `claims.claim_id`.
+> - Timestamps can be used to infer ordering (e.g., whether `C` occurs after `E`).
+
+### A. Check if `C` is present for (almost) all claims
+```sql
+SELECT
+  ce_counts.total_claims,
+  ce_counts.with_c_claims,
+  ce_counts.with_c_claims::numeric / ce_counts.total_claims AS c_coverage
+FROM (
+  SELECT
+    (SELECT COUNT(DISTINCT claim_id) FROM claims) AS total_claims,
+    (SELECT COUNT(DISTINCT claim_id)
+     FROM claim_events
+     WHERE activity = 'C') AS with_c_claims
+) ce_counts;
+```
+
+### B. Find claims where `C` occurs (closure), but **no `E` exists**
+(Tests the hypothesis that closure happens without evaluation.)
+```sql
+SELECT
+  c.claim_id,
+  c.customer_id,
+  c.claim_type,
+  c.submission_date
+FROM claims c
+LEFT JOIN claim_events e
+  ON e.claim_id = c.claim_id AND e.activity = 'E'
+WHERE EXISTS (
+  SELECT 1 FROM claim_events x
+  WHERE x.claim_id = c.claim_id AND x.activity = 'C'
+)
+AND e.claim_id IS NULL;
+```
+
+### C. Find claims where both `E` and `C` occur (violating noncoexistence)
+```sql
+SELECT
+  c.claim_id,
+  c.claim_type,
+  c.submission_date,
+  MAX(CASE WHEN ce.activity = 'E' THEN ce.timestamp END) AS last_e_ts,
+  MAX(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) AS last_c_ts
+FROM claims c
+JOIN claim_events ce
+  ON ce.claim_id = c.claim_id
+GROUP BY c.claim_id, c.claim_type, c.submission_date
+HAVING
+  SUM(CASE WHEN ce.activity = 'E' THEN 1 ELSE 0 END) > 0
+  AND SUM(CASE WHEN ce.activity = 'C' THEN 1 ELSE 0 END) > 0;
+```
+
+### D. Quantify frequency of each activity combination: `E` present/absent vs `C` present/absent
+```sql
+SELECT
+  (CASE WHEN e.has_e THEN 'has_E' ELSE 'no_E' END) AS e_flag,
+  (CASE WHEN c.has_c THEN 'has_C' ELSE 'no_C' END) AS c_flag,
+  COUNT(*) AS claims_count
+FROM (
+  SELECT
+    claim_id,
+    MAX(CASE WHEN activity = 'E' THEN 1 ELSE 0 END) AS has_e,
+    MAX(CASE WHEN activity = 'C' THEN 1 ELSE 0 END) AS has_c
+  FROM claim_events
+  WHERE activity IN ('E','C')
+  GROUP BY claim_id
+) x
+JOIN LATERAL (SELECT x.has_e) e(has_e) ON true
+JOIN LATERAL (SELECT x.has_c) c(has_c) ON true
+GROUP BY
+  (CASE WHEN e.has_e THEN 'has_E' ELSE 'no_E' END),
+  (CASE WHEN c.has_c THEN 'has_C' ELSE 'no_C' END)
+ORDER BY claims_count DESC;
+```
+
+### E. Validate the `E -> A` dependency (“responded existence”)
+Find claims with `E` but **no `A`**.
+```sql
+SELECT
+  c.claim_id,
+  c.claim_type,
+  c.submission_date
+FROM claims c
+LEFT JOIN claim_events a
+  ON a.claim_id = c.claim_id AND a.activity = 'A'
+WHERE EXISTS (
+  SELECT 1 FROM claim_events e
+  WHERE e.claim_id = c.claim_id AND e.activity = 'E'
+)
+AND a.claim_id IS NULL;
+```
+
+### F. Validate ordering constraints: if both exist, whether `E` occurs before `C`
+(Helps determine whether you should model `precedence(E, C)` instead of noncoexistence.)
+```sql
+SELECT
+  c.claim_id,
+  MIN(CASE WHEN ce.activity='E' THEN ce.timestamp END) AS first_e_ts,
+  MIN(CASE WHEN ce.activity='C' THEN ce.timestamp END) AS first_c_ts,
+  CASE
+    WHEN MIN(CASE WHEN ce.activity='E' THEN ce.timestamp END) < MIN(CASE WHEN ce.activity='C' THEN ce.timestamp END)
+    THEN 'E_before_C' ELSE 'C_before_E_or_same' END AS ordering_bucket
+FROM claims c
+JOIN claim_events ce
+  ON ce.claim_id = c.claim_id
+WHERE ce.activity IN ('E','C')
+GROUP BY c.claim_id
+HAVING
+  SUM(CASE WHEN ce.activity='E' THEN 1 ELSE 0 END) > 0
+  AND SUM(CASE WHEN ce.activity='C' THEN 1 ELSE 0 END) > 0;
+```
+
+### G. Check whether `C` always occurs after `R` (the `precedence(C, R)` rule)
+Find claims where `C` exists but `R` either missing or occurs after `C`.
+```sql
+SELECT
+  c.claim_id,
+  c.claim_type,
+  MIN(CASE WHEN ce.activity='R' THEN ce.timestamp END) AS first_r_ts,
+  MIN(CASE WHEN ce.activity='C' THEN ce.timestamp END) AS first_c_ts
+FROM claims c
+LEFT JOIN claim_events ce
+  ON ce.claim_id = c.claim_id
+  AND ce.activity IN ('R','C')
+GROUP BY c.claim_id, c.claim_type
+HAVING
+  SUM(CASE WHEN ce.activity='C' THEN 1 ELSE 0 END) > 0
+  AND (
+    SUM(CASE WHEN ce.activity='R' THEN 1 ELSE 0 END) = 0
+    OR MIN(CASE WHEN ce.activity='R' THEN ce.timestamp END) > MIN(CASE WHEN ce.activity='C' THEN ce.timestamp END)
+  );
+```
+
+### H. Event “resource” sanity check around `E` and `C`
+If `resource` indicates adjusters/system, verify whether `E` is logged by the expected adjusters or differs across traces.
+```sql
+SELECT
+  ce.activity,
+  ce.resource,
+  COUNT(*) AS event_count
+FROM claim_events ce
+WHERE ce.activity IN ('E','C')
+GROUP BY ce.activity, ce.resource
+ORDER BY event_count DESC;
+```
+
+---
+
+If you want, I can also propose a “corrected” DECLARE constraint set that matches your intended flow (`E` before `C`, and `C` implies earlier `R`, etc.), but the above queries will first tell you whether the anomalies are real in the event log or caused by instrumentation/mapping issues.

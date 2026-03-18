@@ -1,0 +1,413 @@
+Below are likely anomalies/undesirable behaviors I can infer from the event log patterns you provided, plus hypotheses for *why* they might occur and SQL queries you can run to investigate each one (using `order_event_log`, and optionally `orders`/`resources`). I’m assuming “normal” is:
+
+1) Register Order  2) Perform Credit Check  3) Validate Stock  4) Confirm Shipment  5) Ship Goods  6) Issue Invoice  7) Receive Payment.
+
+---
+
+## 1) Event ordering violations (workflow not following the expected sequence)
+
+### What looks anomalous
+- **Case 1002:** `Confirm Shipment` occurs *before* `Perform Credit Check`  
+- **Case 1004:** `Receive Payment` occurs *before* `Issue Invoice` and before `Confirm Shipment`
+
+These suggest the workflow is not strictly enforced in ordering, or events are recorded out of sequence.
+
+### Hypotheses
+- **Asynchronous systems**: Events are logged when actions are initiated/completed in different services; timestamps may represent different “clock moments”.
+- **Partial failure/retry logic**: Steps can be retried, and “later” attempts may be logged earlier due to latency or batch processing.
+- **Policy enforcement gap**: Some statuses might be allowed to proceed (e.g., shipment confirmation) without credit approval for certain order types.
+- **Incorrect logging**: Timestamp mapping to the wrong business milestone.
+
+### SQL to check relative ordering per case
+```sql
+WITH seq AS (
+  SELECT
+    case_id,
+    activity,
+    MIN(timestamp) AS ts
+  FROM order_event_log
+  GROUP BY case_id, activity
+),
+pairs AS (
+  SELECT
+    a.case_id,
+    a.ts AS ts_a, b.ts AS ts_b,
+    a.activity AS activity_a,
+    b.activity AS activity_b
+  FROM seq a
+  JOIN seq b ON a.case_id = b.case_id
+)
+SELECT *
+FROM pairs
+WHERE (activity_a = 'Confirm Shipment' AND activity_b = 'Perform Credit Check' AND ts_a < ts_b)
+   OR (activity_a = 'Receive Payment' AND activity_b = 'Issue Invoice' AND ts_a < ts_b)
+   OR (activity_a = 'Issue Invoice' AND activity_b = 'Receive Payment' AND ts_a > ts_b);
+```
+
+### SQL to summarize “first occurrence” order violations against a rule set
+```sql
+WITH firsts AS (
+  SELECT
+    case_id,
+    MIN(timestamp) FILTER (WHERE activity='Register Order') AS t1,
+    MIN(timestamp) FILTER (WHERE activity='Perform Credit Check') AS t2,
+    MIN(timestamp) FILTER (WHERE activity='Validate Stock') AS t3,
+    MIN(timestamp) FILTER (WHERE activity='Confirm Shipment') AS t4,
+    MIN(timestamp) FILTER (WHERE activity='Ship Goods') AS t5,
+    MIN(timestamp) FILTER (WHERE activity='Issue Invoice') AS t6,
+    MIN(timestamp) FILTER (WHERE activity='Receive Payment') AS t7
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT *
+FROM firsts
+WHERE
+  (t4 IS NOT NULL AND t2 IS NOT NULL AND t4 < t2) -- confirm before credit
+  OR (t7 IS NOT NULL AND t6 IS NOT NULL AND t7 < t6) -- payment before invoice
+  OR (t6 IS NOT NULL AND t5 IS NOT NULL AND t6 < t5); -- invoice before ship
+```
+
+---
+
+## 2) Missing steps (incomplete workflow traces)
+
+### What looks anomalous
+- **Case 1004:** credit check and validate stock are not shown before shipment/invoice/payment (at least not in the sample).
+
+### Hypotheses
+- Steps may still occur but weren’t included in the provided extract (data retention/window issue).
+- Some order types bypass steps.
+- Logging/integration failure prevented some events from being recorded.
+
+### SQL to find cases missing required activities
+```sql
+SELECT
+  case_id,
+  COUNT(*) FILTER (WHERE activity='Perform Credit Check') AS has_credit,
+  COUNT(*) FILTER (WHERE activity='Validate Stock') AS has_stock,
+  COUNT(*) FILTER (WHERE activity='Confirm Shipment') AS has_confirm,
+  COUNT(*) FILTER (WHERE activity='Ship Goods') AS has_ship,
+  COUNT(*) FILTER (WHERE activity='Issue Invoice') AS has_invoice,
+  COUNT(*) FILTER (WHERE activity='Receive Payment') AS has_payment
+FROM order_event_log
+WHERE case_id IS NOT NULL
+GROUP BY case_id;
+```
+
+### SQL to list cases missing any “required” step
+```sql
+WITH req AS (
+  SELECT
+    case_id,
+    BOOL_OR(activity='Perform Credit Check') AS has_credit,
+    BOOL_OR(activity='Validate Stock') AS has_stock,
+    BOOL_OR(activity='Confirm Shipment') AS has_confirm,
+    BOOL_OR(activity='Ship Goods') AS has_ship,
+    BOOL_OR(activity='Issue Invoice') AS has_invoice,
+    BOOL_OR(activity='Receive Payment') AS has_payment
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT *
+FROM req
+WHERE NOT has_credit OR NOT has_stock OR NOT has_confirm OR NOT has_ship OR NOT has_invoice OR NOT has_payment;
+```
+
+---
+
+## 3) Duplicate or conflicting events (multiple logs for same activity)
+
+### What looks anomalous
+Your sample shows one event per activity per case, but real data often has duplicates (e.g., “Issue Invoice” could be regenerated).
+
+### Hypotheses
+- **Retries**: downstream failures cause repeated logging.
+- **Edits/corrections**: invoice reissued, shipment re-confirmed.
+- **Idempotency not enforced**: repeated triggers create multiple records.
+
+### SQL to detect multiple occurrences per case+activity
+```sql
+SELECT
+  case_id,
+  activity,
+  COUNT(*) AS cnt,
+  MIN(timestamp) AS first_ts,
+  MAX(timestamp) AS last_ts
+FROM order_event_log
+GROUP BY case_id, activity
+HAVING COUNT(*) > 1
+ORDER BY cnt DESC, case_id, activity;
+```
+
+---
+
+## 4) Unusually fast or negative durations between steps
+
+### What looks anomalous
+- If payment occurs before invoice (as in case 1004), that implies **negative duration** between those steps.
+
+### Hypotheses
+- Timestamp mismatches (event logged at the wrong moment).
+- Out-of-order event ingestion.
+- Manual overrides or bulk adjustments.
+
+### SQL to compute step-to-step durations
+```sql
+WITH firsts AS (
+  SELECT
+    case_id,
+    MIN(timestamp) FILTER (WHERE activity='Issue Invoice') AS t6,
+    MIN(timestamp) FILTER (WHERE activity='Receive Payment') AS t7,
+    MIN(timestamp) FILTER (WHERE activity='Confirm Shipment') AS t4,
+    MIN(timestamp) FILTER (WHERE activity='Ship Goods') AS t5,
+    MIN(timestamp) FILTER (WHERE activity='Perform Credit Check') AS t2
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT
+  case_id,
+  EXTRACT(EPOCH FROM (t7 - t6)) AS seconds_payment_minus_invoice,
+  EXTRACT(EPOCH FROM (t5 - t4)) AS seconds_ship_minus_confirm,
+  EXTRACT(EPOCH FROM (t2 - t2)) AS dummy
+FROM firsts
+WHERE t6 IS NOT NULL AND t7 IS NOT NULL
+  AND (t7 < t6);
+```
+
+---
+
+## 5) Resource/role anomalies (events done by unexpected departments/roles)
+
+### What looks anomalous
+- If “Receive Payment” should always be Finance (Cashier), but data might show different resources/roles.
+
+Your sample appears consistent, but this is still worth testing—especially for cases with ordering issues (like case 1004).
+
+### Hypotheses
+- Misconfigured RBAC (role assignments).
+- Manual interventions by staff outside the normal process.
+- Data quality issues: `resource` strings not normalized / inconsistent.
+
+### SQL: verify role/department per activity
+```sql
+SELECT
+  el.activity,
+  r.role,
+  r.department,
+  COUNT(*) AS cnt
+FROM order_event_log el
+LEFT JOIN resources r
+  ON r.resource_id = el.resource
+GROUP BY el.activity, r.role, r.department
+ORDER BY el.activity, cnt DESC;
+```
+
+### SQL: find cases where an activity is performed by “unexpected” departments
+(You can tailor the expected mapping; below is a starting assumption.)
+```sql
+SELECT
+  el.case_id,
+  el.activity,
+  el.resource,
+  r.department
+FROM order_event_log el
+LEFT JOIN resources r ON r.resource_id = el.resource
+WHERE
+  (el.activity IN ('Perform Credit Check','Issue Invoice','Receive Payment') AND r.department <> 'Finance')
+  OR
+  (el.activity IN ('Validate Stock','Ship Goods') AND r.department <> 'Logistics')
+  OR
+  (el.activity IN ('Register Order','Ship Goods','Confirm Shipment','Issue Invoice') AND r.department IS NULL)
+ORDER BY el.case_id, el.activity;
+```
+
+---
+
+## 6) Activity performed by multiple resources (possible ownership issues)
+
+### What looks anomalous
+Not in the sample, but sometimes the same activity is logged by many different resources for one case.
+
+### Hypotheses
+- Transfers between agents due to workload/switching.
+- Lack of event “owner” tracking.
+- Manual overrides.
+
+### SQL to see resource diversity per case/activity
+```sql
+SELECT
+  case_id,
+  activity,
+  COUNT(DISTINCT resource) AS distinct_resources,
+  ARRAY_AGG(DISTINCT resource ORDER BY resource) AS resources
+FROM order_event_log
+GROUP BY case_id, activity
+HAVING COUNT(DISTINCT resource) > 1
+ORDER BY distinct_resources DESC;
+```
+
+---
+
+## 7) Order-type dependent workflow deviations
+
+### What looks anomalous
+Case 1002 is `priority`. Some organizations allow expedited flows (e.g., reserve shipment sooner), which could explain earlier `Confirm Shipment`.
+
+Case 1004 is `standard` yet shows a major order-sequence inversion.
+
+### Hypotheses
+- Priority orders are processed with different constraints (e.g., pre-authorization).
+- Standard orders might have exceptional handling (manual processing) or logging issues.
+
+### SQL: compare ordering violations by order_type
+```sql
+WITH firsts AS (
+  SELECT
+    el.case_id,
+    MIN(timestamp) FILTER (WHERE activity='Perform Credit Check') AS t2,
+    MIN(timestamp) FILTER (WHERE activity='Confirm Shipment') AS t4,
+    MIN(timestamp) FILTER (WHERE activity='Issue Invoice') AS t6,
+    MIN(timestamp) FILTER (WHERE activity='Receive Payment') AS t7
+  FROM order_event_log el
+  GROUP BY el.case_id
+)
+SELECT
+  o.order_type,
+  COUNT(*) AS cases,
+  SUM(CASE WHEN t4 IS NOT NULL AND t2 IS NOT NULL AND t4 < t2 THEN 1 ELSE 0 END) AS confirm_before_credit,
+  SUM(CASE WHEN t7 IS NOT NULL AND t6 IS NOT NULL AND t7 < t6 THEN 1 ELSE 0 END) AS payment_before_invoice
+FROM firsts f
+JOIN orders o ON o.case_id = f.case_id
+GROUP BY o.order_type
+ORDER BY confirm_before_credit DESC, payment_before_invoice DESC;
+```
+
+---
+
+## 8) Cases with payment recorded “too early” (possible manual payment posting or reconciliation)
+
+### What looks anomalous
+Case 1004 has payment almost immediately and before invoice/shipment confirmation. That can happen if:
+- payment is collected upfront (advance payment), but then invoice/event order should reflect that pattern;
+- payment posting job runs asynchronously and logs “receive payment” based on a bank reconciliation feed.
+
+### Hypotheses
+- Payment events driven by external system reconciliation (bank feed) not tied to order workflow milestones.
+- Partial shipment or cancellation/reversal logic not modeled.
+- Manual posting.
+
+### SQL: show timing from Register Order to Payment and check whether invoice exists
+```sql
+WITH firsts AS (
+  SELECT
+    case_id,
+    MIN(timestamp) FILTER (WHERE activity='Register Order') AS t1,
+    MIN(timestamp) FILTER (WHERE activity='Issue Invoice') AS t6,
+    MIN(timestamp) FILTER (WHERE activity='Receive Payment') AS t7
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT
+  f.case_id,
+  o.order_type,
+  o.order_value,
+  f.t1,
+  f.t6,
+  f.t7,
+  EXTRACT(EPOCH FROM (f.t7 - f.t1)) AS seconds_register_to_payment
+FROM firsts f
+JOIN orders o ON o.case_id = f.case_id
+WHERE f.t7 IS NOT NULL
+ORDER BY seconds_register_to_payment ASC;
+```
+
+---
+
+## 9) Check for out-of-window ingestion / timezone issues
+
+### What looks anomalous
+If ordering violations occur broadly, this can be explained by timezone conversions or inconsistent timestamp sources.
+
+### Hypotheses
+- Mixed timezone storage (UTC vs local).
+- Different services writing timestamps with different timezone handling.
+- `timestamp` column represents “event time” vs “ingestion time” inconsistently.
+
+### SQL: inspect min/max times and “day boundary” characteristics
+```sql
+SELECT
+  case_id,
+  MIN(timestamp) AS first_activity_ts,
+  MAX(timestamp) AS last_activity_ts,
+  COUNT(*) AS total_events,
+  MIN(activity) AS dummy
+FROM order_event_log
+GROUP BY case_id
+ORDER BY first_activity_ts DESC;
+```
+
+### SQL: check whether violations concentrate in certain time periods
+```sql
+WITH firsts AS (
+  SELECT
+    el.case_id,
+    MIN(timestamp) FILTER (WHERE activity='Register Order') AS t1,
+    MIN(timestamp) FILTER (WHERE activity='Issue Invoice') AS t6,
+    MIN(timestamp) FILTER (WHERE activity='Receive Payment') AS t7
+  FROM order_event_log el
+  GROUP BY el.case_id
+)
+SELECT
+  DATE_TRUNC('day', t1) AS register_day,
+  COUNT(*) AS cases,
+  SUM(CASE WHEN t7 < t6 THEN 1 ELSE 0 END) AS payment_before_invoice_cases
+FROM firsts
+WHERE t1 IS NOT NULL AND t6 IS NOT NULL AND t7 IS NOT NULL
+GROUP BY DATE_TRUNC('day', t1)
+ORDER BY register_day;
+```
+
+---
+
+## 10) Investigate the specific problematic cases (1002, 1004) in full detail
+
+### SQL: full event timeline for selected case_ids
+```sql
+SELECT
+  el.case_id,
+  el.event_id,
+  el.activity,
+  el.timestamp,
+  el.resource,
+  r.role,
+  r.department,
+  el.additional_info
+FROM order_event_log el
+LEFT JOIN resources r ON r.resource_id = el.resource
+WHERE el.case_id IN (1002, 1004)
+ORDER BY el.case_id, el.timestamp, el.event_id;
+```
+
+### SQL: compare all cases that have the same inversion pattern as case 1004
+```sql
+WITH firsts AS (
+  SELECT
+    case_id,
+    MIN(timestamp) FILTER (WHERE activity='Issue Invoice') AS t6,
+    MIN(timestamp) FILTER (WHERE activity='Receive Payment') AS t7,
+    MIN(timestamp) FILTER (WHERE activity='Confirm Shipment') AS t4
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT f.case_id, o.order_type, o.order_value, f.t4, f.t6, f.t7
+FROM firsts f
+JOIN orders o ON o.case_id = f.case_id
+WHERE f.t7 < f.t6
+ORDER BY f.t7 - f.t6 ASC;
+```
+
+---
+
+If you want, I can also:
+1) turn the “normal flow” into a generic SQL validator (finite-state / expected-next-step checks), and/or  
+2) propose a scorecard query that ranks cases by severity of anomalies (missing steps, ordering inversions, extreme durations, resource deviations).

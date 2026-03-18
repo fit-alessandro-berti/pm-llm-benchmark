@@ -1,0 +1,256 @@
+The main irregularities are:
+
+### Notable anomalies
+- **R  P**: The average is about **25 hours** with a **very small spread**. That kind of consistency can point to a fixed scheduling rule, batch approval, or timestamp rounding rather than natural process variation.
+- **P  N**: An average of **7 days** with a **large standard deviation** suggests unstable notification timing, likely caused by backlog, manual handling, or delayed outbound communication.
+- **A  C**: Closing claims about **2 hours after assignment** is very fast and may indicate claims being closed without the full expected path being executed.
+- **E  N**: About **5 minutes** from evaluation to notification is extremely quick unless notification is fully automated.
+- **E  C**: The combination of a short mean and fairly wide spread can indicate mixed behavior: some claims follow a normal path, while others are fast-tracked or skip steps.
+
+### Possible explanations
+- **Automated or batch-driven actions**  
+  Approval or notification may be triggered by a scheduled job, causing unnaturally regular delays.
+- **Manual backlog / workload spikes**  
+  Especially plausible for the long and variable **P  N** interval.
+- **Missing or incomplete event logging**  
+  If some intermediate steps are not recorded, the model will show misleadingly short transitions.
+- **Fast-track or exception handling**  
+  Certain claim types may be closed quickly after assignment or evaluation.
+- **Timestamp granularity issues**  
+  If timestamps are rounded to the hour or minute, the standard deviation can look artificially small.
+- **Resource-specific behavior**  
+  One adjuster, team, region, or notification service may be driving the anomaly.
+
+---
+
+## SQL verification queries
+
+Below is a reusable CTE that extracts the first timestamp for each activity per claim.  
+If your event log can contain repeated activities, you can adapt it to use the specific occurrence you want.
+
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS r_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS a_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS e_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS p_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS n_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS c_ts
+  FROM claim_events
+  GROUP BY claim_id
+),
+assign_evt AS (
+  SELECT DISTINCT ON (claim_id)
+    claim_id,
+    resource AS assign_resource,
+    timestamp AS a_ts
+  FROM claim_events
+  WHERE activity = 'A'
+  ORDER BY claim_id, timestamp
+)
+```
+
+### 1) Claims where **R  P** is anomalous
+Flags claims whose receive-to-approve duration is far from the model average.
+
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS r_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS p_ts
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  c.claim_id,
+  c.claim_type,
+  c.claim_amount,
+  fe.r_ts,
+  fe.p_ts,
+  EXTRACT(EPOCH FROM (fe.p_ts - fe.r_ts)) AS actual_seconds
+FROM first_events fe
+JOIN claims c USING (claim_id)
+WHERE fe.r_ts IS NOT NULL
+  AND fe.p_ts IS NOT NULL
+  AND ABS(EXTRACT(EPOCH FROM (fe.p_ts - fe.r_ts)) - 90000) > 3 * 3600
+ORDER BY actual_seconds DESC;
+```
+
+### 2) Claims where **P  N** is unusually long or short
+Useful for identifying delayed notifications and backlog.
+
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS p_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS n_ts
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  c.claim_id,
+  c.claim_type,
+  c.customer_id,
+  fe.p_ts,
+  fe.n_ts,
+  EXTRACT(EPOCH FROM (fe.n_ts - fe.p_ts)) AS actual_seconds
+FROM first_events fe
+JOIN claims c USING (claim_id)
+WHERE fe.p_ts IS NOT NULL
+  AND fe.n_ts IS NOT NULL
+  AND ABS(EXTRACT(EPOCH FROM (fe.n_ts - fe.p_ts)) - 604800) > 3 * 172800
+ORDER BY actual_seconds DESC;
+```
+
+If you specifically want to inspect the very long cases:
+
+```sql
+... AND (fe.n_ts - fe.p_ts) > INTERVAL '9 days'
+```
+
+### 3) Claims closed very quickly after assignment, with no intermediate E/P/N events
+This checks whether claims are being closed too early or skipping steps.
+
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS a_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS c_ts
+  FROM claim_events
+  GROUP BY claim_id
+),
+assign_evt AS (
+  SELECT DISTINCT ON (claim_id)
+    claim_id,
+    resource AS assign_resource,
+    timestamp AS a_ts
+  FROM claim_events
+  WHERE activity = 'A'
+  ORDER BY claim_id, timestamp
+)
+SELECT
+  c.claim_id,
+  c.claim_type,
+  c.submission_date,
+  ae.assign_resource,
+  adj.name AS adjuster_name,
+  adj.region,
+  fe.a_ts,
+  fe.c_ts,
+  EXTRACT(EPOCH FROM (fe.c_ts - fe.a_ts)) AS actual_seconds
+FROM first_events fe
+JOIN claims c USING (claim_id)
+LEFT JOIN assign_evt ae USING (claim_id)
+LEFT JOIN adjusters adj
+  ON adj.name = ae.assign_resource
+  OR adj.adjuster_id::text = ae.assign_resource
+WHERE fe.a_ts IS NOT NULL
+  AND fe.c_ts IS NOT NULL
+  AND fe.c_ts - fe.a_ts <= INTERVAL '2 hours'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events e
+    WHERE e.claim_id = fe.claim_id
+      AND e.timestamp > fe.a_ts
+      AND e.timestamp < fe.c_ts
+      AND e.activity IN ('E', 'P', 'N')
+  )
+ORDER BY actual_seconds;
+```
+
+### 4) Claims where **E  N** is too fast
+This helps find cases where notification may be automated or logging may be incomplete.
+
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS e_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS n_ts
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  c.claim_id,
+  c.claim_type,
+  fe.e_ts,
+  fe.n_ts,
+  EXTRACT(EPOCH FROM (fe.n_ts - fe.e_ts)) AS actual_seconds
+FROM first_events fe
+JOIN claims c USING (claim_id)
+WHERE fe.e_ts IS NOT NULL
+  AND fe.n_ts IS NOT NULL
+  AND ABS(EXTRACT(EPOCH FROM (fe.n_ts - fe.e_ts)) - 300) > 3 * 60
+ORDER BY actual_seconds;
+```
+
+### 5) Correlate timing anomalies with claim type and region
+This is useful to see whether a specific segment drives the anomalies.
+
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS r_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'A') AS a_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'E') AS e_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS p_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'N') AS n_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'C') AS c_ts
+  FROM claim_events
+  GROUP BY claim_id
+),
+assign_evt AS (
+  SELECT DISTINCT ON (claim_id)
+    claim_id,
+    resource AS assign_resource,
+    timestamp AS a_ts
+  FROM claim_events
+  WHERE activity = 'A'
+  ORDER BY claim_id, timestamp
+)
+SELECT
+  c.claim_type,
+  COALESCE(adj.region, 'unknown') AS region,
+  COALESCE(adj.specialization, 'unknown') AS specialization,
+  COUNT(*) AS claims,
+  AVG(EXTRACT(EPOCH FROM (fe.p_ts - fe.r_ts))) FILTER (WHERE fe.r_ts IS NOT NULL AND fe.p_ts IS NOT NULL) AS avg_r_to_p_sec,
+  AVG(EXTRACT(EPOCH FROM (fe.n_ts - fe.p_ts))) FILTER (WHERE fe.p_ts IS NOT NULL AND fe.n_ts IS NOT NULL) AS avg_p_to_n_sec,
+  AVG(EXTRACT(EPOCH FROM (fe.c_ts - fe.a_ts))) FILTER (WHERE fe.a_ts IS NOT NULL AND fe.c_ts IS NOT NULL) AS avg_a_to_c_sec
+FROM first_events fe
+JOIN claims c USING (claim_id)
+LEFT JOIN assign_evt ae USING (claim_id)
+LEFT JOIN adjusters adj
+  ON adj.name = ae.assign_resource
+  OR adj.adjuster_id::text = ae.assign_resource
+GROUP BY c.claim_type, COALESCE(adj.region, 'unknown'), COALESCE(adj.specialization, 'unknown')
+ORDER BY avg_p_to_n_sec DESC NULLS LAST;
+```
+
+### 6) Check whether the suspiciously low variance is caused by rounding or batching
+If many durations cluster around exact hours or days, that supports a scheduling artifact hypothesis.
+
+```sql
+WITH first_events AS (
+  SELECT
+    claim_id,
+    MIN(timestamp) FILTER (WHERE activity = 'R') AS r_ts,
+    MIN(timestamp) FILTER (WHERE activity = 'P') AS p_ts
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT
+  ROUND(EXTRACT(EPOCH FROM (p_ts - r_ts)) / 3600.0, 2) AS hours_between_r_and_p,
+  COUNT(*) AS claims
+FROM first_events
+WHERE r_ts IS NOT NULL AND p_ts IS NOT NULL
+GROUP BY 1
+ORDER BY claims DESC, hours_between_r_and_p;
+```
+
+If you want, I can also turn these into a single anomaly-detection SQL script that outputs one row per claim with flags for each suspicious interval.

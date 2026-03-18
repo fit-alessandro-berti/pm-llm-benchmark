@@ -1,0 +1,329 @@
+Below are **plausible anomalies** visible in the provided event log, **why they might happen**, and **PostgreSQL SQL queries** to investigate each hypothesis (using `order_event_log`, and when useful, `orders` + `resources`).
+
+---
+
+## 1) Step-order violations (process activities occur in the “wrong” order)
+
+### Evidence (from your examples)
+- **case_id = 1002**: *Confirm Shipment* and *Ship Goods* occur **before** *Perform Credit Check* and *Validate Stock*.
+- **case_id = 1003**: *Ship Goods* occurs **before** *Confirm Shipment*.
+- **case_id = 1004**: *Receive Payment* occurs **before** *Issue Invoice*, and credit/stock steps appear missing.
+
+### Why this might happen (hypotheses)
+- Events are logged from **multiple services** running concurrently (race conditions / asynchronous writes).
+- **Manual overrides** or “fast track” logic lets orders move forward before other checks complete.
+- **Event ingestion/indexing bug** (timestamps not written consistently, clock skew, or wrong timestamp field).
+- Failures in some steps cause retries/alternative paths, but the log doesn’t record “failure/cancel” steps.
+
+### SQL A — Detect any case where step numbers decrease over time
+```sql
+WITH mapped AS (
+  SELECT
+    case_id,
+    event_id,
+    activity,
+    "timestamp",
+    CASE activity
+      WHEN 'Register Order' THEN 1
+      WHEN 'Perform Credit Check' THEN 2
+      WHEN 'Validate Stock' THEN 3
+      WHEN 'Confirm Shipment' THEN 4
+      WHEN 'Ship Goods' THEN 5
+      WHEN 'Issue Invoice' THEN 6
+      WHEN 'Receive Payment' THEN 7
+      ELSE NULL
+    END AS step_no
+  FROM order_event_log
+),
+ordered AS (
+  SELECT
+    *,
+    LAG(step_no) OVER (
+      PARTITION BY case_id
+      ORDER BY "timestamp", event_id
+    ) AS prev_step_no
+  FROM mapped
+  WHERE step_no IS NOT NULL
+)
+SELECT
+  case_id,
+  prev_step_no,
+  step_no,
+  activity,
+  "timestamp"
+FROM ordered
+WHERE prev_step_no IS NOT NULL
+  AND step_no < prev_step_no
+ORDER BY case_id, "timestamp";
+```
+
+### SQL B — Find specific “wrong precedence” pairs (payment before invoice, ship before confirm, etc.)
+```sql
+WITH per_case AS (
+  SELECT
+    case_id,
+    MIN("timestamp") FILTER (WHERE activity='Perform Credit Check')   AS credit_ts,
+    MIN("timestamp") FILTER (WHERE activity='Validate Stock')        AS stock_ts,
+    MIN("timestamp") FILTER (WHERE activity='Confirm Shipment')     AS confirm_ts,
+    MIN("timestamp") FILTER (WHERE activity='Ship Goods')           AS ship_ts,
+    MIN("timestamp") FILTER (WHERE activity='Issue Invoice')        AS invoice_ts,
+    MIN("timestamp") FILTER (WHERE activity='Receive Payment')      AS payment_ts
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT *
+FROM per_case
+WHERE
+  (payment_ts IS NOT NULL AND invoice_ts IS NOT NULL AND payment_ts < invoice_ts)
+  OR
+  (ship_ts IS NOT NULL AND confirm_ts IS NOT NULL AND ship_ts < confirm_ts)
+  OR
+  (confirm_ts IS NOT NULL AND credit_ts IS NOT NULL AND confirm_ts < credit_ts)
+  OR
+  (ship_ts IS NOT NULL AND stock_ts IS NOT NULL AND ship_ts < stock_ts);
+```
+
+---
+
+## 2) Missing required steps (gaps in the process)
+
+### Evidence
+- **case_id = 1004**: no *Perform Credit Check* and no *Validate Stock* in the sample.
+- Other cases also show deviations from the assumed full flow.
+
+### Why this might happen (hypotheses)
+- Steps not logged due to system error or integration failure.
+- Alternative process paths (e.g., “exception orders”, cancellations, or “skip checks” policy).
+- Steps did occur but were logged under different `activity` names.
+
+### SQL — Identify cases missing one or more expected activities
+```sql
+SELECT
+  case_id,
+  BOOL_OR(activity='Register Order')            AS has_register,
+  BOOL_OR(activity='Perform Credit Check')     AS has_credit_check,
+  BOOL_OR(activity='Validate Stock')          AS has_validate_stock,
+  BOOL_OR(activity='Confirm Shipment')        AS has_confirm_shipment,
+  BOOL_OR(activity='Ship Goods')              AS has_ship_goods,
+  BOOL_OR(activity='Issue Invoice')          AS has_invoice,
+  BOOL_OR(activity='Receive Payment')        AS has_payment
+FROM order_event_log
+GROUP BY case_id
+HAVING
+  NOT (
+    BOOL_OR(activity='Register Order')
+    AND BOOL_OR(activity='Perform Credit Check')
+    AND BOOL_OR(activity='Validate Stock')
+    AND BOOL_OR(activity='Confirm Shipment')
+    AND BOOL_OR(activity='Ship Goods')
+    AND BOOL_OR(activity='Issue Invoice')
+    AND BOOL_OR(activity='Receive Payment')
+  )
+ORDER BY case_id;
+```
+
+### SQL — Check whether activities exist under unexpected names
+```sql
+SELECT DISTINCT activity
+FROM order_event_log
+ORDER BY activity;
+```
+
+---
+
+## 3) Timestamp anomalies (clock skew, wrong timestamp source, or re-ordering)
+
+### Why this might happen (hypotheses)
+- Some services record timestamps in different time zones or with different clock sources.
+- `event_id` ordering might not match `timestamp` ordering.
+
+### SQL — Compare ordering by `event_id` vs `timestamp`
+```sql
+WITH x AS (
+  SELECT
+    case_id,
+    event_id,
+    "timestamp",
+    ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY event_id)      AS rn_by_event_id,
+    ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY "timestamp", event_id) AS rn_by_ts
+  FROM order_event_log
+)
+SELECT case_id, COUNT(*) AS cnt
+FROM x
+WHERE rn_by_event_id <> rn_by_ts
+GROUP BY case_id
+ORDER BY cnt DESC;
+```
+
+---
+
+## 4) Resource/department mismatches for an activity
+
+### Why this might happen (hypotheses)
+- Misconfigured role-to-department mapping.
+- Incorrect `resource` recorded for the event.
+- Permissions allow unexpected roles to execute steps (policy violation).
+
+### SQL — Check whether the performing resource’s department matches the expected department by activity
+```sql
+WITH e AS (
+  SELECT
+    l.case_id,
+    l.activity,
+    l.resource,
+    l."timestamp",
+    r.department,
+    CASE
+      WHEN l.activity = 'Register Order' THEN 'Sales'
+      WHEN l.activity IN ('Perform Credit Check','Issue Invoice','Receive Payment') THEN 'Finance'
+      WHEN l.activity IN ('Validate Stock','Confirm Shipment','Ship Goods') THEN 'Logistics'
+      ELSE NULL
+    END AS expected_department
+  FROM order_event_log l
+  LEFT JOIN resources r
+    ON r.resource_id = l.resource
+)
+SELECT
+  case_id, activity, resource, department, expected_department, "timestamp"
+FROM e
+WHERE expected_department IS NOT NULL
+  AND department IS DISTINCT FROM expected_department
+ORDER BY case_id, "timestamp";
+```
+
+---
+
+## 5) “Flag” inconsistencies in `additional_info` vs the actual outcome
+
+### Evidence in your sample
+- **case_id = 1004**: `Confirm Shipment` has `shipment_scheduled=N`, yet later there is *Ship Goods*.
+- **case_id = 1002**: `Confirm Shipment` includes `attempted_early=Y`.
+
+### Why this might happen (hypotheses)
+- Flags are logged but the control logic later overrides them.
+- `additional_info` parsing/formatting differs across systems (e.g., `N`/`n` vs `N `).
+- Exceptions exist: shipment may still occur despite schedule flag.
+
+### SQL A — Find Confirm Shipment events with `shipment_scheduled=N` (extracting the flag)
+```sql
+SELECT
+  case_id,
+  "timestamp",
+  resource,
+  additional_info
+FROM order_event_log
+WHERE activity='Confirm Shipment'
+  AND additional_info ~* 'shipment_scheduled\s*=\s*N';
+```
+
+### SQL B — Compare “shipment_scheduled” flag to whether Ship Goods happened afterwards
+```sql
+WITH conf AS (
+  SELECT
+    case_id,
+    MIN("timestamp") FILTER (WHERE activity='Confirm Shipment') AS confirm_ts,
+    -- crude flag extraction: assumes format shipment_scheduled=<value>
+    MIN("timestamp") FILTER (WHERE activity='Confirm Shipment' AND additional_info ~* 'shipment_scheduled\s*=\s*N') AS confirm_flag_n_ts
+  FROM order_event_log
+  GROUP BY case_id
+),
+ship AS (
+  SELECT
+    case_id,
+    MIN("timestamp") FILTER (WHERE activity='Ship Goods') AS ship_ts
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT
+  c.case_id,
+  c.confirm_ts,
+  c.confirm_flag_n_ts,
+  s.ship_ts
+FROM conf c
+JOIN ship s USING (case_id)
+WHERE c.confirm_flag_n_ts IS NOT NULL
+  AND s.ship_ts IS NOT NULL
+  AND s.ship_ts > c.confirm_ts;
+```
+
+---
+
+## 6) Amount/payment consistency (policy violation or logging error)
+
+### Why this might happen (hypotheses)
+- Payment is recorded with a different amount than `orders.order_value`.
+- `additional_info` amount is malformed/unparsed.
+- Payment step is recorded early (as in case 1004) due to asynchronous billing integration.
+
+### SQL — Compare `orders.order_value` to parsed `Receive Payment additional_info=amount=...`
+```sql
+WITH pay AS (
+  SELECT
+    case_id,
+    (regexp_match(additional_info, 'amount\s*=\s*([0-9]+(\.[0-9]+)?)'))[1]::numeric AS paid_amount,
+    MIN("timestamp") FILTER (WHERE activity='Receive Payment') AS payment_ts
+  FROM order_event_log
+  GROUP BY case_id, additional_info
+)
+SELECT
+  o.case_id,
+  o.order_value,
+  p.paid_amount,
+  p.payment_ts,
+  (p.paid_amount - o.order_value) AS diff_amount
+FROM orders o
+JOIN (
+  SELECT case_id,
+         MAX(paid_amount) AS paid_amount,
+         MIN(payment_ts) AS payment_ts
+  FROM pay
+  GROUP BY case_id
+) p ON p.case_id = o.case_id
+WHERE p.paid_amount IS DISTINCT FROM o.order_value
+ORDER BY ABS(p.paid_amount - o.order_value) DESC;
+```
+
+---
+
+## 7) “Credit score” outliers or approval despite low score (if your policy expects something)
+
+### Why this might happen (hypotheses)
+- Credit policy threshold exists but is not enforced.
+- Credit officer logged score, but later decisions ignore it.
+- Additional info format changed; score not reliably captured.
+
+### SQL — Extract `credit_score` and correlate with whether later steps occurred
+```sql
+WITH credit AS (
+  SELECT
+    case_id,
+    (regexp_match(additional_info, 'credit_score\s*=\s*([0-9]+)'))[1]::int AS credit_score,
+    MIN("timestamp") AS credit_ts
+  FROM order_event_log
+  WHERE activity='Perform Credit Check'
+  GROUP BY case_id, additional_info
+),
+flags AS (
+  SELECT
+    case_id,
+    BOOL_OR(activity='Receive Payment') AS has_payment,
+    BOOL_OR(activity='Ship Goods')     AS has_ship
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT
+  c.case_id,
+  c.credit_score,
+  c.credit_ts,
+  f.has_ship,
+  f.has_payment
+FROM credit c
+LEFT JOIN flags f USING (case_id)
+ORDER BY c.credit_score ASC NULLS LAST;
+```
+
+---
+
+## If you want, I can also:
+1) Provide a **single consolidated “process health” query** that outputs per-case: missing steps, precedence violations, duration metrics, and resource mismatches.  
+2) Tailor the “expected step order” if your real workflow differs from the assumed one.
