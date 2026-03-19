@@ -42,6 +42,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | o3-2025-04-16                     | **31.0** | :x:                | :white_check_mark: | 5.7                  | 5.6                  | 3.6                  | 3.7                  | 4.8                  | 4.4                  | 3.3                  | 4.0                  |
 | gemini-2.5-pro-thinkhigh          | **30.9** | :x:                | :white_check_mark: | 5.2                  | 6.2                  | 4.0                  | 3.2                  | 4.6                  | 4.6                  | 3.3                  | 4.2                  |
 | gemini-3-flash-preview-thinkhigh  | **30.9** | :x:                | :white_check_mark: | 5.2                  | 6.1                  | 4.4                  | 3.7                  | 4.6                  | 4.1                  | 2.7                  | **4.6**              |
+| xiaomimimo-v2-pro                 | **30.8** | :x:                | :white_check_mark: | 5.5                  | 5.7                  | 3.7                  | 3.8                  | 4.5                  | 4.3                  | 3.3                  | 0.0                  |
 | qwen3.5-122b-a10b                 | **30.7** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.9                  | 4.1                  | 4.3                  | **4.8**              | 3.4                  | 0.0                  |
 | googlegemini-3.1-pro-preview      | **30.5** | :x:                | :white_check_mark: | 5.3                  | 6.2                  | 4.8                  | 3.2                  | 4.0                  | 4.0                  | 3.0                  | :mage_woman: **4.8** |
 | minimaxminimax-m2.5               | **30.2** | :white_check_mark: | :white_check_mark: | 5.5                  | 5.8                  | 3.5                  | 3.4                  | 4.3                  | **4.7**              | 3.0                  | 0.0                  |
@@ -50,15 +51,16 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | claude-sonnet-4-5-20250929        | **30.0** | :x:                | :x:                | 5.0                  | 5.6                  | 3.6                  | 3.4                  | 4.8                  | 4.3                  | 3.3                  | **4.5**              |
 | claude-opus-4-1-thinking-20250805 | **30.0** | :x:                | :white_check_mark: | 5.5                  | 5.8                  | 3.5                  | 4.0                  | 4.2                  | 4.0                  | 3.0                  | 3.5                  |
 | claude-opus-4-1-20250805          | **29.8** | :x:                | :x:                | 5.0                  | 5.4                  | 3.7                  | 4.1                  | 4.3                  | 4.1                  | 3.1                  | 4.0                  |
+| xiaomimimo-v2-omni                | **29.7** | :x:                | :white_check_mark: | 5.3                  | 5.2                  | 3.8                  | 3.6                  | 4.0                  | 4.4                  | 3.3                  | 0.0                  |
 | gpt-4.1-2025-04-14                | **29.6** | :x:                | :x:                | 5.3                  | 5.3                  | 3.1                  | 4.2                  | 4.3                  | 4.3                  | 3.1                  | 4.0                  |
 | gpt-4.5-preview                   | **29.6** | :x:                | :x:                | 5.3                  | 5.2                  | 3.6                  | 4.1                  | 4.5                  | 4.3                  | 2.5                  | 4.1                  |
 | gpt-5-nano-2025-08-07             | **29.5** | :x:                | :white_check_mark: | 5.4                  | 5.2                  | 2.8                  | 4.0                  | 4.4                  | 4.4                  | 3.2                  | **4.5**              |
 | nousresearchhermes-4-70b          | **29.5** | :white_check_mark: | :white_check_mark: | 4.9                  | 6.0                  | 3.4                  | 4.1                  | 3.6                  | 4.3                  | 3.2                  | 0.0                  |
+| minimaxminimax-m2.7               | **29.4** | :white_check_mark: | :white_check_mark: | 5.3                  | 5.4                  | 3.5                  | 3.5                  | 3.8                  | 4.4                  | 3.4                  | 0.0                  |
 | qwen3-next-80b-a3b-thinking       | **29.4** | :white_check_mark: | :white_check_mark: | 5.2                  | 5.4                  | 2.7                  | 4.4                  | 4.6                  | 4.0                  | 3.0                  | 0.0                  |
 | qwen3.5-35b-a3b                   | **29.3** | :white_check_mark: | :white_check_mark: | 5.7                  | 5.7                  | 2.1                  | 3.9                  | 4.2                  | 4.5                  | 3.2                  | 0.0                  |
 | gpt-5.4-nano-2026-03-17-NONE      | **29.3** | :x:                | :x:                | 4.5                  | 5.1                  | 3.0                  | 4.2                  | 4.7                  | 4.5                  | 3.4                  | 4.2                  |
 | grok-code-fast-1                  | **29.2** | :x:                | :white_check_mark: | 5.5                  | 5.5                  | 3.1                  | 3.9                  | 4.3                  | 3.9                  | 3.0                  | 0.0                  |
-| openrouterhunter-alpha            | **29.0** | :white_check_mark: | :x:                | 4.8                  | 5.7                  | 3.4                  | 3.6                  | 4.2                  | 4.1                  | 3.2                  | 0.0                  |
 | prime-intellectintellect-3        | **29.0** | :white_check_mark: | :white_check_mark: | 5.5                  | 5.1                  | 2.8                  | 3.8                  | 4.3                  | 4.5                  | 3.0                  | 0.0                  |
 | phi4-reasoningplus                | **28.9** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.7                  | 3.7                  | 4.3                  | 4.2                  | 2.8                  | 0.0                  |
 | Grok-4.1-20251219                 | **28.9** | :x:                | :x:                | 5.5                  | 5.0                  | 2.9                  | 3.3                  | 4.5                  | 4.4                  | 3.3                  | 4.0                  |
@@ -66,7 +68,6 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | nemotron-super-49b-v1.5-thinking  | **28.7** | :white_check_mark: | :white_check_mark: | 5.1                  | 5.4                  | 3.0                  | 4.1                  | 4.1                  | 4.6                  | 2.4                  | 0.0                  |
 | writerpalmyra-x5                  | **28.5** | :white_check_mark: | :x:                | 4.8                  | 5.2                  | 2.1                  | 4.1                  | 4.5                  | 4.6                  | 3.1                  | 0.0                  |
 | phi4-reasoning                    | **28.4** | :white_check_mark: | :white_check_mark: | 5.6                  | 5.3                  | 2.6                  | 3.9                  | 4.1                  | 4.2                  | 2.7                  | 0.0                  |
-| openrouterhealer-alpha            | **28.1** | :white_check_mark: | :x:                | 4.9                  | 5.3                  | 3.1                  | 3.7                  | 4.2                  | 3.7                  | 3.2                  | 3.4                  |
 | gemini-3.1-flash-lite-preview     | **27.7** | :x:                | :x:                | 4.7                  | 5.3                  | 3.1                  | 4.0                  | 4.1                  | 4.3                  | 2.2                  | **4.5**              |
 | claude-haiku-4-5-20251001         | **27.7** | :x:                | :x:                | 5.2                  | 4.5                  | 2.9                  | 3.7                  | 4.5                  | 4.3                  | 2.6                  | 0.0                  |
 | grok-3                            | **27.4** | :x:                | :x:                | 5.0                  | 5.0                  | 3.0                  | 3.0                  | 4.2                  | 4.4                  | 2.8                  | 0.0                  |
@@ -2430,6 +2431,62 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 6.2   |
 | cat08_05_task_schedul              | 4.3   |
 
+### xiaomimimo-v2-pro   => 30.8 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 9.6   |
+| cat01_02_activity_context          | 7.3   |
+| cat01_03_high_level_events         | 5.1   |
+| cat01_04_sensor_recordings         | 7.6   |
+| cat01_05_merge_two_logs            | 7.0   |
+| cat01_06_system_logs               | 5.6   |
+| cat01_07_interv_to_pseudo_bpmn     | 6.8   |
+| cat01_08_tables_to_log             | 5.8   |
+| cat02_01_conformance_textual       | 7.5   |
+| cat02_02_conf_desiderata           | 3.9   |
+| cat02_03_anomaly_event_log         | 7.2   |
+| cat02_04_powl_anomaly_detection    | 6.4   |
+| cat02_05_two_powls_anomalies       | 3.3   |
+| cat02_06_root_cause_1              | 6.9   |
+| cat02_07_root_cause_2              | 7.1   |
+| cat02_08_underfitting_process_tree | 8.7   |
+| cat02_09_fix_process_tree          | 5.6   |
+| cat03_01_process_tree_generation   | 2.8   |
+| cat03_02_powl_generation           | 7.8   |
+| cat03_03_log_skeleton_generation   | 3.9   |
+| cat03_04_declare_generation        | 3.9   |
+| cat03_05_temp_profile_generation   | 2.7   |
+| cat03_06_petri_net_generation      | 1.1   |
+| cat03_07_process_tree_discovery    | 6.9   |
+| cat03_08_powl_discovery            | 8.2   |
+| cat04_01_pseudo_bpmn_description   | 6.9   |
+| cat04_02_pseudo_bpmn_open_question | 6.4   |
+| cat04_03_declare_open_question     | 2.0   |
+| cat04_04_declare_description       | 1.1   |
+| cat04_05_sql_filt_num_events       | 9.3   |
+| cat04_06_sql_filt_three_df         | 5.6   |
+| cat04_07_sql_filt_top_k_vars       | 6.8   |
+| cat05_01_hyp_generation_log        | 5.3   |
+| cat05_02_hyp_gen_powl              | 6.7   |
+| cat05_03_hyp_gen_declare           | 6.1   |
+| cat05_04_hyp_gen_temp_profile      | 3.8   |
+| cat05_05_question_gen_nlp          | 8.7   |
+| cat05_06_question_pseudo_bpmn      | 7.4   |
+| cat05_07_question_interview        | 7.3   |
+| cat06_01_bias_text                 | 7.4   |
+| cat06_02_bias_event_log            | 5.3   |
+| cat06_03_bias_powl                 | 7.3   |
+| cat06_04_bias_two_logs             | 7.4   |
+| cat06_05_bias_two_logs_2           | 5.6   |
+| cat06_06_bias_mitigation_declare   | 2.8   |
+| cat06_07_fair_unfair_powl          | 7.3   |
+| cat08_01_queue_mining              | 7.4   |
+| cat08_02_instance_spanning         | 6.2   |
+| cat08_03_transport_opt             | 6.4   |
+| cat08_04_resource_assign           | 7.2   |
+| cat08_05_task_schedul              | 6.0   |
+
 ### qwenqwen3.5-122b-a10b   => 30.7 points
 
 | Question                           | Score |
@@ -2914,6 +2971,62 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 5.9   |
 | cat08_05_task_schedul              | 6.4   |
 
+### xiaomimimo-v2-omni   => 29.7 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 7.5   |
+| cat01_02_activity_context          | 7.0   |
+| cat01_03_high_level_events         | 7.1   |
+| cat01_04_sensor_recordings         | 6.8   |
+| cat01_05_merge_two_logs            | 5.9   |
+| cat01_06_system_logs               | 6.4   |
+| cat01_07_interv_to_pseudo_bpmn     | 5.9   |
+| cat01_08_tables_to_log             | 6.8   |
+| cat02_01_conformance_textual       | 5.6   |
+| cat02_02_conf_desiderata           | 3.3   |
+| cat02_03_anomaly_event_log         | 7.3   |
+| cat02_04_powl_anomaly_detection    | 5.3   |
+| cat02_05_two_powls_anomalies       | 6.4   |
+| cat02_06_root_cause_1              | 7.2   |
+| cat02_07_root_cause_2              | 6.0   |
+| cat02_08_underfitting_process_tree | 7.8   |
+| cat02_09_fix_process_tree          | 3.3   |
+| cat03_01_process_tree_generation   | 5.0   |
+| cat03_02_powl_generation           | 7.8   |
+| cat03_03_log_skeleton_generation   | 3.3   |
+| cat03_04_declare_generation        | 3.9   |
+| cat03_05_temp_profile_generation   | 7.7   |
+| cat03_06_petri_net_generation      | 1.7   |
+| cat03_07_process_tree_discovery    | 7.1   |
+| cat03_08_powl_discovery            | 1.7   |
+| cat04_01_pseudo_bpmn_description   | 7.3   |
+| cat04_02_pseudo_bpmn_open_question | 6.4   |
+| cat04_03_declare_open_question     | 2.2   |
+| cat04_04_declare_description       | 1.7   |
+| cat04_05_sql_filt_num_events       | 8.2   |
+| cat04_06_sql_filt_three_df         | 3.9   |
+| cat04_07_sql_filt_top_k_vars       | 6.1   |
+| cat05_01_hyp_generation_log        | 1.5   |
+| cat05_02_hyp_gen_powl              | 5.6   |
+| cat05_03_hyp_gen_declare           | 5.8   |
+| cat05_04_hyp_gen_temp_profile      | 4.0   |
+| cat05_05_question_gen_nlp          | 7.8   |
+| cat05_06_question_pseudo_bpmn      | 8.4   |
+| cat05_07_question_interview        | 7.3   |
+| cat06_01_bias_text                 | 7.4   |
+| cat06_02_bias_event_log            | 4.8   |
+| cat06_03_bias_powl                 | 7.3   |
+| cat06_04_bias_two_logs             | 6.3   |
+| cat06_05_bias_two_logs_2           | 7.1   |
+| cat06_06_bias_mitigation_declare   | 5.1   |
+| cat06_07_fair_unfair_powl          | 5.8   |
+| cat08_01_queue_mining              | 7.4   |
+| cat08_02_instance_spanning         | 5.6   |
+| cat08_03_transport_opt             | 6.8   |
+| cat08_04_resource_assign           | 6.3   |
+| cat08_05_task_schedul              | 6.9   |
+
 ### gpt-4.1-2025-04-14   => 29.6 points
 
 | Question                           | Score |
@@ -3156,6 +3269,62 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 6.9   |
 | cat08_05_task_schedul              | 6.6   |
 
+### minimaxminimax-m2.7   => 29.4 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 9.6   |
+| cat01_02_activity_context          | 7.7   |
+| cat01_03_high_level_events         | 6.4   |
+| cat01_04_sensor_recordings         | 5.6   |
+| cat01_05_merge_two_logs            | 3.9   |
+| cat01_06_system_logs               | 6.7   |
+| cat01_07_interv_to_pseudo_bpmn     | 6.8   |
+| cat01_08_tables_to_log             | 6.6   |
+| cat02_01_conformance_textual       | 6.7   |
+| cat02_02_conf_desiderata           | 5.6   |
+| cat02_03_anomaly_event_log         | 7.6   |
+| cat02_04_powl_anomaly_detection    | 5.3   |
+| cat02_05_two_powls_anomalies       | 3.3   |
+| cat02_06_root_cause_1              | 6.4   |
+| cat02_07_root_cause_2              | 5.6   |
+| cat02_08_underfitting_process_tree | 5.6   |
+| cat02_09_fix_process_tree          | 7.8   |
+| cat03_01_process_tree_generation   | 5.3   |
+| cat03_02_powl_generation           | 7.8   |
+| cat03_03_log_skeleton_generation   | 2.8   |
+| cat03_04_declare_generation        | 2.2   |
+| cat03_05_temp_profile_generation   | 7.3   |
+| cat03_06_petri_net_generation      | 4.4   |
+| cat03_07_process_tree_discovery    | 2.2   |
+| cat03_08_powl_discovery            | 3.3   |
+| cat04_01_pseudo_bpmn_description   | 6.9   |
+| cat04_02_pseudo_bpmn_open_question | 7.0   |
+| cat04_03_declare_open_question     | 1.7   |
+| cat04_04_declare_description       | 1.5   |
+| cat04_05_sql_filt_num_events       | 6.7   |
+| cat04_06_sql_filt_three_df         | 7.1   |
+| cat04_07_sql_filt_top_k_vars       | 3.9   |
+| cat05_01_hyp_generation_log        | 4.2   |
+| cat05_02_hyp_gen_powl              | 6.3   |
+| cat05_03_hyp_gen_declare           | 3.3   |
+| cat05_04_hyp_gen_temp_profile      | 2.8   |
+| cat05_05_question_gen_nlp          | 7.4   |
+| cat05_06_question_pseudo_bpmn      | 7.1   |
+| cat05_07_question_interview        | 7.1   |
+| cat06_01_bias_text                 | 7.6   |
+| cat06_02_bias_event_log            | 5.8   |
+| cat06_03_bias_powl                 | 6.7   |
+| cat06_04_bias_two_logs             | 5.6   |
+| cat06_05_bias_two_logs_2           | 7.2   |
+| cat06_06_bias_mitigation_declare   | 4.0   |
+| cat06_07_fair_unfair_powl          | 7.4   |
+| cat08_01_queue_mining              | 6.8   |
+| cat08_02_instance_spanning         | 6.8   |
+| cat08_03_transport_opt             | 7.3   |
+| cat08_04_resource_assign           | 6.8   |
+| cat08_05_task_schedul              | 6.7   |
+
 ### qwenqwen3-next-80b-a3b-thinking   => 29.4 points
 
 | Question                           | Score |
@@ -3385,62 +3554,6 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             | 6.4   |
 | cat08_04_resource_assign           | 5.7   |
 | cat08_05_task_schedul              | 5.9   |
-
-### openrouterhunter-alpha   => 29.0 points
-
-| Question                           | Score |
-| ---------------------------------- | ----- |
-| cat01_01_case_id_inference         | 8.8   |
-| cat01_02_activity_context          | 4.5   |
-| cat01_03_high_level_events         | 7.1   |
-| cat01_04_sensor_recordings         | 5.8   |
-| cat01_05_merge_two_logs            | 5.8   |
-| cat01_06_system_logs               | 4.0   |
-| cat01_07_interv_to_pseudo_bpmn     | 5.4   |
-| cat01_08_tables_to_log             | 7.1   |
-| cat02_01_conformance_textual       | 7.1   |
-| cat02_02_conf_desiderata           | 7.2   |
-| cat02_03_anomaly_event_log         | 7.5   |
-| cat02_04_powl_anomaly_detection    | 5.0   |
-| cat02_05_two_powls_anomalies       | 4.8   |
-| cat02_06_root_cause_1              | 6.3   |
-| cat02_07_root_cause_2              | 5.8   |
-| cat02_08_underfitting_process_tree | 7.2   |
-| cat02_09_fix_process_tree          | 6.5   |
-| cat03_01_process_tree_generation   | 3.0   |
-| cat03_02_powl_generation           | 7.5   |
-| cat03_03_log_skeleton_generation   | 3.4   |
-| cat03_04_declare_generation        | 2.5   |
-| cat03_05_temp_profile_generation   | 6.0   |
-| cat03_06_petri_net_generation      | 4.8   |
-| cat03_07_process_tree_discovery    | 2.0   |
-| cat03_08_powl_discovery            | 4.5   |
-| cat04_01_pseudo_bpmn_description   | 6.9   |
-| cat04_02_pseudo_bpmn_open_question | 7.0   |
-| cat04_03_declare_open_question     | 2.5   |
-| cat04_04_declare_description       | 2.5   |
-| cat04_05_sql_filt_num_events       | 7.7   |
-| cat04_06_sql_filt_three_df         | 3.0   |
-| cat04_07_sql_filt_top_k_vars       | 6.4   |
-| cat05_01_hyp_generation_log        | 3.8   |
-| cat05_02_hyp_gen_powl              | 5.9   |
-| cat05_03_hyp_gen_declare           | 5.4   |
-| cat05_04_hyp_gen_temp_profile      | 4.0   |
-| cat05_05_question_gen_nlp          | 7.8   |
-| cat05_06_question_pseudo_bpmn      | 7.9   |
-| cat05_07_question_interview        | 7.7   |
-| cat06_01_bias_text                 | 7.2   |
-| cat06_02_bias_event_log            | 6.3   |
-| cat06_03_bias_powl                 | 7.2   |
-| cat06_04_bias_two_logs             | 3.0   |
-| cat06_05_bias_two_logs_2           | 7.5   |
-| cat06_06_bias_mitigation_declare   | 2.5   |
-| cat06_07_fair_unfair_powl          | 7.1   |
-| cat08_01_queue_mining              | 6.3   |
-| cat08_02_instance_spanning         | 6.4   |
-| cat08_03_transport_opt             | 6.4   |
-| cat08_04_resource_assign           | 6.4   |
-| cat08_05_task_schedul              | 6.1   |
 
 ### prime-intellectintellect-3   => 29.0 points
 
@@ -3839,68 +3952,6 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             | 5.7   |
 | cat08_04_resource_assign           | 5.9   |
 | cat08_05_task_schedul              | 5.1   |
-
-### openrouterhealer-alpha   => 28.1 points
-
-| Question                           | Score |
-| ---------------------------------- | ----- |
-| cat01_01_case_id_inference         | 8.6   |
-| cat01_02_activity_context          | 6.7   |
-| cat01_03_high_level_events         | 6.6   |
-| cat01_04_sensor_recordings         | 6.3   |
-| cat01_05_merge_two_logs            | 5.8   |
-| cat01_06_system_logs               | 4.8   |
-| cat01_07_interv_to_pseudo_bpmn     | 5.9   |
-| cat01_08_tables_to_log             | 4.5   |
-| cat02_01_conformance_textual       | 7.0   |
-| cat02_02_conf_desiderata           | 7.3   |
-| cat02_03_anomaly_event_log         | 7.2   |
-| cat02_04_powl_anomaly_detection    | 5.2   |
-| cat02_05_two_powls_anomalies       | 2.5   |
-| cat02_06_root_cause_1              | 6.2   |
-| cat02_07_root_cause_2              | 7.0   |
-| cat02_08_underfitting_process_tree | 7.9   |
-| cat02_09_fix_process_tree          | 3.0   |
-| cat03_01_process_tree_generation   | 3.5   |
-| cat03_02_powl_generation           | 6.8   |
-| cat03_03_log_skeleton_generation   | 3.0   |
-| cat03_04_declare_generation        | 2.0   |
-| cat03_05_temp_profile_generation   | 5.5   |
-| cat03_06_petri_net_generation      | 3.0   |
-| cat03_07_process_tree_discovery    | 4.0   |
-| cat03_08_powl_discovery            | 3.0   |
-| cat04_01_pseudo_bpmn_description   | 6.3   |
-| cat04_02_pseudo_bpmn_open_question | 7.3   |
-| cat04_03_declare_open_question     | 2.0   |
-| cat04_04_declare_description       | 3.0   |
-| cat04_05_sql_filt_num_events       | 7.3   |
-| cat04_06_sql_filt_three_df         | 4.5   |
-| cat04_07_sql_filt_top_k_vars       | 6.2   |
-| cat05_01_hyp_generation_log        | 4.6   |
-| cat05_02_hyp_gen_powl              | 5.2   |
-| cat05_03_hyp_gen_declare           | 3.4   |
-| cat05_04_hyp_gen_temp_profile      | 5.8   |
-| cat05_05_question_gen_nlp          | 7.2   |
-| cat05_06_question_pseudo_bpmn      | 8.8   |
-| cat05_07_question_interview        | 7.2   |
-| cat06_01_bias_text                 | 7.5   |
-| cat06_02_bias_event_log            | 4.0   |
-| cat06_03_bias_powl                 | 3.0   |
-| cat06_04_bias_two_logs             | 6.2   |
-| cat06_05_bias_two_logs_2           | 6.2   |
-| cat06_06_bias_mitigation_declare   | 3.0   |
-| cat06_07_fair_unfair_powl          | 7.3   |
-| cat07_01_ocdfg                     | 3.5   |
-| cat07_02_bpmn_orders               | 7.6   |
-| cat07_03_bpmn_dispatch             | 7.5   |
-| cat07_04_causal_net                | 4.5   |
-| cat07_05_proclets                  | 3.0   |
-| cat07_06_perf_spectrum             | 7.5   |
-| cat08_01_queue_mining              | 6.2   |
-| cat08_02_instance_spanning         | 5.8   |
-| cat08_03_transport_opt             | 6.4   |
-| cat08_04_resource_assign           | 6.2   |
-| cat08_05_task_schedul              | 7.2   |
 
 ### gemini-3.1-flash-lite-preview-nothink   => 27.7 points
 
