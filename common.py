@@ -261,9 +261,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "grok-3", "grok-4-0709", "grok-code-fast-1",
-            "grok-4-1-fast-reasoning", "grok-4-1-fast-non-reasoning",
-            "grok-4.20-experimental-beta-0304-reasoning", "grok-4.20-experimental-beta-0304-non-reasoning",
-            "grok-4.20-multi-agent-experimental-beta-0304"
+            "grok-4-1-fast-reasoning", "grok-4-1-fast-non-reasoning"
         }
     },
     "deepinfra": {
@@ -401,11 +399,6 @@ MODELS_DICT = {
                 "provider": "openai",
                 "base_model": "gpt-5.3-codex",
                 "reasoning_effort": "xhigh"
-            },
-            "grok-4.20-heavy": {
-                "provider": "grok",
-                "base_model": "grok-4.20-multi-agent-experimental-beta-0304",
-                "reasoning_effort": "high"
             },
             "gpt-5.3-chat-latest-2026-03-05": {
                 "provider": "openai",
@@ -1513,7 +1506,7 @@ def check_all_models():
     insert_api_keys()
 
     for provider in MODELS_DICT:
-        if provider not in {"google", "claude", "grok", "qwen", "manual", "perplexity", "mistral"}:
+        if provider not in {"google", "claude", "qwen", "manual", "perplexity"}:
             print(provider)
             info = MODELS_DICT[provider]
             Shared.API_URL = info["api_url"]
