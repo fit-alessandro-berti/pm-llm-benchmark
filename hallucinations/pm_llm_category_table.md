@@ -4,16 +4,16 @@ Aggregated hallucination counts across all LLMs, organized by PM-LLM benchmark c
 
 | Hallucination Type | CAT01 | CAT02 | CAT03 | CAT04 | CAT05 | CAT06 | CAT07 | CAT08 | Total |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1a. Instruction Override | 313 | 116 | 345 | 154 | 201 | 125 | 3 | 45 | 1302 |
-| 1b. Context Omission | 961 | 878 | 572 | 745 | 982 | 831 | 282 | 1402 | 6653 |
-| 1c. Prompt Contradiction | 155 | 84 | 150 | 86 | 33 | 60 | 15 | 34 | 617 |
-| 2a. Concept Fabrication | 370 | 216 | 262 | 589 | 165 | 262 | 200 | 491 | 2555 |
-| 2b. Spurious Numeric | 388 | 507 | 413 | 282 | 244 | 233 | 106 | 1051 | 3224 |
+| 1a. Instruction Override | 320 | 118 | 351 | 157 | 209 | 126 | 3 | 46 | 1330 |
+| 1b. Context Omission | 975 | 886 | 585 | 754 | 1000 | 845 | 283 | 1418 | 6746 |
+| 1c. Prompt Contradiction | 159 | 84 | 152 | 87 | 34 | 62 | 15 | 35 | 628 |
+| 2a. Concept Fabrication | 378 | 219 | 263 | 606 | 173 | 271 | 206 | 498 | 2614 |
+| 2b. Spurious Numeric | 390 | 510 | 419 | 285 | 246 | 235 | 109 | 1063 | 3257 |
 | 2c. False Citation | 3 | 12 | 4 | 24 | 5 | 47 | 3 | 21 | 119 |
-| 3a. Unsupported Leap | 1477 | 1629 | 1303 | 1411 | 1243 | 1594 | 575 | 1416 | 10648 |
-| 3b. Self Contradiction | 289 | 161 | 294 | 166 | 60 | 135 | 10 | 69 | 1184 |
-| 3c. Circular Reasoning | 2 | 2 | 3 | 2 | 1 | 0 | 0 | 3 | 13 |
-| 4a. Syntax Error | 99 | 34 | 213 | 93 | 234 | 91 | 7 | 102 | 873 |
-| 4b. Model Semantics Breach | 218 | 104 | 746 | 389 | 221 | 230 | 73 | 39 | 2020 |
-| 4c. Visual Description Mismatch | 125 | 35 | 61 | 86 | 44 | 16 | 357 | 24 | 748 |
-| **Total** | **4400** | **3778** | **4366** | **4027** | **3433** | **3624** | **1631** | **4697** | **29956** |
+| 3a. Unsupported Leap | 1495 | 1655 | 1319 | 1431 | 1266 | 1624 | 590 | 1438 | 10818 |
+| 3b. Self Contradiction | 292 | 162 | 296 | 172 | 60 | 136 | 10 | 71 | 1199 |
+| 3c. Circular Reasoning | 2 | 2 | 3 | 2 | 1 | 0 | 0 | 4 | 14 |
+| 4a. Syntax Error | 99 | 34 | 215 | 94 | 235 | 92 | 8 | 104 | 881 |
+| 4b. Model Semantics Breach | 220 | 106 | 752 | 396 | 227 | 234 | 74 | 40 | 2049 |
+| 4c. Visual Description Mismatch | 125 | 35 | 62 | 88 | 45 | 16 | 364 | 25 | 760 |
+| **Total** | **4458** | **3823** | **4421** | **4096** | **3501** | **3688** | **1665** | **4763** | **30415** |
