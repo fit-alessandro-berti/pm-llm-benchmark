@@ -233,7 +233,7 @@ MODELS_DICT = {
         "api_key": "sk-",
         "models": {
             "gemini-1.5-pro-002", "gemini-2.0-flash", "gemini-2.0-flash-lite",
-            "gemini-3-pro-preview"
+            "gemini-3-pro-preview", "gemma-4-26b-a4b-it", "gemma-4-31b-it"
         }
     },
     "claude": {
@@ -595,7 +595,7 @@ def get_ordered_references_llms_with_scores(base_path="."):
 
 
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium", "grok-4", "horizon", "gpt-5", "sonoma", "polaris-alpha", "sherlock", "ministral-3b-2512", "ministral-8b-2512", "ministral-14b-2512", "mistral-large-2512", "healer-alpha", "mistral-small-2603", "glm-5v"]
+    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium", "grok-4", "horizon", "gpt-5", "sonoma", "polaris-alpha", "sherlock", "ministral-3b-2512", "ministral-8b-2512", "ministral-14b-2512", "mistral-large-2512", "healer-alpha", "mistral-small-2603", "glm-5v", "gemma-4"]
 
     for p in patterns:
         if p.lower() in model_name.lower():
@@ -1099,7 +1099,7 @@ def query_text_simple_google(question, api_url, target_file):
     dump_response(response, target_file)
 
     try:
-        response_message = response["candidates"][0]["content"]["parts"][0]["text"]
+        response_message = response["candidates"][0]["content"]["parts"][-1]["text"]
     except Exception as e:
         raise Exception(str(response))
 
