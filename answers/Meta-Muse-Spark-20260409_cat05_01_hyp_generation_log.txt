@@ -1,0 +1,153 @@
+Based on the schema and event log data you provided, here’s what stands out as the target LLM response:
+
+### 1. Anomalies and Undesirable Behaviors Identified
+
+Comparing each case to the assumed normal flow: `Register Order → Perform Credit Check → Validate Stock → Confirm Shipment → Ship Goods → Issue Invoice → Receive Payment`
+
+| case_id | Deviations from Normal Flow |
+| --- | --- |
+| **1001** | No deviations. This is the happy path: all 7 steps in correct order, timestamps ascending. |
+| **1002** | **Out-of-order execution**: `Confirm Shipment` and `Ship Goods` occur *before* `Perform Credit Check` and `Validate Stock`. High risk: shipping without credit approval or stock validation. `additional_info` says `attempted_early=Y`. |
+| **1003** | **Skipped step**: `Validate Stock` is missing entirely. **Out-of-order**: `Ship Goods` occurs before `Confirm Shipment`. `additional_info` shows `late_confirmation=Y`. |
+| **1004** | **Skipped steps**: `Perform Credit Check` and `Validate Stock` both missing. **Out-of-order**: `Receive Payment` occurs immediately after `Register Order`, before `Issue Invoice` and before any logistics steps. `Confirm Shipment` shows `shipment_scheduled=N` but `Ship Goods` still happened. |
+
+**Cross-cutting issues:**
+1. **Payment before invoice**: Case 1004 receives payment before invoice issued.
+2. **Shipping without confirmation**: Cases 1002 and 1004 ship before/after irregular confirmation.
+3. **Missing control steps**: Credit check and stock validation are bypassed in 1003, 1004.
+
+### 2. Hypotheses for Why These Anomalies Occur
+
+1. **System/workflow bypass**: Users may have permissions to manually trigger `Ship Goods` or `Receive Payment` without system enforcement of prerequisites. Case 1002 `attempted_early=Y` suggests intentional override.
+2. **Training/process gaps**: Sales or warehouse staff unaware that credit/stock checks are mandatory. Case 1003 skips `Validate Stock` entirely.
+3. **Policy exceptions for priority orders**: Case 1002 is `order_type = priority`. Business may allow expedited shipping before checks to meet SLAs, accepting financial risk.
+4. **Data entry timing vs real-world timing**: `timestamp` reflects when event was logged, not when it happened. `Receive Payment` in 1004 could be a prepayment entered early.
+5. **System integration issues**: If credit check and stock systems are separate, failures or delays may cause users to skip and proceed manually.
+6. **Fraud/override risk**: Payment before invoice + shipping without `shipment_scheduled=N` in case 1004 could indicate collusion or error.
+
+### 3. Relevant SQL Queries to Investigate Further
+
+These queries help validate how widespread the issues are and test the hypotheses. All use PostgreSQL syntax.
+
+**A. Find all cases that violate activity order**
+```sql
+-- Get sequence of key activities per case and flag out-of-order cases
+WITH ordered_events AS (
+  SELECT 
+    case_id,
+    activity,
+    timestamp,
+    ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS seq_num,
+    CASE activity
+      WHEN 'Register Order' THEN 1
+      WHEN 'Perform Credit Check' THEN 2
+      WHEN 'Validate Stock' THEN 3
+      WHEN 'Confirm Shipment' THEN 4
+      WHEN 'Ship Goods' THEN 5
+      WHEN 'Issue Invoice' THEN 6
+      WHEN 'Receive Payment' THEN 7
+    END AS expected_seq
+  FROM order_event_log
+  WHERE activity IN ('Register Order','Perform Credit Check','Validate Stock','Confirm Shipment',
+                     'Ship Goods','Issue Invoice','Receive Payment')
+)
+SELECT case_id, 
+       ARRAY_AGG(activity ORDER BY timestamp) AS actual_sequence
+FROM ordered_events
+GROUP BY case_id
+HAVING NOT ARRAY_AGG(expected_seq ORDER BY timestamp) @> ARRAY[1,2,3,4,5,6,7];
+```
+Simpler version: find cases where `Ship Goods` timestamp < `Perform Credit Check` timestamp.
+```sql
+SELECT s.case_id
+FROM order_event_log s
+JOIN order_event_log c ON s.case_id = c.case_id
+WHERE s.activity = 'Ship Goods' 
+  AND c.activity = 'Perform Credit Check'
+  AND s.timestamp < c.timestamp;
+```
+
+**B. Find cases with missing mandatory steps**
+```sql
+-- Cases missing credit check or stock validation
+SELECT o.case_id, o.order_type, o.order_value
+FROM orders o
+WHERE NOT EXISTS (
+    SELECT 1 FROM order_event_log e 
+    WHERE e.case_id = o.case_id AND e.activity = 'Perform Credit Check'
+) 
+OR NOT EXISTS (
+    SELECT 1 FROM order_event_log e 
+    WHERE e.case_id = o.case_id AND e.activity = 'Validate Stock'
+);
+```
+
+**C. Payment before invoice or before shipment**
+```sql
+SELECT p.case_id, p.timestamp AS payment_time, i.timestamp AS invoice_time
+FROM order_event_log p
+LEFT JOIN order_event_log i ON p.case_id = i.case_id AND i.activity = 'Issue Invoice'
+WHERE p.activity = 'Receive Payment'
+  AND (i.event_id IS NULL OR p.timestamp < i.timestamp);
+```
+
+**D. Shipped without confirmation or with confirmation = N**
+```sql
+SELECT e.case_id, e.timestamp AS ship_time, c.additional_info AS confirm_info
+FROM order_event_log e
+LEFT JOIN order_event_log c ON e.case_id = c.case_id AND c.activity = 'Confirm Shipment'
+WHERE e.activity = 'Ship Goods'
+  AND (c.event_id IS NULL OR c.additional_info LIKE '%shipment_scheduled=N%');
+```
+
+**E. Analyze by resource/role to check for training issues**
+```sql
+-- Which resources are involved in out-of-order shipments?
+SELECT r.resource_id, r.role, r.department, COUNT(*) AS violation_count
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+JOIN (
+    SELECT s.case_id
+    FROM order_event_log s
+    JOIN order_event_log c ON s.case_id = c.case_id
+    WHERE s.activity = 'Ship Goods' 
+      AND c.activity = 'Perform Credit Check'
+      AND s.timestamp < c.timestamp
+) v ON e.case_id = v.case_id
+WHERE e.activity = 'Ship Goods'
+GROUP BY r.resource_id, r.role, r.department
+ORDER BY violation_count DESC;
+```
+
+**F. Correlation with order_type and value: are priority/high-value orders skipping checks?**
+```sql
+SELECT o.order_type,
+       COUNT(*) AS total_orders,
+       COUNT(*) FILTER (WHERE no_credit.case_id IS NOT NULL) AS missing_credit_check,
+       AVG(o.order_value) AS avg_value
+FROM orders o
+LEFT JOIN (
+    SELECT DISTINCT case_id FROM order_event_log WHERE activity = 'Perform Credit Check'
+) has_credit ON o.case_id = has_credit.case_id
+LEFT JOIN (
+    SELECT DISTINCT case_id FROM order_event_log WHERE activity = 'Perform Credit Check'
+) no_credit ON o.case_id = no_credit.case_id AND no_credit.case_id IS NULL
+GROUP BY o.order_type;
+```
+
+**G. Lead time analysis to detect rushed processing**
+```sql
+-- Time from Register Order to Ship Goods
+SELECT 
+  e.case_id,
+  o.order_type,
+  EXTRACT(EPOCH FROM (ship.timestamp - reg.timestamp))/60 AS minutes_to_ship
+FROM order_event_log reg
+JOIN order_event_log ship ON reg.case_id = ship.case_id
+JOIN orders o ON reg.case_id = o.case_id
+WHERE reg.activity = 'Register Order' AND ship.activity = 'Ship Goods'
+ORDER BY minutes_to_ship ASC;
+```
+Cases with very low `minutes_to_ship` may indicate steps were skipped.
+
+These queries let you quantify how common each anomaly is, which departments/resources are involved, and whether order attributes like `priority` or high `order_value` correlate with violations.

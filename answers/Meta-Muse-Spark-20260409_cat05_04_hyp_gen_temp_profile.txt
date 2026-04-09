@@ -1,0 +1,165 @@
+**1. Identified Anomalies in the Temporal Profile Model**
+
+Based on the provided `temporal_profile`, these pairs deviate from expected insurance claim handling logic:
+
+| Activity Pair | Avg Time | STDEV | Why It's Anomalous |
+| --- | --- | --- | --- |
+| **R → P** Receive to Approve | ~25 hours | 1 hour | STDEV is only 4% of the mean. Real approvals should vary with claim complexity, adjuster workload, and investigation time. A 1-hour STDEV suggests approvals are happening on a fixed schedule, not driven by actual evaluation completion. |
+| **P → N** Approve to Notify | 7 days | 2 days | Very long average delay after approval, with high variance. Once approved, customer notification is typically automated or same-day. 7 days implies a bottleneck or batch process. |
+| **A → C** Assign to Close | 2 hours | 1 hour | Claims close just 2 hours after assign. This bypasses Evaluate and Approve steps. Suggests claims are closed without investigation or due to data quality issues. |
+| **E → N** Evaluate to Notify | 5 minutes | 1 minute | Extremely fast and consistent. Evaluation usually requires documentation, follow-up, or review. 5 minutes implies notification is auto-triggered regardless of evaluation outcome, or 'Evaluate' is logged prematurely. |
+
+**2. Hypotheses for Why These Anomalies Exist**
+
+- **R → P: Fixed-interval automation or SLA override**
+  Approval may be auto-stamped 25 hours after receipt for certain low-value claims to meet a KPI, ignoring whether evaluation occurred. Alternatively, a batch job runs daily at a fixed time, giving the tiny STDEV.
+
+- **P → N: Manual batch notifications or resource contention**
+  Notifications might be sent in weekly batches by back-office staff. High STDEV occurs when staff are absent, or when high-priority claims are manually expedited. System may also queue notifications but lack retry logic, causing long tails.
+
+- **A → C: Premature closure due to misclassification or duplicates**
+  Adjusters may close claims immediately if they detect duplicates, fraud flags, or out-of-scope submissions right after assignment. Could also be system events where 'Close' is logged by default if no activity happens within 2 hours.
+
+- **E → N: Event logging issue or skipped workflow steps**
+  'Evaluate' and 'Notify' might be triggered by the same system call, so timestamps are nearly identical. Or 'Evaluate' is recorded when the adjuster opens the claim file, not when evaluation actually finishes. Some claims may skip 'Approve' entirely, going E→N→C.
+
+- **Cross-cutting factor: Specialized fast-track paths**
+  Certain `claim_type` like "auto_glass" or low `claim_amount` may follow abbreviated workflows that don't fit the general 6-step model, skewing averages.
+
+**3. Verification Approaches Using SQL Queries**
+
+All queries assume PostgreSQL and use `claim_events`. We use `LEAD()` / `LAG()` over `timestamp` partitioned by `claim_id` to compute intervals.
+
+**3.1 Find claims violating R → P timing**
+Goal: Identify claims where Approve happens much faster/slower than 25h ± 3*STDEV =
+```sql
+WITH event_pairs AS (
+  SELECT
+    r.claim_id,
+    r.timestamp AS receive_ts,
+    p.timestamp AS approve_ts,
+    EXTRACT(EPOCH FROM p.timestamp - r.timestamp) AS seconds_r_to_p
+  FROM claim_events r
+  JOIN claim_events p ON r.claim_id = p.claim_id
+  WHERE r.activity = 'R' AND p.activity = 'P'
+)
+SELECT
+  ep.claim_id,
+  c.claim_type,
+  c.claim_amount,
+  ep.seconds_r_to_p / 3600.0 AS hours_r_to_p,
+  p.resource AS approver,
+  a.specialization,
+  a.region
+FROM event_pairs ep
+JOIN claims c ON ep.claim_id = c.claim_id
+LEFT JOIN claim_events p ON p.claim_id = ep.claim_id AND p.activity = 'P'
+LEFT JOIN adjusters a ON p.resource = a.name
+WHERE ep.seconds_r_to_p < 79200 OR ep.seconds_r_to_p > 100800 -- outside 22-28h
+ORDER BY ep.seconds_r_to_p;
+```
+
+**3.2 Detect excessive P → N delays and correlate with resources**
+Goal: Flag claims where Notify is > 7d + 2*STDEV = 11 days after Approve, and group by adjuster/region
+```sql
+SELECT
+  p.claim_id,
+  c.claim_type,
+  c.region AS customer_region,
+  a.name AS adjuster_name,
+  a.region AS adjuster_region,
+  EXTRACT(DAY FROM n.timestamp - p.timestamp) AS days_p_to_n,
+  p.timestamp AS approved_at,
+  n.timestamp AS notified_at
+FROM claim_events p
+JOIN claim_events n ON p.claim_id = n.claim_id
+JOIN claims c ON p.claim_id = c.claim_id
+LEFT JOIN adjusters a ON p.resource = a.name
+WHERE p.activity = 'P'
+  AND n.activity = 'N'
+  AND n.timestamp > p.timestamp + INTERVAL '11 days'
+ORDER BY days_p_to_n DESC;
+```
+
+**3.3 Find claims closed directly after Assign without E or P**
+Goal: Surface workflows that skip evaluation/approval
+```sql
+WITH ordered_events AS (
+  SELECT
+    claim_id,
+    activity,
+    timestamp,
+    LEAD(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_activity,
+    LEAD(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_ts
+  FROM claim_events
+)
+SELECT
+  oe.claim_id,
+  c.claim_type,
+  c.claim_amount,
+  oe.timestamp AS assigned_at,
+  oe.next_ts AS closed_at,
+  EXTRACT(EPOCH FROM oe.next_ts - oe.timestamp)/3600.0 AS hours_a_to_c,
+  oe.resource AS assigned_to
+FROM ordered_events oe
+JOIN claims c ON oe.claim_id = c.claim_id
+WHERE oe.activity = 'A'
+  AND oe.next_activity = 'C'
+  AND EXTRACT(EPOCH FROM oe.next_ts - oe.timestamp) <= 10800; -- <= 3h
+```
+
+**3.4 Check E → N intervals and missing intermediate steps**
+Goal: Confirm if Notify happens too fast after Evaluate and whether Approve is skipped
+```sql
+SELECT
+  e.claim_id,
+  c.claim_type,
+  EXTRACT(EPOCH FROM n.timestamp - e.timestamp) AS seconds_e_to_n,
+  EXISTS (
+    SELECT 1 FROM claim_events p
+    WHERE p.claim_id = e.claim_id
+      AND p.activity = 'P'
+      AND p.timestamp BETWEEN e.timestamp AND n.timestamp
+  ) AS had_approval_between,
+  e.resource AS evaluator
+FROM claim_events e
+JOIN claim_events n ON e.claim_id = n.claim_id
+JOIN claims c ON e.claim_id = c.claim_id
+WHERE e.activity = 'E'
+  AND n.activity = 'N'
+  AND n.timestamp >= e.timestamp
+  AND EXTRACT(EPOCH FROM n.timestamp - e.timestamp) < 600 -- under 10 min
+ORDER BY seconds_e_to_n;
+```
+
+**3.5 Aggregate anomalies by segment to find systemic patterns**
+Goal: See if specific `claim_type`, `region`, or `adjuster` drives deviations
+```sql
+WITH intervals AS (
+  SELECT
+    r.claim_id,
+    EXTRACT(EPOCH FROM p.timestamp - r.timestamp) AS r_to_p,
+    EXTRACT(EPOCH FROM n.timestamp - p.timestamp) AS p_to_n
+  FROM claim_events r
+  LEFT JOIN claim_events p ON r.claim_id = p.claim_id AND p.activity = 'P'
+  LEFT JOIN claim_events n ON r.claim_id = n.claim_id AND n.activity = 'N'
+  WHERE r.activity = 'R'
+)
+SELECT
+  c.claim_type,
+  a.region,
+  COUNT(*) AS total_claims,
+  AVG(i.r_to_p)/3600.0 AS avg_r_to_p_hours,
+  STDDEV(i.r_to_p)/3600.0 AS stdev_r_to_p_hours,
+  AVG(i.p_to_n)/86400.0 AS avg_p_to_n_days,
+  PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY i.p_to_n) / 86400.0 AS p95_p_to_n_days
+FROM intervals i
+JOIN claims c ON i.claim_id = c.claim_id
+LEFT JOIN claim_events a_ev ON a_ev.claim_id = i.claim_id AND a_ev.activity = 'A'
+LEFT JOIN adjusters a ON a_ev.resource = a.name
+GROUP BY c.claim_type, a.region
+HAVING COUNT(*) > 30 -- filter noise
+ORDER BY avg_p_to_n_days DESC;
+```
+
+These queries let you isolate outlier claims, test whether anomalies cluster by adjuster, region, or claim_type, and check for skipped steps. Results can then be compared against business rules to confirm if the temporal profile reflects automation, policy exceptions, or data quality issues.

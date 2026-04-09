@@ -1,0 +1,111 @@
+### 1. Anomalies in the DECLARE Model
+
+Looking at the constraints, several rules contradict each other and conflict with the intended process flow R → A → E → P → N → C.
+
+**Anomalies identified:**
+
+- **Direct conflict: `existence[C]` vs `noncoexistence[E,C]`**  
+  The model requires that every trace contains `C` Close, with support 1.0 and confidence 1.0. At the same time, `noncoexistence` forbids `E` Evaluate and `C` Close from occurring together in the same trace. These cannot both hold. If `C` must always occur, then `E` can never occur, yet the intended process requires evaluation before closing.
+
+- **Circular dependency: `responded_existence[E,A]` vs missing assignment constraints**  
+  `responded_existence` says if `E` Evaluate occurs, then `A` Assign must also occur somewhere in the trace. However, there is no constraint forcing `A` to precede `E`. Combined with `noncoexistence[E,C]`, this means traces that do evaluation cannot close, but traces that close cannot evaluate. This breaks the R → A → E → P → N → C flow.
+
+- **Incomplete coverage of intended sequence**  
+  The model enforces `init[R]` and `existence[C]`, plus `precedence[C,R]` meaning `C` cannot occur before `R`. But there are no constraints for `P` Approve or `N` Notify, and no ordering between `A`, `E`, `P`. The model allows traces like `R → C` which skips assign, evaluate, approve, and notify entirely.
+
+- **Undermined business logic**  
+  The intended flow requires evaluation before approval and approval before close. The `noncoexistence[E,C]` rule makes compliant execution impossible: any claim that is evaluated cannot be closed, and any claim that is closed cannot have been evaluated.
+
+### 2. Hypotheses for Why These Anomalies Exist
+
+| Hypothesis | Explanation |
+| --- | --- |
+| **Conflicting policy updates** | Different teams updated constraints at different times. One team added `existence[C]` to ensure all claims get closed. Another added `noncoexistence[E,C]` to flag a specific fraud pattern, not realizing it conflicts globally. |
+| **Misunderstood constraint semantics** | Model authors confused `noncoexistence` with `not succession`. They intended to say `E` must occur before `C` but not immediately, and used the wrong DECLARE template. |
+| **Overfitting to noisy log data** | The DECLARE model was mined automatically from historical logs. If some closed claims lacked an `E` event due to system errors or legacy data, the miner inferred `noncoexistence[E,C]` incorrectly. |
+| **Exception path promoted to rule** | There is a fast-track process for small claims that skips evaluation. That exception was encoded as a hard constraint, making it appear to apply to all claims. |
+| **Ambiguous activity mapping** | The event log uses multiple codes for evaluation, like `E` and `E2`. The model only references `E`, so traces using `E2` appear to violate evaluation requirements and distort the mined rules. |
+
+### 3. SQL-Based Verification Approaches
+
+Use `claim_events` joined to `claims` to check whether these anomalies occur in real data and to quantify impact.
+
+**Check 1: Claims closed without any evaluation**  
+Finds violations of business logic where `C` occurs but `E` never occurs.
+```sql
+SELECT c.claim_id, c.claim_type, c.claim_amount
+FROM claims c
+WHERE EXISTS (
+    SELECT 1 FROM claim_events ce 
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'C'
+)
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events ce 
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'E'
+);
+```
+
+**Check 2: Traces where evaluation and closing coexist**  
+This directly tests the `noncoexistence[E,C]` rule. If any rows return, the rule is violated in practice.
+```sql
+SELECT claim_id
+FROM claim_events
+WHERE activity IN ('E', 'C')
+GROUP BY claim_id
+HAVING COUNT(DISTINCT activity) = 2;
+```
+
+**Check 3: Evaluation occurs without assignment**  
+Tests `responded_existence[E, A]`. Returns claims where `E` happened but no `A` is present.
+```sql
+SELECT DISTINCT ce.claim_id
+FROM claim_events ce
+WHERE ce.activity = 'E'
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events ce2 
+    WHERE ce2.claim_id = ce.claim_id AND ce2.activity = 'A'
+);
+```
+
+**Check 4: Order violations: Close before Receive**  
+Validates `precedence[C, R]`. Close should never have an earlier timestamp than Receive.
+```sql
+SELECT c.claim_id, 
+       MIN(CASE WHEN ce.activity = 'R' THEN ce.timestamp END) AS receive_time,
+       MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) AS close_time
+FROM claims c
+JOIN claim_events ce ON c.claim_id = ce.claim_id
+WHERE ce.activity IN ('R', 'C')
+GROUP BY c.claim_id
+HAVING MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) < 
+       MIN(CASE WHEN ce.activity = 'R' THEN ce.timestamp END);
+```
+
+**Check 5: Evaluate without assigned adjuster resource**  
+Checks if `E` events are performed by a valid adjuster. Helps identify if system auto-evaluation or missing assignment data causes the anomalies.
+```sql
+SELECT ce.claim_id, ce.timestamp, ce.resource
+FROM claim_events ce
+WHERE ce.activity = 'E'
+AND NOT EXISTS (
+    SELECT 1 FROM adjusters a WHERE a.adjuster_id::text = ce.resource
+);
+```
+
+**Check 6: Sequence conformance summary**  
+Counts how many claims follow the full intended sequence vs truncated paths like `R → C`.
+```sql
+WITH ordered_events AS (
+    SELECT claim_id,
+           STRING_AGG(activity, '->' ORDER BY timestamp) AS path
+    FROM claim_events
+    WHERE activity IN ('R','A','E','P','N','C')
+    GROUP BY claim_id
+)
+SELECT path, COUNT(*) AS claim_count
+FROM ordered_events
+GROUP BY path
+ORDER BY claim_count DESC;
+```
+
+These queries let you measure how often each anomalous pattern occurs, distinguish between model errors and real process deviations, and prioritize which constraints need fixing.
