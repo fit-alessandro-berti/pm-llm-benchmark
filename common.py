@@ -325,7 +325,7 @@ MODELS_DICT = {
             "z-ai/glm-5-turbo",
             "minimax/minimax-m2.7", "xiaomi/mimo-v2-pro", "xiaomi/mimo-v2-omni",
             "z-ai/glm-5v-turbo", "arcee-ai/trinity-large-thinking",
-            "qwen/qwen3.6-plus:free", "z-ai/glm-5.1"
+            "qwen/qwen3.6-plus:free", "z-ai/glm-5.1", "openrouter/elephant-alpha"
         }
     },
     "manual": {

@@ -1,0 +1,232 @@
+Excellent. This is a comprehensive process mining / anomaly detection task.  
+The target LLM should analyze the provided event logs against the **normal process flow** to identify deviations, reason about possible causes, and generate SQL queries to investigate further.
+
+Here is how the target model should respond, structured for clarity and reproducibility.
+
+---
+
+## **1. Identify Anomalies and Undesirable Behaviors**
+
+We compare each `case_id` against the ideal sequence:
+
+1. Register Order  2. Perform Credit Check  3. Validate Stock  4. Confirm Shipment  5. Ship Goods  6. Issue Invoice  7. Receive Payment
+
+### **Case 1001**  
+ **Normal flow.** All steps present, in order, with appropriate resources.  
+- No anomalies.
+
+---
+
+### **Case 1002**  
+ **Anomalies Detected:**
+1. **Missing "Perform Credit Check" before "Confirm Shipment"**  
+   - Event 8: Register Order (Sales)  
+   - Event 9: **Confirm Shipment** (Logistics)  **Skips Credit Check**  
+   - Event 11: Perform Credit Check (Finance)  occurs **after** shipment confirmation.  
+   - This is a **sequence violation** (out-of-order activity).
+2. **Early Shipment Attempt**  
+   - `additional_info: attempted_early=Y` suggests an attempt to bypass policy.
+3. **Activity "Validate Stock" occurs after "Confirm Shipment" and "Ship Goods"**  
+   - Event 12: Validate Stock after goods were already shipped (Event 10).  
+   - This is **illogical** – stock validation should precede shipment.
+4. **Missing "Receive Payment"**  
+   - Process ends at "Issue Invoice". Payment may be pending or recorded externally.
+
+**Hypothesized Causes:**  
+- System error allowed shipment confirmation before credit validation.  
+- Training gap or process bypass due to urgency.  
+- "Validate Stock" may have been logged late due to retrospective correction.  
+- Payment step may not be captured in this log (e.g., external payment system).
+
+---
+
+### **Case 1003**  
+ **Anomalies Detected:**
+1. **Missing "Validate Stock" before "Ship Goods"**  
+   - Event 17: Ship Goods  no prior "Validate Stock".  
+   - Stock validation (Event 19) occurs **after** shipment.
+2. **"Confirm Shipment" occurs after "Ship Goods"**  
+   - Event 19: Confirm Shipment after goods were already shipped.  
+   - Logical inconsistency – confirmation should precede shipment.
+3. **Missing "Receive Payment"**  
+   - Process ends at "Receive Payment" in data? Wait – actually, event 20 **is** "Receive Payment", so this is present.  
+   - But payment occurs **after** shipment and invoice, which is normal. However, timing may be delayed.
+
+**Hypothesized Causes:**  
+- Possible system glitch causing event reordering.  
+- "Validate Stock" may have been omitted initially, then corrected post-shipment (maybe a reconciliation step).  
+- "Confirm Shipment" may have been delayed due to administrative hold.
+
+---
+
+### **Case 1004**  
+ **Anomalies Detected:**
+1. **Missing "Perform Credit Check" and "Validate Stock"**  
+   - Order registered  immediate payment  invoice  shipment.  
+   - No credit or stock validation steps present.
+2. **"Confirm Shipment" shows `shipment_scheduled=N`**  
+   - Indicates shipment was not properly scheduled, yet goods were shipped later.  
+   - Possible override or error.
+3. **Payment received before invoice issued**  
+   - Event 22: Receive Payment  Event 23: Issue Invoice.  
+   - Typically, invoice precedes payment. This sequence may indicate:
+     - Advance payment (possible but should be flagged), or
+     - Misattribution of payment to wrong case.
+
+**Hypothesized Causes:**  
+- High-priority or trusted customer bypassing checks.  
+- System integration issue where payment was processed before invoicing.  
+- Data entry error (e.g., wrong `case_id` for payment or invoice).
+
+---
+
+## **2. Hypotheses for Anomaly Causes**
+
+| Case | Anomaly Type                     | Possible Root Cause                                                                 |
+|------|----------------------------------|-------------------------------------------------------------------------------------|
+| 1002 | Sequence violation               | System allows out-of-order execution; lack of enforcement.                          |
+|      | Missing credit check             | Credit check bypassed due to override or system failure.                            |
+|      | Invalid stock validation timing  | Logged retrospectively; possible reconciliation process.                           |
+| 1003 | Missing stock validation         | Stock check omitted; assumed "OK" without verification.                             |
+|      | Shipment confirmation delay      | Administrative delay; correction logged after shipment.                             |
+| 1004 | Missing credit & stock checks    | High-risk exception flow; possibly a VIP customer or system misconfiguration.       |
+|      | Payment before invoice           | Advance payment scenario not properly modeled; or data entry timing issue.          |
+|      | `shipment_scheduled=N` but shipped | Override without proper justification; potential compliance gap.                |
+
+---
+
+## **3. SQL Queries to Investigate Further**
+
+### **Query 1: Identify Cases with Out-of-Order Activities**
+Find cases where a later activity in the process occurs before an earlier one.
+
+```sql
+SELECT 
+    oel1.case_id,
+    oel1.activity AS early_activity,
+    oel1.timestamp AS early_timestamp,
+    oel2.activity AS late_activity,
+    oel2.timestamp AS late_timestamp
+FROM order_event_log oel1
+JOIN order_event_log oel2
+    ON oel1.case_id = oel2.case_id
+    AND oel1.event_id < oel2.event_id
+    -- Define disorder: later activity should come before earlier in sequence
+    AND (
+        (oel1.activity = 'Ship Goods' AND oel2.activity = 'Confirm Shipment')
+        OR (oel1.activity = 'Confirm Shipment' AND oel2.activity = 'Ship Goods')
+        OR (oel1.activity = 'Ship Goods' AND oel2.activity = 'Validate Stock')
+        OR (oel1.activity = 'Confirm Shipment' AND oel2.activity = 'Perform Credit Check')
+        OR (oel1.activity = 'Ship Goods' AND oel2.activity = 'Perform Credit Check')
+    )
+    AND oel1.timestamp > oel2.timestamp
+ORDER BY oel1.case_id, oel1.timestamp;
+```
+
+---
+
+### **Query 2: Find Cases Missing Critical Steps (e.g., Credit Check)**
+Identify orders that skipped "Perform Credit Check".
+
+```sql
+SELECT 
+    oel.case_id,
+    o.order_value,
+    r.role AS last_role,
+    MAX(oel.timestamp) AS last_event_time
+FROM order_event_log oel
+JOIN orders o ON oel.case_id = o.case_id
+LEFT JOIN resources r ON oel.resource = r.resource_id
+WHERE oel.activity != 'Perform Credit Check'
+    AND oel.case_id NOT IN (
+        SELECT DISTINCT case_id 
+        FROM order_event_log 
+        WHERE activity = 'Perform Credit Check'
+    )
+GROUP BY oel.case_id, o.order_value, r.role;
+```
+
+---
+
+### **Query 3: Cases with Missing Activity Sequences (e.g., no Validate Stock before Ship Goods)**
+
+```sql
+SELECT 
+    oel.case_id,
+    o.order_value,
+    o.order_type
+FROM orders o
+WHERE o.case_id IN (
+    SELECT DISTINCT case_id 
+    FROM order_event_log 
+    WHERE activity = 'Ship Goods'
+)
+AND o.case_id NOT IN (
+    SELECT DISTINCT case_id 
+    FROM order_event_log 
+    WHERE activity = 'Validate Stock'
+);
+```
+
+---
+
+### **Query 4: Detect Payments Before Invoices (Potential Data Issue)**
+
+```sql
+SELECT 
+    oel1.case_id,
+    oel1.timestamp AS payment_time,
+    oel2.timestamp AS invoice_time,
+    oel1.additional_info->'amount' AS payment_amount,
+    oel2.additional_info->'invoice_id' AS invoice_id
+FROM order_event_log oel1
+JOIN order_event_log oel2
+    ON oel1.case_id = oel2.case_id
+    AND oel1.timestamp < oel2.timestamp
+WHERE oel1.activity = 'Receive Payment'
+    AND oel2.activity = 'Issue Invoice';
+```
+
+---
+
+### **Query 5: Resource Role vs. Activity Mismatch (e.g., non-Finance performing Finance activities)**
+
+```sql
+SELECT 
+    oel.case_id,
+    oel.activity,
+    r.role,
+    r.department,
+    oel.timestamp
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+WHERE (oel.activity = 'Perform Credit Check' AND r.role NOT LIKE '%Credit%')
+   OR (oel.activity = 'Issue Invoice' AND r.department != 'Finance')
+   OR (oel.activity = 'Receive Payment' AND r.department != 'Finance');
+```
+
+---
+
+### **Query 6: Identify Early/Suspicious Shipment Attempts (e.g., `attempted_early=Y`)**
+
+```sql
+SELECT 
+    case_id,
+    resource,
+    timestamp,
+    additional_info
+FROM order_event_log
+WHERE activity = 'Confirm Shipment'
+    AND additional_info LIKE '%attempted_early%';
+```
+
+---
+
+## **Summary for Target Model**
+
+The target model should:
+- Detect **sequence violations**, **missing steps**, and **logical inconsistencies**.
+- Hypothesize causes such as **system errors**, **policy bypasses**, **data entry mistakes**, or **exception handling workflows**.
+- Provide **targeted SQL queries** to investigate each anomaly type using the available schema.
+
+These queries can be executed directly on the PostgreSQL database to validate hypotheses and support process improvement.
