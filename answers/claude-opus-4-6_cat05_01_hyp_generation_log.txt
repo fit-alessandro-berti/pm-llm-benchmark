@@ -1,0 +1,343 @@
+
+
+# Process Mining Anomaly Analysis
+
+## Identified Anomalies and Undesirable Behaviors
+
+After examining the event log data against the assumed normal process flow, several significant anomalies emerge:
+
+---
+
+### Anomaly 1: Out-of-Sequence Activities in Case 1002
+
+**Observation:** In case 1002, "Confirm Shipment" (event 9) and "Ship Goods" (event 10) occur *before* "Perform Credit Check" (event 11) and "Validate Stock" (event 12). The shipment was confirmed just 5 minutes after order registration, and goods were shipped before creditworthiness was even assessed. The `additional_info` field explicitly flags `attempted_early=Y`.
+
+**Hypotheses:**
+- **Policy violation:** A logistics manager may have rushed the order (possibly flagged as "priority" order type) bypassing controls.
+- **System misconfiguration:** The workflow engine may not enforce sequencing for priority orders.
+- **Training issue:** LogisticsMgr_2 may not understand that credit checks and stock validation are prerequisites.
+- **Collusion or fraud risk:** Shipping goods before credit verification (credit_score=650, which is relatively low) exposes the organization to financial risk.
+
+---
+
+### Anomaly 2: Missing Activities in Cases 1003 and 1004
+
+**Observation:**
+- **Case 1003** is missing "Validate Stock" entirely — goods were shipped without stock validation.
+- **Case 1004** is missing both "Perform Credit Check" and "Validate Stock" — a $3,000 order was processed with no credit check and no stock verification.
+
+**Hypotheses:**
+- **Intentional bypass:** Employees may be skipping steps to accelerate processing, especially for higher-value orders.
+- **System defect:** The workflow system may not enforce mandatory steps, allowing cases to progress without completing prerequisites.
+- **Exception handling gaps:** There may be an informal "fast track" process that lacks proper controls.
+
+---
+
+### Anomaly 3: Payment Before Invoice in Case 1004
+
+**Observation:** In case 1004, "Receive Payment" (event 22, at 09:05) occurs before "Issue Invoice" (event 23, at 09:20). Payment of $3,000 was received just 5 minutes after order registration, before an invoice was even generated.
+
+**Hypotheses:**
+- **Prepayment or advance payment** that wasn't properly categorized in the system.
+- **Data entry error:** The timestamp may be incorrect, or the payment was retroactively recorded.
+- **Potential fraud:** Receiving payment outside normal channels without proper documentation.
+- **Process workaround:** The customer may have paid proactively, but the system should still enforce invoice-first sequencing.
+
+---
+
+### Anomaly 4: Shipment Before Confirmation in Case 1003
+
+**Observation:** "Ship Goods" (event 17, at 09:10) occurs before "Confirm Shipment" (event 19, at 09:45), with `late_confirmation=Y` flagged. Goods were physically shipped 35 minutes before logistics confirmed the shipment.
+
+**Hypotheses:**
+- **Warehouse acted independently** without waiting for logistics approval.
+- **Communication breakdown** between warehouse and logistics departments.
+- **Retroactive confirmation:** The confirmation was done after the fact to "paper over" the process deviation.
+
+---
+
+### Anomaly 5: Suspiciously Short Processing Times
+
+**Observation:** Cases 1002 and 1004 show extremely compressed timelines — Case 1002 went from registration to shipment in 20 minutes; Case 1004 went from registration to payment in 5 minutes. By contrast, Case 1001 (the normal case) spans multiple days.
+
+**Hypotheses:**
+- **Automated bot or bulk processing** that bypasses manual checks.
+- **Backdated entries:** Events may have been recorded retroactively.
+- **Inadequate controls** for expedited processing.
+
+---
+
+## SQL Queries for Further Investigation
+
+### Query 1: Detect Out-of-Order Activities Across All Cases
+
+This query identifies cases where activities occur in a sequence that violates the expected process flow by assigning expected ordinal positions and finding inversions.
+
+```sql
+WITH expected_order AS (
+    SELECT activity, expected_seq
+    FROM (VALUES
+        ('Register Order', 1),
+        ('Perform Credit Check', 2),
+        ('Validate Stock', 3),
+        ('Confirm Shipment', 4),
+        ('Ship Goods', 5),
+        ('Issue Invoice', 6),
+        ('Receive Payment', 7)
+    ) AS eo(activity, expected_seq)
+),
+event_with_seq AS (
+    SELECT
+        e.case_id,
+        e.activity,
+        e.timestamp,
+        e.resource,
+        eo.expected_seq,
+        ROW_NUMBER() OVER (PARTITION BY e.case_id ORDER BY e.timestamp) AS actual_seq
+    FROM order_event_log e
+    JOIN expected_order eo ON e.activity = eo.activity
+)
+SELECT
+    a.case_id,
+    a.activity AS earlier_activity,
+    a.timestamp AS earlier_timestamp,
+    a.expected_seq AS earlier_expected_seq,
+    b.activity AS later_activity,
+    b.timestamp AS later_timestamp,
+    b.expected_seq AS later_expected_seq
+FROM event_with_seq a
+JOIN event_with_seq b
+    ON a.case_id = b.case_id
+    AND a.timestamp < b.timestamp
+    AND a.expected_seq > b.expected_seq
+ORDER BY a.case_id, a.timestamp;
+```
+
+---
+
+### Query 2: Identify Cases with Missing Mandatory Activities
+
+```sql
+WITH mandatory_activities AS (
+    SELECT activity
+    FROM (VALUES
+        ('Register Order'),
+        ('Perform Credit Check'),
+        ('Validate Stock'),
+        ('Confirm Shipment'),
+        ('Ship Goods'),
+        ('Issue Invoice'),
+        ('Receive Payment')
+    ) AS ma(activity)
+),
+case_activities AS (
+    SELECT DISTINCT case_id, activity
+    FROM order_event_log
+)
+SELECT
+    o.case_id,
+    o.order_type,
+    o.order_value,
+    ma.activity AS missing_activity
+FROM orders o
+CROSS JOIN mandatory_activities ma
+LEFT JOIN case_activities ca
+    ON o.case_id = ca.case_id AND ma.activity = ca.activity
+WHERE ca.activity IS NULL
+ORDER BY o.case_id, ma.activity;
+```
+
+---
+
+### Query 3: Find Cases Where Payment Precedes Invoice
+
+```sql
+SELECT
+    pay.case_id,
+    pay.timestamp AS payment_timestamp,
+    inv.timestamp AS invoice_timestamp,
+    pay.additional_info AS payment_info,
+    inv.additional_info AS invoice_info,
+    o.order_value,
+    o.order_type
+FROM order_event_log pay
+JOIN order_event_log inv
+    ON pay.case_id = inv.case_id
+    AND pay.activity = 'Receive Payment'
+    AND inv.activity = 'Issue Invoice'
+JOIN orders o ON o.case_id = pay.case_id
+WHERE pay.timestamp < inv.timestamp;
+```
+
+---
+
+### Query 4: Detect Shipments Without Prior Credit Check or Stock Validation
+
+```sql
+SELECT
+    ship.case_id,
+    ship.timestamp AS ship_timestamp,
+    ship.resource AS shipping_resource,
+    o.order_value,
+    o.order_type,
+    cc.timestamp AS credit_check_timestamp,
+    vs.timestamp AS stock_validation_timestamp,
+    CASE WHEN cc.timestamp IS NULL THEN 'MISSING'
+         WHEN cc.timestamp > ship.timestamp THEN 'AFTER SHIPMENT'
+         ELSE 'OK' END AS credit_check_status,
+    CASE WHEN vs.timestamp IS NULL THEN 'MISSING'
+         WHEN vs.timestamp > ship.timestamp THEN 'AFTER SHIPMENT'
+         ELSE 'OK' END AS stock_validation_status
+FROM order_event_log ship
+JOIN orders o ON o.case_id = ship.case_id
+LEFT JOIN order_event_log cc
+    ON ship.case_id = cc.case_id AND cc.activity = 'Perform Credit Check'
+LEFT JOIN order_event_log vs
+    ON ship.case_id = vs.case_id AND vs.activity = 'Validate Stock'
+WHERE ship.activity = 'Ship Goods'
+    AND (cc.timestamp IS NULL OR cc.timestamp > ship.timestamp
+         OR vs.timestamp IS NULL OR vs.timestamp > ship.timestamp);
+```
+
+---
+
+### Query 5: Analyze Resource Behavior — Which Resources Are Involved in Anomalous Cases?
+
+```sql
+WITH anomalous_cases AS (
+    -- Cases with out-of-order: shipment before credit check
+    SELECT DISTINCT ship.case_id
+    FROM order_event_log ship
+    LEFT JOIN order_event_log cc
+        ON ship.case_id = cc.case_id AND cc.activity = 'Perform Credit Check'
+    WHERE ship.activity = 'Ship Goods'
+        AND (cc.timestamp IS NULL OR cc.timestamp > ship.timestamp)
+)
+SELECT
+    e.resource,
+    r.role,
+    r.department,
+    e.activity,
+    COUNT(DISTINCT e.case_id) AS anomalous_case_count,
+    ARRAY_AGG(DISTINCT e.case_id) AS affected_cases
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE e.case_id IN (SELECT case_id FROM anomalous_cases)
+GROUP BY e.resource, r.role, r.department, e.activity
+ORDER BY anomalous_case_count DESC, e.resource;
+```
+
+---
+
+### Query 6: Measure Time Between Consecutive Steps to Identify Suspiciously Fast Processing
+
+```sql
+WITH ordered_events AS (
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        resource,
+        LAG(activity) OVER (PARTITION BY case_id ORDER BY timestamp) AS prev_activity,
+        LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) AS prev_timestamp
+    FROM order_event_log
+)
+SELECT
+    oe.case_id,
+    oe.prev_activity,
+    oe.activity,
+    oe.prev_timestamp,
+    oe.timestamp,
+    EXTRACT(EPOCH FROM (oe.timestamp - oe.prev_timestamp)) / 60 AS minutes_between,
+    o.order_type,
+    o.order_value
+FROM ordered_events oe
+JOIN orders o ON o.case_id = oe.case_id
+WHERE oe.prev_activity IS NOT NULL
+    AND EXTRACT(EPOCH FROM (oe.timestamp - oe.prev_timestamp)) / 60 < 10
+ORDER BY minutes_between ASC;
+```
+
+---
+
+### Query 7: Correlate Anomalies with Order Type and Value
+
+```sql
+WITH expected_order AS (
+    SELECT activity, expected_seq
+    FROM (VALUES
+        ('Register Order', 1),
+        ('Perform Credit Check', 2),
+        ('Validate Stock', 3),
+        ('Confirm Shipment', 4),
+        ('Ship Goods', 5),
+        ('Issue Invoice', 6),
+        ('Receive Payment', 7)
+    ) AS eo(activity, expected_seq)
+),
+sequence_violations AS (
+    SELECT DISTINCT a.case_id
+    FROM order_event_log a
+    JOIN order_event_log b ON a.case_id = b.case_id AND a.timestamp < b.timestamp
+    JOIN expected_order eoa ON a.activity = eoa.activity
+    JOIN expected_order eob ON b.activity = eob.activity
+    WHERE eoa.expected_seq > eob.expected_seq
+),
+missing_steps AS (
+    SELECT DISTINCT o.case_id
+    FROM orders o
+    WHERE NOT EXISTS (
+        SELECT 1 FROM order_event_log e
+        WHERE e.case_id = o.case_id AND e.activity = 'Perform Credit Check'
+    )
+    OR NOT EXISTS (
+        SELECT 1 FROM order_event_log e
+        WHERE e.case_id = o.case_id AND e.activity = 'Validate Stock'
+    )
+)
+SELECT
+    o.case_id,
+    o.order_type,
+    o.order_value,
+    o.customer_id,
+    CASE WHEN sv.case_id IS NOT NULL THEN TRUE ELSE FALSE END AS has_sequence_violation,
+    CASE WHEN ms.case_id IS NOT NULL THEN TRUE ELSE FALSE END AS has_missing_steps
+FROM orders o
+LEFT JOIN sequence_violations sv ON o.case_id = sv.case_id
+LEFT JOIN missing_steps ms ON o.case_id = ms.case_id
+ORDER BY o.order_value DESC;
+```
+
+---
+
+### Query 8: Check if Specific Departments or Roles Disproportionately Trigger Early Actions
+
+```sql
+SELECT
+    r.department,
+    r.role,
+    e.resource,
+    e.activity,
+    COUNT(*) AS occurrence_count,
+    ARRAY_AGG(e.case_id ORDER BY e.case_id) AS cases,
+    ARRAY_AGG(e.additional_info ORDER BY e.case_id) AS context
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE e.additional_info LIKE '%early%'
+   OR e.additional_info LIKE '%late%'
+   OR e.additional_info LIKE '%attempted%'
+GROUP BY r.department, r.role, e.resource, e.activity;
+```
+
+---
+
+## Summary of Findings and Recommended Actions
+
+| Case | Anomalies | Risk Level | Key Concern |
+|------|-----------|------------|-------------|
+| 1001 | None — follows expected flow |  Low | Baseline normal case |
+| 1002 | Shipment before credit check & stock validation; priority order with low credit score (650) |  High | Financial exposure — goods shipped to potentially uncreditworthy customer |
+| 1003 | Stock validation skipped; goods shipped before shipment confirmation |  Medium | Inventory and logistics control gaps |
+| 1004 | Credit check & stock validation missing; payment before invoice; $3K order with no controls |  High | Potential fraud or severe process breakdown |
+
+The queries above should be run against the full dataset to determine whether these are isolated incidents or systemic patterns, and to identify whether specific resources, departments, order types, or customer segments are disproportionately associated with process deviations.

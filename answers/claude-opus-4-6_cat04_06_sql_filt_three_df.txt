@@ -1,0 +1,91 @@
+# DuckDB SQL Query for Process Mining Event Log Filtering
+
+## Understanding the Problem
+
+We need to:
+1. **Detect a direct-follow sequence** of three specific activities within each case
+2. **Apply a timing condition** (>5 days between the 2nd and 3rd activity in the sequence)
+3. **Exclude** cases matching both conditions, returning all other events
+
+## The Query
+
+```sql
+WITH ordered_events AS (
+    -- Assign a row number to each event within a case, ordered by timestamp
+    SELECT
+        *,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS rn
+    FROM event_log
+),
+
+sequences AS (
+    -- Use LEAD to look ahead at the next two activities and their timestamps
+    -- within each case (in chronological order)
+    SELECT
+        case_id,
+        activity                                                        AS act1,
+        LEAD(activity, 1) OVER (PARTITION BY case_id ORDER BY rn)      AS act2,
+        LEAD(activity, 2) OVER (PARTITION BY case_id ORDER BY rn)      AS act3,
+        LEAD(timestamp, 1) OVER (PARTITION BY case_id ORDER BY rn)     AS ts2,
+        LEAD(timestamp, 2) OVER (PARTITION BY case_id ORDER BY rn)     AS ts3
+    FROM ordered_events
+),
+
+cases_to_exclude AS (
+    -- Find cases where the exact 3-activity sequence exists in direct succession
+    -- AND the time between 'Create Order' and 'Confirm Order' exceeds 5 days
+    SELECT DISTINCT case_id
+    FROM sequences
+    WHERE act1 = 'Approve Purchase Requisition'
+      AND act2 = 'Create Order'
+      AND act3 = 'Confirm Order'
+      AND (ts3 - ts2) > INTERVAL 5 DAY
+)
+
+-- Return all events from cases that are NOT in the exclusion list
+SELECT el.*
+FROM event_log el
+WHERE el.case_id NOT IN (SELECT case_id FROM cases_to_exclude);
+```
+
+## Step-by-Step Explanation
+
+### Step 1: `ordered_events` — Establish Deterministic Ordering
+```
+ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS rn
+```
+- Assigns a sequential row number to each event **within its case**, ordered by `timestamp`.
+- This ensures a deterministic ordering, which is critical for detecting **direct succession** (no intervening events).
+
+### Step 2: `sequences` — Look Ahead for Consecutive Triples
+```
+LEAD(activity, 1) ... AS act2
+LEAD(activity, 2) ... AS act3
+```
+- For each event, we peek at the **immediately next** and **second-next** events in the same case.
+- Because we order by `rn` (which reflects chronological order), `act1  act2  act3` are guaranteed to be **directly successive** — no other event sits between them.
+- We also capture `ts2` and `ts3` (the timestamps of the 2nd and 3rd activities) for the timing check.
+
+### Step 3: `cases_to_exclude` — Apply Both Conditions
+| Condition | Purpose |
+|---|---|
+| `act1 = 'Approve Purchase Requisition'` | First activity in sequence |
+| `act2 = 'Create Order'` | Second activity (direct successor) |
+| `act3 = 'Confirm Order'` | Third activity (direct successor to second) |
+| `(ts3 - ts2) > INTERVAL 5 DAY` | Time between Create Order  Confirm Order exceeds 5 days |
+
+- `DISTINCT` ensures each case appears only once, even if the pattern occurs multiple times.
+
+### Step 4: Final Selection — Anti-Join via `NOT IN`
+```sql
+WHERE el.case_id NOT IN (SELECT case_id FROM cases_to_exclude)
+```
+- Returns **all columns and all events** from cases that do **not** match both the sequence and timing criteria.
+- Cases that have the sequence but complete within 5 days are **retained**.
+- Cases that lack the sequence entirely are **retained**.
+
+## Key Design Decisions
+
+- **`ROW_NUMBER` + `LEAD`** is the most efficient pattern in DuckDB for detecting directly-follows relationships — it avoids expensive self-joins.
+- **`INTERVAL 5 DAY`** leverages DuckDB's native interval arithmetic for clean, readable date comparison.
+- **`NOT IN`** with a `DISTINCT` subquery is clean and performant for case-level exclusion. An alternative would be a `LEFT JOIN ... WHERE ... IS NULL` anti-join pattern if `case_id` could be `NULL`.

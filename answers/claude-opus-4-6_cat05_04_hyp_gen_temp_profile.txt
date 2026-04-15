@@ -1,0 +1,259 @@
+
+
+# Temporal Profile Anomaly Analysis for Insurance Claim Handling
+
+## 1. Identified Anomalies
+
+### Anomaly 1: R  P (Receive to Approve) — Rigid Approval Timing
+- **Average:** ~25 hours | **STDEV:** 1 hour
+- The standard deviation is disproportionately small relative to the average. In a realistic claims process, the time from receipt to approval should vary significantly depending on claim complexity, documentation completeness, and adjuster workload. A near-constant 25-hour window suggests an artificial or batch-scheduled approval mechanism rather than genuine case-by-case evaluation.
+
+### Anomaly 2: P  N (Approve to Notify) — Excessive Notification Delay
+- **Average:** 7 days | **STDEV:** 2 days
+- After a claim is approved, notifying the customer should be a swift, largely automated step. A 7-day average with wide variance suggests a severe bottleneck — possibly manual notification workflows, resource shortages, or systematic deprioritization of the notification step.
+
+### Anomaly 3: A  C (Assign to Close) — Premature Closure
+- **Average:** 2 hours | **STDEV:** 1 hour
+- Closing a claim within 2 hours of adjuster assignment leaves insufficient time for evaluation, approval, and notification. This pattern implies that a subset of claims is being closed without completing all intermediate process steps — possibly representing rejected, duplicate, or withdrawn claims that bypass the standard workflow.
+
+### Anomaly 4: E  N (Evaluate to Notify) — Suspiciously Rapid Transition
+- **Average:** 5 minutes | **STDEV:** 1 minute
+- A 5-minute gap between evaluation and customer notification, with almost no variance, suggests either an automated system trigger that fires notification immediately upon evaluation completion, or that the approval step (P) is being skipped entirely for certain claims. Either scenario warrants investigation.
+
+---
+
+## 2. Hypotheses
+
+| Anomaly | Hypothesis |
+|---------|-----------|
+| **R  P rigid timing** | Approvals may be processed in a nightly or daily batch job that runs at a fixed time (e.g., 1:00 AM), producing a near-constant delay regardless of when the claim was received. Alternatively, an automated rule engine may approve certain low-risk claims on a fixed schedule. |
+| **P  N long delay** | Notification may depend on a manual step — perhaps generating a letter or waiting for a specific team to process outbound communications. Regional staffing imbalances or weekend/holiday effects could amplify the delay. The high STDEV suggests some claims are notified quickly (possibly digitally) while others wait for physical mail or manual follow-up. |
+| **A  C premature closure** | Certain claim types (e.g., duplicates, below-threshold amounts, or claims missing required documents) may be closed immediately by the assigned adjuster without evaluation or approval. This could also indicate fraudulent fast-tracking or adjuster gaming of performance metrics. |
+| **E  N instant transition** | An automated notification system may fire immediately when an evaluation record is saved, bypassing the approval step. This could be intentional for denied claims (where no approval is needed) or a system misconfiguration that skips required authorization. |
+
+---
+
+## 3. Verification Queries
+
+### 3.1 Claims with Abnormally Rigid R  P Timing
+
+This query identifies claims where the Receive-to-Approve interval clusters tightly around the 25-hour mark, and checks whether these follow a fixed daily schedule:
+
+```sql
+SELECT
+    ce_r.claim_id,
+    ce_r.timestamp AS receive_time,
+    ce_p.timestamp AS approve_time,
+    EXTRACT(EPOCH FROM (ce_p.timestamp - ce_r.timestamp)) AS duration_seconds,
+    EXTRACT(HOUR FROM ce_p.timestamp) AS approve_hour,
+    c.claim_type,
+    c.claim_amount
+FROM claim_events ce_r
+JOIN claim_events ce_p
+    ON ce_r.claim_id = ce_p.claim_id
+    AND ce_r.activity = 'R'
+    AND ce_p.activity = 'P'
+JOIN claims c
+    ON c.claim_id = ce_r.claim_id
+WHERE ABS(EXTRACT(EPOCH FROM (ce_p.timestamp - ce_r.timestamp)) - 90000) <= 3600
+ORDER BY approve_hour, ce_r.claim_id;
+```
+
+*If approvals cluster at a specific hour of the day, the batch-processing hypothesis is confirmed.*
+
+### 3.2 Claims Where Approval to Notification Exceeds Reasonable Bounds
+
+```sql
+WITH pn_times AS (
+    SELECT
+        ce_p.claim_id,
+        ce_p.timestamp AS approve_time,
+        ce_n.timestamp AS notify_time,
+        EXTRACT(EPOCH FROM (ce_n.timestamp - ce_p.timestamp)) AS pn_duration_seconds,
+        ce_p.resource AS approver,
+        ce_n.resource AS notifier
+    FROM claim_events ce_p
+    JOIN claim_events ce_n
+        ON ce_p.claim_id = ce_n.claim_id
+        AND ce_p.activity = 'P'
+        AND ce_n.activity = 'N'
+)
+SELECT
+    pn.*,
+    c.claim_type,
+    a.region,
+    a.name AS adjuster_name
+FROM pn_times pn
+JOIN claims c ON c.claim_id = pn.claim_id
+LEFT JOIN adjusters a ON a.name = pn.approver OR a.name = pn.notifier
+WHERE pn.pn_duration_seconds > (604800 + 2 * 172800)   -- Beyond AVG + 2*STDEV (~11 days)
+   OR pn.pn_duration_seconds < (604800 - 2 * 172800)   -- Below AVG - 2*STDEV (~3 days)
+ORDER BY pn.pn_duration_seconds DESC;
+```
+
+### 3.3 Correlate Long P  N Delays by Region and Claim Type
+
+```sql
+SELECT
+    a.region,
+    c.claim_type,
+    COUNT(*) AS claim_count,
+    AVG(EXTRACT(EPOCH FROM (ce_n.timestamp - ce_p.timestamp))) AS avg_pn_seconds,
+    STDDEV(EXTRACT(EPOCH FROM (ce_n.timestamp - ce_p.timestamp))) AS stdev_pn_seconds,
+    MAX(EXTRACT(EPOCH FROM (ce_n.timestamp - ce_p.timestamp))) AS max_pn_seconds
+FROM claim_events ce_p
+JOIN claim_events ce_n
+    ON ce_p.claim_id = ce_n.claim_id
+    AND ce_p.activity = 'P'
+    AND ce_n.activity = 'N'
+JOIN claims c ON c.claim_id = ce_p.claim_id
+LEFT JOIN adjusters a ON a.name = ce_p.resource
+GROUP BY a.region, c.claim_type
+ORDER BY avg_pn_seconds DESC;
+```
+
+### 3.4 Claims Closed Prematurely After Assignment (Skipping E, P, N)
+
+```sql
+SELECT
+    ce_a.claim_id,
+    ce_a.timestamp AS assign_time,
+    ce_c.timestamp AS close_time,
+    EXTRACT(EPOCH FROM (ce_c.timestamp - ce_a.timestamp)) / 3600.0 AS hours_to_close,
+    ce_a.resource AS assigned_adjuster,
+    c.claim_type,
+    c.claim_amount
+FROM claim_events ce_a
+JOIN claim_events ce_c
+    ON ce_a.claim_id = ce_c.claim_id
+    AND ce_a.activity = 'A'
+    AND ce_c.activity = 'C'
+JOIN claims c ON c.claim_id = ce_a.claim_id
+WHERE NOT EXISTS (
+    SELECT 1 FROM claim_events ce_e
+    WHERE ce_e.claim_id = ce_a.claim_id AND ce_e.activity = 'E'
+      AND ce_e.timestamp BETWEEN ce_a.timestamp AND ce_c.timestamp
+)
+AND EXTRACT(EPOCH FROM (ce_c.timestamp - ce_a.timestamp)) < 10800  -- Less than 3 hours
+ORDER BY hours_to_close ASC;
+```
+
+### 3.5 Adjuster-Level Breakdown of Premature Closures
+
+```sql
+SELECT
+    ce_a.resource AS adjuster,
+    COUNT(*) AS premature_close_count,
+    AVG(c.claim_amount) AS avg_claim_amount,
+    ARRAY_AGG(DISTINCT c.claim_type) AS claim_types
+FROM claim_events ce_a
+JOIN claim_events ce_c
+    ON ce_a.claim_id = ce_c.claim_id
+    AND ce_a.activity = 'A'
+    AND ce_c.activity = 'C'
+JOIN claims c ON c.claim_id = ce_a.claim_id
+WHERE EXTRACT(EPOCH FROM (ce_c.timestamp - ce_a.timestamp)) < 10800
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events
+    WHERE claim_id = ce_a.claim_id
+      AND activity IN ('E', 'P')
+      AND timestamp BETWEEN ce_a.timestamp AND ce_c.timestamp
+)
+GROUP BY ce_a.resource
+ORDER BY premature_close_count DESC;
+```
+
+*A single adjuster with a disproportionate count of premature closures would indicate either a specialized role (handling invalid claims) or potential misconduct.*
+
+### 3.6 Claims Where E  N Occurs Without an Intervening Approval Step
+
+```sql
+SELECT
+    ce_e.claim_id,
+    ce_e.timestamp AS evaluate_time,
+    ce_n.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (ce_n.timestamp - ce_e.timestamp)) AS en_duration_seconds,
+    c.claim_type,
+    c.claim_amount,
+    ce_e.resource AS evaluator,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM claim_events ce_p
+            WHERE ce_p.claim_id = ce_e.claim_id
+              AND ce_p.activity = 'P'
+              AND ce_p.timestamp BETWEEN ce_e.timestamp AND ce_n.timestamp
+        ) THEN 'Yes'
+        ELSE 'No'
+    END AS approval_present
+FROM claim_events ce_e
+JOIN claim_events ce_n
+    ON ce_e.claim_id = ce_n.claim_id
+    AND ce_e.activity = 'E'
+    AND ce_n.activity = 'N'
+JOIN claims c ON c.claim_id = ce_e.claim_id
+WHERE EXTRACT(EPOCH FROM (ce_n.timestamp - ce_e.timestamp)) < 600  -- Under 10 minutes
+ORDER BY en_duration_seconds ASC;
+```
+
+*Claims where `approval_present = 'No'` and the E  N gap is under 5 minutes are strong candidates for a skipped authorization step.*
+
+### 3.7 Full Process Duration Outlier Detection Across All Activity Pairs
+
+```sql
+WITH activity_pairs AS (
+    SELECT
+        e1.claim_id,
+        e1.activity AS activity_from,
+        e2.activity AS activity_to,
+        EXTRACT(EPOCH FROM (e2.timestamp - e1.timestamp)) AS duration_seconds
+    FROM claim_events e1
+    JOIN claim_events e2
+        ON e1.claim_id = e2.claim_id
+        AND e2.timestamp > e1.timestamp
+    WHERE (e1.activity, e2.activity) IN (
+        ('R','A'), ('R','E'), ('R','P'), ('A','C'),
+        ('E','N'), ('E','C'), ('P','N'), ('N','C')
+    )
+),
+stats AS (
+    SELECT
+        activity_from,
+        activity_to,
+        AVG(duration_seconds) AS avg_dur,
+        STDDEV(duration_seconds) AS stdev_dur
+    FROM activity_pairs
+    GROUP BY activity_from, activity_to
+)
+SELECT
+    ap.claim_id,
+    ap.activity_from,
+    ap.activity_to,
+    ap.duration_seconds,
+    s.avg_dur,
+    s.stdev_dur,
+    CASE
+        WHEN s.stdev_dur > 0
+        THEN (ap.duration_seconds - s.avg_dur) / s.stdev_dur
+        ELSE NULL
+    END AS z_score
+FROM activity_pairs ap
+JOIN stats s
+    ON ap.activity_from = s.activity_from
+    AND ap.activity_to = s.activity_to
+WHERE s.stdev_dur > 0
+  AND ABS((ap.duration_seconds - s.avg_dur) / s.stdev_dur) > 2
+ORDER BY ABS((ap.duration_seconds - s.avg_dur) / s.stdev_dur) DESC;
+```
+
+*This general-purpose query computes Z-scores for every claim across all tracked activity pairs, surfacing the most extreme deviations for further investigation. Adjusting the threshold from 2 to a higher ZETA value narrows the focus to the most egregious outliers.*
+
+---
+
+## Summary
+
+| Activity Pair | Anomaly Type | Primary Hypothesis | Key Verification |
+|---|---|---|---|
+| R  P | Artificially low variance | Batch/scheduled approval | Check approval hour clustering (Query 3.1) |
+| P  N | Excessive average delay | Manual notification bottleneck | Regional/type correlation (Query 3.3) |
+| A  C | Premature closure | Skipped process steps | Missing E/P activities (Query 3.4, 3.5) |
+| E  N | Unrealistically fast | Automated bypass of approval | Check for missing P step (Query 3.6) |
