@@ -1,0 +1,133 @@
+# Process Mining Analysis: Order Event Log Anomalies
+
+## 1. Identified Anomalies
+
+Comparing each case against the assumed normal flow (Register  Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Issue Invoice  Receive Payment):
+
+### Case 1001 
+Follows the normal process flow perfectly. Serves as a baseline.
+
+### Case 1002 
+- **Out-of-order activities:** `Confirm Shipment` and `Ship Goods` occurred **before** `Perform Credit Check` and `Validate Stock`.
+- **Risk:** Goods shipped before creditworthiness was verified. Customer had a low credit score (650) — potential financial risk.
+- The `additional_info` field (`attempted_early=Y`) suggests this may be a known/flagged behavior.
+
+### Case 1003 
+- **Missing activity:** `Validate Stock` is **absent entirely**.
+- **Out-of-order:** `Ship Goods` happened **before** `Confirm Shipment` (flagged with `late_confirmation=Y`).
+- **Risk:** Goods shipped without stock validation — possible inventory/fulfillment inconsistency.
+
+### Case 1004  (Most Severe)
+- **Missing activities:** No `Perform Credit Check`, no `Validate Stock`.
+- **Severe order inversion:** `Receive Payment` occurred **before** `Issue Invoice`, and both occurred **before** `Confirm Shipment` and `Ship Goods`.
+- `shipment_scheduled=N` indicates shipment was confirmed while flagged as not scheduled.
+- **Risk:** Highest order value (3000.00), skipping compliance steps entirely — major control failure.
+
+---
+
+## 2. Hypotheses for Root Causes
+
+| Anomaly | Possible Cause |
+|---|---|
+| Shipment before credit check (1002, 1004) | Policy override for "priority" orders; role-based permission gap; SalesRep_01/02 bypassing finance controls |
+| Missing Validate Stock (1003, 1004) | System integration failure between Sales and Warehouse modules; training issue — staff unaware step is mandatory |
+| Payment before invoice (1004) | Manual data entry error; timestamp recorded incorrectly; prepayment scenario not modeled in process |
+| Late shipment confirmation (1003) | Workflow tool not enforcing sequence; LogisticsMgr_2 filling in retroactively |
+| Same resources recurring in anomalies (SalesRep_01, LogisticsMgr_2, FinanceTeam_02) | Possible training gap or deliberate workaround by specific individuals |
+
+---
+
+## 3. Investigative SQL Queries
+
+### Q1. Detect cases missing mandatory activities
+```sql
+SELECT o.case_id, o.order_type, o.order_value,
+       STRING_AGG(DISTINCT e.activity, ', ') AS activities_present
+FROM orders o
+LEFT JOIN order_event_log e ON o.case_id = e.case_id
+GROUP BY o.case_id, o.order_type, o.order_value
+HAVING NOT (STRING_AGG(DISTINCT e.activity, ',') LIKE '%Perform Credit Check%')
+    OR NOT (STRING_AGG(DISTINCT e.activity, ',') LIKE '%Validate Stock%');
+```
+
+### Q2. Find cases where Ship Goods occurred before Perform Credit Check
+```sql
+SELECT s.case_id, s.timestamp AS ship_time, c.timestamp AS credit_time
+FROM order_event_log s
+JOIN order_event_log c
+  ON s.case_id = c.case_id
+WHERE s.activity = 'Ship Goods'
+  AND c.activity = 'Perform Credit Check'
+  AND s.timestamp < c.timestamp;
+```
+
+### Q3. Find cases where Payment precedes Invoice
+```sql
+SELECT p.case_id, p.timestamp AS payment_time, i.timestamp AS invoice_time
+FROM order_event_log p
+JOIN order_event_log i
+  ON p.case_id = i.case_id
+WHERE p.activity = 'Receive Payment'
+  AND i.activity = 'Issue Invoice'
+  AND p.timestamp < i.timestamp;
+```
+
+### Q4. Reconstruct each case's actual activity sequence
+```sql
+SELECT case_id,
+       STRING_AGG(activity, ' -> ' ORDER BY timestamp) AS actual_flow
+FROM order_event_log
+GROUP BY case_id;
+```
+
+### Q5. Identify resources frequently involved in out-of-order events
+```sql
+WITH anomalies AS (
+  SELECT DISTINCT case_id
+  FROM order_event_log e1
+  JOIN order_event_log e2
+    ON e1.case_id = e2.case_id
+  WHERE (e1.activity = 'Ship Goods' AND e2.activity = 'Perform Credit Check' AND e1.timestamp < e2.timestamp)
+     OR (e1.activity = 'Receive Payment' AND e2.activity = 'Issue Invoice' AND e1.timestamp < e2.timestamp)
+)
+SELECT e.resource, r.role, r.department, COUNT(*) AS events_in_anomalous_cases
+FROM order_event_log e
+JOIN anomalies a ON e.case_id = a.case_id
+JOIN resources r ON e.resource = r.resource_id
+GROUP BY e.resource, r.role, r.department
+ORDER BY events_in_anomalous_cases DESC;
+```
+
+### Q6. Correlate anomalies with order value / order type (risk exposure)
+```sql
+SELECT o.order_type,
+       COUNT(DISTINCT o.case_id) AS total_orders,
+       SUM(o.order_value) AS total_value,
+       COUNT(DISTINCT CASE WHEN missing.case_id IS NOT NULL THEN o.case_id END) AS risky_orders
+FROM orders o
+LEFT JOIN (
+    SELECT case_id FROM order_event_log
+    GROUP BY case_id
+    HAVING COUNT(CASE WHEN activity='Perform Credit Check' THEN 1 END) = 0
+        OR COUNT(CASE WHEN activity='Validate Stock' THEN 1 END) = 0
+) missing ON o.case_id = missing.case_id
+GROUP BY o.order_type;
+```
+
+### Q7. Check if specific departments are skipping their steps
+```sql
+SELECT r.department, e.activity, COUNT(*) AS event_count
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+GROUP BY r.department, e.activity
+ORDER BY r.department, event_count DESC;
+```
+
+---
+
+## 4. Recommended Next Steps
+
+1. **Enforce sequence via workflow engine:** Prevent `Ship Goods` and `Issue Invoice` events from being logged before prerequisite activities complete.
+2. **Audit high-value orders (e.g., case 1004):** Verify whether skipped steps were truly omitted or just unlogged.
+3. **Retrain resources** repeatedly flagged (notably SalesRep_01, LogisticsMgr_2).
+4. **Add validation constraints** in the event logging system to detect impossible orderings (e.g., payment before invoice) in real time.

@@ -1,0 +1,227 @@
+# Temporal Profile Analysis: Insurance Claim Handling Process
+
+## 1. Identified Anomalies
+
+After examining the temporal profile model, the following irregularities stand out:
+
+### Anomaly A: R  P (Receive to Approve)
+- **Average:** ~25 hours (90,000 seconds)
+- **STDEV:** 1 hour (3,600 seconds)
+- **Issue:** The standard deviation is disproportionately low relative to the mean. Real-world approval times should vary significantly based on claim complexity, amount, and adjuster workload.
+
+### Anomaly B: P  N (Approve to Notify)
+- **Average:** 7 days (604,800 seconds)
+- **STDEV:** 2 days (172,800 seconds)
+- **Issue:** Both the average delay and variation are excessively large. Notification after approval is typically a quick, often automated step.
+
+### Anomaly C: A  C (Assign to Close)
+- **Average:** 2 hours (7,200 seconds)
+- **STDEV:** 1 hour (3,600 seconds)
+- **Issue:** Closing claims only 2 hours after assignment is suspicious — it leaves insufficient time for the intervening Evaluate, Approve, and Notify steps.
+
+### Anomaly D: E  N (Evaluate to Notify)
+- **Average:** 5 minutes (300 seconds)
+- **STDEV:** 1 minute (60 seconds)
+- **Issue:** A 5-minute window between Evaluate and Notify is unusually short and leaves almost no time for the Approve step.
+
+---
+
+## 2. Hypotheses for Each Anomaly
+
+### Anomaly A (R  P): Artificially Rigid Approval Timing
+- **H1:** A batch-processing job may run on a fixed daily schedule, forcing all approvals to complete within a narrow time window regardless of claim complexity.
+- **H2:** A script or bot could be automatically approving claims without real adjudication, producing machine-like, low-variance timing.
+- **H3:** Data entry may be backdated or timestamps auto-filled at a standard interval by the system.
+
+### Anomaly B (P  N): Severe Bottleneck in Notification
+- **H1:** Notifications might require manual letter generation or postal dispatch, creating backlogs.
+- **H2:** A single resource (e.g., one specific communications team) may be responsible for all notifications, creating queuing delays.
+- **H3:** Notification may depend on external processes (payment clearance, third-party services) that introduce variable delays.
+
+### Anomaly C (A  C): Premature Claim Closure
+- **H1:** Some claims may be rejected or withdrawn immediately after assignment, skipping evaluation entirely.
+- **H2:** Adjusters may be closing duplicate or invalid claims without full processing.
+- **H3:** System errors or automated rules might close claims that fail initial validation checks.
+
+### Anomaly D (E  N): Skipped Approval Step
+- **H1:** For low-value or pre-approved claim categories, the Approve step may be bypassed by automation.
+- **H2:** Evaluate and Notify timestamps may be generated programmatically in sequence, rather than reflecting actual business activity.
+- **H3:** Certain claim types (e.g., auto-approved small amounts) may have streamlined workflows that skip formal approval.
+
+---
+
+## 3. Verification SQL Queries
+
+### Query 1: Identify R  P Claims With Unusually Uniform Timing
+```sql
+SELECT 
+    r.claim_id,
+    r.timestamp AS receive_time,
+    p.timestamp AS approve_time,
+    EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS seconds_between
+FROM claim_events r
+JOIN claim_events p 
+  ON r.claim_id = p.claim_id
+WHERE r.activity = 'R' 
+  AND p.activity = 'P'
+ORDER BY seconds_between;
+```
+**Follow-up:** Check whether the `resource` column for activity 'P' contains a non-human/system identifier (e.g., "AUTO_APPROVE_BOT").
+
+```sql
+SELECT resource, COUNT(*) AS approval_count
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY resource
+ORDER BY approval_count DESC;
+```
+
+---
+
+### Query 2: Find Claims With Extremely Long P  N Intervals
+```sql
+SELECT 
+    p.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    p.timestamp AS approve_time,
+    n.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS delay_seconds,
+    n.resource AS notify_resource
+FROM claim_events p
+JOIN claim_events n 
+  ON p.claim_id = n.claim_id
+JOIN claims c 
+  ON c.claim_id = p.claim_id
+WHERE p.activity = 'P' 
+  AND n.activity = 'N'
+  AND EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) > 950400  -- > avg + 2*STDEV
+ORDER BY delay_seconds DESC;
+```
+**Follow-up: Correlate delays with resources:**
+```sql
+SELECT 
+    n.resource,
+    COUNT(*) AS notification_count,
+    AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) AS avg_delay
+FROM claim_events p
+JOIN claim_events n 
+  ON p.claim_id = n.claim_id
+WHERE p.activity = 'P' AND n.activity = 'N'
+GROUP BY n.resource
+ORDER BY avg_delay DESC;
+```
+
+---
+
+### Query 3: Detect Claims Closed Shortly After Assignment (Skipping Steps)
+```sql
+SELECT 
+    a.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    a.timestamp AS assign_time,
+    cl.timestamp AS close_time,
+    EXTRACT(EPOCH FROM (cl.timestamp - a.timestamp)) AS seconds_to_close,
+    a.resource AS adjuster_resource
+FROM claim_events a
+JOIN claim_events cl 
+  ON a.claim_id = cl.claim_id
+JOIN claims c 
+  ON c.claim_id = a.claim_id
+WHERE a.activity = 'A' AND cl.activity = 'C'
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events mid
+      WHERE mid.claim_id = a.claim_id
+        AND mid.activity IN ('E', 'P', 'N')
+        AND mid.timestamp BETWEEN a.timestamp AND cl.timestamp
+  )
+ORDER BY seconds_to_close ASC;
+```
+**Follow-up — correlate with adjuster specialization/region:**
+```sql
+SELECT 
+    adj.specialization,
+    adj.region,
+    COUNT(*) AS premature_closures
+FROM claim_events a
+JOIN claim_events cl 
+  ON a.claim_id = cl.claim_id
+JOIN adjusters adj 
+  ON adj.name = a.resource
+WHERE a.activity = 'A' AND cl.activity = 'C'
+  AND EXTRACT(EPOCH FROM (cl.timestamp - a.timestamp)) < 7200
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events mid
+      WHERE mid.claim_id = a.claim_id
+        AND mid.activity IN ('E', 'P')
+  )
+GROUP BY adj.specialization, adj.region
+ORDER BY premature_closures DESC;
+```
+
+---
+
+### Query 4: Detect E  N Transitions That Skipped Approval
+```sql
+SELECT 
+    e.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    e.timestamp AS evaluate_time,
+    n.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS seconds_between
+FROM claim_events e
+JOIN claim_events n 
+  ON e.claim_id = n.claim_id
+JOIN claims c 
+  ON c.claim_id = e.claim_id
+WHERE e.activity = 'E' AND n.activity = 'N'
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events p
+      WHERE p.claim_id = e.claim_id
+        AND p.activity = 'P'
+        AND p.timestamp BETWEEN e.timestamp AND n.timestamp
+  )
+ORDER BY seconds_between ASC;
+```
+**Follow-up — check whether such claims cluster by claim type or amount:**
+```sql
+SELECT 
+    c.claim_type,
+    CASE 
+        WHEN c.claim_amount < 1000 THEN 'low'
+        WHEN c.claim_amount < 10000 THEN 'medium'
+        ELSE 'high'
+    END AS amount_tier,
+    COUNT(*) AS skipped_approval_count
+FROM claims c
+JOIN claim_events e ON c.claim_id = e.claim_id AND e.activity = 'E'
+JOIN claim_events n ON c.claim_id = n.claim_id AND n.activity = 'N'
+WHERE NOT EXISTS (
+    SELECT 1 FROM claim_events p
+    WHERE p.claim_id = c.claim_id AND p.activity = 'P'
+)
+GROUP BY c.claim_type, amount_tier
+ORDER BY skipped_approval_count DESC;
+```
+
+---
+
+### Query 5: Cross-Anomaly Resource Profiling
+Identify resources that simultaneously appear in multiple anomalous patterns, which might indicate a specific user or automated agent responsible for process irregularities:
+```sql
+SELECT 
+    resource,
+    COUNT(DISTINCT claim_id) FILTER (WHERE activity = 'P') AS approvals_made,
+    COUNT(DISTINCT claim_id) FILTER (WHERE activity = 'C') AS closures_made,
+    COUNT(DISTINCT claim_id) FILTER (WHERE activity = 'N') AS notifications_made
+FROM claim_events
+GROUP BY resource
+HAVING COUNT(DISTINCT claim_id) > 50
+ORDER BY approvals_made DESC;
+```
+
+---
+
+These queries will help confirm whether the temporal anomalies reflect genuine process irregularities (premature closures, skipped approvals, automation artifacts, or notification bottlenecks) and localize them to specific resources, claim types, or regions for further remediation.
