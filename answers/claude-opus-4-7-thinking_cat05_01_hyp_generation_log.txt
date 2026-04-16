@@ -1,0 +1,156 @@
+# Analysis of Process Anomalies in Order Event Log
+
+## 1. Identified Anomalies
+
+### Case 1001 
+Follows the normal process flow perfectly. Used as baseline.
+
+### Case 1002  — Out-of-Order Fulfillment
+- **Confirm Shipment** (08:25) and **Ship Goods** (08:40) occurred **before** the **Credit Check** (09:10) and **Validate Stock** (09:15).
+- Customer had a low credit score (650), yet goods shipped before verification.
+- `additional_info=attempted_early=Y` suggests deliberate bypass.
+
+### Case 1003  — Skipped Step & Late Confirmation
+- **Validate Stock** was entirely **skipped**.
+- **Ship Goods** (09:10) happened **before Confirm Shipment** (09:45).
+- `late_confirmation=Y` flag confirms the issue.
+
+### Case 1004  — Severe Process Violation
+- **Receive Payment** (09:05) occurred before **Issue Invoice** (09:20) — illogical ordering.
+- **Credit Check** and **Validate Stock** were **both skipped**.
+- `shipment_scheduled=N` yet goods were shipped anyway.
+- Highest order value ($3,000), making this the riskiest deviation.
+
+---
+
+## 2. Hypotheses
+
+| # | Hypothesis | Rationale |
+|---|-----------|-----------|
+| H1 | **Policy bypass for priority/high-value orders** | Case 1002 (priority) and 1004 (high value) both skip controls. |
+| H2 | **Specific resources routinely violate process order** | LogisticsMgr_2 appears in both late-confirmation cases (1002, 1003). |
+| H3 | **Pre-payment workflow for certain customers** | Case 1004 had payment before invoicing — could be prepaid/COD not modeled in the schema. |
+| H4 | **Weak system controls** | No enforcement of activity ordering allows arbitrary sequencing. |
+| H5 | **Training/knowledge gaps** | Newer clerks (e.g., WarehouseClerk_4) may not know proper sequence. |
+| H6 | **Credit check skipped for returning customers** | Could explain why 1003/1004 have no credit check. |
+
+---
+
+## 3. Investigative SQL Queries
+
+### Q1. Detect cases with missing mandatory activities
+```sql
+SELECT o.case_id, o.order_type, o.order_value,
+       STRING_AGG(DISTINCT e.activity, ', ') AS activities_present
+FROM orders o
+LEFT JOIN order_event_log e ON o.case_id = e.case_id
+GROUP BY o.case_id, o.order_type, o.order_value
+HAVING COUNT(DISTINCT e.activity) FILTER (
+          WHERE e.activity IN ('Register Order','Perform Credit Check',
+                               'Validate Stock','Confirm Shipment',
+                               'Ship Goods','Issue Invoice','Receive Payment')
+       ) < 7;
+```
+
+### Q2. Detect out-of-order activity sequences (e.g., Ship before Confirm)
+```sql
+WITH ordered AS (
+  SELECT case_id, activity, timestamp,
+         ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS step
+  FROM order_event_log
+)
+SELECT a.case_id, a.activity AS earlier_activity, a.step AS earlier_step,
+       b.activity AS later_activity, b.step AS later_step
+FROM ordered a
+JOIN ordered b ON a.case_id = b.case_id AND a.step < b.step
+WHERE (a.activity = 'Ship Goods'      AND b.activity = 'Confirm Shipment')
+   OR (a.activity = 'Ship Goods'      AND b.activity = 'Perform Credit Check')
+   OR (a.activity = 'Ship Goods'      AND b.activity = 'Validate Stock')
+   OR (a.activity = 'Receive Payment' AND b.activity = 'Issue Invoice')
+   OR (a.activity = 'Confirm Shipment'AND b.activity = 'Perform Credit Check');
+```
+
+### Q3. Payment preceding invoice
+```sql
+SELECT p.case_id, p.timestamp AS payment_time, i.timestamp AS invoice_time,
+       o.order_value, o.order_type
+FROM order_event_log p
+JOIN order_event_log i
+  ON p.case_id = i.case_id
+JOIN orders o ON o.case_id = p.case_id
+WHERE p.activity = 'Receive Payment'
+  AND i.activity = 'Issue Invoice'
+  AND p.timestamp < i.timestamp;
+```
+
+### Q4. Resources most frequently linked to deviations
+```sql
+WITH deviant_cases AS (
+  SELECT DISTINCT case_id FROM order_event_log
+  WHERE additional_info ILIKE '%late%'
+     OR additional_info ILIKE '%attempted_early%'
+     OR additional_info ILIKE '%shipment_scheduled=N%'
+)
+SELECT e.resource, r.role, r.department, COUNT(DISTINCT e.case_id) AS deviant_case_count
+FROM order_event_log e
+JOIN resources r ON r.resource_id = e.resource
+WHERE e.case_id IN (SELECT case_id FROM deviant_cases)
+GROUP BY e.resource, r.role, r.department
+ORDER BY deviant_case_count DESC;
+```
+
+### Q5. Deviation rate by order type / value
+```sql
+SELECT o.order_type,
+       CASE WHEN o.order_value >= 2500 THEN 'high'
+            WHEN o.order_value >= 1500 THEN 'medium'
+            ELSE 'low' END AS value_band,
+       COUNT(*) AS cases,
+       SUM(CASE WHEN missing_steps > 0 OR out_of_order > 0 THEN 1 ELSE 0 END) AS deviant_cases
+FROM orders o
+JOIN (
+   SELECT case_id,
+          7 - COUNT(DISTINCT activity) AS missing_steps,
+          SUM(CASE WHEN activity='Ship Goods'
+                    AND timestamp < (SELECT MIN(timestamp) FROM order_event_log e2
+                                      WHERE e2.case_id = e1.case_id
+                                        AND e2.activity='Confirm Shipment')
+                   THEN 1 ELSE 0 END) AS out_of_order
+   FROM order_event_log e1
+   GROUP BY case_id
+) d ON d.case_id = o.case_id
+GROUP BY o.order_type, value_band;
+```
+
+### Q6. Cases where Credit Check was skipped, grouped by SalesRep
+```sql
+SELECT e.resource AS sales_rep, COUNT(DISTINCT e.case_id) AS orders_without_credit_check
+FROM order_event_log e
+WHERE e.activity = 'Register Order'
+  AND e.case_id NOT IN (
+      SELECT case_id FROM order_event_log WHERE activity = 'Perform Credit Check'
+  )
+GROUP BY e.resource
+ORDER BY orders_without_credit_check DESC;
+```
+
+### Q7. Cycle-time outliers (suspiciously fast cases)
+```sql
+SELECT case_id,
+       MIN(timestamp) AS start_time,
+       MAX(timestamp) AS end_time,
+       EXTRACT(EPOCH FROM (MAX(timestamp) - MIN(timestamp)))/60 AS duration_min
+FROM order_event_log
+GROUP BY case_id
+ORDER BY duration_min ASC;
+```
+
+---
+
+## 4. Recommended Next Steps
+
+1. **Enforce activity-order constraints** via application logic or a workflow engine.
+2. **Require credit check before any shipment**, with override logging.
+3. **Audit LogisticsMgr_2** and review shipment confirmation workflows.
+4. **Investigate Case 1004** urgently — payment-before-invoice with no credit or stock check is a financial control failure.
+5. Introduce a **deviation dashboard** using queries Q1–Q5 for continuous monitoring.

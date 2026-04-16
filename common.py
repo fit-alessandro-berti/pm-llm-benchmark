@@ -461,6 +461,11 @@ MODELS_DICT = {
                 "thinking_tokens": 16000,
                 "max_tokens": 16000
             },
+            "claude-opus-4-7-thinking": {
+                "provider": "claude",
+                "base_model": "claude-opus-4-7",
+                "added_to_payload": {"thinking": {"type": "adaptive"}}
+            },
             "gemini-3-flash-preview-nothink": {
                 "provider": "google",
                 "base_model": "gemini-3-flash-preview",
@@ -1016,6 +1021,9 @@ def query_text_simple_anthropic(question, api_url, target_file):
         payload["thinking"] = {"type": "enabled", "budget_tokens": Shared.ANTHROPIC_THINKING_TOKENS}
         payload["max_tokens"] += Shared.ANTHROPIC_THINKING_TOKENS
         payload["max_tokens"] = min(64000, payload["max_tokens"])
+
+    if Shared.ADDED_TO_PAYLOAD is not None:
+        payload.update(Shared.ADDED_TO_PAYLOAD)
 
     dump_payload(payload, target_file)
 
