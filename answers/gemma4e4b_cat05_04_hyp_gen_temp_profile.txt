@@ -1,0 +1,160 @@
+### Identified Temporal Anomalies
+
+The temporal profile model shows several time intervals that are statistically unusual, suggesting that the process flow is not uniform or stable.
+
+1. **R $\rightarrow$ P (Receive to Approve):** The average time (approx. 1.04 days) combined with a very low standard deviation (1 hour) is highly suspicious. This suggests that the approval process happens on a rigidly predictable, systematic schedule, which is rare in real-world, human-managed claim processing.
+2. **P $\rightarrow$ N (Approve to Notify):** This interval exhibits an extremely long average time (7 days) paired with a very large standard deviation (2 days). This indicates massive inconsistency, suggesting that the notification step is often blocked or delayed significantly, but sometimes happens rapidly.
+3. **A $\rightarrow$ C (Assign to Close):** The average time (2 hours) is remarkably short, especially when considering the potential complexity of claims. This suggests a significant proportion of claims may be closed quickly immediately after assignment, potentially bypassing crucial evaluation or approval stages.
+4. **E $\rightarrow$ N (Evaluate to Notify):** The average time (5 minutes) is unrealistically short. This quick transition may suggest that the "Notify" step is often triggered automatically immediately upon evaluation, potentially skipping manual review time or failing to account for necessary communication preparation.
+
+***
+
+### Hypotheses on Anomaly Causes
+
+Based on the observed timing inconsistencies, the anomalies may arise from a combination of system limitations, operational practices, and workflow shortcuts:
+
+* **Rigid/Automated Steps (R $\rightarrow$ P):** The low variance in approval timing suggests that the approval step might be governed by an automated, timed workflow (e.g., "Approvals happen every 24 hours on Tuesdays") rather than discretionary human judgment. This is a mechanical bottleneck, not a business one.
+* **Backlogs and Resource Dependency (P $\rightarrow$ N):** The massive variance and long average for P $\rightarrow$ N points to a severe process bottleneck, likely related to resource capacity (e.g., the notification team is severely understaffed, leading to long delays, but when they become free, they process large batches quickly).
+* **Premature Closure/Simplification (A $\rightarrow$ C):** The quick closure suggests that certain low-value, simple claims (e.g., minor auto damage) may be subject to a rapid, simplified "fast track" process, bypassing full evaluation to meet service level agreements (SLAs).
+* **Systemic Triggering (E $\rightarrow$ N):** The ultra-short time between evaluation and notification implies that the system is configured to auto-send a notice (or a preliminary notice) as soon as the evaluation status is logged, rather than waiting for a human resource to review the evaluation results and manually initiate the communication.
+
+***
+
+### SQL Verification Queries (PostgreSQL)
+
+The following queries focus on identifying specific instances where the time lapse between required sequential activities deviates significantly from the established norms.
+
+#### 1. Identifying Claims with Excessive Delay (Targeting P $\rightarrow$ N Anomaly)
+
+This query identifies claims where the time between 'P' (Approve) and 'N' (Notify) exceeds 5 standard deviations (a strong indicator of an outlier or systemic failure).
+
+```sql
+WITH RankedEvents AS (
+    SELECT
+        claim_id,
+        activity,
+        timestamp,
+        resource,
+        LAG(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS previous_activity,
+        LAG(timestamp) OVER (PARTITION BY claim_id ORDER BY timestamp) AS previous_timestamp
+    FROM claim_events
+)
+SELECT
+    claim_id,
+    previous_activity,
+    activity,
+    timestamp,
+    (EXTRACT(EPOCH FROM (timestamp - previous_timestamp)) / 3600)::NUMERIC AS hours_elapsed
+FROM RankedEvents
+WHERE previous_activity = 'P'
+  AND activity = 'N'
+  AND (timestamp - previous_timestamp) > INTERVAL '2 day' * 3 -- Selecting instances > 2 days
+ORDER BY 
+    hours_elapsed DESC
+LIMIT 10;
+```
+
+#### 2. Identifying Claims Closed Immediately After Assignment (Targeting A $\rightarrow$ C Anomaly)
+
+This query isolates the fastest claims closed after assignment, helping confirm if a "fast track" process is operating outside standard controls.
+
+```sql
+WITH AssignedClaims AS (
+    SELECT
+        claim_id,
+        timestamp AS assignment_time,
+        resource AS adjuster_resource
+    FROM claim_events
+    WHERE activity = 'A'
+),
+ClosedClaims AS (
+    SELECT
+        claim_id,
+        timestamp AS close_time
+    FROM claim_events
+    WHERE activity = 'C'
+)
+SELECT
+    T1.claim_id,
+    T1.adjuster_resource,
+    T1.assignment_time,
+    T2.close_time,
+    (T2.close_time - T1.assignment_time) AS time_elapsed
+FROM AssignedClaims T1
+JOIN ClosedClaims T2 ON T1.claim_id = T2.claim_id
+WHERE T2.close_time > T1.assignment_time
+  -- Filter for claims closed within 4 hours
+  AND T2.close_time - T1.assignment_time < INTERVAL '4 hours'
+ORDER BY
+    time_elapsed ASC;
+```
+
+#### 3. Correlating Short Intervals with Specific Resources or Claim Types (Targeting E $\rightarrow$ N Anomaly)
+
+This query identifies instances where the time between 'E' (Evaluate) and 'N' (Notify) is extremely short (e.g., less than 15 minutes) and attempts to correlate these rapid transitions with specific adjusters or high-volume claim types, suggesting automated flow bypassing manual checks.
+
+```sql
+WITH EvaluationEvents AS (
+    SELECT
+        claim_id,
+        timestamp AS evaluate_time,
+        resource AS evaluator
+    FROM claim_events
+    WHERE activity = 'E'
+),
+NotificationEvents AS (
+    SELECT
+        claim_id,
+        timestamp AS notify_time
+    FROM claim_events
+    WHERE activity = 'N'
+)
+SELECT
+    CE.claim_id,
+    CE.evaluator,
+    CE.evaluate_time,
+    NE.notify_time,
+    (NE.notify_time - CE.evaluate_time) AS time_difference,
+    C.claim_type
+FROM EvaluationEvents CE
+JOIN NotificationEvents NE ON CE.claim_id = NE.claim_id
+JOIN claims C ON CE.claim_id = C.claim_id
+WHERE 
+    -- Filter for intervals less than 15 minutes
+    NE.notify_time - CE.evaluate_time < INTERVAL '15 minutes'
+ORDER BY
+    time_difference ASC, C.claim_type;
+```
+
+#### 4. Detecting Records Violating Predicted Schedules (Targeting R $\rightarrow$ P Anomaly)
+
+This query checks claims where the initial steps (R $\rightarrow$ E $\rightarrow$ P) are suspiciously close to the expected schedule average, but we check the *variance* by segmenting the data to see if deviation is correlated with the claim type.
+
+```sql
+-- Calculate the total time span between Receive and Approve (R to P)
+WITH TimeSpan AS (
+    SELECT
+        claim_id,
+        MIN(CASE WHEN activity = 'R' THEN timestamp END) AS receive_time,
+        MAX(CASE WHEN activity = 'P' THEN timestamp END) AS approve_time
+    FROM claim_events
+    WHERE activity IN ('R', 'P')
+    GROUP BY claim_id
+)
+SELECT
+    T.claim_id,
+    C.claim_type,
+    T.receive_time,
+    T.approve_time,
+    (T.approve_time - T.receive_time) AS total_duration,
+    -- Calculate days elapsed
+    (EXTRACT(EPOCH FROM (T.approve_time - T.receive_time)) / (3600 * 24.0))::NUMERIC AS days_elapsed
+FROM TimeSpan T
+JOIN claims C ON T.claim_id = C.claim_id
+-- Look for claims where the duration is suspiciously consistent (e.g., within 10% of the expected 1 day mark)
+WHERE 
+    EXTRACT(EPOCH FROM (T.approve_time - T.receive_time)) BETWEEN 
+    (1.04 * 24 * 3600 * 0.9) AND (1.04 * 24 * 3600 * 1.1)
+ORDER BY
+    C.claim_type, total_duration;
+```

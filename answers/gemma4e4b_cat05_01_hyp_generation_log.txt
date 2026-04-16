@@ -1,0 +1,187 @@
+## Data Analyst Report: Order Event Flow Anomalies
+
+Based on the provided event log data and the assumed normal process flow, several critical data integrity issues and procedural anomalies are visible. These anomalies suggest potential systemic failures, policy circumvention, or poor training adherence.
+
+###  Identified Anomalies
+
+We can categorize the findings into three primary areas: **Sequence Violation (Most Critical)**, **Temporal Violation**, and **Process Integrity Violations**.
+
+---
+
+###  1. Process Flow Sequence Violations (Critical)
+
+The most glaring issue is the violation of the established, sequential process flow. Critical downstream steps (like shipping or invoicing) are occurring *before* their prerequisite checks (like credit validation or stock checks).
+
+**Examples Observed:**
+*   **Case 1002:** Confirmation and Shipping (Events 9, 10) occur before Credit Check (Event 11) and Stock Validation (Event 12).
+*   **Case 1004:** Payment (Event 22) occurs immediately after Registration (Event 21), completely bypassing Credit Check, Stock Validation, and Confirmation steps.
+
+**Hypothesis:**
+1.  **System Bug/Manual Override:** The process might allow users to skip mandatory steps, bypassing required checks (e.g., "Force Ship" button).
+2.  **Procedural Non-Adherence:** The employees may be rushing to close the order, skipping necessary internal checks to meet aggressive targets.
+
+**SQL Investigation Queries:**
+
+**A. Identify Order Cases with Out-of-Sequence Activities:**
+This query attempts to detect if a "late" activity (e.g., Shipping) is recorded before its mandatory "early" activity (e.g., Stock Validation).
+
+```sql
+WITH RankedEvents AS (
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp ASC) AS process_step_order
+    FROM
+        order_event_log
+)
+SELECT
+    case_id,
+    activity AS out_of_order_activity,
+    timestamp,
+    -- Join back to find the most recent prerequisite activity
+    (
+        SELECT
+            MIN(activity)
+        FROM
+            order_event_log e2
+        WHERE
+            e2.case_id = r.case_id
+            AND e2.timestamp <= r.timestamp
+            AND e2.activity IN ('Validate Stock', 'Perform Credit Check', 'Confirm Shipment')
+        ORDER BY e2.timestamp DESC
+        LIMIT 1
+    ) AS prerequisite_activity
+FROM
+    order_event_log r
+WHERE
+    r.activity IN ('Ship Goods', 'Receive Payment') -- Focus on late steps
+    AND r.timestamp < (
+        SELECT
+            MAX(timestamp)
+        FROM
+            order_event_log e2
+        WHERE
+            e2.case_id = r.case_id
+            AND e2.activity IN ('Validate Stock', 'Perform Credit Check', 'Confirm Shipment')
+    )
+GROUP BY case_id, activity, timestamp
+ORDER BY case_id, timestamp;
+```
+
+**B. Identify Records Where Payment Occurs Without Prior Credit Check:**
+This specifically targets the critical failure in Case 1004.
+
+```sql
+SELECT
+    t1.case_id,
+    t1.timestamp AS payment_time,
+    t1.activity,
+    t2.activity AS last_recorded_activity
+FROM
+    order_event_log t1
+LEFT JOIN (
+    SELECT
+        case_id,
+        MAX(timestamp) AS max_preceding_time,
+        MAX(activity) AS last_activity
+    FROM
+        order_event_log
+    WHERE
+        activity != 'Receive Payment'
+    GROUP BY case_id
+) t2 ON t1.case_id = t2.case_id
+WHERE
+    t1.activity = 'Receive Payment'
+    AND t1.timestamp < t2.max_preceding_time
+    AND NOT EXISTS (
+        SELECT 1 FROM order_event_log e3
+        WHERE e3.case_id = t1.case_id
+        AND e3.activity = 'Perform Credit Check'
+        AND e3.timestamp < t1.timestamp
+    );
+```
+
+---
+
+###  2. Temporal Violations (Timing Issues)
+
+These relate to unusual time gaps or impossible timing between events, which could indicate stalled processes, data entry errors, or unusual customer behavior.
+
+**Examples Observed:**
+*   **Case 1001:** A large gap (3 days) between Shipment (Day 1, 9:45) and Payment (Day 2, 15:00). This is acceptable but needs to be tracked for SLA compliance.
+*   **General:** Comparing the time between 'Confirm Shipment' and 'Ship Goods' might reveal operational bottlenecks.
+
+**Hypothesis:**
+1.  **SLA Violation:** The elapsed time between crucial steps (e.g., Confirmation $\to$ Shipping) exceeds the defined Service Level Agreement.
+2.  **Data Error:** The timestamps may be incorrect (e.g., timezone issues or manual date correction).
+
+**SQL Investigation Query:**
+
+**C. Calculate Time Elapsed Between Consecutive Key Milestones:**
+This query calculates the time duration between the required steps (e.g., Credit Check $\to$ Stock Validation).
+
+```sql
+WITH StepTimestamps AS (
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        -- Use LAG to get the timestamp of the activity that happened immediately prior in the log
+        LAG(timestamp, 1) OVER (PARTITION BY case_id ORDER BY timestamp) AS previous_timestamp
+    FROM
+        order_event_log
+)
+SELECT
+    case_id,
+    activity,
+    timestamp,
+    previous_timestamp,
+    (timestamp - previous_timestamp) AS time_diff_interval
+FROM
+    StepTimestamps
+WHERE
+    activity IN ('Validate Stock', 'Perform Credit Check', 'Confirm Shipment')
+    AND previous_timestamp IS NOT NULL
+ORDER BY
+    case_id, timestamp;
+```
+
+---
+
+###  3. Resource/Role Integrity Violations
+
+While the provided sample data doesn't show explicit role violations, we should test if any single resource performs tasks outside their defined departmental scope.
+
+**Example Observation (Theoretical):** If a resource with the role `Sales Executive` was found to execute the `Issue Invoice` activity.
+
+**Hypothesis:**
+1.  **Insufficient Training/Scope:** Non-specialized staff are performing critical tasks requiring deep departmental knowledge.
+2.  **Temporary Delegation Failure:** A required resource (e.g., `FinanceTeam_01`) is absent, and another resource is forced to handle the task, which might necessitate system flags or manual review.
+
+**SQL Investigation Query:**
+
+**D. Identify Activities Performed by Resources Not Typically Assigned to Them:**
+This requires comparing the `resource` on the log against the expected `role` in the `resources` table.
+
+```sql
+SELECT DISTINCT
+    e.case_id,
+    e.activity,
+    e.resource,
+    r.role AS resource_role_assigned,
+    CASE
+        -- Check if the resource role suggests a different department/function
+        WHEN e.activity = 'Issue Invoice' AND r.department != 'Finance' THEN 'FLAG: Role Mismatch - Invoice issued by non-Finance personnel.'
+        WHEN e.activity = 'Validate Stock' AND r.department != 'Logistics' THEN 'FLAG: Role Mismatch - Stock checked by non-Logistics personnel.'
+        ELSE 'OK'
+    END AS compliance_check
+FROM
+    order_event_log e
+JOIN
+    resources r ON e.resource = r.resource_id
+WHERE
+    (e.activity = 'Issue Invoice' AND r.department != 'Finance') OR
+    (e.activity = 'Validate Stock' AND r.department != 'Logistics')
+LIMIT 10; -- Limiting to see potential flags based on known roles
+```
