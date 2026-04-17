@@ -1,0 +1,205 @@
+### Temporal Profile Anomalies and Analysis
+
+The following analysis identifies irregularities in the temporal profile, proposes business or technical hypotheses for these deviations, and provides SQL verification strategies using the `claim_events` and related tables.
+
+---
+
+### 1. Identified Anomalies
+
+| Activity Pair | Avg Time (s) | STDEV (s) | CV* | Anomaly Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **R  P** | 90,000 | 3,600 | 4% | **Suspiciously Low Variance:** The coefficient of variation (CV) is extremely low. While the average duration (~25 hours) is plausible, the tight clustering suggests a rigid, non-human-driven process. |
+| **A  C** | 7,200 | 3,600 | 50% | **Premature Closure Risk:** Claims are closing on average 2 hours after assignment. Given the process flow requires Evaluation, Approval, and Notification, this short duration suggests claims may be bypassing intermediate steps or closing incorrectly. |
+| **E  N** | 300 | 60 | 20% | **Abnormally Fast Transition:** Only 5 minutes average between Evaluation and Notification. This speed is inconsistent with typical manual review cycles and may indicate automated triggering or missing steps. |
+| **P  N** | 604,800 | 172,800 | 28.6% | **High Latency & Instability:** A 7-day average delay with high variance indicates significant bottlenecks. Some claims are notified quickly while others wait up to 11 days, suggesting resource constraints or dependency issues. |
+| **E  C** | 3,600 | 3,000 | 83% | **Process Divergence:** A 1-hour average from Evaluation to Close with high variance implies a distinct sub-process. Claims may be closing rapidly after evaluation without proceeding to Approval/Notification, suggesting rejected claims or specific claim types following an alternative path. |
+
+*\*CV = Coefficient of Variation (STDEV / AVG).*
+
+---
+
+### 2. Hypotheses
+
+#### Hypothesis A: Automated Batch Processing for R  P
+The low variance in **R  P** suggests claims are not being approved individually by humans in real-time. Instead, claims may be batched and processed at fixed intervals (e.g., every 24 hours) by an automated system, resulting in timestamps that cluster tightly around the batch run time.
+
+#### Hypothesis B: Bifurcated Process Flow for A  C and E  C
+The short **A  C** and **E  C** durations, combined with the long **P  N** delay, suggest the process is not linear for all claims.
+*   **Rejected Claims:** Claims that fail evaluation may be closing immediately (E  C) without proceeding to Approval (P).
+*   **System Errors:** The "Close" event might be triggered erroneously by the system upon assignment for certain claim types, skipping the workflow.
+
+#### Hypothesis C: Manual Bottleneck in Notification (P  N)
+The long and variable **P  N** interval indicates a manual dependency. The notification step likely relies on human resources that are overloaded or unavailable. The high variance suggests that notification speed depends heavily on the queue length at the time of approval.
+
+#### Hypothesis D: Automated Notification Trigger (E  N)
+The rapid **E  N** transition may result from an automated rule where the system sends a notification immediately upon evaluation completion, or the "Evaluate" and "Notify" activities are logged as a single atomic action in the source system, artificially compressing the time.
+
+---
+
+### 3. Verification Queries
+
+The following SQL queries target PostgreSQL. They use self-joins on `claim_events` to compute time intervals and correlate anomalies with claim attributes, adjusters, or resources.
+
+#### Query 1: Verify R  P Rigidity and Batch Patterns
+*Goal: Identify claims with R  P times tightly clustered around 25 hours and check for patterns in `claim_type` or `resource` that suggest automation.*
+
+```sql
+WITH r_p_intervals AS (
+    SELECT 
+        c.claim_id,
+        c.claim_type,
+        c.customer_id,
+        EXTRACT(EPOCH FROM (
+            MAX(CASE WHEN ce_p.activity = 'P' THEN ce_p.timestamp END) - 
+            MAX(CASE WHEN ce_r.activity = 'R' THEN ce_r.timestamp END)
+        )) AS duration_seconds
+    FROM claims c
+    JOIN claim_events ce_r ON c.claim_id = ce_r.claim_id AND ce_r.activity = 'R'
+    JOIN claim_events ce_p ON c.claim_id = ce_p.claim_id AND ce_p.activity = 'P'
+    GROUP BY c.claim_id, c.claim_type, c.customer_id
+    HAVING duration_seconds BETWEEN 86400 AND 93600 -- Within 1 std dev of avg
+)
+SELECT 
+    claim_type,
+    COUNT(*) AS claim_count,
+    ROUND(AVG(duration_seconds), 2) AS avg_duration,
+    ROUND(STDDEV(duration_seconds), 2) AS std_duration
+FROM r_p_intervals
+GROUP BY claim_type
+ORDER BY claim_count DESC;
+
+-- Verification Check: Look for claim_types with near-zero STDEV.
+-- If present, inspect the 'resource' column for 'R' and 'P' events in those claims.
+-- Automated processes often use a system user (e.g., 'SYSTEM_BOT') as the resource.
+```
+
+#### Query 2: Detect Premature Closures (A  C) and Missing Steps
+*Goal: Find claims closing shortly after assignment and verify if they skipped Evaluation, Approval, or Notification.*
+
+```sql
+WITH a_c_check AS (
+    SELECT 
+        c.claim_id,
+        c.claim_type,
+        EXTRACT(EPOCH FROM (
+            MAX(CASE WHEN ce_c.activity = 'C' THEN ce_c.timestamp END) - 
+            MAX(CASE WHEN ce_a.activity = 'A' THEN ce_a.timestamp END)
+        )) AS ac_duration,
+        -- Check for presence of intermediate steps
+        MAX(CASE WHEN EXISTS (SELECT 1 FROM claim_events ce2 WHERE ce2.claim_id = c.claim_id AND ce2.activity = 'E') THEN 1 ELSE 0 END) AS has_E,
+        MAX(CASE WHEN EXISTS (SELECT 1 FROM claim_events ce2 WHERE ce2.claim_id = c.claim_id AND ce2.activity = 'P') THEN 1 ELSE 0 END) AS has_P,
+        MAX(CASE WHEN EXISTS (SELECT 1 FROM claim_events ce2 WHERE ce2.claim_id = c.claim_id AND ce2.activity = 'N') THEN 1 ELSE 0 END) AS has_N
+    FROM claims c
+    JOIN claim_events ce_a ON c.claim_id = ce_a.claim_id AND ce_a.activity = 'A'
+    JOIN claim_events ce_c ON c.claim_id = ce_c.claim_id AND ce_c.activity = 'C'
+    GROUP BY c.claim_id, c.claim_type
+    HAVING ac_duration < 3600 -- Less than 1 hour
+)
+SELECT 
+    claim_type,
+    COUNT(*) AS premature_close_count,
+    SUM(has_E) AS with_evaluation,
+    SUM(has_P) AS with_approval,
+    SUM(has_N) AS with_notification
+FROM a_c_check
+GROUP BY claim_type;
+
+-- Verification Check: If `premature_close_count` is high and `with_approval` is low,
+-- it confirms claims are closing without approval. Check 'additional_info' for 
+-- keywords like 'auto_close' or 'error'.
+```
+
+#### Query 3: Analyze P  N Bottlenecks and Resource Correlation
+*Goal: Correlate long notification delays with specific adjusters, regions, or claim types.*
+
+```sql
+WITH p_n_delays AS (
+    SELECT 
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        a.region,
+        adj.name AS adjuster_name,
+        EXTRACT(EPOCH FROM (
+            MAX(CASE WHEN ce_n.activity = 'N' THEN ce_n.timestamp END) - 
+            MAX(CASE WHEN ce_p.activity = 'P' THEN ce_p.timestamp END)
+        )) AS delay_seconds,
+        -- Check the resource performing the notification
+        MAX(CASE WHEN ce_n.activity = 'N' THEN ce_n.resource END) AS notify_resource
+    FROM claims c
+    JOIN claim_events ce_p ON c.claim_id = ce_p.claim_id AND ce_p.activity = 'P'
+    JOIN claim_events ce_n ON c.claim_id = ce_n.claim_id AND ce_n.activity = 'N'
+    JOIN adjusters adj ON c.claim_id = adj.adjuster_id -- Assuming adjuster linked via claim or resource mapping
+    GROUP BY c.claim_id, c.claim_type, c.claim_amount, a.region, adj.name
+)
+SELECT 
+    region,
+    claim_type,
+    CASE 
+        WHEN delay_seconds > 604800 + 172800 THEN 'Long Delay (>9 days)'
+        WHEN delay_seconds < 604800 - 172800 THEN 'Unexpectedly Short'
+        ELSE 'Within Profile'
+    END AS delay_category,
+    COUNT(*) AS claims_in_category,
+    STRING_AGG(DISTINCT notify_resource, ', ') AS notify_resources
+FROM p_n_delays
+GROUP BY region, claim_type, delay_category
+ORDER BY claims_in_category DESC;
+
+-- Verification Check: Look for regions or claim types dominating the 'Long Delay' category.
+-- If 'notify_resource' shows specific human names or 'QUEUE_SYSTEM', it supports the bottleneck hypothesis.
+```
+
+#### Query 4: Investigate E  N Speed and Atomic Actions
+*Goal: Check if E and N events occur in rapid succession and share attributes suggesting they are linked.*
+
+```sql
+SELECT 
+    claim_type,
+    resource, -- Resource performing Evaluation
+    COUNT(*) AS fast_e_n_count,
+    AVG(EXTRACT(EPOCH FROM (
+        MIN(CASE WHEN ce_n.activity = 'N' THEN ce_n.timestamp END) - 
+        MIN(CASE WHEN ce_e.activity = 'E' THEN ce_e.timestamp END)
+    ))) AS avg_seconds
+FROM claims c
+JOIN claim_events ce_e ON c.claim_id = ce_e.claim_id AND ce_e.activity = 'E'
+JOIN claim_events ce_n ON c.claim_id = ce_n.claim_id AND ce_n.activity = 'N'
+GROUP BY claim_type, resource
+HAVING avg_seconds < 600 -- Less than 10 minutes
+ORDER BY fast_e_n_count DESC;
+
+-- Verification Check: If `resource` is the same for E and N, or if `additional_info` 
+-- contains identical content for both events, it suggests an atomic operation 
+-- where the system logs both steps simultaneously.
+```
+
+#### Query 5: Identify Claims Closing Directly After Evaluation (E  C Path)
+*Goal: Isolate claims that skip Approval/Notification and close quickly after Evaluation.*
+
+```sql
+SELECT 
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    adj.region,
+    EXTRACT(EPOCH FROM (
+        MIN(CASE WHEN ce_c.activity = 'C' THEN ce_c.timestamp END) - 
+        MIN(CASE WHEN ce_e.activity = 'E' THEN ce_e.timestamp END)
+    )) AS ec_duration
+FROM claims c
+JOIN claim_events ce_e ON c.claim_id = ce_e.claim_id AND ce_e.activity = 'E'
+JOIN claim_events ce_c ON c.claim_id = ce_c.claim_id AND ce_c.activity = 'C'
+LEFT JOIN claim_events ce_p ON c.claim_id = ce_p.claim_id AND ce_p.activity = 'P'
+LEFT JOIN claim_events ce_n ON c.claim_id = ce_n.claim_id AND ce_n.activity = 'N'
+WHERE ce_p.event_id IS NULL AND ce_n.event_id IS NULL -- Claims without P or N
+  AND EXTRACT(EPOCH FROM (
+        MIN(CASE WHEN ce_c.activity = 'C' THEN ce_c.timestamp END) - 
+        MIN(CASE WHEN ce_e.activity = 'E' THEN ce_e.timestamp END)
+    )) < 7200 -- Closing within 2 hours of evaluation
+ORDER BY ec_duration;
+
+-- Verification Check: These claims likely represent a "Reject" path. Verify if 
+-- `additional_info` in the 'E' event contains status 'Rejected' or 'Denied'.
+-- Check if `claim_type` correlates with high rejection rates.
+```

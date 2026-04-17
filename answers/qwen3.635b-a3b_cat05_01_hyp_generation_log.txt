@@ -1,0 +1,153 @@
+###  Identified Anomalies
+
+| Case ID | Anomaly Description |
+|---------|---------------------|
+| **1002** | `Perform Credit Check` and `Validate Stock` occur **after** `Confirm Shipment` and `Ship Goods`. `attempted_early=Y` suggests a deliberate bypass. |
+| **1003** | `Validate Stock` is **completely missing**. `Ship Goods` occurs before `Confirm Shipment`. `late_confirmation=Y` indicates retroactive logging. |
+| **1004** | `Receive Payment` occurs **5 minutes after registration**, before any processing, invoicing, or shipping. `shipment_scheduled=N` contradicts later shipping events. Missing `Perform Credit Check` and `Validate Stock`. |
+| **General** | Multiple cases violate the assumed linear flow. Temporal inconsistencies and missing mandatory steps suggest systemic or procedural breakdowns. |
+
+---
+
+###  Hypothesized Root Causes
+
+1. **Policy Bypass / Expedited Processing**: Staff may be manually overriding standard controls (credit/stock checks) to meet SLAs or handle priority/high-value orders, leading to skipped or retroactive steps.
+2. **System Integration Glitches**: Independent subsystems (payment gateway, warehouse WMS, CRM) may be auto-triggering events outside the order management workflow, causing out-of-order logging.
+3. **User Error / Training Gaps**: Operators might be misusing the UI, logging events in the wrong sequence, or using placeholder timestamps due to lack of training or unclear SOPs.
+4. **Unlogged Exception Handling**: Certain activities might be automated or deemed optional in specific scenarios (e.g., auto-approved credit for high scores), but the event log still records them inconsistently.
+5. **Data Entry Artifacts**: Manual overrides or batch imports might be injecting events with incorrect `timestamp` or `resource` values.
+
+---
+
+###  Investigative SQL Queries (PostgreSQL)
+
+#### Query 1: Identify Missing Mandatory Activities per Case
+*Tests the hypothesis that steps are being skipped or not logged.*
+```sql
+WITH expected_steps AS (
+    VALUES 
+        ('Register Order', 1), ('Perform Credit Check', 2), ('Validate Stock', 3),
+        ('Confirm Shipment', 4), ('Ship Goods', 5), ('Issue Invoice', 6), ('Receive Payment', 7)
+) AS expected(activity, step),
+distinct_cases AS (
+    SELECT DISTINCT case_id FROM order_event_log
+)
+SELECT 
+    dc.case_id,
+    o.order_type,
+    o.order_value,
+    es.activity AS missing_activity
+FROM distinct_cases dc
+CROSS JOIN expected_steps es
+LEFT JOIN order_event_log oel 
+    ON dc.case_id = oel.case_id AND es.activity = oel.activity
+JOIN orders o ON dc.case_id = o.case_id
+WHERE oel.activity IS NULL
+ORDER BY dc.case_id, es.step;
+```
+
+#### Query 2: Detect Out-of-Order Execution Relative to Standard Flow
+*Tests the hypothesis that steps are being executed or logged in the wrong sequence.*
+```sql
+WITH flow_sequence AS (
+    VALUES 
+        ('Register Order', 1), ('Perform Credit Check', 2), ('Validate Stock', 3),
+        ('Confirm Shipment', 4), ('Ship Goods', 5), ('Issue Invoice', 6), ('Receive Payment', 7)
+) AS expected(activity, step),
+case_timeline AS (
+    SELECT 
+        oel.case_id,
+        oel.activity,
+        oel.timestamp,
+        ex.step AS expected_step,
+        LAG(oel.activity) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) AS prev_activity,
+        LAG(ex.step) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) AS prev_expected_step
+    FROM order_event_log oel
+    JOIN flow_sequence ex ON oel.activity = ex.activity
+)
+SELECT 
+    case_id,
+    activity,
+    timestamp,
+    prev_activity,
+    prev_expected_step,
+    expected_step,
+    CASE WHEN expected_step < prev_expected_step THEN 'VIOLATION' ELSE 'OK' END AS status
+FROM case_timeline
+WHERE prev_activity IS NOT NULL 
+  AND expected_step < prev_expected_step
+ORDER BY case_id, timestamp;
+```
+
+#### Query 3: Flag Cases Where Payment Occurs Before Invoicing/Shipping
+*Tests the hypothesis of premature financial processing or system auto-charging.*
+```sql
+WITH payment_timing AS (
+    SELECT 
+        case_id,
+        MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS pay_time,
+        MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS inv_time,
+        MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS ship_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT 
+    pt.case_id,
+    o.order_type,
+    o.order_value,
+    pt.pay_time,
+    pt.inv_time,
+    pt.ship_time,
+    CASE 
+        WHEN pt.pay_time < pt.inv_time THEN 'Payment before Invoice'
+        WHEN pt.pay_time < pt.ship_time THEN 'Payment before Shipping'
+        ELSE 'Normal'
+    END AS anomaly_flag
+FROM payment_timing pt
+JOIN orders o ON pt.case_id = o.case_id
+WHERE pt.pay_time < COALESCE(pt.inv_time, pt.ship_time)
+ORDER BY pt.case_id;
+```
+
+#### Query 4: Correlate Anomalies with Order Attributes & Resource Roles
+*Tests whether specific order types, values, or departments are driving the deviations.*
+```sql
+WITH anomaly_cases AS (
+    SELECT DISTINCT case_id
+    FROM (
+        SELECT case_id, activity, timestamp,
+               LAG(activity) OVER (PARTITION BY case_id ORDER BY timestamp) AS prev_activity
+        FROM order_event_log
+    ) t
+    WHERE prev_activity IS NOT NULL 
+      AND activity NOT IN ('Receive Payment', 'Issue Invoice', 'Ship Goods')
+      AND prev_activity IN ('Confirm Shipment', 'Ship Goods')
+)
+SELECT 
+    ac.case_id,
+    o.order_type,
+    o.order_value,
+    oel.activity,
+    oel.timestamp,
+    oel.resource,
+    res.role,
+    res.department
+FROM anomaly_cases ac
+JOIN orders o ON ac.case_id = o.case_id
+JOIN order_event_log oel ON ac.case_id = oel.case_id
+JOIN resources res ON oel.resource = res.resource_id
+ORDER BY ac.case_id, oel.timestamp;
+```
+
+---
+
+###  How to Use These Queries
+1. Run **Query 1** to confirm exactly which steps are missing per case.
+2. Run **Query 2** to map temporal violations against the expected process sequence.
+3. Run **Query 3** to isolate financial/process mismatches (e.g., case 1004).
+4. Run **Query 4** to cross-reference anomalies with `orders` and `resources` tables. Look for patterns like:
+   - Specific `order_type` or `order_value` thresholds triggering bypasses
+   - Certain `department`/`role` combinations consistently causing out-of-order logs
+   - `additional_info` fields (`attempted_early=Y`, `late_confirmation=Y`) correlating with specific staff or systems
+
+These queries will provide empirical evidence to validate or reject the hypothesized causes and guide targeted process, system, or training interventions.

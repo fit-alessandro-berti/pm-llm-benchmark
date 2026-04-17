@@ -8,8 +8,8 @@ from common import query_text_simple, query_image_simple, callback_write, set_ap
 import common
 
 WAITING_TIME_RETRY = 15
-USE_MULTITHREADING = True
-MAX_WORKERS = 75
+USE_MULTITHREADING = False
+MAX_WORKERS = 1
 TIME_BETWEEN_ANSWERS = 0
 
 

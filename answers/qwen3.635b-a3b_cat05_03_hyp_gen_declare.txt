@@ -1,0 +1,85 @@
+### 1. Identified Anomalies in the DECLARE Model
+
+- **Direct Logical Contradiction via `noncoexistence(E, C)`**: The constraint explicitly forbids Evaluation (E) and Closing (C) from coexisting in the same trace. This directly contradicts the intended business process, where E must precede C. Any standard claim closure in reality would violate this rule.
+- **Missing Existence Constraints for Critical Steps**: The model does not enforce the occurrence of Assign (A), Approve (P), Notify (N), or even Evaluate (E). Traces can legally skip these steps entirely, undermining process integrity and compliance.
+- **Weak/Insufficient Ordering Constraints**: `precedence(C, R)` only guarantees that Receive (R) happens before Close (C), but permits arbitrary or missing intermediate steps. Similarly, `responded_existence(E, A)` only triggers if E occurs; if E is skipped, A is not enforced.
+- **Allowed Invalid Execution Paths**: Due to the above, the model permits logically invalid sequences such as `R  C` (receive and immediately close without evaluation, approval, or notification) or `R  A  P  N  C` (evaluation completely omitted).
+
+### 2. Hypotheses for Anomaly Origins
+
+- **Semantic Misinterpretation During Modeling**: The modeler likely confused `noncoexistence` with `precedence` or `response`. The intent was probably to enforce that E must occur before C, but the wrong constraint type was selected, creating a hard logical block instead of an ordering rule.
+- **Process Evolution & Exception Handling**: The business may have introduced automated or expedited claim types where human evaluation is bypassed. The `noncoexistence` rule might have been added to handle these exceptions, but it was applied globally rather than conditionally, breaking the standard flow.
+- **Incremental/Incomplete Constraint Induction**: The model may have been generated from event logs using a mining algorithm that prioritized high-confidence patterns. If certain claim types frequently lacked evaluation steps in historical data, the miner might have inferred `noncoexistence(E, C)` as a statistical pattern rather than a business rule, while dropping lower-frequency steps like P and N.
+- **Data Quality or System Migration Artifacts**: During a system upgrade or data migration, event logs might have been truncated or misaligned. If historical data showed many closed claims with missing evaluation events, constraint induction tools might have incorrectly formalized this data gap as a process rule instead of a logging error.
+
+### 3. SQL-Based Verification Strategies
+
+The following PostgreSQL queries can be executed against the `claims`, `adjusters`, and `claim_events` tables to validate whether these anomalies manifest in actual process execution.
+
+**A. Detect Claims with Both Evaluation and Closing (Violates `noncoexistence(E, C)`)**
+```sql
+SELECT c.claim_id, c.claim_type
+FROM claims c
+WHERE c.claim_id IN (SELECT claim_id FROM claim_events WHERE activity = 'E')
+  AND c.claim_id IN (SELECT claim_id FROM claim_events WHERE activity = 'C');
+```
+*Purpose:* Identifies claims that contain both E and C events. A high result count indicates the `noncoexistence` constraint is invalid in practice and contradicts actual business operations.
+
+**B. Identify Claims Closed Without Evaluation (RC Direct or Skipped E)**
+```sql
+SELECT c.claim_id, c.claim_type
+FROM claims c
+JOIN claim_events e_r ON c.claim_id = e_r.claim_id AND e_r.activity = 'R'
+WHERE NOT EXISTS (
+    SELECT 1 FROM claim_events e_e 
+    WHERE e_e.claim_id = c.claim_id AND e_e.activity = 'E'
+);
+```
+*Purpose:* Finds claims that were received and closed but never evaluated. This tests whether the process allows skipping critical validation steps.
+
+**C. Verify All Evaluations Are Preceded by Assignments (Tests `responded_existence(E, A)`)**
+```sql
+SELECT e_e.claim_id, e_e.timestamp AS eval_time
+FROM claim_events e_e
+WHERE e_e.activity = 'E'
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events e_a 
+      WHERE e_a.claim_id = e_e.claim_id 
+        AND e_a.activity = 'A' 
+        AND e_a.timestamp < e_e.timestamp
+  );
+```
+*Purpose:* Returns evaluation events that occurred before any assignment event. A non-empty result indicates a violation of the intended assignment-then-evaluate logic.
+
+**D. Find Claims Missing Approval or Notification Steps**
+```sql
+SELECT c.claim_id,
+       CASE WHEN p_exists IS NULL THEN 'Missing P' ELSE 'Has P' END AS approval_status,
+       CASE WHEN n_exists IS NULL THEN 'Missing N' ELSE 'Has N' END AS notification_status
+FROM claims c
+JOIN (SELECT claim_id, MIN(CASE WHEN activity = 'P' THEN 1 ELSE 0 END) AS p_exists 
+      FROM claim_events GROUP BY claim_id) p ON c.claim_id = p.claim_id
+JOIN (SELECT claim_id, MIN(CASE WHEN activity = 'N' THEN 1 ELSE 0 END) AS n_exists 
+      FROM claim_events GROUP BY claim_id) n ON c.claim_id = n.claim_id
+WHERE c.claim_id IN (SELECT claim_id FROM claim_events WHERE activity = 'C')
+  AND (p.p_exists = 0 OR n.n_exists = 0);
+```
+*Purpose:* Highlights claims that reached the closing stage without being formally approved or notified, confirming the model's lack of existence constraints for P and N.
+
+**E. Check if All Closings Are Properly Preceded by Receives (Tests `precedence(C, R)`)**
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE c.claim_id IN (SELECT claim_id FROM claim_events WHERE activity = 'C')
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events e_r
+      WHERE e_r.claim_id = c.claim_id
+        AND e_r.activity = 'R'
+        AND e_r.timestamp < (
+            SELECT MIN(e_c.timestamp) 
+            FROM claim_events e_c 
+            WHERE e_c.claim_id = c.claim_id AND e_c.activity = 'C'
+        )
+  );
+```
+*Purpose:* Identifies claims where the closing event occurred before the receive event (or without a receive event at all). This validates the weakest ordering constraint in the model.
