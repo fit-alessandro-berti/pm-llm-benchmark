@@ -316,7 +316,6 @@ MODELS_DICT = {
             "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick",
             "ai21/jamba-large-1.7",
             "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking",
-            "allenai/olmo-3-7b-think", "allenai/olmo-3-7b-instruct",
             "qwen/qwen3.5-35b-a3b", "qwen/qwen3.5-27b", "qwen/qwen3.5-122b-a10b",
             "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1",
             "writer/palmyra-x5", "z-ai/glm-4.7-flash",
@@ -327,7 +326,7 @@ MODELS_DICT = {
             "z-ai/glm-5-turbo",
             "minimax/minimax-m2.7", "xiaomi/mimo-v2-pro", "xiaomi/mimo-v2-omni",
             "z-ai/glm-5v-turbo", "arcee-ai/trinity-large-thinking",
-            "qwen/qwen3.6-plus:free", "z-ai/glm-5.1", "openrouter/elephant-alpha"
+            "z-ai/glm-5.1", "openrouter/elephant-alpha"
         }
     },
     "manual": {
