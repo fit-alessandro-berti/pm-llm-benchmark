@@ -10,7 +10,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | qwen3.5-122b-a10b           | **30.7** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.9                  | 4.1                  | 4.3                  | **4.8**              | **3.4**              | 0.0                  |
 | qwen3-next-80b-a3b-thinking | **29.4** | :white_check_mark: | :white_check_mark: | 5.2                  | 5.4                  | 2.7                  | :mage_woman: **4.4** | 4.6                  | 4.0                  | 3.0                  | 0.0                  |
 | qwen3.5-35b-a3b             | **29.3** | :white_check_mark: | :white_check_mark: | 5.7                  | 5.7                  | 2.1                  | 3.9                  | 4.2                  | 4.5                  | 3.2                  | 0.0                  |
-| qwen3.635b-a3b              | **28.7** | :x:                | :white_check_mark: | 5.4                  | 5.9                  | 2.4                  | 3.5                  | 3.8                  | 4.4                  | **3.4**              | 4.0                  |
+| qwen3.635b-a3b              | **28.9** | :x:                | :white_check_mark: | 5.4                  | 5.9                  | 2.4                  | 3.7                  | 3.8                  | 4.4                  | **3.4**              | 4.0                  |
 | qwen3.59b                   | **26.3** | :white_check_mark: | :x:                | 4.9                  | 5.5                  | 2.1                  | 3.3                  | 3.6                  | 4.1                  | 2.8                  | 0.0                  |
 | qwen3-next-80b-a3b-instruct | **26.2** | :white_check_mark: | :x:                | 4.3                  | 4.5                  | 2.4                  | 3.7                  | 4.3                  | 4.0                  | 3.0                  | 0.0                  |
 | qwen3.54b                   | **25.7** | :white_check_mark: | :x:                | 4.6                  | 4.9                  | 2.1                  | 3.8                  | 3.2                  | 4.2                  | 2.9                  | 0.0                  |
@@ -359,7 +359,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 6.4   |
 | cat08_05_task_schedul              | 5.9   |
 
-### qwen3.635b-a3b   => 28.7 points
+### qwen3.635b-a3b   => 28.9 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |
@@ -394,6 +394,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat04_04_declare_description       | 3.3   |
 | cat04_05_sql_filt_num_events       | 7.5   |
 | cat04_06_sql_filt_three_df         | 7.7   |
+| cat04_07_sql_filt_top_k_vars       | 2.2   |
 | cat05_01_hyp_generation_log        | 5.1   |
 | cat05_02_hyp_gen_powl              | 6.4   |
 | cat05_03_hyp_gen_declare           | 4.9   |
