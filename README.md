@@ -11,59 +11,59 @@ The prompts are reported in the *questions/* folder.
 
 ## Textual Question Index
 
-| Question | First 80 chars |
-| --- | --- |
-| `cat01_01` | Below is a complex, interleaved sequence of hospital process events. Each line r |
-| `cat01_02` | **Prompt:**  You are given a process event log from a complex support workflow a |
-| `cat01_03` | **Prompt:**  You are given a complex event log from a manufacturing process that |
-| `cat01_04` | **Prompt:**  You have been given a log of events from a manufacturing assembly l |
-| `cat01_05` | **Prompt:**  You are given two separate event logs, **Log A** (from System A) an |
-| `cat01_06` | You are an expert AI assistant with deep knowledge in process mining. Your task  |
-| `cat01_07` | **Prompt:**  **Context:**   You have been provided with transcripts from a serie |
-| `cat01_08` | **Prompt:**  You are given several tables extracted from an ERP system. These ta |
-| `cat02_01` | **Prompt:**  You are given a textual description of a normative process for hand |
-| `cat02_02` | **Part 1: Normative Process Behavior (Strict Rules)**   **Textual Description:** |
-| `cat02_03` | **Prompt:**  You are given an event log from a well-known business process commo |
-| `cat02_04` | **Prompt:**  You are given a POWL (Partially Ordered Workflow Language) model de |
-| `cat02_05` | **Prompt:**  In this task, you are given two POWL (Partially Ordered Workflow La |
-| `cat02_06` | **Prompt:**  You are presented with an event log of a “Customer Support Ticket |
-| `cat02_07` | **Prompt:**  You are given an event log of an “Insurance Claims Processing”  |
-| `cat02_08` | **Prompt:**  You are given a process tree model that is intended to represent a  |
-| `cat02_09` | **Prompt:**  Below is a process tree model representing a simplified "Procure-to |
-| `cat03_01` | **Prompt:**  PROCESS TREE   A process tree is a hierarchical process model.   Th |
-| `cat03_02` | **Prompt:**  POWL (PARTIALLY ORDERED WORKFLOW LANGUAGE) MODELS   A partially ord |
-| `cat03_03` | **Prompt:**  LOG SKELETON   The Log Skeleton process model contains the followin |
-| `cat03_04` | **Prompt:**  DECLARE   A DECLARE model in pm4py is expressed as a Python diction |
-| `cat03_05` | **Prompt:**  TEMPORAL PROFILE   The temporal profile is a model describing the a |
-| `cat03_06` | **Prompt:**  ACCEPTING PETRI NET   A Petri net plus an initial and a final marki |
-| `cat03_07` | **Prompt:**  PROCESS TREE   A process tree is a hierarchical process model.   Th |
-| `cat03_08` | **Prompt:**  POWL (PARTIALLY ORDERED WORKFLOW LANGUAGE) MODELS   A partially ord |
-| `cat04_01` | **Pseudo-BPMN Representation:**  ``` Start Event --> Task A: "Receive Customer R |
-| `cat04_02` | **Pseudo-BPMN Representation:**  ``` Start Event --> Task A: "Receive Customer R |
-| `cat04_03` | **Real-Life DECLARE Model Representation:**  ```python declare_model = {     'ex |
-| `cat04_04` | Below is a complete prompt you could provide to a target LLM, including the DECL |
-| `cat04_05` | **Draft Prompt for the Benchmark:**  "Assume you have an event log stored in a D |
-| `cat04_06` | **Prompt for the Benchmark:**  "Consider an event log stored in a DuckDB table n |
-| `cat04_07` | **Prompt for the Benchmark:**  "Consider an event log stored in a DuckDB table n |
-| `cat05_01` | ### Underlying Database and Schema  **Database Type:** PostgreSQL  **Schema Desc |
-| `cat05_02` | ### Underlying Database Context  **Database Type:** PostgreSQL  **Schema Descrip |
-| `cat05_03` | ### Underlying Database Context  **Database Type:** PostgreSQL  **Schema Descrip |
-| `cat05_04` | Below is a proposed scenario involving a temporal profile model for an insurance |
-| `cat05_05` | **Process Description (in natural language):**  Consider a complex, multinationa |
-| `cat05_06` | **Pseudo-BPMN Representation of the Process (Textual Approximation)**  ``` Start |
-| `cat05_07` | **Long Process Description:**  Imagine a large-scale property management company |
-| `cat06_01` | **Process Description:**  The lending division of Argentum Financial Inc. uses a |
-| `cat06_02` | **Event Log**  \| CaseID \| Activity             \| Timestamp           \| LocalResi |
-| `cat06_03` | ```python import pm4py from pm4py.objects.powl.obj import StrictPartialOrder, Op |
-| `cat06_04` | ---  **Event Log for Group A (Protected Group)**  \| CaseID \| Activity            |
-| `cat06_05` | ---  **Event Log for Group A (Protected Group)**  \| CaseID \| Activity            |
-| `cat06_06` | ---  **Prompt:**  You are given a process model represented in the DECLARE const |
-| `cat06_07` | The following is a long textual description of a complex hiring process at a mul |
-| `cat08_01` | **Scenario Context:**  A large multi-specialty outpatient clinic is facing chall |
-| `cat08_02` | **Scenario Context:**  An e-commerce company operates a large warehouse fulfillm |
-| `cat08_03` | **Scenario Context:**  "Speedy Parcels," a regional logistics company, operates  |
-| `cat08_04` | **Scenario Context:**  "TechSolve Solutions" provides IT support services via a  |
-| `cat08_05` | **Scenario Context:**  "Precision Parts Inc." operates a manufacturing job shop  |
+| Question | First 50 chars | Last 50 chars |
+| --- | --- | --- |
+| `cat01_01` | Below is a complex, interleaved sequence of hospit | e case IDs from this complex interleaved sequence. |
+| `cat01_02` | **Prompt:**  You are given a process event log fro | ng the contextual clues that led to those changes. |
+| `cat01_03` | **Prompt:**  You are given a complex event log fro | nces to more meaningful aggregated process stages. |
+| `cat01_04` | **Prompt:**  You have been given a log of events f | , deriving a labeled process from a raw event log. |
+| `cat01_05` | **Prompt:**  You are given two separate event logs | l as how you integrated attributes from both logs. |
+| `cat01_06` | You are an expert AI assistant with deep knowledge | pp=Microsoft Word,Window=Quarterly_Report.docx ``` |
+| `cat01_07` | **Prompt:**  **Context:**   You have been provided | eptions within a fairly standard business process. |
+| `cat01_08` | **Prompt:**  You are given several tables extracte |       \| Irene Park       \| Billing Clerk    \|  --- |
+| `cat02_01` | **Prompt:**  You are given a textual description o | d interpreting any ambiguities as best as you can. |
+| `cat02_02` | **Part 1: Normative Process Behavior (Strict Rules | ne with the given constraints and recommendations. |
+| `cat02_03` | **Prompt:**  You are given an event log from a wel |  Explain why these anomalies might be problematic. |
+| `cat02_04` | **Prompt:**  You are given a POWL (Partially Order | loop_approve_invoice, P) root.order.add_edge(P, O) |
+| `cat02_05` | **Prompt:**  In this task, you are given two POWL  | ch model affect process correctness and integrity. |
+| `cat02_06` | **Prompt:**  You are presented with an event log o |  that might address these performance bottlenecks. |
+| `cat02_07` | **Prompt:**  You are given an event log of an “I | d offer suggestions to mitigate these root causes. |
+| `cat02_08` | **Prompt:**  You are given a process tree model th |  operations required by the Order-to-Cash process. |
+| `cat02_09` | **Prompt:**  Below is a process tree model represe | e domain’s logic and prevents unwanted behavior. |
+| `cat03_01` | **Prompt:**  PROCESS TREE   A process tree is a hi | the notation for activities or silent steps (tau). |
+| `cat03_02` | **Prompt:**  POWL (PARTIALLY ORDERED WORKFLOW LANG | rating the loop and exclusive choice as described. |
+| `cat03_03` | **Prompt:**  LOG SKELETON   The Log Skeleton proce | resenting the Log Skeleton for the given scenario. |
+| `cat03_04` | **Prompt:**  DECLARE   A DECLARE model in pm4py is |  representing the DECLARE model for this scenario. |
+| `cat03_05` | **Prompt:**  TEMPORAL PROFILE   The temporal profi | ctivities that may be separated by multiple steps. |
+| `cat03_06` | **Prompt:**  ACCEPTING PETRI NET   A Petri net plu | h the initial marking (im) and final marking (fm). |
+| `cat03_07` | **Prompt:**  PROCESS TREE   A process tree is a hi | the eventual approval, confirmation, and archival. |
+| `cat03_08` | **Prompt:**  POWL (PARTIALLY ORDERED WORKFLOW LANG |  \| 5       \| D         \| 2024-06-03 14:00   \|  --- |
+| `cat04_01` | **Pseudo-BPMN Representation:**  ``` Start Event - | nditions approvals or rework steps are triggered." |
+| `cat04_02` | **Pseudo-BPMN Representation:**  ``` Start Event - | ustomer satisfaction, and operational complexity." |
+| `cat04_03` | **Real-Life DECLARE Model Representation:**  ```py | might lead to such a stringent set of conditions." |
+| `cat04_04` | Below is a complete prompt you could provide to a  | scribed order or if mandatory steps were omitted." |
+| `cat04_05` | **Draft Prompt for the Benchmark:**  "Assume you h | ct grouping and filtering to achieve this result." |
+| `cat04_06` | **Prompt for the Benchmark:**  "Consider an event  |  events from the cases that are not filtered out." |
+| `cat04_07` | **Prompt for the Benchmark:**  "Consider an event  | e corresponding events from those filtered cases." |
+| `cat05_01` | ### Underlying Database and Schema  **Database Typ | rther without any hints or guidance provided here. |
+| `cat05_02` | ### Underlying Database Context  **Database Type:* | fication steps are frequently skipped in practice. |
+| `cat05_03` | ### Underlying Database Context  **Database Type:* |  SQL-based investigation strategies independently. |
+| `cat05_04` | Below is a proposed scenario involving a temporal  | e reasons, and verification queries independently. |
+| `cat05_05` | **Process Description (in natural language):**  Co |  provide any SQL queries; just list the questions. |
+| `cat05_06` | **Pseudo-BPMN Representation of the Process (Textu |  provide any SQL queries; just list the questions. |
+| `cat05_07` | **Long Process Description:**  Imagine a large-sca | arity on this complex property onboarding process. |
+| `cat06_01` | **Process Description:**  The lending division of  | impact on fairness and equity for all applicants.* |
+| `cat06_02` | **Event Log**  \| CaseID \| Activity             \| T | hen their underlying creditworthiness is similar.* |
+| `cat06_03` | ```python import pm4py from pm4py.objects.powl.obj | irness and equity in the final loan decisions.”* |
+| `cat06_04` | ---  **Event Log for Group A (Protected Group)**   |  to systematic differences in final decisions.”* |
+| `cat06_05` | ---  **Event Log for Group A (Protected Group)**   | for fairness and equity in the hiring process.”* |
+| `cat06_06` | ---  **Prompt:**  You are given a process model re | aints reduce bias in the loan application process. |
+| `cat06_07` | The following is a long textual description of a c | (nodes=[loop, xor]) root.order.add_edge(loop, xor) |
+| `cat08_01` | **Scenario Context:**  A large multi-specialty out | ta-driven insights and actionable recommendations. |
+| `cat08_02` | **Scenario Context:**  An e-commerce company opera | roduced by dependencies between process instances. |
+| `cat08_03` | **Scenario Context:**  "Speedy Parcels," a regiona | otential insights within the described event data. |
+| `cat08_04` | **Scenario Context:**  "TechSolve Solutions" provi | and assignment patterns within the event log data. |
+| `cat08_05` | **Scenario Context:**  "Precision Parts Inc." oper | ifficulty and complexity inherent in the scenario. |
 
 Procedure for every prompt:
 * Provide the prompt to a LLM:
