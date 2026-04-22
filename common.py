@@ -629,12 +629,12 @@ def is_open_source(m_name):
 
 def is_large_reasoning_model(m_name):
     m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "gemini-3", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "nemotron-3-nano-30b-a3b", "minimax-m2.1", "glm-4.7", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5", "qwen3-max-thinking", "qwen3.5-35b", "qwen3.5-397b", "qwen3.5-122b", "qwen3.5-27b", "nemotron-3", "thinkhigh", "minimax-m2.7", "mimo-v2-omni", "mimo-v2-pro", "gemma-4", "qwen3.6", "kimi-k2.6"]
+    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "gemini-3", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "nemotron-3-nano-30b-a3b", "minimax-m2.1", "glm-4.7", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5", "qwen3-max-thinking", "qwen3.5-35b", "qwen3.5-397b", "qwen3.5-122b", "qwen3.5-27b", "nemotron-3", "thinkhigh", "minimax-m2.7", "mimo-v2-omni", "mimo-v2-pro", "gemma-4", "qwen3.6", "kimi-k2.6", "ChatGPT-5.5-Pro"]
 
     for p in patterns:
         if p in m_name:
             if (not "qwen3" in m_name) or ("qwen3" in m_name and not ("nstruct" in m_name or "coder" in m_name or "max" in m_name)):
-                if not ("chat" in m_name or "none" in m_name or "nothink" in m_name or "grok-4.1" in m_name):
+                if not ("none" in m_name or "nothink" in m_name or "grok-4.1" in m_name):
                     if not ("non-reasoning" in m_name):
                         return True
 
