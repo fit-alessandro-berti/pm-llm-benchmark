@@ -1,0 +1,347 @@
+A useful way to keep the target prompt hint-free is to separate the **prompt shown to the target LLM** from any **private evaluator notes**.
+
+## Target LLM Prompt
+
+```text
+You are an expert process-mining analyst and PostgreSQL investigator.
+
+You are given an order-processing event log stored in PostgreSQL. Your task is to analyze the process behavior, identify anomalies or undesirable patterns, hypothesize plausible causes, and propose SQL queries that could be used to investigate those issues further.
+
+Use only the database schema, assumed normal process flow, and sample data provided below.
+
+Do not assume that the sample rows contain all possible anomaly types. Think generally about the process and propose reusable SQL that could be run on the full database.
+
+Database schema:
+
+Table: order_event_log
+- case_id INTEGER: Identifies a particular order
+- event_id INTEGER: Primary key for event records
+- activity VARCHAR: Name of the event/activity in the process
+- timestamp TIMESTAMP: When the activity took place
+- resource VARCHAR: The person/system performing the activity
+- additional_info VARCHAR: Additional context, e.g. amounts, reason codes
+
+Table: orders
+- case_id INTEGER: Matches order_event_log.case_id
+- customer_id INTEGER: Identifies the customer
+- order_type VARCHAR: E.g., standard, priority
+- order_value DECIMAL: Monetary value of the order
+
+Table: resources
+- resource_id VARCHAR: Matches order_event_log.resource
+- role VARCHAR: The role of the resource
+- department VARCHAR: The department
+
+Assumed normal process flow:
+
+1. Register Order, performed by Sales
+2. Perform Credit Check, performed by Finance
+3. Validate Stock, performed by Warehouse / Logistics
+4. Confirm Shipment, performed by Logistics
+5. Ship Goods, performed by Logistics
+6. Issue Invoice, performed by Finance
+7. Receive Payment, performed by Finance
+
+Sample event log data:
+
+[PASTE THE SAMPLE order_event_log ROWS HERE]
+
+Sample orders data:
+
+[PASTE THE SAMPLE orders ROWS HERE]
+
+Sample resources data:
+
+[PASTE THE SAMPLE resources ROWS HERE]
+
+Your response should include the following sections:
+
+1. Executive summary
+   - Summarize the most important process deviations or risks you observe.
+
+2. Detected anomalies and undesirable behaviors
+   - Identify concrete anomalies in the sample data.
+   - For each anomaly, explain:
+     - What happened.
+     - Why it is a deviation from the expected process.
+     - Which case_id values illustrate the issue.
+     - What business risk it may create.
+
+3. Possible root-cause hypotheses
+   - For each anomaly type, propose plausible explanations.
+   - Consider causes such as:
+     - System integration or timestamp-ordering errors.
+     - Manual workarounds.
+     - Policy violations.
+     - Training or role-clarity issues.
+     - Emergency or priority-order handling.
+     - Missing event capture.
+     - Data quality issues.
+
+4. SQL investigation plan
+   - Propose PostgreSQL queries to detect and quantify these issues on the full database.
+   - Queries should be reusable and should not rely only on hard-coded sample case IDs.
+   - Use window functions, CTEs, conditional aggregation, self-joins, or joins to orders/resources where helpful.
+   - For each query, provide:
+     - Purpose of the query.
+     - PostgreSQL SQL.
+     - Expected output columns.
+     - How to interpret the results.
+
+5. Prioritization
+   - Rank the anomalies by likely business impact and urgency.
+   - Explain which issues should be investigated first.
+
+6. Recommended next steps
+   - Suggest improvements to process controls, data capture, monitoring, or governance.
+   - Include ideas for dashboards, alerts, or recurring compliance checks.
+
+Important constraints:
+- Use PostgreSQL syntax.
+- Prefer timestamp ordering, with event_id as a tie-breaker where needed.
+- Treat additional_info as semi-structured text; explain any assumptions if parsing it.
+- Distinguish between true process violations and possible data-quality artifacts.
+- Be explicit about uncertainty when the data is insufficient.
+```
+
+## Private Evaluator Checklist — Do Not Include in Target Prompt
+
+A strong target-model response should independently detect issues such as:
+
+| Area                        | Expected finding                                                                                                                         |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Ordering violation          | Case `1002` confirms shipment and ships goods before credit check and stock validation.                                                  |
+| Ordering violation          | Case `1003` ships goods before shipment confirmation.                                                                                    |
+| Missing activity            | Case `1003` appears to miss `Validate Stock`.                                                                                            |
+| Missing activity            | Case `1004` appears to miss both `Perform Credit Check` and `Validate Stock`.                                                            |
+| Payment/invoicing anomaly   | Case `1004` receives payment before invoice issuance.                                                                                    |
+| Business-rule inconsistency | Case `1004` has `shipment_scheduled=N` but still ships goods.                                                                            |
+| Control weakness            | Goods may be shipped without prior credit approval or stock validation.                                                                  |
+| Data-quality possibility    | Some deviations could reflect late event logging, timestamp errors, system synchronization issues, or missing captured events.           |
+| Role/department checks      | The model should suggest joining `resources` to verify whether activities are performed by expected departments.                         |
+| Generalizable SQL           | Queries should detect all cases with missing steps, out-of-order steps, unexpected departments, and suspicious `additional_info` values. |
+
+## Example SQL Patterns a Good Answer Might Produce
+
+These are useful for evaluating the target model’s SQL quality, but they should not be embedded in the hint-free target prompt.
+
+### 1. Compare observed activity order against expected process order
+
+```sql
+WITH expected_flow AS (
+    SELECT *
+    FROM (VALUES
+        ('Register Order', 1),
+        ('Perform Credit Check', 2),
+        ('Validate Stock', 3),
+        ('Confirm Shipment', 4),
+        ('Ship Goods', 5),
+        ('Issue Invoice', 6),
+        ('Receive Payment', 7)
+    ) AS v(activity, expected_step)
+),
+ordered_events AS (
+    SELECT
+        e.case_id,
+        e.event_id,
+        e.activity,
+        e.timestamp,
+        f.expected_step,
+        LAG(f.expected_step) OVER (
+            PARTITION BY e.case_id
+            ORDER BY e.timestamp, e.event_id
+        ) AS previous_expected_step,
+        LAG(e.activity) OVER (
+            PARTITION BY e.case_id
+            ORDER BY e.timestamp, e.event_id
+        ) AS previous_activity
+    FROM order_event_log e
+    LEFT JOIN expected_flow f
+        ON e.activity = f.activity
+)
+SELECT
+    case_id,
+    event_id,
+    activity,
+    timestamp,
+    previous_activity,
+    previous_expected_step,
+    expected_step
+FROM ordered_events
+WHERE expected_step < previous_expected_step
+ORDER BY case_id, timestamp, event_id;
+```
+
+### 2. Find cases missing required activities
+
+```sql
+WITH required_activities AS (
+    SELECT *
+    FROM (VALUES
+        ('Register Order'),
+        ('Perform Credit Check'),
+        ('Validate Stock'),
+        ('Confirm Shipment'),
+        ('Ship Goods'),
+        ('Issue Invoice'),
+        ('Receive Payment')
+    ) AS v(activity)
+),
+cases AS (
+    SELECT DISTINCT case_id
+    FROM order_event_log
+)
+SELECT
+    c.case_id,
+    r.activity AS missing_activity
+FROM cases c
+CROSS JOIN required_activities r
+LEFT JOIN order_event_log e
+    ON e.case_id = c.case_id
+   AND e.activity = r.activity
+WHERE e.event_id IS NULL
+ORDER BY c.case_id, r.activity;
+```
+
+### 3. Detect shipping before credit check, stock validation, or shipment confirmation
+
+```sql
+WITH case_times AS (
+    SELECT
+        case_id,
+        MIN(timestamp) FILTER (WHERE activity = 'Perform Credit Check') AS credit_check_time,
+        MIN(timestamp) FILTER (WHERE activity = 'Validate Stock') AS stock_validation_time,
+        MIN(timestamp) FILTER (WHERE activity = 'Confirm Shipment') AS shipment_confirmation_time,
+        MIN(timestamp) FILTER (WHERE activity = 'Ship Goods') AS ship_goods_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    case_id,
+    credit_check_time,
+    stock_validation_time,
+    shipment_confirmation_time,
+    ship_goods_time,
+    CASE
+        WHEN credit_check_time IS NULL THEN 'Missing credit check'
+        WHEN ship_goods_time < credit_check_time THEN 'Shipped before credit check'
+    END AS credit_check_issue,
+    CASE
+        WHEN stock_validation_time IS NULL THEN 'Missing stock validation'
+        WHEN ship_goods_time < stock_validation_time THEN 'Shipped before stock validation'
+    END AS stock_issue,
+    CASE
+        WHEN shipment_confirmation_time IS NULL THEN 'Missing shipment confirmation'
+        WHEN ship_goods_time < shipment_confirmation_time THEN 'Shipped before shipment confirmation'
+    END AS shipment_confirmation_issue
+FROM case_times
+WHERE ship_goods_time IS NOT NULL
+  AND (
+      credit_check_time IS NULL
+      OR stock_validation_time IS NULL
+      OR shipment_confirmation_time IS NULL
+      OR ship_goods_time < credit_check_time
+      OR ship_goods_time < stock_validation_time
+      OR ship_goods_time < shipment_confirmation_time
+  )
+ORDER BY case_id;
+```
+
+### 4. Detect payment before invoice
+
+```sql
+WITH case_times AS (
+    SELECT
+        case_id,
+        MIN(timestamp) FILTER (WHERE activity = 'Issue Invoice') AS invoice_time,
+        MIN(timestamp) FILTER (WHERE activity = 'Receive Payment') AS payment_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    case_id,
+    invoice_time,
+    payment_time
+FROM case_times
+WHERE payment_time IS NOT NULL
+  AND (
+      invoice_time IS NULL
+      OR payment_time < invoice_time
+  )
+ORDER BY case_id;
+```
+
+### 5. Check whether activities are performed by expected departments
+
+```sql
+WITH expected_departments AS (
+    SELECT *
+    FROM (VALUES
+        ('Register Order', 'Sales'),
+        ('Perform Credit Check', 'Finance'),
+        ('Validate Stock', 'Logistics'),
+        ('Confirm Shipment', 'Logistics'),
+        ('Ship Goods', 'Logistics'),
+        ('Issue Invoice', 'Finance'),
+        ('Receive Payment', 'Finance')
+    ) AS v(activity, expected_department)
+)
+SELECT
+    e.case_id,
+    e.event_id,
+    e.activity,
+    e.timestamp,
+    e.resource,
+    r.department AS actual_department,
+    ed.expected_department
+FROM order_event_log e
+LEFT JOIN resources r
+    ON e.resource = r.resource_id
+LEFT JOIN expected_departments ed
+    ON e.activity = ed.activity
+WHERE ed.expected_department IS NOT NULL
+  AND r.department IS DISTINCT FROM ed.expected_department
+ORDER BY e.case_id, e.timestamp, e.event_id;
+```
+
+### 6. Detect contradictory shipment flags in `additional_info`
+
+```sql
+SELECT
+    case_id,
+    event_id,
+    activity,
+    timestamp,
+    resource,
+    additional_info
+FROM order_event_log
+WHERE activity = 'Confirm Shipment'
+  AND additional_info ILIKE '%shipment_scheduled=N%'
+ORDER BY case_id, timestamp, event_id;
+```
+
+### 7. Find cases that shipped despite a negative shipment confirmation flag
+
+```sql
+WITH shipment_flags AS (
+    SELECT
+        case_id,
+        MIN(timestamp) FILTER (
+            WHERE activity = 'Confirm Shipment'
+              AND additional_info ILIKE '%shipment_scheduled=N%'
+        ) AS negative_confirmation_time,
+        MIN(timestamp) FILTER (
+            WHERE activity = 'Ship Goods'
+        ) AS ship_goods_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    case_id,
+    negative_confirmation_time,
+    ship_goods_time
+FROM shipment_flags
+WHERE negative_confirmation_time IS NOT NULL
+  AND ship_goods_time IS NOT NULL
+ORDER BY case_id;
+```
