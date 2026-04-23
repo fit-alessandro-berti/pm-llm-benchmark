@@ -277,12 +277,8 @@ MODELS_DICT = {
         "api_url": "http://137.226.117.70:11434/v1/",
         "api_key": "sk-",
         "models": {
-            "falcon3:10b-instruct-q8_0", "falcon3:7b-instruct-q8_0",
-            "falcon3:3b-instruct-q8_0",
-            "exaone-deep:32b-fp16", "exaone-deep:7.8b-fp16", "exaone-deep:2.4b-fp16",
             "phi4-reasoning", "phi4-reasoning:plus",
-            "qwen3:4b-instruct-2507-q8_0", "qwen3:4b-thinking-2507-q8_0",
-            "granite4:micro", "granite4:micro-h", "granite4:tiny-h", "granite4:small-h",
+            "granite4:small-h",
             "qwen3.5:4b", "qwen3.5:9b", "gemma4:e2b", "gemma4:e4b", "qwen3.6:35b-a3b"
         }
     },
@@ -315,10 +311,9 @@ MODELS_DICT = {
         "models": {
             "meta-llama/llama-4-scout", "meta-llama/llama-4-maverick",
             "ai21/jamba-large-1.7",
-            "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-thinking",
             "qwen/qwen3.5-35b-a3b", "qwen/qwen3.5-27b", "qwen/qwen3.5-122b-a10b",
-            "arcee-ai/trinity-mini", "amazon/nova-2-lite-v1",
-            "writer/palmyra-x5", "z-ai/glm-4.7-flash",
+            "amazon/nova-2-lite-v1",
+            "writer/palmyra-x5",
             "moonshotai/kimi-k2.5",
             "minimax/minimax-m2.5", "z-ai/glm-5",
             "qwen/qwen3.5-397b-a17b", "google/gemini-3.1-pro-preview",
