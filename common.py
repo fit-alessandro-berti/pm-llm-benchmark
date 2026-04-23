@@ -326,7 +326,7 @@ MODELS_DICT = {
             "z-ai/glm-5-turbo",
             "minimax/minimax-m2.7", "xiaomi/mimo-v2-pro", "xiaomi/mimo-v2-omni",
             "z-ai/glm-5v-turbo", "arcee-ai/trinity-large-thinking",
-            "z-ai/glm-5.1", "openrouter/elephant-alpha",
+            "z-ai/glm-5.1",
             "moonshotai/kimi-k2.6", "xiaomi/mimo-v2.5", "xiaomi/mimo-v2.5-pro"
         }
     },
@@ -1519,7 +1519,7 @@ def check_all_models():
     insert_api_keys()
 
     for provider in MODELS_DICT:
-        if provider not in {"google", "claude", "qwen", "manual", "perplexity"}:
+        if provider not in {"google", "claude", "qwen", "manual", "perplexity", "ollama_local"}:
             print(provider)
             info = MODELS_DICT[provider]
             Shared.API_URL = info["api_url"]
