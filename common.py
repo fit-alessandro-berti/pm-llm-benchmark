@@ -321,7 +321,8 @@ MODELS_DICT = {
             "minimax/minimax-m2.7", "xiaomi/mimo-v2-pro", "xiaomi/mimo-v2-omni",
             "z-ai/glm-5v-turbo", "arcee-ai/trinity-large-thinking",
             "z-ai/glm-5.1",
-            "moonshotai/kimi-k2.6", "xiaomi/mimo-v2.5", "xiaomi/mimo-v2.5-pro"
+            "moonshotai/kimi-k2.6", "xiaomi/mimo-v2.5", "xiaomi/mimo-v2.5-pro",
+            "inclusionai/ling-2.6-1t:free"
         }
     },
     "manual": {
