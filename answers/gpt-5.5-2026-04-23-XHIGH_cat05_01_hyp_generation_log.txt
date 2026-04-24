@@ -1,0 +1,609 @@
+Assuming the listed normal flow is mandatory and event order is determined by `timestamp, event_id`, case `1001` looks normal, while cases `1002`, `1003`, and `1004` show control-flow anomalies.
+
+## 1. Main anomalies in the sample
+
+| case_id | Observed behavior | Why it is anomalous | Possible hypotheses |
+|---:|---|---|---|
+| `1001` | Normal sequence from registration through payment | No obvious anomaly | Baseline/conforming case |
+| `1002` | `Confirm Shipment` and `Ship Goods` happen before `Perform Credit Check` and `Validate Stock` | Shipment is confirmed and goods are shipped before financial and stock prerequisites are completed | Priority-order shortcut, manual override, poor system controls, training issue, async logging/timestamp problem |
+| `1002` | Credit score is `650`, and credit check occurs after shipment | Potentially risky order shipped before creditworthiness was known | Policy violation, expedited shipping without approval, missing credit hold |
+| `1003` | `Validate Stock` is missing | Required stock validation did not occur or was not logged | Integration failure, skipped warehouse control, missing event capture |
+| `1003` | `Ship Goods` occurs before `Confirm Shipment`; `Confirm Shipment` occurs after invoice | Shipment confirmation is late and marked `late_confirmation=Y` | Back-office confirmation after physical shipment, delayed event logging, logistics training/control issue |
+| `1004` | `Perform Credit Check` and `Validate Stock` are missing | Order progresses without key controls | Manual bypass, system failure, exception flow not modeled |
+| `1004` | `Receive Payment` occurs before `Issue Invoice` | Payment before invoice contradicts assumed process | Prepayment not modeled, timestamp error, invoice created late, policy exception |
+| `1004` | `Issue Invoice` occurs before shipment | Invoice issued before fulfillment | Premature billing, finance automation issue |
+| `1004` | `Confirm Shipment` has `shipment_scheduled=N`, but `Ship Goods` follows | Shipment proceeds despite apparent scheduling failure | Control failure, contradictory status update, manual override |
+
+---
+
+## 2. Reconstruct observed traces
+
+```sql
+SELECT
+    case_id,
+    string_agg(activity, ' -> ' ORDER BY "timestamp", event_id) AS observed_trace,
+    min("timestamp") AS start_ts,
+    max("timestamp") AS end_ts,
+    count(*) AS event_count
+FROM order_event_log
+GROUP BY case_id
+ORDER BY case_id;
+```
+
+This gives a quick process trace per order and should show, for example, that case `1002` follows:
+
+```text
+Register Order -> Confirm Shipment -> Ship Goods -> Perform Credit Check -> Validate Stock -> Issue Invoice -> Receive Payment
+```
+
+---
+
+## 3. Detect missing required activities
+
+```sql
+WITH expected(pos, activity) AS (
+    VALUES
+        (1, 'Register Order'),
+        (2, 'Perform Credit Check'),
+        (3, 'Validate Stock'),
+        (4, 'Confirm Shipment'),
+        (5, 'Ship Goods'),
+        (6, 'Issue Invoice'),
+        (7, 'Receive Payment')
+),
+cases AS (
+    SELECT DISTINCT case_id
+    FROM order_event_log
+)
+SELECT
+    c.case_id,
+    array_agg(e.activity ORDER BY e.pos) AS missing_activities
+FROM cases c
+CROSS JOIN expected e
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM order_event_log l
+    WHERE l.case_id = c.case_id
+      AND l.activity = e.activity
+)
+GROUP BY c.case_id
+ORDER BY c.case_id;
+```
+
+Expected findings from the sample:
+
+- `1003`: missing `Validate Stock`
+- `1004`: missing `Perform Credit Check`, `Validate Stock`
+
+---
+
+## 4. Generic precedence-violation detection
+
+This checks whether any activity occurred before an activity that should have preceded it.
+
+```sql
+WITH expected(pos, activity) AS (
+    VALUES
+        (1, 'Register Order'),
+        (2, 'Perform Credit Check'),
+        (3, 'Validate Stock'),
+        (4, 'Confirm Shipment'),
+        (5, 'Ship Goods'),
+        (6, 'Issue Invoice'),
+        (7, 'Receive Payment')
+),
+precedence AS (
+    SELECT
+        e1.activity AS prerequisite,
+        e2.activity AS dependent
+    FROM expected e1
+    JOIN expected e2
+      ON e1.pos < e2.pos
+),
+firsts AS (
+    SELECT DISTINCT ON (case_id, activity)
+        case_id,
+        activity,
+        event_id,
+        "timestamp" AS first_ts,
+        resource
+    FROM order_event_log
+    ORDER BY case_id, activity, "timestamp", event_id
+)
+SELECT
+    dep.case_id,
+    p.prerequisite,
+    p.dependent,
+    pr.first_ts AS prerequisite_ts,
+    dep.first_ts AS dependent_ts,
+    dep.event_id AS dependent_event_id,
+    dep.resource AS dependent_resource,
+    CASE
+        WHEN pr.first_ts IS NULL THEN 'dependent occurred but prerequisite is missing'
+        WHEN dep.first_ts < pr.first_ts THEN 'dependent occurred before prerequisite'
+    END AS violation_type
+FROM precedence p
+JOIN firsts dep
+  ON dep.activity = p.dependent
+LEFT JOIN firsts pr
+  ON pr.case_id = dep.case_id
+ AND pr.activity = p.prerequisite
+WHERE pr.first_ts IS NULL
+   OR dep.first_ts < pr.first_ts
+ORDER BY dep.case_id, dep.first_ts, p.prerequisite;
+```
+
+This should flag cases such as:
+
+- `1002`: `Confirm Shipment` before credit/stock validation
+- `1002`: `Ship Goods` before credit/stock validation
+- `1003`: `Ship Goods` before `Validate Stock` and before `Confirm Shipment`
+- `1004`: payment/invoice/shipment activities without credit or stock validation
+
+---
+
+## 5. Compact case-level anomaly summary
+
+```sql
+WITH per_case AS (
+    SELECT
+        case_id,
+        min("timestamp") FILTER (WHERE activity = 'Register Order') AS register_ts,
+        min("timestamp") FILTER (WHERE activity = 'Perform Credit Check') AS credit_ts,
+        min("timestamp") FILTER (WHERE activity = 'Validate Stock') AS stock_ts,
+        min("timestamp") FILTER (WHERE activity = 'Confirm Shipment') AS confirm_ts,
+        min("timestamp") FILTER (WHERE activity = 'Ship Goods') AS ship_ts,
+        min("timestamp") FILTER (WHERE activity = 'Issue Invoice') AS invoice_ts,
+        min("timestamp") FILTER (WHERE activity = 'Receive Payment') AS payment_ts
+    FROM order_event_log
+    GROUP BY case_id
+),
+flags AS (
+    SELECT
+        case_id,
+        array_remove(ARRAY[
+            CASE
+                WHEN register_ts IS NULL THEN 'missing registration'
+            END,
+            CASE
+                WHEN credit_ts IS NULL THEN 'missing credit check'
+                WHEN register_ts IS NOT NULL AND credit_ts < register_ts THEN 'credit check before registration'
+            END,
+            CASE
+                WHEN stock_ts IS NULL THEN 'missing stock validation'
+                WHEN credit_ts IS NOT NULL AND stock_ts < credit_ts THEN 'stock validation before credit check'
+            END,
+            CASE
+                WHEN confirm_ts IS NULL THEN 'missing shipment confirmation'
+                WHEN stock_ts IS NULL AND confirm_ts IS NOT NULL THEN 'confirmation despite missing stock validation'
+                WHEN stock_ts IS NOT NULL AND confirm_ts < stock_ts THEN 'confirmation before stock validation'
+            END,
+            CASE
+                WHEN ship_ts IS NOT NULL AND credit_ts IS NULL THEN 'shipped without credit check'
+                WHEN ship_ts IS NOT NULL AND credit_ts IS NOT NULL AND ship_ts < credit_ts THEN 'shipped before credit check'
+            END,
+            CASE
+                WHEN ship_ts IS NOT NULL AND stock_ts IS NULL THEN 'shipped without stock validation'
+                WHEN ship_ts IS NOT NULL AND stock_ts IS NOT NULL AND ship_ts < stock_ts THEN 'shipped before stock validation'
+            END,
+            CASE
+                WHEN ship_ts IS NOT NULL AND confirm_ts IS NULL THEN 'shipped without shipment confirmation'
+                WHEN ship_ts IS NOT NULL AND confirm_ts IS NOT NULL AND ship_ts < confirm_ts THEN 'shipped before shipment confirmation'
+            END,
+            CASE
+                WHEN invoice_ts IS NOT NULL AND ship_ts IS NULL THEN 'invoice without shipment'
+                WHEN invoice_ts IS NOT NULL AND ship_ts IS NOT NULL AND invoice_ts < ship_ts THEN 'invoice before shipment'
+            END,
+            CASE
+                WHEN invoice_ts IS NOT NULL AND confirm_ts IS NOT NULL AND invoice_ts < confirm_ts THEN 'invoice before shipment confirmation'
+            END,
+            CASE
+                WHEN payment_ts IS NOT NULL AND invoice_ts IS NULL THEN 'payment without invoice'
+                WHEN payment_ts IS NOT NULL AND invoice_ts IS NOT NULL AND payment_ts < invoice_ts THEN 'payment before invoice'
+            END
+        ], NULL) AS anomalies,
+        register_ts,
+        credit_ts,
+        stock_ts,
+        confirm_ts,
+        ship_ts,
+        invoice_ts,
+        payment_ts
+    FROM per_case
+)
+SELECT *
+FROM flags
+WHERE array_length(anomalies, 1) IS NOT NULL
+ORDER BY case_id;
+```
+
+---
+
+## 6. Investigate suspicious `additional_info` flags
+
+```sql
+SELECT
+    case_id,
+    event_id,
+    activity,
+    "timestamp",
+    resource,
+    additional_info
+FROM order_event_log
+WHERE additional_info ILIKE '%attempted_early=Y%'
+   OR additional_info ILIKE '%late_confirmation=Y%'
+   OR additional_info ILIKE '%shipment_scheduled=N%'
+ORDER BY case_id, "timestamp", event_id;
+```
+
+This should highlight:
+
+- `1002`: `attempted_early=Y`
+- `1003`: `late_confirmation=Y`
+- `1004`: `shipment_scheduled=N`
+
+To specifically find cases where shipment proceeded despite `shipment_scheduled=N`:
+
+```sql
+WITH confirm_n AS (
+    SELECT
+        case_id,
+        event_id AS confirm_event_id,
+        "timestamp" AS confirm_ts,
+        resource AS confirm_resource,
+        additional_info
+    FROM order_event_log
+    WHERE activity = 'Confirm Shipment'
+      AND additional_info ILIKE '%shipment_scheduled=N%'
+),
+ship AS (
+    SELECT DISTINCT ON (case_id)
+        case_id,
+        event_id AS ship_event_id,
+        "timestamp" AS ship_ts,
+        resource AS ship_resource
+    FROM order_event_log
+    WHERE activity = 'Ship Goods'
+    ORDER BY case_id, "timestamp", event_id
+)
+SELECT
+    c.case_id,
+    c.confirm_event_id,
+    c.confirm_ts,
+    c.confirm_resource,
+    c.additional_info,
+    s.ship_event_id,
+    s.ship_ts,
+    s.ship_resource
+FROM confirm_n c
+JOIN ship s
+  ON s.case_id = c.case_id
+WHERE s.ship_ts > c.confirm_ts
+ORDER BY c.case_id;
+```
+
+---
+
+## 7. Check whether activities were performed by the right department
+
+```sql
+WITH expected_department(activity, expected_department) AS (
+    VALUES
+        ('Register Order', 'Sales'),
+        ('Perform Credit Check', 'Finance'),
+        ('Validate Stock', 'Logistics'),
+        ('Confirm Shipment', 'Logistics'),
+        ('Ship Goods', 'Logistics'),
+        ('Issue Invoice', 'Finance'),
+        ('Receive Payment', 'Finance')
+)
+SELECT
+    l.case_id,
+    l.event_id,
+    l.activity,
+    l."timestamp",
+    l.resource,
+    r.role,
+    r.department AS actual_department,
+    ed.expected_department
+FROM order_event_log l
+LEFT JOIN resources r
+  ON r.resource_id = l.resource
+LEFT JOIN expected_department ed
+  ON ed.activity = l.activity
+WHERE r.resource_id IS NULL
+   OR ed.expected_department IS NULL
+   OR r.department IS DISTINCT FROM ed.expected_department
+ORDER BY l.case_id, l.event_id;
+```
+
+The sample data appears department-consistent, but this query is important because resource misassignment can explain process deviations.
+
+---
+
+## 8. Find resources associated with sequence violations
+
+```sql
+WITH expected(pos, activity) AS (
+    VALUES
+        (1, 'Register Order'),
+        (2, 'Perform Credit Check'),
+        (3, 'Validate Stock'),
+        (4, 'Confirm Shipment'),
+        (5, 'Ship Goods'),
+        (6, 'Issue Invoice'),
+        (7, 'Receive Payment')
+),
+precedence AS (
+    SELECT
+        e1.activity AS prerequisite,
+        e2.activity AS dependent
+    FROM expected e1
+    JOIN expected e2
+      ON e1.pos < e2.pos
+),
+firsts AS (
+    SELECT DISTINCT ON (case_id, activity)
+        case_id,
+        activity,
+        event_id,
+        "timestamp" AS first_ts,
+        resource
+    FROM order_event_log
+    ORDER BY case_id, activity, "timestamp", event_id
+),
+violations AS (
+    SELECT
+        dep.case_id,
+        p.prerequisite,
+        p.dependent,
+        dep.resource AS dependent_resource
+    FROM precedence p
+    JOIN firsts dep
+      ON dep.activity = p.dependent
+    LEFT JOIN firsts pr
+      ON pr.case_id = dep.case_id
+     AND pr.activity = p.prerequisite
+    WHERE pr.first_ts IS NULL
+       OR dep.first_ts < pr.first_ts
+)
+SELECT
+    v.dependent_resource AS resource,
+    r.role,
+    r.department,
+    v.dependent AS anomalous_activity,
+    count(*) AS violation_count,
+    count(DISTINCT v.case_id) AS affected_cases
+FROM violations v
+LEFT JOIN resources r
+  ON r.resource_id = v.dependent_resource
+GROUP BY
+    v.dependent_resource,
+    r.role,
+    r.department,
+    v.dependent
+ORDER BY violation_count DESC, affected_cases DESC;
+```
+
+This helps determine whether anomalies are concentrated around specific people, roles, departments, or systems.
+
+---
+
+## 9. Analyze anomalies by order type and order value
+
+```sql
+WITH expected(pos, activity) AS (
+    VALUES
+        (1, 'Register Order'),
+        (2, 'Perform Credit Check'),
+        (3, 'Validate Stock'),
+        (4, 'Confirm Shipment'),
+        (5, 'Ship Goods'),
+        (6, 'Issue Invoice'),
+        (7, 'Receive Payment')
+),
+precedence AS (
+    SELECT
+        e1.activity AS prerequisite,
+        e2.activity AS dependent
+    FROM expected e1
+    JOIN expected e2
+      ON e1.pos < e2.pos
+),
+firsts AS (
+    SELECT DISTINCT ON (case_id, activity)
+        case_id,
+        activity,
+        "timestamp" AS first_ts
+    FROM order_event_log
+    ORDER BY case_id, activity, "timestamp", event_id
+),
+violating_cases AS (
+    SELECT DISTINCT dep.case_id
+    FROM precedence p
+    JOIN firsts dep
+      ON dep.activity = p.dependent
+    LEFT JOIN firsts pr
+      ON pr.case_id = dep.case_id
+     AND pr.activity = p.prerequisite
+    WHERE pr.first_ts IS NULL
+       OR dep.first_ts < pr.first_ts
+)
+SELECT
+    o.order_type,
+    CASE
+        WHEN o.order_value >= 2500 THEN 'high_value'
+        ELSE 'normal_value'
+    END AS value_band,
+    count(DISTINCT o.case_id) AS total_orders,
+    count(DISTINCT v.case_id) AS orders_with_sequence_violation,
+    round(
+        100.0 * count(DISTINCT v.case_id)
+        / nullif(count(DISTINCT o.case_id), 0),
+        2
+    ) AS pct_with_violation,
+    avg(o.order_value) FILTER (WHERE v.case_id IS NOT NULL) AS avg_value_anomalous_orders
+FROM orders o
+LEFT JOIN violating_cases v
+  ON v.case_id = o.case_id
+GROUP BY
+    o.order_type,
+    CASE
+        WHEN o.order_value >= 2500 THEN 'high_value'
+        ELSE 'normal_value'
+    END
+ORDER BY pct_with_violation DESC;
+```
+
+This helps test whether anomalies are linked to priority orders, high-value orders, or certain order categories.
+
+---
+
+## 10. Investigate risky credit behavior
+
+If there is a credit-score policy threshold, for example `700`, this query identifies shipped orders with missing, late, or low credit checks.
+
+```sql
+WITH credit AS (
+    SELECT DISTINCT ON (case_id)
+        case_id,
+        event_id AS credit_event_id,
+        "timestamp" AS credit_ts,
+        resource AS credit_resource,
+        substring(additional_info FROM 'credit_score=([0-9]+)')::int AS credit_score
+    FROM order_event_log
+    WHERE activity = 'Perform Credit Check'
+    ORDER BY case_id, "timestamp", event_id
+),
+ship AS (
+    SELECT DISTINCT ON (case_id)
+        case_id,
+        event_id AS ship_event_id,
+        "timestamp" AS ship_ts,
+        resource AS ship_resource
+    FROM order_event_log
+    WHERE activity = 'Ship Goods'
+    ORDER BY case_id, "timestamp", event_id
+)
+SELECT
+    o.case_id,
+    o.order_type,
+    o.order_value,
+    c.credit_score,
+    c.credit_ts,
+    s.ship_ts,
+    array_remove(ARRAY[
+        CASE WHEN c.credit_ts IS NULL THEN 'missing credit check' END,
+        CASE WHEN c.credit_ts IS NOT NULL AND s.ship_ts < c.credit_ts THEN 'shipped before credit check' END,
+        CASE WHEN c.credit_score < 700 THEN 'credit score below threshold' END
+    ], NULL) AS credit_risk_reasons
+FROM orders o
+JOIN ship s
+  ON s.case_id = o.case_id
+LEFT JOIN credit c
+  ON c.case_id = o.case_id
+WHERE c.credit_ts IS NULL
+   OR s.ship_ts < c.credit_ts
+   OR c.credit_score < 700
+ORDER BY o.case_id;
+```
+
+This should flag `1002` because it was shipped before the credit check and has a credit score of `650`.
+
+---
+
+## 11. Check payment amount consistency
+
+The process sequence may be wrong even if the amount is correct, but this query checks whether payment amounts match order values.
+
+```sql
+WITH payments AS (
+    SELECT
+        case_id,
+        event_id,
+        "timestamp" AS payment_ts,
+        resource AS payment_resource,
+        substring(additional_info FROM 'amount=([0-9]+(\.[0-9]+)?)')::numeric AS paid_amount
+    FROM order_event_log
+    WHERE activity = 'Receive Payment'
+)
+SELECT
+    p.case_id,
+    p.event_id,
+    p.payment_ts,
+    p.payment_resource,
+    o.order_value,
+    p.paid_amount
+FROM payments p
+JOIN orders o
+  ON o.case_id = p.case_id
+WHERE p.paid_amount IS NULL
+   OR p.paid_amount <> o.order_value
+ORDER BY p.case_id;
+```
+
+---
+
+## 12. Additional checks for data-quality issues
+
+### Duplicate or repeated activities
+
+```sql
+SELECT
+    case_id,
+    activity,
+    count(*) AS event_count,
+    min("timestamp") AS first_ts,
+    max("timestamp") AS last_ts
+FROM order_event_log
+GROUP BY case_id, activity
+HAVING count(*) > 1
+ORDER BY case_id, activity;
+```
+
+### Unknown activities outside the expected process
+
+```sql
+WITH expected(activity) AS (
+    VALUES
+        ('Register Order'),
+        ('Perform Credit Check'),
+        ('Validate Stock'),
+        ('Confirm Shipment'),
+        ('Ship Goods'),
+        ('Issue Invoice'),
+        ('Receive Payment')
+)
+SELECT
+    l.*
+FROM order_event_log l
+LEFT JOIN expected e
+  ON e.activity = l.activity
+WHERE e.activity IS NULL
+ORDER BY l.case_id, l."timestamp", l.event_id;
+```
+
+### Timestamp/order inconsistency by `event_id`
+
+```sql
+WITH ordered_by_event_id AS (
+    SELECT
+        *,
+        lag("timestamp") OVER (
+            PARTITION BY case_id
+            ORDER BY event_id
+        ) AS previous_ts_by_event_id
+    FROM order_event_log
+)
+SELECT
+    case_id,
+    event_id,
+    activity,
+    "timestamp",
+    previous_ts_by_event_id
+FROM ordered_by_event_id
+WHERE previous_ts_by_event_id > "timestamp"
+ORDER BY case_id, event_id;
+```
+
+This helps determine whether apparent anomalies may be due to logging or timestamp issues rather than actual process violations.

@@ -1,0 +1,702 @@
+Below I assume `claim_events.activity` may contain either the short labels `R/A/E/P/N/C` or full activity names. Adjust the mappings if your real event labels differ.
+
+---
+
+## 1. Anomalies in the POWL model
+
+### A. Evaluation/approval loop is suspicious
+
+```python
+loop = OperatorPOWL(operator=Operator.LOOP, children=[E, P])
+```
+
+With typical loop semantics, this means:
+
+```text
+E (P E)*
+```
+
+So possible behavior includes:
+
+```text
+E
+E P E
+E P E P E
+...
+```
+
+This is anomalous because the intended flow is:
+
+```text
+Evaluate Claim -> Approve Claim
+```
+
+But the loop makes approval behave like a “redo” step. It allows:
+
+- Evaluation without any approval.
+- Multiple approvals.
+- Evaluation after approval.
+- A final evaluation after the last approval, meaning approval is not necessarily the final decision step.
+
+If repeated evaluation is needed, the loop should probably involve something like:
+
+```text
+Evaluate -> Request More Information -> Evaluate
+```
+
+and then a single final approval.
+
+---
+
+### B. Customer notification can be skipped
+
+```python
+xor = OperatorPOWL(operator=Operator.XOR, children=[N, skip])
+```
+
+This means the process can either notify the customer or silently skip notification.
+
+That conflicts with the ideal process:
+
+```text
+Approve Claim -> Notify Customer -> Close Claim
+```
+
+Unless there is a legitimate business rule, such as:
+
+- Notification is handled outside the claims workflow.
+- Only certain claim types require notification.
+- Notification is skipped for internal test claims.
+- Notification is automated but not logged.
+
+Otherwise, this is a compliance/customer-service anomaly.
+
+---
+
+### C. Claim closure is under-constrained and may happen prematurely
+
+The partial order is:
+
+```python
+R -> A
+A -> loop
+loop -> xor
+A -> C
+```
+
+There is no required edge:
+
+```text
+xor -> C
+```
+
+Therefore, once `A` has happened, `C` is allowed to occur independently of evaluation, approval, and notification.
+
+So the model may allow traces such as:
+
+```text
+R, A, C, E, P, N
+R, A, C, E
+R, A, E, C, P, N
+R, A, E, P, C, N
+```
+
+This is a major anomaly because closure should normally happen after evaluation, approval, and customer notification.
+
+---
+
+## 2. Hypotheses for why these anomalies exist
+
+### Hypothesis 1: Partially implemented business-rule change
+
+The business may have introduced new rules such as:
+
+- Fast-track low-value claims.
+- Auto-approval for certain claim types.
+- No notification needed for internal or duplicate claims.
+- Re-evaluation required after provisional approval.
+
+But the workflow model may have been changed incompletely, resulting in under-specified ordering and optional notification.
+
+Evidence to look for:
+
+- Anomalies only after a specific date.
+- Anomalies concentrated in certain `claim_type` values.
+- Anomalies concentrated in low `claim_amount` claims.
+- Anomalies associated with specific regions or adjuster teams.
+
+---
+
+### Hypothesis 2: Miscommunication between departments
+
+For example:
+
+- Operations assumed approval is final.
+- IT interpreted approval as an intermediate review step.
+- Customer service assumed notification is handled elsewhere.
+- Claims operations assumed closure is an administrative action that can happen before all downstream tasks finish.
+
+Evidence to look for:
+
+- Premature closures concentrated among certain resources, regions, or specializations.
+- Notifications missing only for claims handled by specific teams.
+- Different departments following different trace variants.
+
+---
+
+### Hypothesis 3: Technical workflow or integration errors
+
+Possible causes:
+
+- Duplicate approval events caused by retries.
+- Closure jobs running asynchronously before evaluation/approval is logged.
+- Notification events not written to `claim_events`.
+- Events imported out of order.
+- System resources auto-closing claims prematurely.
+
+Evidence to look for:
+
+- Duplicate events with identical timestamps.
+- Anomalies clustered around certain dates/times.
+- Anomalies associated with `resource = 'system'` or similar.
+- Events occurring seconds apart in suspicious batches.
+
+---
+
+### Hypothesis 4: Inadequate constraints in the process modeler/tool
+
+The POWL model uses partial ordering but fails to enforce critical dependencies.
+
+The process model should likely enforce:
+
+```text
+R -> A -> E -> P -> N -> C
+```
+
+or, if rework is allowed:
+
+```text
+R -> A -> loop(E / rework) -> P -> N -> C
+```
+
+Evidence to look for:
+
+- Real traces showing exactly the under-constrained behavior permitted by the model.
+- Frequent closure before approval.
+- Frequent notification after closure.
+- High variation in actual trace variants.
+
+---
+
+## 3. Database checks to verify the anomalies
+
+First, create a normalized view for activity labels.
+
+```sql
+CREATE OR REPLACE VIEW v_claim_events_normalized AS
+SELECT
+    event_id,
+    claim_id,
+    "timestamp" AS ts,
+    activity AS raw_activity,
+    CASE
+        WHEN activity IN ('R', 'Receive Claim') THEN 'R'
+        WHEN activity IN ('A', 'Assign Adjuster') THEN 'A'
+        WHEN activity IN ('E', 'Evaluate Claim') THEN 'E'
+        WHEN activity IN ('P', 'Approve Claim') THEN 'P'
+        WHEN activity IN ('N', 'Notify Customer') THEN 'N'
+        WHEN activity IN ('C', 'Close Claim') THEN 'C'
+        ELSE activity
+    END AS act,
+    resource,
+    additional_info
+FROM claim_events;
+```
+
+---
+
+## A. Inspect actual process variants
+
+This shows the most common observed traces.
+
+```sql
+SELECT
+    trace,
+    COUNT(*) AS claim_count
+FROM (
+    SELECT
+        claim_id,
+        string_agg(act, ' > ' ORDER BY ts, event_id) AS trace
+    FROM v_claim_events_normalized
+    WHERE act IN ('R', 'A', 'E', 'P', 'N', 'C')
+    GROUP BY claim_id
+) t
+GROUP BY trace
+ORDER BY claim_count DESC;
+```
+
+Look for suspicious variants such as:
+
+```text
+R > A > C
+R > A > C > E
+R > A > E > C
+R > A > E > P > C > N
+R > A > E
+R > A > E > N > C
+```
+
+---
+
+## B. Claims closed without evaluation or approval before closure
+
+This directly checks for premature closure.
+
+```sql
+WITH first_close AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        ts AS close_ts,
+        event_id AS close_event_id
+    FROM v_claim_events_normalized
+    WHERE act = 'C'
+    ORDER BY claim_id, ts, event_id
+)
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    c.submission_date,
+    fc.close_ts,
+    COUNT(e.event_id) FILTER (
+        WHERE e.act = 'E'
+          AND (e.ts, e.event_id) < (fc.close_ts, fc.close_event_id)
+    ) AS evaluations_before_close,
+    COUNT(e.event_id) FILTER (
+        WHERE e.act = 'P'
+          AND (e.ts, e.event_id) < (fc.close_ts, fc.close_event_id)
+    ) AS approvals_before_close
+FROM claims c
+JOIN first_close fc
+    ON c.claim_id = fc.claim_id
+LEFT JOIN v_claim_events_normalized e
+    ON c.claim_id = e.claim_id
+GROUP BY
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    c.submission_date,
+    fc.close_ts,
+    fc.close_event_id
+HAVING
+    COUNT(e.event_id) FILTER (
+        WHERE e.act = 'E'
+          AND (e.ts, e.event_id) < (fc.close_ts, fc.close_event_id)
+    ) = 0
+    OR
+    COUNT(e.event_id) FILTER (
+        WHERE e.act = 'P'
+          AND (e.ts, e.event_id) < (fc.close_ts, fc.close_event_id)
+    ) = 0
+ORDER BY fc.close_ts;
+```
+
+This identifies claims that were closed before a proper evaluation or approval was logged.
+
+---
+
+## C. Claims with process events after closure
+
+This checks whether evaluation, approval, or notification happened after closure.
+
+```sql
+WITH first_close AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        ts AS close_ts,
+        event_id AS close_event_id
+    FROM v_claim_events_normalized
+    WHERE act = 'C'
+    ORDER BY claim_id, ts, event_id
+)
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    fc.close_ts,
+    string_agg(e.act, ' > ' ORDER BY e.ts, e.event_id) AS events_after_close,
+    MIN(e.ts) AS first_event_after_close
+FROM claims c
+JOIN first_close fc
+    ON c.claim_id = fc.claim_id
+JOIN v_claim_events_normalized e
+    ON c.claim_id = e.claim_id
+WHERE e.act IN ('E', 'P', 'N')
+  AND (e.ts, e.event_id) > (fc.close_ts, fc.close_event_id)
+GROUP BY
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    fc.close_ts
+ORDER BY fc.close_ts;
+```
+
+If this returns many rows, it supports the concern that `C` is not properly ordered after evaluation, approval, and notification.
+
+---
+
+## D. Claims approved multiple times
+
+This checks for the loop anomaly.
+
+```sql
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    COUNT(e.event_id) AS approval_count,
+    array_agg(e.ts ORDER BY e.ts, e.event_id) AS approval_times
+FROM claims c
+JOIN v_claim_events_normalized e
+    ON c.claim_id = e.claim_id
+WHERE e.act = 'P'
+GROUP BY
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount
+HAVING COUNT(e.event_id) > 1
+ORDER BY approval_count DESC, c.claim_id;
+```
+
+Multiple approvals may indicate that the approval step is being used incorrectly as part of a rework loop.
+
+---
+
+## E. Claims evaluated after approval
+
+In the intended process, evaluation should normally occur before approval. This query finds cases where evaluation happened after approval.
+
+```sql
+SELECT DISTINCT
+    p.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    p.ts AS approval_ts,
+    e.ts AS later_evaluation_ts
+FROM v_claim_events_normalized p
+JOIN v_claim_events_normalized e
+    ON p.claim_id = e.claim_id
+JOIN claims c
+    ON p.claim_id = c.claim_id
+WHERE p.act = 'P'
+  AND e.act = 'E'
+  AND (e.ts, e.event_id) > (p.ts, p.event_id)
+ORDER BY p.claim_id, p.ts;
+```
+
+This is strong evidence of the `E -> P -> E` loop behavior appearing in the actual data.
+
+---
+
+## F. How often is customer notification skipped?
+
+This checks closed claims that have no notification event.
+
+```sql
+WITH claim_summary AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        c.submission_date,
+        COUNT(e.event_id) FILTER (WHERE e.act = 'C') AS close_count,
+        COUNT(e.event_id) FILTER (WHERE e.act = 'N') AS notify_count
+    FROM claims c
+    LEFT JOIN v_claim_events_normalized e
+        ON c.claim_id = e.claim_id
+    GROUP BY
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        c.submission_date
+)
+SELECT
+    COUNT(*) FILTER (WHERE close_count > 0) AS closed_claims,
+    COUNT(*) FILTER (
+        WHERE close_count > 0
+          AND notify_count = 0
+    ) AS closed_without_notification,
+    ROUND(
+        100.0 * COUNT(*) FILTER (
+            WHERE close_count > 0
+              AND notify_count = 0
+        ) / NULLIF(COUNT(*) FILTER (WHERE close_count > 0), 0),
+        2
+    ) AS pct_closed_without_notification
+FROM claim_summary;
+```
+
+A high percentage suggests the XOR skip path is being used frequently, or notification events are not being logged.
+
+---
+
+## G. Notification skipped by claim type and month
+
+This helps test whether skipped notification is due to a business rule change.
+
+```sql
+WITH claim_summary AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        c.submission_date,
+        COUNT(e.event_id) FILTER (WHERE e.act = 'C') AS close_count,
+        COUNT(e.event_id) FILTER (WHERE e.act = 'N') AS notify_count
+    FROM claims c
+    LEFT JOIN v_claim_events_normalized e
+        ON c.claim_id = e.claim_id
+    GROUP BY
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        c.submission_date
+)
+SELECT
+    date_trunc('month', submission_date)::date AS submission_month,
+    claim_type,
+    COUNT(*) FILTER (WHERE close_count > 0) AS closed_claims,
+    COUNT(*) FILTER (
+        WHERE close_count > 0
+          AND notify_count = 0
+    ) AS closed_without_notification,
+    ROUND(
+        100.0 * COUNT(*) FILTER (
+            WHERE close_count > 0
+              AND notify_count = 0
+        ) / NULLIF(COUNT(*) FILTER (WHERE close_count > 0), 0),
+        2
+    ) AS pct_closed_without_notification
+FROM claim_summary
+GROUP BY
+    date_trunc('month', submission_date)::date,
+    claim_type
+ORDER BY
+    submission_month,
+    claim_type;
+```
+
+If notification skipping begins suddenly after a certain month, that supports the “business rule change” or “system deployment issue” hypothesis.
+
+---
+
+## H. Anomaly rates by claim amount band
+
+This can reveal whether low-value claims are intentionally being fast-tracked.
+
+```sql
+WITH first_close AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        ts AS close_ts,
+        event_id AS close_event_id
+    FROM v_claim_events_normalized
+    WHERE act = 'C'
+    ORDER BY claim_id, ts, event_id
+),
+claim_flags AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        CASE
+            WHEN c.claim_amount < 500 THEN '< 500'
+            WHEN c.claim_amount < 1000 THEN '500 - 999'
+            WHEN c.claim_amount < 5000 THEN '1000 - 4999'
+            ELSE '5000+'
+        END AS amount_band,
+        fc.close_ts,
+        COUNT(e.event_id) FILTER (
+            WHERE e.act = 'E'
+              AND fc.close_ts IS NOT NULL
+              AND (e.ts, e.event_id) < (fc.close_ts, fc.close_event_id)
+        ) AS evals_before_close,
+        COUNT(e.event_id) FILTER (
+            WHERE e.act = 'P'
+              AND fc.close_ts IS NOT NULL
+              AND (e.ts, e.event_id) < (fc.close_ts, fc.close_event_id)
+        ) AS approvals_before_close
+    FROM claims c
+    LEFT JOIN first_close fc
+        ON c.claim_id = fc.claim_id
+    LEFT JOIN v_claim_events_normalized e
+        ON c.claim_id = e.claim_id
+    GROUP BY
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        amount_band,
+        fc.close_ts,
+        fc.close_event_id
+)
+SELECT
+    claim_type,
+    amount_band,
+    COUNT(*) FILTER (WHERE close_ts IS NOT NULL) AS closed_claims,
+    COUNT(*) FILTER (
+        WHERE close_ts IS NOT NULL
+          AND evals_before_close = 0
+    ) AS closed_without_eval,
+    COUNT(*) FILTER (
+        WHERE close_ts IS NOT NULL
+          AND approvals_before_close = 0
+    ) AS closed_without_approval
+FROM claim_flags
+GROUP BY
+    claim_type,
+    amount_band
+ORDER BY
+    claim_type,
+    amount_band;
+```
+
+If premature closure is concentrated in low-value claims, the anomaly may reflect an intended but poorly modeled fast-track rule.
+
+---
+
+## I. Anomalies by resource, adjuster region, or specialization
+
+This helps test whether anomalies are concentrated in particular teams.
+
+```sql
+WITH first_close AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        ts AS close_ts,
+        event_id AS close_event_id,
+        resource AS close_resource
+    FROM v_claim_events_normalized
+    WHERE act = 'C'
+    ORDER BY claim_id, ts, event_id
+),
+closed_without_approval AS (
+    SELECT
+        fc.claim_id,
+        fc.close_ts,
+        fc.close_resource
+    FROM first_close fc
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM v_claim_events_normalized p
+        WHERE p.claim_id = fc.claim_id
+          AND p.act = 'P'
+          AND (p.ts, p.event_id) < (fc.close_ts, fc.close_event_id)
+    )
+)
+SELECT
+    cwa.close_resource,
+    a.region,
+    a.specialization,
+    COUNT(*) AS anomalous_claims
+FROM closed_without_approval cwa
+LEFT JOIN adjusters a
+    ON lower(a.name) = lower(cwa.close_resource)
+GROUP BY
+    cwa.close_resource,
+    a.region,
+    a.specialization
+ORDER BY anomalous_claims DESC;
+```
+
+If one region, specialization, or resource has a high anomaly count, that supports the miscommunication, training, or local work-practice hypothesis.
+
+---
+
+## J. Duplicate or suspicious repeated events
+
+This checks for technical retries or logging duplication.
+
+```sql
+SELECT
+    claim_id,
+    act,
+    ts,
+    resource,
+    COUNT(*) AS duplicate_count,
+    array_agg(event_id ORDER BY event_id) AS event_ids
+FROM v_claim_events_normalized
+WHERE act IN ('R', 'A', 'E', 'P', 'N', 'C')
+GROUP BY
+    claim_id,
+    act,
+    ts,
+    resource
+HAVING COUNT(*) > 1
+ORDER BY duplicate_count DESC, claim_id, ts;
+```
+
+Duplicate approvals or closures may indicate workflow engine retries, integration bugs, or repeated event ingestion.
+
+---
+
+## K. Coarse check against the ideal order
+
+This query identifies claims whose first observed events do not follow:
+
+```text
+R -> A -> E -> P -> N -> C
+```
+
+```sql
+WITH first_events AS (
+    SELECT
+        claim_id,
+        MIN(ts) FILTER (WHERE act = 'R') AS first_receive_ts,
+        MIN(ts) FILTER (WHERE act = 'A') AS first_assign_ts,
+        MIN(ts) FILTER (WHERE act = 'E') AS first_evaluate_ts,
+        MIN(ts) FILTER (WHERE act = 'P') AS first_approve_ts,
+        MIN(ts) FILTER (WHERE act = 'N') AS first_notify_ts,
+        MIN(ts) FILTER (WHERE act = 'C') AS first_close_ts
+    FROM v_claim_events_normalized
+    WHERE act IN ('R', 'A', 'E', 'P', 'N', 'C')
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    fe.*
+FROM claims c
+JOIN first_events fe
+    ON c.claim_id = fe.claim_id
+WHERE first_receive_ts IS NULL
+   OR first_assign_ts IS NULL
+   OR first_evaluate_ts IS NULL
+   OR first_approve_ts IS NULL
+   OR first_notify_ts IS NULL
+   OR first_close_ts IS NULL
+   OR NOT (
+        first_receive_ts <= first_assign_ts
+        AND first_assign_ts <= first_evaluate_ts
+        AND first_evaluate_ts <= first_approve_ts
+        AND first_approve_ts <= first_notify_ts
+        AND first_notify_ts <= first_close_ts
+   )
+ORDER BY c.claim_id;
+```
+
+This is a broad conformance screen. For more precise process-mining analysis, use the full trace variant query above.
+
+---
+
+## Important interpretation note
+
+If an event is missing from `claim_events`, that does not always prove the business step did not happen. It may mean:
+
+- The step was skipped.
+- The step happened but was not logged.
+- The step happened in another system.
+- The event label mapping is incomplete.
+- Events were imported late or out of order.
+
+So the database queries should be combined with interviews, workflow configuration review, deployment history, and audit logs.

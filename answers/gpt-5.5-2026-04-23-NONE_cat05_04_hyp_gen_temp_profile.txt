@@ -1,0 +1,503 @@
+## 1. Key Temporal Anomalies
+
+### A. Receive to Approve: `R  P`
+- **Average:** ~25 hours  
+- **Standard deviation:** 1 hour  
+- **Why unusual:** Approval occurs at almost the same elapsed time after claim receipt across many cases. The low variation is suspicious because real claim approval times usually vary by claim type, claim amount, adjuster availability, workload, and complexity.
+
+Possible interpretations:
+- Approvals may be batch-processed on a fixed schedule.
+- Approval timestamps may be system-generated or rounded.
+- Some required intermediate activities may not be properly recorded.
+- Claims may be auto-approved after a fixed waiting period.
+
+---
+
+### B. Approve to Notify: `P  N`
+- **Average:** 7 days  
+- **Standard deviation:** 2 days  
+- **Why unusual:** Notification happens very late after approval, and the variation is large. Once a claim is approved, customer notification would typically be expected quickly.
+
+Possible interpretations:
+- Customer notifications are delayed due to manual processing.
+- Notification jobs may run weekly or in delayed batches.
+- There may be backlog in a communication or customer service team.
+- Some notifications may fail and require retries.
+- Certain claim types, regions, or resources may be associated with long delays.
+
+---
+
+### C. Assign to Close: `A  C`
+- **Average:** 2 hours  
+- **Standard deviation:** 1 hour  
+- **Why unusual:** Claims appear to be closed shortly after assignment. If this happens without evaluation and approval, it may indicate premature closures or skipped process steps.
+
+Possible interpretations:
+- Some claims are rejected or withdrawn shortly after assignment.
+- Duplicate or invalid claims may be closed quickly.
+- Adjusters may be closing claims without completing all expected steps.
+- Some events may be missing from the event log.
+- Closure timestamps may be incorrectly recorded.
+
+---
+
+### D. Evaluate to Notify: `E  N`
+- **Average:** 5 minutes  
+- **Standard deviation:** 1 minute  
+- **Why unusual:** Notification happens almost immediately after evaluation. This could be acceptable if notification is automated, but it is suspicious if approval is supposed to occur between evaluation and notification.
+
+Possible interpretations:
+- Notification may be automatically triggered immediately after evaluation.
+- Approval may be skipped or not logged.
+- Evaluation and approval may be combined operationally but recorded inconsistently.
+- The recorded `E` timestamp may actually represent a later stage than intended.
+- The process model may not match the actual operational process.
+
+---
+
+## 2. Verification Queries
+
+### 2.1 Compute Actual Time Gaps Between Key Activities
+
+This query calculates the first timestamp for each activity per claim, then computes elapsed time between relevant activity pairs.
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS r_time,
+        MIN(timestamp) FILTER (WHERE activity = 'A') AS a_time,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS e_time,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS n_time,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS c_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    EXTRACT(EPOCH FROM (a_time - r_time)) AS r_to_a_seconds,
+    EXTRACT(EPOCH FROM (e_time - r_time)) AS r_to_e_seconds,
+    EXTRACT(EPOCH FROM (p_time - r_time)) AS r_to_p_seconds,
+    EXTRACT(EPOCH FROM (c_time - a_time)) AS a_to_c_seconds,
+    EXTRACT(EPOCH FROM (n_time - e_time)) AS e_to_n_seconds,
+    EXTRACT(EPOCH FROM (c_time - e_time)) AS e_to_c_seconds,
+    EXTRACT(EPOCH FROM (n_time - p_time)) AS p_to_n_seconds,
+    EXTRACT(EPOCH FROM (c_time - n_time)) AS n_to_c_seconds
+FROM event_times;
+```
+
+---
+
+## 3. Detect Claims with Suspicious `R  P` Timing
+
+The expected average is about 90,000 seconds with a standard deviation of 3,600 seconds. Claims outside a 2-standard-deviation range may be anomalous.
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS r_time,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    et.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    c.submission_date,
+    et.r_time,
+    et.p_time,
+    EXTRACT(EPOCH FROM (et.p_time - et.r_time)) AS r_to_p_seconds
+FROM event_times et
+JOIN claims c
+    ON c.claim_id = et.claim_id
+WHERE et.r_time IS NOT NULL
+  AND et.p_time IS NOT NULL
+  AND ABS(EXTRACT(EPOCH FROM (et.p_time - et.r_time)) - 90000) > 2 * 3600
+ORDER BY r_to_p_seconds DESC;
+```
+
+To inspect whether approval occurs at a rigid schedule:
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS r_time,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    DATE_TRUNC('hour', p_time) AS approval_hour,
+    COUNT(*) AS approval_count
+FROM event_times
+WHERE r_time IS NOT NULL
+  AND p_time IS NOT NULL
+GROUP BY DATE_TRUNC('hour', p_time)
+ORDER BY approval_count DESC;
+```
+
+---
+
+## 4. Detect Long Delays from Approval to Notification
+
+The expected average is 7 days. This query identifies claims where notification took longer than 11 days, which is more than 2 standard deviations above the average.
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS n_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    et.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    c.submission_date,
+    et.p_time,
+    et.n_time,
+    EXTRACT(EPOCH FROM (et.n_time - et.p_time)) / 86400.0 AS p_to_n_days
+FROM event_times et
+JOIN claims c
+    ON c.claim_id = et.claim_id
+WHERE et.p_time IS NOT NULL
+  AND et.n_time IS NOT NULL
+  AND EXTRACT(EPOCH FROM (et.n_time - et.p_time)) > 604800 + 2 * 172800
+ORDER BY p_to_n_days DESC;
+```
+
+Check whether these delays are concentrated by claim type:
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS n_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_type,
+    COUNT(*) AS claim_count,
+    AVG(EXTRACT(EPOCH FROM (et.n_time - et.p_time)) / 86400.0) AS avg_p_to_n_days,
+    STDDEV(EXTRACT(EPOCH FROM (et.n_time - et.p_time)) / 86400.0) AS stdev_p_to_n_days,
+    MAX(EXTRACT(EPOCH FROM (et.n_time - et.p_time)) / 86400.0) AS max_p_to_n_days
+FROM event_times et
+JOIN claims c
+    ON c.claim_id = et.claim_id
+WHERE et.p_time IS NOT NULL
+  AND et.n_time IS NOT NULL
+GROUP BY c.claim_type
+ORDER BY avg_p_to_n_days DESC;
+```
+
+Check whether delays are associated with notification resources:
+
+```sql
+WITH p_events AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        timestamp AS p_time
+    FROM claim_events
+    WHERE activity = 'P'
+    ORDER BY claim_id, timestamp
+),
+n_events AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        timestamp AS n_time,
+        resource AS notification_resource
+    FROM claim_events
+    WHERE activity = 'N'
+    ORDER BY claim_id, timestamp
+)
+SELECT
+    n.notification_resource,
+    COUNT(*) AS claim_count,
+    AVG(EXTRACT(EPOCH FROM (n.n_time - p.p_time)) / 86400.0) AS avg_p_to_n_days,
+    STDDEV(EXTRACT(EPOCH FROM (n.n_time - p.p_time)) / 86400.0) AS stdev_p_to_n_days,
+    MAX(EXTRACT(EPOCH FROM (n.n_time - p.p_time)) / 86400.0) AS max_p_to_n_days
+FROM p_events p
+JOIN n_events n
+    ON n.claim_id = p.claim_id
+GROUP BY n.notification_resource
+ORDER BY avg_p_to_n_days DESC;
+```
+
+---
+
+## 5. Identify Claims Closed Soon After Assignment
+
+This query finds claims closed within 2 hours after assignment.
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'A') AS a_time,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS e_time,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS c_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    et.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    et.a_time,
+    et.e_time,
+    et.p_time,
+    et.c_time,
+    EXTRACT(EPOCH FROM (et.c_time - et.a_time)) / 3600.0 AS a_to_c_hours,
+    CASE WHEN et.e_time IS NULL THEN 'Missing Evaluate' ELSE 'Has Evaluate' END AS evaluate_status,
+    CASE WHEN et.p_time IS NULL THEN 'Missing Approve' ELSE 'Has Approve' END AS approve_status
+FROM event_times et
+JOIN claims c
+    ON c.claim_id = et.claim_id
+WHERE et.a_time IS NOT NULL
+  AND et.c_time IS NOT NULL
+  AND EXTRACT(EPOCH FROM (et.c_time - et.a_time)) <= 7200
+ORDER BY a_to_c_hours ASC;
+```
+
+Check whether quick closures are concentrated by claim type:
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'A') AS a_time,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS c_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_type,
+    COUNT(*) AS quick_close_count,
+    AVG(c.claim_amount) AS avg_claim_amount,
+    AVG(EXTRACT(EPOCH FROM (et.c_time - et.a_time)) / 3600.0) AS avg_a_to_c_hours
+FROM event_times et
+JOIN claims c
+    ON c.claim_id = et.claim_id
+WHERE et.a_time IS NOT NULL
+  AND et.c_time IS NOT NULL
+  AND EXTRACT(EPOCH FROM (et.c_time - et.a_time)) <= 7200
+GROUP BY c.claim_type
+ORDER BY quick_close_count DESC;
+```
+
+---
+
+## 6. Detect Evaluation Followed Almost Immediately by Notification
+
+This query finds claims where notification occurred within 5 minutes of evaluation.
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS e_time,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS n_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    et.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    et.e_time,
+    et.p_time,
+    et.n_time,
+    EXTRACT(EPOCH FROM (et.n_time - et.e_time)) AS e_to_n_seconds,
+    CASE
+        WHEN et.p_time IS NULL THEN 'Missing Approve'
+        WHEN et.p_time > et.n_time THEN 'Approve After Notify'
+        WHEN et.p_time < et.e_time THEN 'Approve Before Evaluate'
+        ELSE 'Approve Between Evaluate and Notify'
+    END AS approval_sequence_status
+FROM event_times et
+JOIN claims c
+    ON c.claim_id = et.claim_id
+WHERE et.e_time IS NOT NULL
+  AND et.n_time IS NOT NULL
+  AND EXTRACT(EPOCH FROM (et.n_time - et.e_time)) <= 300
+ORDER BY e_to_n_seconds ASC;
+```
+
+---
+
+## 7. Check for Skipped or Out-of-Order Process Steps
+
+This query checks whether claims follow the intended sequence: `R  A  E  P  N  C`.
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS r_time,
+        MIN(timestamp) FILTER (WHERE activity = 'A') AS a_time,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS e_time,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS n_time,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS c_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    r_time,
+    a_time,
+    e_time,
+    p_time,
+    n_time,
+    c_time,
+    CASE
+        WHEN r_time IS NULL THEN 'Missing Receive'
+        WHEN a_time IS NULL THEN 'Missing Assign'
+        WHEN e_time IS NULL THEN 'Missing Evaluate'
+        WHEN p_time IS NULL THEN 'Missing Approve'
+        WHEN n_time IS NULL THEN 'Missing Notify'
+        WHEN c_time IS NULL THEN 'Missing Close'
+        WHEN NOT (r_time <= a_time AND a_time <= e_time AND e_time <= p_time AND p_time <= n_time AND n_time <= c_time)
+            THEN 'Out of Order'
+        ELSE 'Expected Sequence'
+    END AS sequence_status
+FROM event_times
+WHERE r_time IS NULL
+   OR a_time IS NULL
+   OR e_time IS NULL
+   OR p_time IS NULL
+   OR n_time IS NULL
+   OR c_time IS NULL
+   OR NOT (r_time <= a_time AND a_time <= e_time AND e_time <= p_time AND p_time <= n_time AND n_time <= c_time)
+ORDER BY claim_id;
+```
+
+---
+
+## 8. Correlate Timing Deviations with Resources
+
+Since the event log contains the resource performing each activity, this query checks whether specific approval resources are associated with unusual `R  P` timing.
+
+```sql
+WITH r_events AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        timestamp AS r_time
+    FROM claim_events
+    WHERE activity = 'R'
+    ORDER BY claim_id, timestamp
+),
+p_events AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        timestamp AS p_time,
+        resource AS approval_resource
+    FROM claim_events
+    WHERE activity = 'P'
+    ORDER BY claim_id, timestamp
+)
+SELECT
+    p.approval_resource,
+    COUNT(*) AS claim_count,
+    AVG(EXTRACT(EPOCH FROM (p.p_time - r.r_time)) / 3600.0) AS avg_r_to_p_hours,
+    STDDEV(EXTRACT(EPOCH FROM (p.p_time - r.r_time)) / 3600.0) AS stdev_r_to_p_hours,
+    MIN(EXTRACT(EPOCH FROM (p.p_time - r.r_time)) / 3600.0) AS min_r_to_p_hours,
+    MAX(EXTRACT(EPOCH FROM (p.p_time - r.r_time)) / 3600.0) AS max_r_to_p_hours
+FROM r_events r
+JOIN p_events p
+    ON p.claim_id = r.claim_id
+GROUP BY p.approval_resource
+ORDER BY stdev_r_to_p_hours ASC, avg_r_to_p_hours DESC;
+```
+
+---
+
+## 9. Correlate Anomalies with Adjuster Region or Specialization
+
+If the `resource` value for assignment or evaluation corresponds to an adjuster name, this query can associate timing patterns with adjuster metadata.
+
+```sql
+WITH a_events AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        timestamp AS a_time,
+        resource AS adjuster_resource
+    FROM claim_events
+    WHERE activity = 'A'
+    ORDER BY claim_id, timestamp
+),
+c_events AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        timestamp AS c_time
+    FROM claim_events
+    WHERE activity = 'C'
+    ORDER BY claim_id, timestamp
+)
+SELECT
+    adj.region,
+    adj.specialization,
+    COUNT(*) AS claim_count,
+    AVG(EXTRACT(EPOCH FROM (c.c_time - a.a_time)) / 3600.0) AS avg_a_to_c_hours,
+    STDDEV(EXTRACT(EPOCH FROM (c.c_time - a.a_time)) / 3600.0) AS stdev_a_to_c_hours,
+    COUNT(*) FILTER (
+        WHERE EXTRACT(EPOCH FROM (c.c_time - a.a_time)) <= 7200
+    ) AS quick_close_count
+FROM a_events a
+JOIN c_events c
+    ON c.claim_id = a.claim_id
+LEFT JOIN adjusters adj
+    ON adj.name = a.adjuster_resource
+GROUP BY adj.region, adj.specialization
+ORDER BY quick_close_count DESC;
+```
+
+---
+
+## 10. Check Whether Notifications Are Batch-Processed
+
+If many notifications occur at the same time or same day of week, this may explain the long `P  N` delay.
+
+```sql
+SELECT
+    DATE_TRUNC('day', timestamp) AS notification_day,
+    COUNT(*) AS notification_count
+FROM claim_events
+WHERE activity = 'N'
+GROUP BY DATE_TRUNC('day', timestamp)
+ORDER BY notification_count DESC;
+```
+
+Check by day of week and hour:
+
+```sql
+SELECT
+    EXTRACT(DOW FROM timestamp) AS day_of_week,
+    EXTRACT(HOUR FROM timestamp) AS hour_of_day,
+    COUNT(*) AS notification_count
+FROM claim_events
+WHERE activity = 'N'
+GROUP BY EXTRACT(DOW FROM timestamp), EXTRACT(HOUR FROM timestamp)
+ORDER BY notification_count DESC;
+```
+
+---
+
+## 11. Summary of Likely Causes and Validation Paths
+
+| Anomaly | Likely Causes | SQL Validation |
+|---|---|---|
+| `R  P` has very low variation | Batch approval, auto-approval timer, timestamp rounding, missing intermediate steps | Analyze approval time distributions, group by approval hour/resource/claim type |
+| `P  N` is very long and variable | Notification backlog, manual customer contact, failed notification retries, weekly batch jobs | Identify claims above 11 days, group by resource/claim type/day of week |
+| `A  C` is very short | Premature closure, invalid/duplicate claims, missing evaluation/approval logs | Find closures within 2 hours and check missing `E`/`P` |
+| `E  N` is extremely short | Automated notification, skipped approval, evaluation timestamp recorded late | Find `E  N <= 5 minutes` and check whether `P` exists and occurs between `E` and `N` |

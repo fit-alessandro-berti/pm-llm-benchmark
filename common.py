@@ -369,6 +369,21 @@ MODELS_DICT = {
                 "base_model": "gpt-5.4-2026-03-05",
                 "reasoning_effort": "xhigh"
             },
+            "gpt-5.5-2026-04-23-NONE": {
+                "provider": "openai",
+                "base_model": "gpt-5.5-2026-04-23",
+                "reasoning_effort": "none"
+            },
+            "gpt-5.5-2026-04-23-HIGH": {
+                "provider": "openai",
+                "base_model": "gpt-5.5-2026-04-23",
+                "reasoning_effort": "high"
+            },
+            "gpt-5.5-2026-04-23-XHIGH": {
+                "provider": "openai",
+                "base_model": "gpt-5.5-2026-04-23",
+                "reasoning_effort": "xhigh"
+            },
             "gpt-5.4-mini-2026-03-17-NONE": {
                 "provider": "openai",
                 "base_model": "gpt-5.4-mini-2026-03-17",

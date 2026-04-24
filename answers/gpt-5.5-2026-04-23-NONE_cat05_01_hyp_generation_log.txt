@@ -1,0 +1,918 @@
+Below is a structured analysis of potential anomalies in the `order_event_log`, possible explanations, and SQL queries to investigate them further in PostgreSQL.
+
+---
+
+## 1. Key Process Anomalies Observed
+
+The assumed normal process flow is:
+
+1. `Register Order`
+2. `Perform Credit Check`
+3. `Validate Stock`
+4. `Confirm Shipment`
+5. `Ship Goods`
+6. `Issue Invoice`
+7. `Receive Payment`
+
+Several cases deviate from this expected order.
+
+---
+
+## 2. Case-Level Findings
+
+### Case 1001 — Appears Normal
+
+Observed sequence:
+
+```text
+Register Order
+Perform Credit Check
+Validate Stock
+Confirm Shipment
+Ship Goods
+Issue Invoice
+Receive Payment
+```
+
+This follows the expected process flow.
+
+No obvious anomaly is visible from the provided data.
+
+---
+
+### Case 1002 — Shipment Before Credit Check and Stock Validation
+
+Observed sequence:
+
+```text
+Register Order
+Confirm Shipment
+Ship Goods
+Perform Credit Check
+Validate Stock
+Issue Invoice
+Receive Payment
+```
+
+Anomalies:
+
+- `Confirm Shipment` occurred before `Perform Credit Check`.
+- `Confirm Shipment` occurred before `Validate Stock`.
+- `Ship Goods` occurred before `Perform Credit Check`.
+- `Ship Goods` occurred before `Validate Stock`.
+
+Why this is concerning:
+
+- Goods were shipped before confirming customer creditworthiness.
+- Goods were shipped before validating stock.
+- The `additional_info` value `attempted_early=Y` on `Confirm Shipment` suggests the early shipment may have been known or flagged.
+
+Possible hypotheses:
+
+- Priority orders may be fast-tracked, bypassing normal controls.
+- Logistics staff may be acting before Finance and Warehouse approvals are complete.
+- System workflow rules may not enforce prerequisites.
+- There may be pressure to ship quickly for certain order types or customers.
+- Timestamping or integration latency may cause events to appear out of order.
+
+---
+
+### Case 1003 — Missing Stock Validation and Late Shipment Confirmation
+
+Observed sequence:
+
+```text
+Register Order
+Perform Credit Check
+Ship Goods
+Issue Invoice
+Confirm Shipment
+Receive Payment
+```
+
+Anomalies:
+
+- `Validate Stock` is missing.
+- `Ship Goods` occurred before `Confirm Shipment`.
+- `Issue Invoice` occurred before `Confirm Shipment`.
+- `Confirm Shipment` has `additional_info = late_confirmation=Y`.
+
+Why this is concerning:
+
+- Shipment occurred without an explicit stock validation event.
+- Shipment confirmation came after goods were already shipped.
+- Invoice was issued before shipment was confirmed.
+
+Possible hypotheses:
+
+- Warehouse may be shipping without completing required stock validation.
+- Stock validation may happen outside the system or not be logged.
+- Confirmation might be treated as a documentation step rather than a control step.
+- Late confirmations may be manually entered after operational work is complete.
+- Integration between warehouse and logistics systems may be delayed.
+
+---
+
+### Case 1004 — Payment Before Invoice and Missing Credit/Stock Validation
+
+Observed sequence:
+
+```text
+Register Order
+Receive Payment
+Issue Invoice
+Confirm Shipment
+Ship Goods
+```
+
+Anomalies:
+
+- `Receive Payment` occurred before `Issue Invoice`.
+- `Perform Credit Check` is missing.
+- `Validate Stock` is missing.
+- Payment was received only 5 minutes after registration.
+- `Confirm Shipment` has `shipment_scheduled=N`, yet `Ship Goods` occurred afterward.
+
+Why this is concerning:
+
+- Receiving payment before issuing an invoice may indicate prepayment, but it conflicts with the assumed normal process.
+- Missing credit check and stock validation suggest major control bypasses.
+- Shipment occurred despite `shipment_scheduled=N`.
+- This order has the highest value in the sample: `3000.00`.
+
+Possible hypotheses:
+
+- The order may be prepaid, causing payment to precede invoice.
+- Credit checks may be skipped for prepaid orders, but this should be explicitly governed.
+- Stock validation may have been omitted or not recorded.
+- Logistics may ship despite shipment not being scheduled due to manual override.
+- `shipment_scheduled=N` may indicate a failed scheduling attempt, making subsequent shipment suspicious.
+- High-value orders may be receiving special handling or manual intervention.
+
+---
+
+## 3. General Anomaly Categories
+
+### A. Out-of-Order Activities
+
+Examples:
+
+- Shipment before credit check.
+- Shipment before stock validation.
+- Shipment before confirmation.
+- Payment before invoice.
+- Invoice before shipment confirmation.
+
+---
+
+### B. Missing Required Activities
+
+Examples:
+
+- Missing `Validate Stock` in case `1003`.
+- Missing `Perform Credit Check` and `Validate Stock` in case `1004`.
+
+---
+
+### C. Suspicious Additional Information Flags
+
+Examples:
+
+- `attempted_early=Y`
+- `late_confirmation=Y`
+- `shipment_scheduled=N`
+
+---
+
+### D. Potential Segregation or Responsibility Issues
+
+Possible concerns:
+
+- Activities performed by resources in unexpected departments.
+- Finance activities performed by non-Finance resources.
+- Shipment or warehouse-related activities performed by non-Logistics resources.
+
+The sample data appears aligned by department, but this should be validated over the full dataset.
+
+---
+
+## 4. SQL Queries to Investigate Further
+
+---
+
+# Query 1: Show Full Event Sequence Per Case
+
+This query displays the ordered event sequence for each case.
+
+```sql
+SELECT
+    case_id,
+    event_id,
+    activity,
+    "timestamp",
+    resource,
+    additional_info
+FROM order_event_log
+ORDER BY case_id, "timestamp", event_id;
+```
+
+---
+
+# Query 2: Build Activity Sequence String Per Case
+
+Useful for quickly identifying variants of the process.
+
+```sql
+SELECT
+    case_id,
+    STRING_AGG(activity, ' -> ' ORDER BY "timestamp", event_id) AS activity_sequence
+FROM order_event_log
+GROUP BY case_id
+ORDER BY case_id;
+```
+
+---
+
+# Query 3: Compare Each Case to the Expected Activity Order
+
+This assigns each activity an expected step number and compares it to the actual sequence.
+
+```sql
+WITH expected_order AS (
+    SELECT *
+    FROM (VALUES
+        ('Register Order', 1),
+        ('Perform Credit Check', 2),
+        ('Validate Stock', 3),
+        ('Confirm Shipment', 4),
+        ('Ship Goods', 5),
+        ('Issue Invoice', 6),
+        ('Receive Payment', 7)
+    ) AS v(activity, expected_step)
+),
+events_ranked AS (
+    SELECT
+        e.case_id,
+        e.event_id,
+        e.activity,
+        e."timestamp",
+        e.resource,
+        eo.expected_step,
+        ROW_NUMBER() OVER (
+            PARTITION BY e.case_id
+            ORDER BY e."timestamp", e.event_id
+        ) AS actual_step
+    FROM order_event_log e
+    LEFT JOIN expected_order eo
+        ON e.activity = eo.activity
+)
+SELECT
+    case_id,
+    event_id,
+    activity,
+    "timestamp",
+    resource,
+    expected_step,
+    actual_step,
+    actual_step - expected_step AS step_difference
+FROM events_ranked
+ORDER BY case_id, actual_step;
+```
+
+---
+
+# Query 4: Detect Pairwise Ordering Violations
+
+This query checks whether required predecessor activities occurred before successor activities.
+
+```sql
+WITH required_pairs AS (
+    SELECT *
+    FROM (VALUES
+        ('Register Order', 'Perform Credit Check'),
+        ('Perform Credit Check', 'Validate Stock'),
+        ('Validate Stock', 'Confirm Shipment'),
+        ('Confirm Shipment', 'Ship Goods'),
+        ('Ship Goods', 'Issue Invoice'),
+        ('Issue Invoice', 'Receive Payment')
+    ) AS v(predecessor_activity, successor_activity)
+),
+activity_times AS (
+    SELECT
+        case_id,
+        activity,
+        MIN("timestamp") AS first_time
+    FROM order_event_log
+    GROUP BY case_id, activity
+)
+SELECT
+    c.case_id,
+    rp.predecessor_activity,
+    rp.successor_activity,
+    p.first_time AS predecessor_time,
+    s.first_time AS successor_time,
+    CASE
+        WHEN p.first_time IS NULL THEN 'Missing predecessor'
+        WHEN s.first_time IS NULL THEN 'Missing successor'
+        WHEN p.first_time > s.first_time THEN 'Out of order'
+        ELSE 'OK'
+    END AS status
+FROM (
+    SELECT DISTINCT case_id
+    FROM order_event_log
+) c
+CROSS JOIN required_pairs rp
+LEFT JOIN activity_times p
+    ON c.case_id = p.case_id
+   AND rp.predecessor_activity = p.activity
+LEFT JOIN activity_times s
+    ON c.case_id = s.case_id
+   AND rp.successor_activity = s.activity
+WHERE
+    p.first_time IS NULL
+    OR s.first_time IS NULL
+    OR p.first_time > s.first_time
+ORDER BY c.case_id, rp.predecessor_activity;
+```
+
+---
+
+# Query 5: Detect Shipments Before Credit Check
+
+```sql
+WITH activity_times AS (
+    SELECT
+        case_id,
+        MIN("timestamp") FILTER (WHERE activity = 'Perform Credit Check') AS credit_check_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Ship Goods') AS ship_goods_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    case_id,
+    credit_check_time,
+    ship_goods_time
+FROM activity_times
+WHERE
+    ship_goods_time IS NOT NULL
+    AND (
+        credit_check_time IS NULL
+        OR ship_goods_time < credit_check_time
+    )
+ORDER BY case_id;
+```
+
+---
+
+# Query 6: Detect Shipments Before Stock Validation
+
+```sql
+WITH activity_times AS (
+    SELECT
+        case_id,
+        MIN("timestamp") FILTER (WHERE activity = 'Validate Stock') AS validate_stock_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Ship Goods') AS ship_goods_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    case_id,
+    validate_stock_time,
+    ship_goods_time
+FROM activity_times
+WHERE
+    ship_goods_time IS NOT NULL
+    AND (
+        validate_stock_time IS NULL
+        OR ship_goods_time < validate_stock_time
+    )
+ORDER BY case_id;
+```
+
+---
+
+# Query 7: Detect Shipments Before Shipment Confirmation
+
+```sql
+WITH activity_times AS (
+    SELECT
+        case_id,
+        MIN("timestamp") FILTER (WHERE activity = 'Confirm Shipment') AS confirm_shipment_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Ship Goods') AS ship_goods_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    case_id,
+    confirm_shipment_time,
+    ship_goods_time
+FROM activity_times
+WHERE
+    ship_goods_time IS NOT NULL
+    AND (
+        confirm_shipment_time IS NULL
+        OR ship_goods_time < confirm_shipment_time
+    )
+ORDER BY case_id;
+```
+
+---
+
+# Query 8: Detect Payments Before Invoice
+
+```sql
+WITH activity_times AS (
+    SELECT
+        case_id,
+        MIN("timestamp") FILTER (WHERE activity = 'Issue Invoice') AS issue_invoice_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Receive Payment') AS receive_payment_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    case_id,
+    issue_invoice_time,
+    receive_payment_time
+FROM activity_times
+WHERE
+    receive_payment_time IS NOT NULL
+    AND (
+        issue_invoice_time IS NULL
+        OR receive_payment_time < issue_invoice_time
+    )
+ORDER BY case_id;
+```
+
+---
+
+# Query 9: Find Missing Required Activities Per Case
+
+```sql
+WITH required_activities AS (
+    SELECT *
+    FROM (VALUES
+        ('Register Order'),
+        ('Perform Credit Check'),
+        ('Validate Stock'),
+        ('Confirm Shipment'),
+        ('Ship Goods'),
+        ('Issue Invoice'),
+        ('Receive Payment')
+    ) AS v(activity)
+),
+cases AS (
+    SELECT DISTINCT case_id
+    FROM order_event_log
+)
+SELECT
+    c.case_id,
+    ra.activity AS missing_activity
+FROM cases c
+CROSS JOIN required_activities ra
+LEFT JOIN order_event_log e
+    ON c.case_id = e.case_id
+   AND ra.activity = e.activity
+WHERE e.case_id IS NULL
+ORDER BY c.case_id, ra.activity;
+```
+
+---
+
+# Query 10: Summarize Missing Activities by Activity Type
+
+```sql
+WITH required_activities AS (
+    SELECT *
+    FROM (VALUES
+        ('Register Order'),
+        ('Perform Credit Check'),
+        ('Validate Stock'),
+        ('Confirm Shipment'),
+        ('Ship Goods'),
+        ('Issue Invoice'),
+        ('Receive Payment')
+    ) AS v(activity)
+),
+cases AS (
+    SELECT DISTINCT case_id
+    FROM order_event_log
+),
+missing AS (
+    SELECT
+        c.case_id,
+        ra.activity AS missing_activity
+    FROM cases c
+    CROSS JOIN required_activities ra
+    LEFT JOIN order_event_log e
+        ON c.case_id = e.case_id
+       AND ra.activity = e.activity
+    WHERE e.case_id IS NULL
+)
+SELECT
+    missing_activity,
+    COUNT(*) AS missing_case_count
+FROM missing
+GROUP BY missing_activity
+ORDER BY missing_case_count DESC, missing_activity;
+```
+
+---
+
+# Query 11: Identify Suspicious Additional Info Flags
+
+```sql
+SELECT
+    case_id,
+    event_id,
+    activity,
+    "timestamp",
+    resource,
+    additional_info
+FROM order_event_log
+WHERE
+    additional_info ILIKE '%early%'
+    OR additional_info ILIKE '%late%'
+    OR additional_info ILIKE '%scheduled=N%'
+    OR additional_info ILIKE '%attempted%'
+ORDER BY case_id, "timestamp", event_id;
+```
+
+---
+
+# Query 12: Detect Confirm Shipment Events Where Shipment Was Not Scheduled
+
+```sql
+SELECT
+    case_id,
+    event_id,
+    activity,
+    "timestamp",
+    resource,
+    additional_info
+FROM order_event_log
+WHERE
+    activity = 'Confirm Shipment'
+    AND additional_info ILIKE '%shipment_scheduled=N%'
+ORDER BY case_id, "timestamp";
+```
+
+---
+
+# Query 13: Cases Where Shipment Occurred Despite `shipment_scheduled=N`
+
+```sql
+WITH confirm_events AS (
+    SELECT
+        case_id,
+        MIN("timestamp") AS not_scheduled_time
+    FROM order_event_log
+    WHERE
+        activity = 'Confirm Shipment'
+        AND additional_info ILIKE '%shipment_scheduled=N%'
+    GROUP BY case_id
+),
+ship_events AS (
+    SELECT
+        case_id,
+        MIN("timestamp") AS ship_time
+    FROM order_event_log
+    WHERE activity = 'Ship Goods'
+    GROUP BY case_id
+)
+SELECT
+    c.case_id,
+    c.not_scheduled_time,
+    s.ship_time
+FROM confirm_events c
+JOIN ship_events s
+    ON c.case_id = s.case_id
+WHERE s.ship_time > c.not_scheduled_time
+ORDER BY c.case_id;
+```
+
+---
+
+# Query 14: Enrich Anomalies with Order Value and Order Type
+
+This helps assess whether anomalies are concentrated in priority orders or high-value orders.
+
+```sql
+WITH activity_times AS (
+    SELECT
+        case_id,
+        MIN("timestamp") FILTER (WHERE activity = 'Perform Credit Check') AS credit_check_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Validate Stock') AS validate_stock_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Confirm Shipment') AS confirm_shipment_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Ship Goods') AS ship_goods_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Issue Invoice') AS issue_invoice_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Receive Payment') AS receive_payment_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT
+    a.case_id,
+    o.customer_id,
+    o.order_type,
+    o.order_value,
+    a.credit_check_time,
+    a.validate_stock_time,
+    a.confirm_shipment_time,
+    a.ship_goods_time,
+    a.issue_invoice_time,
+    a.receive_payment_time,
+    CASE
+        WHEN a.ship_goods_time IS NOT NULL
+             AND (a.credit_check_time IS NULL OR a.ship_goods_time < a.credit_check_time)
+        THEN TRUE ELSE FALSE
+    END AS shipped_before_credit_check,
+    CASE
+        WHEN a.ship_goods_time IS NOT NULL
+             AND (a.validate_stock_time IS NULL OR a.ship_goods_time < a.validate_stock_time)
+        THEN TRUE ELSE FALSE
+    END AS shipped_before_stock_validation,
+    CASE
+        WHEN a.ship_goods_time IS NOT NULL
+             AND (a.confirm_shipment_time IS NULL OR a.ship_goods_time < a.confirm_shipment_time)
+        THEN TRUE ELSE FALSE
+    END AS shipped_before_confirmation,
+    CASE
+        WHEN a.receive_payment_time IS NOT NULL
+             AND (a.issue_invoice_time IS NULL OR a.receive_payment_time < a.issue_invoice_time)
+        THEN TRUE ELSE FALSE
+    END AS payment_before_invoice
+FROM activity_times a
+LEFT JOIN orders o
+    ON a.case_id = o.case_id
+WHERE
+    (
+        a.ship_goods_time IS NOT NULL
+        AND (
+            a.credit_check_time IS NULL
+            OR a.validate_stock_time IS NULL
+            OR a.confirm_shipment_time IS NULL
+            OR a.ship_goods_time < a.credit_check_time
+            OR a.ship_goods_time < a.validate_stock_time
+            OR a.ship_goods_time < a.confirm_shipment_time
+        )
+    )
+    OR (
+        a.receive_payment_time IS NOT NULL
+        AND (
+            a.issue_invoice_time IS NULL
+            OR a.receive_payment_time < a.issue_invoice_time
+        )
+    )
+ORDER BY o.order_value DESC NULLS LAST, a.case_id;
+```
+
+---
+
+# Query 15: Check Whether Anomalies Are Concentrated by Order Type
+
+```sql
+WITH case_flags AS (
+    SELECT
+        case_id,
+        MIN("timestamp") FILTER (WHERE activity = 'Perform Credit Check') AS credit_check_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Validate Stock') AS validate_stock_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Confirm Shipment') AS confirm_shipment_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Ship Goods') AS ship_goods_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Issue Invoice') AS issue_invoice_time,
+        MIN("timestamp") FILTER (WHERE activity = 'Receive Payment') AS receive_payment_time
+    FROM order_event_log
+    GROUP BY case_id
+),
+anomaly_flags AS (
+    SELECT
+        case_id,
+        CASE
+            WHEN ship_goods_time IS NOT NULL
+                 AND (credit_check_time IS NULL OR ship_goods_time < credit_check_time)
+            THEN 1 ELSE 0
+        END AS shipped_before_credit_check,
+        CASE
+            WHEN ship_goods_time IS NOT NULL
+                 AND (validate_stock_time IS NULL OR ship_goods_time < validate_stock_time)
+            THEN 1 ELSE 0
+        END AS shipped_before_stock_validation,
+        CASE
+            WHEN ship_goods_time IS NOT NULL
+                 AND (confirm_shipment_time IS NULL OR ship_goods_time < confirm_shipment_time)
+            THEN 1 ELSE 0
+        END AS shipped_before_confirmation,
+        CASE
+            WHEN receive_payment_time IS NOT NULL
+                 AND (issue_invoice_time IS NULL OR receive_payment_time < issue_invoice_time)
+            THEN 1 ELSE 0
+        END AS payment_before_invoice
+    FROM case_flags
+)
+SELECT
+    o.order_type,
+    COUNT(*) AS case_count,
+    SUM(shipped_before_credit_check) AS shipped_before_credit_check_count,
+    SUM(shipped_before_stock_validation) AS shipped_before_stock_validation_count,
+    SUM(shipped_before_confirmation) AS shipped_before_confirmation_count,
+    SUM(payment_before_invoice) AS payment_before_invoice_count
+FROM anomaly_flags af
+JOIN orders o
+    ON af.case_id = o.case_id
+GROUP BY o.order_type
+ORDER BY o.order_type;
+```
+
+---
+
+# Query 16: Check Activities Performed by Unexpected Departments
+
+This validates whether each activity is performed by an appropriate department.
+
+```sql
+WITH expected_departments AS (
+    SELECT *
+    FROM (VALUES
+        ('Register Order', 'Sales'),
+        ('Perform Credit Check', 'Finance'),
+        ('Validate Stock', 'Logistics'),
+        ('Confirm Shipment', 'Logistics'),
+        ('Ship Goods', 'Logistics'),
+        ('Issue Invoice', 'Finance'),
+        ('Receive Payment', 'Finance')
+    ) AS v(activity, expected_department)
+)
+SELECT
+    e.case_id,
+    e.event_id,
+    e.activity,
+    e."timestamp",
+    e.resource,
+    r.role,
+    r.department AS actual_department,
+    ed.expected_department
+FROM order_event_log e
+LEFT JOIN resources r
+    ON e.resource = r.resource_id
+LEFT JOIN expected_departments ed
+    ON e.activity = ed.activity
+WHERE
+    ed.expected_department IS NOT NULL
+    AND (
+        r.department IS NULL
+        OR r.department <> ed.expected_department
+    )
+ORDER BY e.case_id, e."timestamp";
+```
+
+---
+
+# Query 17: Check for Unknown or Unmapped Resources
+
+```sql
+SELECT
+    e.case_id,
+    e.event_id,
+    e.activity,
+    e."timestamp",
+    e.resource
+FROM order_event_log e
+LEFT JOIN resources r
+    ON e.resource = r.resource_id
+WHERE r.resource_id IS NULL
+ORDER BY e.case_id, e."timestamp";
+```
+
+---
+
+# Query 18: Identify Rework or Duplicate Activities Within a Case
+
+```sql
+SELECT
+    case_id,
+    activity,
+    COUNT(*) AS occurrence_count,
+    MIN("timestamp") AS first_occurrence,
+    MAX("timestamp") AS last_occurrence
+FROM order_event_log
+GROUP BY case_id, activity
+HAVING COUNT(*) > 1
+ORDER BY case_id, occurrence_count DESC, activity;
+```
+
+---
+
+# Query 19: Detect Very Short Time Gaps Between Key Events
+
+This can help detect batch/system-generated events, backdated entries, or unrealistic processing speed.
+
+```sql
+WITH ordered_events AS (
+    SELECT
+        case_id,
+        event_id,
+        activity,
+        "timestamp",
+        resource,
+        LAG(activity) OVER (
+            PARTITION BY case_id
+            ORDER BY "timestamp", event_id
+        ) AS previous_activity,
+        LAG("timestamp") OVER (
+            PARTITION BY case_id
+            ORDER BY "timestamp", event_id
+        ) AS previous_timestamp
+    FROM order_event_log
+)
+SELECT
+    case_id,
+    previous_activity,
+    activity,
+    previous_timestamp,
+    "timestamp",
+    "timestamp" - previous_timestamp AS time_gap,
+    resource
+FROM ordered_events
+WHERE
+    previous_timestamp IS NOT NULL
+    AND "timestamp" - previous_timestamp <= INTERVAL '5 minutes'
+ORDER BY case_id, "timestamp";
+```
+
+---
+
+# Query 20: Detect Negative or Zero-Time Ordering by Event ID
+
+If `event_id` is expected to increase with time, this finds timestamp inconsistencies.
+
+```sql
+WITH ordered_by_event_id AS (
+    SELECT
+        case_id,
+        event_id,
+        activity,
+        "timestamp",
+        LAG(event_id) OVER (
+            PARTITION BY case_id
+            ORDER BY event_id
+        ) AS previous_event_id,
+        LAG("timestamp") OVER (
+            PARTITION BY case_id
+            ORDER BY event_id
+        ) AS previous_timestamp
+    FROM order_event_log
+)
+SELECT
+    case_id,
+    previous_event_id,
+    event_id,
+    previous_timestamp,
+    "timestamp",
+    "timestamp" - previous_timestamp AS time_difference
+FROM ordered_by_event_id
+WHERE
+    previous_timestamp IS NOT NULL
+    AND "timestamp" < previous_timestamp
+ORDER BY case_id, event_id;
+```
+
+---
+
+## 5. Higher-Level Investigation Questions
+
+The SQL queries above support investigation into questions such as:
+
+1. Are shipments occurring before credit approval?
+2. Are shipments occurring before stock validation?
+3. Are payments being recorded before invoices are issued?
+4. Are particular order types, especially `priority`, more likely to skip controls?
+5. Are high-value orders more likely to have missing or out-of-order events?
+6. Are anomalies concentrated around particular resources or departments?
+7. Are anomalous cases associated with special flags in `additional_info`?
+8. Are workflow controls missing in the underlying system?
+9. Are timestamps reliable, or could events be logged late or backdated?
+10. Are some required steps optional in practice, despite being part of the assumed normal process?
+
+---
+
+## 6. Most Suspicious Cases to Prioritize
+
+Based on the sample data, the most suspicious cases are:
+
+| Case | Main Concern |
+|---:|---|
+| `1004` | Payment before invoice, missing credit check, missing stock validation, shipment despite `shipment_scheduled=N`, highest order value |
+| `1002` | Shipment before credit check and stock validation, early shipment flag |
+| `1003` | Missing stock validation, shipment before confirmation, late confirmation flag |
+| `1001` | No obvious issue |
+
+---
+
+## 7. Recommended Follow-Up Actions
+
+1. Review system workflow rules to confirm whether credit check and stock validation are enforced before shipment.
+2. Investigate whether `priority` orders are allowed to bypass standard controls.
+3. Validate whether prepaid orders are allowed to receive payment before invoice issuance.
+4. Check whether missing activities are truly skipped or simply not logged.
+5. Review resources involved in anomalous cases for training or compliance issues.
+6. Examine the meaning of flags such as `attempted_early=Y`, `late_confirmation=Y`, and `shipment_scheduled=N`.
+7. Audit high-value cases with missing controls, especially case `1004`.
+8. Consider implementing database or workflow-level controls to prevent shipment before required approvals.

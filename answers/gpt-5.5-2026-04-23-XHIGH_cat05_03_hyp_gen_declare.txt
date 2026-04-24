@@ -1,0 +1,683 @@
+## 1. Anomalies in the DECLARE model
+
+### A. Evaluation is effectively forbidden for any completed claim
+
+The model requires every trace to contain `C`:
+
+```python
+"existence": {
+    "C": ...
+}
+```
+
+But it also declares that `E` and `C` cannot coexist:
+
+```python
+"noncoexistence": {
+    "E": {"activities": ["C"]}
+}
+```
+
+Therefore, any compliant claim that is closed cannot contain an evaluation. Since every claim must be closed, `E` is effectively impossible in any compliant complete trace.
+
+This contradicts the expected claim-handling process, where evaluation should occur before approval, notification, and closure.
+
+---
+
+### B. The intended trace is rejected
+
+The intended flow is:
+
+```text
+R -> A -> E -> P -> N -> C
+```
+
+However, that trace contains both `E` and `C`, so it violates the `noncoexistence(E, C)` constraint.
+
+So the model rejects the desired business process.
+
+---
+
+### C. Undesired traces are allowed
+
+A minimal trace such as:
+
+```text
+R -> C
+```
+
+satisfies the current model:
+
+- It starts with `R`.
+- It contains `C`.
+- `C` is preceded by `R`.
+- It does not contain `E`, so it does not violate `noncoexistence(E, C)`.
+- The `responded_existence(E, A)` rule is vacuously satisfied because `E` never occurs.
+
+This means the model allows claims to be closed without assignment, evaluation, approval, or customer notification.
+
+---
+
+### D. Assignment and evaluation ordering is too weak
+
+The rule:
+
+```python
+"responded_existence": {
+    "E": {"activities": ["A"]}
+}
+```
+
+only says that if `E` occurs, then `A` must also occur somewhere in the same trace.
+
+It does not guarantee that assignment occurs before evaluation. A trace such as:
+
+```text
+R -> E -> A
+```
+
+would satisfy this specific rule, even though it is operationally incorrect.
+
+---
+
+### E. Approval and notification are unconstrained
+
+There are no constraints requiring:
+
+- `P` to occur.
+- `N` to occur.
+- `P` to happen after `E`.
+- `N` to happen after `P`.
+- `C` to happen after `N`.
+
+As a result, approvals and notifications can be skipped, occur in the wrong order, or occur after closure.
+
+---
+
+### F. Closure is not guaranteed to be the final event
+
+The model requires the existence of `C`, but it does not require `C` to be the last activity.
+
+Therefore, traces such as:
+
+```text
+R -> C -> P -> N
+```
+
+are not excluded by the current constraints, even though closure should normally end the claim process.
+
+---
+
+## 2. Hypotheses for why these anomalies exist
+
+### A. Incorrect interpretation of the closure rule
+
+The `noncoexistence(E, C)` rule may have been intended to prevent evaluation after closure, but it was encoded too strongly. Instead of saying “do not evaluate after closing,” it says “evaluation and closing must never occur in the same claim.”
+
+A more appropriate constraint would require evaluation before closure, not prohibit their coexistence.
+
+---
+
+### B. Activity label ambiguity
+
+The activity code `C` may not always mean “Close Claim.” It might sometimes represent cancellation, claim withdrawal, or administrative completion.
+
+If `C` mixes different business meanings, the model may have learned or encoded a misleading relationship between `E` and `C`.
+
+---
+
+### C. Incomplete or inconsistent event logging
+
+Evaluation events may be missing from the event log because they are stored in another system, recorded under another activity code, or captured only in `additional_info`.
+
+If closed claims often lack visible `E` events, a discovery algorithm could incorrectly infer that evaluation and closure do not coexist.
+
+---
+
+### D. Mining from an abnormal or incomplete sample
+
+If the DECLARE model was mined from a small, filtered, or biased log, it may reflect exceptional cases rather than the intended process.
+
+For example, if the source data mostly contained simple claims that were closed quickly without manual evaluation, the discovered constraints may overfit that behavior.
+
+---
+
+### E. Mixed process variants
+
+Different claim types may follow different processes. For example:
+
+- Low-value claims may be auto-closed.
+- Some claim types may not require manual evaluation.
+- Emergency or fast-track claims may skip some steps.
+- Canceled claims may close without evaluation.
+
+If all variants are mined into one DECLARE model, contradictory rules can appear.
+
+---
+
+### F. Incremental rule changes without model cleanup
+
+Business policies may have changed over time, but older constraints may not have been removed. For example, a previous process may have allowed direct closure, while the current process requires evaluation.
+
+The result is a model containing rules from multiple policy versions.
+
+---
+
+## 3. SQL-based investigation strategies
+
+Assumption: each `claim_id` represents one process instance, and event order is determined by `timestamp`, then `event_id`.
+
+Because `timestamp` is also a PostgreSQL type name, the queries quote it as `"timestamp"`.
+
+---
+
+### 3.1 Reconstruct trace variants
+
+Use this to see the actual activity sequences in the log.
+
+```sql
+WITH traces AS (
+    SELECT
+        c.claim_id,
+        string_agg(e.activity, '>' ORDER BY e."timestamp", e.event_id) AS trace
+    FROM claims c
+    LEFT JOIN claim_events e
+        ON e.claim_id = c.claim_id
+    GROUP BY c.claim_id
+)
+SELECT
+    COALESCE(trace, '<no events>') AS trace,
+    COUNT(*) AS claim_count
+FROM traces
+GROUP BY COALESCE(trace, '<no events>')
+ORDER BY claim_count DESC, trace;
+```
+
+This will reveal whether traces like `R>C`, `R>A>E>P>N>C`, or other variants occur frequently.
+
+---
+
+### 3.2 Find claims that do not start with `R`
+
+Checks violation of the `init(R)` rule.
+
+```sql
+WITH first_event AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        event_id,
+        activity,
+        "timestamp"
+    FROM claim_events
+    ORDER BY claim_id, "timestamp", event_id
+)
+SELECT
+    c.claim_id,
+    fe.activity AS first_activity,
+    fe."timestamp" AS first_event_time
+FROM claims c
+LEFT JOIN first_event fe
+    ON fe.claim_id = c.claim_id
+WHERE fe.event_id IS NULL
+   OR fe.activity <> 'R';
+```
+
+---
+
+### 3.3 Find claims with no close event
+
+Checks violation of the mandatory `C` rule.
+
+```sql
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.submission_date
+FROM claims c
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce
+    WHERE ce.claim_id = c.claim_id
+      AND ce.activity = 'C'
+);
+```
+
+---
+
+### 3.4 Find close events without a prior receive event
+
+Checks whether `C` is actually preceded by `R`.
+
+```sql
+SELECT
+    ce.claim_id,
+    ce.event_id AS close_event_id,
+    ce."timestamp" AS close_time
+FROM claim_events ce
+WHERE ce.activity = 'C'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events r
+      WHERE r.claim_id = ce.claim_id
+        AND r.activity = 'R'
+        AND (r."timestamp", r.event_id) < (ce."timestamp", ce.event_id)
+  )
+ORDER BY ce.claim_id, ce."timestamp", ce.event_id;
+```
+
+---
+
+### 3.5 Find claims where evaluation and closure coexist
+
+These traces violate the model’s `noncoexistence(E, C)` rule, but they may represent the correct business process.
+
+```sql
+WITH flags AS (
+    SELECT
+        claim_id,
+        BOOL_OR(activity = 'E') AS has_evaluation,
+        BOOL_OR(activity = 'C') AS has_close,
+        MIN("timestamp") FILTER (WHERE activity = 'E') AS first_evaluation_time,
+        MIN("timestamp") FILTER (WHERE activity = 'C') AS first_close_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    f.first_evaluation_time,
+    f.first_close_time
+FROM flags f
+JOIN claims c
+    ON c.claim_id = f.claim_id
+WHERE f.has_evaluation
+  AND f.has_close
+ORDER BY c.claim_id;
+```
+
+If this query returns many normal claims, the `noncoexistence(E, C)` rule is likely wrong.
+
+---
+
+### 3.6 Find claims closed without any evaluation
+
+Identifies claims following the undesirable `R -> C`-style path.
+
+```sql
+WITH flags AS (
+    SELECT
+        claim_id,
+        BOOL_OR(activity = 'C') AS has_close,
+        BOOL_OR(activity = 'E') AS has_evaluation,
+        MIN("timestamp") FILTER (WHERE activity = 'C') AS first_close_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    f.first_close_time
+FROM claims c
+JOIN flags f
+    ON f.claim_id = c.claim_id
+WHERE f.has_close
+  AND NOT f.has_evaluation
+ORDER BY f.first_close_time;
+```
+
+---
+
+### 3.7 Find evaluation events without assignment anywhere in the trace
+
+Checks the weak `responded_existence(E, A)` relationship.
+
+```sql
+SELECT
+    e.claim_id,
+    e.event_id AS evaluation_event_id,
+    e."timestamp" AS evaluation_time,
+    e.resource
+FROM claim_events e
+WHERE e.activity = 'E'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events a
+      WHERE a.claim_id = e.claim_id
+        AND a.activity = 'A'
+  )
+ORDER BY e.claim_id, e."timestamp", e.event_id;
+```
+
+---
+
+### 3.8 Find evaluations that occurred before assignment
+
+This checks the intended ordering, not just coexistence.
+
+```sql
+SELECT
+    e.claim_id,
+    e.event_id AS evaluation_event_id,
+    e."timestamp" AS evaluation_time,
+    e.resource
+FROM claim_events e
+WHERE e.activity = 'E'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events a
+      WHERE a.claim_id = e.claim_id
+        AND a.activity = 'A'
+        AND (a."timestamp", a.event_id) < (e."timestamp", e.event_id)
+  )
+ORDER BY e.claim_id, e."timestamp", e.event_id;
+```
+
+---
+
+### 3.9 Find events that violate the expected local ordering
+
+This checks the expected chain:
+
+```text
+R before A before E before P before N before C
+```
+
+```sql
+WITH transitions(activity, required_prior_activity) AS (
+    VALUES
+        ('A', 'R'),
+        ('E', 'A'),
+        ('P', 'E'),
+        ('N', 'P'),
+        ('C', 'N')
+)
+SELECT
+    e.claim_id,
+    e.event_id,
+    e.activity,
+    e."timestamp",
+    t.required_prior_activity
+FROM claim_events e
+JOIN transitions t
+    ON t.activity = e.activity
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM claim_events prior
+    WHERE prior.claim_id = e.claim_id
+      AND prior.activity = t.required_prior_activity
+      AND (prior."timestamp", prior.event_id) < (e."timestamp", e.event_id)
+)
+ORDER BY e.claim_id, e."timestamp", e.event_id;
+```
+
+---
+
+### 3.10 Find close events missing required prior activities
+
+This identifies closure events that occurred before assignment, evaluation, approval, or notification.
+
+```sql
+WITH required_before_close(activity) AS (
+    VALUES ('A'), ('E'), ('P'), ('N')
+)
+SELECT
+    ce.claim_id,
+    ce.event_id AS close_event_id,
+    ce."timestamp" AS close_time,
+    array_agg(r.activity ORDER BY r.activity) AS missing_prior_activities
+FROM claim_events ce
+JOIN required_before_close r
+    ON TRUE
+WHERE ce.activity = 'C'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events prior
+      WHERE prior.claim_id = ce.claim_id
+        AND prior.activity = r.activity
+        AND (prior."timestamp", prior.event_id) < (ce."timestamp", ce.event_id)
+  )
+GROUP BY ce.claim_id, ce.event_id, ce."timestamp"
+ORDER BY ce.claim_id, ce."timestamp", ce.event_id;
+```
+
+---
+
+### 3.11 Find activity after closure
+
+Checks whether `C` is actually the end of the process.
+
+```sql
+WITH first_close AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        event_id AS close_event_id,
+        "timestamp" AS close_time
+    FROM claim_events
+    WHERE activity = 'C'
+    ORDER BY claim_id, "timestamp", event_id
+)
+SELECT
+    e.claim_id,
+    e.event_id,
+    e.activity,
+    e."timestamp",
+    fc.close_time
+FROM claim_events e
+JOIN first_close fc
+    ON fc.claim_id = e.claim_id
+WHERE (e."timestamp", e.event_id) > (fc.close_time, fc.close_event_id)
+ORDER BY e.claim_id, e."timestamp", e.event_id;
+```
+
+---
+
+### 3.12 Find claims with multiple close events
+
+Checks whether closure is being logged more than once.
+
+```sql
+SELECT
+    claim_id,
+    COUNT(*) AS close_event_count
+FROM claim_events
+WHERE activity = 'C'
+GROUP BY claim_id
+HAVING COUNT(*) > 1
+ORDER BY close_event_count DESC, claim_id;
+```
+
+---
+
+### 3.13 Check whether evaluations are performed by known adjusters
+
+Uses the `adjusters` table to detect evaluations performed by unknown resources.
+
+```sql
+SELECT
+    e.claim_id,
+    e.event_id AS evaluation_event_id,
+    e."timestamp" AS evaluation_time,
+    e.resource
+FROM claim_events e
+LEFT JOIN adjusters a
+    ON e.resource = a.name
+    OR e.resource = a.adjuster_id::text
+WHERE e.activity = 'E'
+  AND a.adjuster_id IS NULL
+ORDER BY e.claim_id, e."timestamp", e.event_id;
+```
+
+---
+
+### 3.14 Check evaluator specialization against claim type
+
+For claim types like `home_insurance` and `auto_insurance`, this assumes the specialization should match the part before the underscore.
+
+```sql
+SELECT
+    c.claim_id,
+    c.claim_type,
+    e.event_id AS evaluation_event_id,
+    e.resource AS evaluator,
+    a.specialization
+FROM claim_events e
+JOIN claims c
+    ON c.claim_id = e.claim_id
+JOIN adjusters a
+    ON e.resource = a.name
+    OR e.resource = a.adjuster_id::text
+WHERE e.activity = 'E'
+  AND lower(a.specialization) <> lower(split_part(c.claim_type, '_', 1))
+ORDER BY c.claim_id;
+```
+
+---
+
+### 3.15 Check whether closed-without-evaluation cases are concentrated by claim type or amount
+
+This helps identify whether skipped evaluation is a deliberate process variant.
+
+```sql
+WITH flags AS (
+    SELECT
+        claim_id,
+        BOOL_OR(activity = 'C') AS has_close,
+        BOOL_OR(activity = 'E') AS has_evaluation
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_type,
+    CASE
+        WHEN c.claim_amount < 1000 THEN '<1000'
+        WHEN c.claim_amount < 10000 THEN '1000-9999'
+        ELSE '10000+'
+    END AS amount_band,
+    COUNT(*) AS claims,
+    COUNT(*) FILTER (
+        WHERE COALESCE(f.has_close, false)
+          AND NOT COALESCE(f.has_evaluation, false)
+    ) AS closed_without_evaluation,
+    ROUND(
+        100.0 * COUNT(*) FILTER (
+            WHERE COALESCE(f.has_close, false)
+              AND NOT COALESCE(f.has_evaluation, false)
+        ) / NULLIF(COUNT(*), 0),
+        2
+    ) AS pct_closed_without_evaluation
+FROM claims c
+LEFT JOIN flags f
+    ON f.claim_id = c.claim_id
+GROUP BY c.claim_type, amount_band
+ORDER BY c.claim_type, amount_band;
+```
+
+---
+
+### 3.16 Check whether anomalies changed over time
+
+Useful for detecting policy changes or logging changes.
+
+```sql
+WITH flags AS (
+    SELECT
+        claim_id,
+        BOOL_OR(activity = 'E') AS has_evaluation,
+        BOOL_OR(activity = 'C') AS has_close
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    date_trunc('month', c.submission_date)::date AS submission_month,
+    COUNT(*) AS claims,
+    COUNT(*) FILTER (
+        WHERE COALESCE(f.has_evaluation, false)
+          AND COALESCE(f.has_close, false)
+    ) AS evaluation_and_close,
+    COUNT(*) FILTER (
+        WHERE COALESCE(f.has_close, false)
+          AND NOT COALESCE(f.has_evaluation, false)
+    ) AS closed_without_evaluation
+FROM claims c
+LEFT JOIN flags f
+    ON f.claim_id = c.claim_id
+GROUP BY submission_month
+ORDER BY submission_month;
+```
+
+---
+
+### 3.17 Inspect close-event meanings using `additional_info`
+
+Useful if `C` may represent different business outcomes.
+
+```sql
+SELECT
+    additional_info,
+    COUNT(*) AS close_event_count
+FROM claim_events
+WHERE activity = 'C'
+GROUP BY additional_info
+ORDER BY close_event_count DESC;
+```
+
+A high number of close events with values such as cancellation, withdrawal, duplicate claim, or auto-closure may explain why some claims close without evaluation.
+
+---
+
+### 3.18 Check for event-log data quality issues
+
+Find event records that do not match a claim record.
+
+```sql
+SELECT
+    e.claim_id,
+    COUNT(*) AS event_count
+FROM claim_events e
+LEFT JOIN claims c
+    ON c.claim_id = e.claim_id
+WHERE c.claim_id IS NULL
+GROUP BY e.claim_id
+ORDER BY event_count DESC;
+```
+
+Check whether the first receive event aligns with the claim submission date.
+
+```sql
+WITH first_receive AS (
+    SELECT
+        claim_id,
+        MIN("timestamp")::date AS first_receive_date
+    FROM claim_events
+    WHERE activity = 'R'
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_id,
+    c.submission_date,
+    fr.first_receive_date
+FROM claims c
+LEFT JOIN first_receive fr
+    ON fr.claim_id = c.claim_id
+WHERE fr.first_receive_date IS NULL
+   OR fr.first_receive_date <> c.submission_date
+ORDER BY c.claim_id;
+```
+
+---
+
+## Likely model correction direction
+
+The current model should probably remove the `noncoexistence(E, C)` constraint and replace it with ordering constraints such as:
+
+```text
+R before A
+A before E
+E before P
+P before N
+N before C
+```
+
+It should also require the existence of the essential activities, especially `A`, `E`, `P`, and `N`, if those are mandatory for all normal claims. If closure should end the case, the model also needs an explicit final-activity or no-activity-after-close constraint.
