@@ -7,23 +7,26 @@ from typing import Dict, List, Optional, Sequence
 
 from benchlib import (
     average,
-    pairwise_order_accuracy,
     parse_pm_score,
+    population_stdev,
     read_text,
 )
 
 
-def _load_reference_rows(path: Path) -> List[Dict[str, str]]:
+MAX_SCORE_STDEV = 4.5
+
+
+def _load_selected_rows(path: Path) -> List[Dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as file:
         reader = csv.DictReader(file)
-        required = {"category", "question", "quantile", "reference_score", "copied_answer_file"}
+        required = {"category", "copied_answer_file"}
         if reader.fieldnames is None or not required.issubset(set(reader.fieldnames)):
             raise ValueError(f"Selected answers CSV must contain {sorted(required)}: {path}")
         return [row for row in reader if row.get("copied_answer_file")]
 
 
-def _match_reference(eval_name: str, references: Sequence[Dict[str, str]]) -> Optional[Dict[str, str]]:
-    for row in sorted(references, key=lambda item: len(item["copied_answer_file"]), reverse=True):
+def _match_selected_row(eval_name: str, selected_rows: Sequence[Dict[str, str]]) -> Optional[Dict[str, str]]:
+    for row in sorted(selected_rows, key=lambda item: len(item["copied_answer_file"]), reverse=True):
         if eval_name.endswith(f"_{row['copied_answer_file']}"):
             return row
     return None
@@ -42,16 +45,16 @@ def _format_optional(value: Optional[float], digits: int = 4) -> str:
     return f"{value:.{digits}f}"
 
 
-def _quality_score(mae: float, order_accuracy: Optional[float]) -> float:
-    calibration_component = max(0.0, 1.0 - min(mae, 10.0) / 10.0)
-    order_component = order_accuracy if order_accuracy is not None else calibration_component
-    return 100.0 * (0.75 * calibration_component + 0.25 * order_component)
+def _quality_score(score_average: float, score_stdev: float) -> float:
+    lower_average_component = max(0.0, min(1.0, (10.0 - score_average) / 9.0))
+    high_stdev_component = max(0.0, min(1.0, score_stdev / MAX_SCORE_STDEV))
+    return 100.0 * (0.5 * lower_average_component + 0.5 * high_stdev_component)
 
 
 def _category_columns(categories: Sequence[str]) -> List[str]:
     columns: List[str] = []
     for category in categories:
-        columns.extend([f"{category}_mae", f"{category}_order_accuracy"])
+        columns.extend([f"{category}_average", f"{category}_stdev"])
     return columns
 
 
@@ -59,8 +62,8 @@ def _render_markdown(judge_rows: List[Dict[str, object]], categories: Sequence[s
     lines = [
         "# JudgeBench Results",
         "",
-        "The reference score is the original PM-LLM-Benchmark judge score for each copied answer. "
-        "Quality is a 0-100 synthetic score combining closeness to the reference scores and pairwise ordering.",
+        "Quality is a 0-100 synthetic score using only the judge's assigned scores. "
+        "It rewards lower average scores and higher score standard deviation.",
         "",
     ]
 
@@ -75,8 +78,8 @@ def _render_markdown(judge_rows: List[Dict[str, object]], categories: Sequence[s
     for row in judge_rows:
         cells = [str(row["judge"]), f"{float(row['quality_score']):.3f}"]
         for category in categories:
-            cells.append(_format_optional(row.get(f"{category}_mae"), digits=3))  # type: ignore[arg-type]
-            cells.append(_format_optional(row.get(f"{category}_order_accuracy"), digits=3))  # type: ignore[arg-type]
+            cells.append(_format_optional(row.get(f"{category}_average"), digits=3))  # type: ignore[arg-type]
+            cells.append(_format_optional(row.get(f"{category}_stdev"), digits=3))  # type: ignore[arg-type]
         lines.append(
             "| " + " | ".join(cells) + " |"
         )
@@ -88,7 +91,7 @@ def main() -> None:
     script_dir = Path(__file__).resolve().parent
 
     parser = argparse.ArgumentParser(
-        description="Parse JudgeBench evaluations and report judge quality against reference PM scores."
+        description="Parse JudgeBench evaluations and report judge quality from score average and spread."
     )
     parser.add_argument(
         "--evaluations-dir",
@@ -103,17 +106,11 @@ def main() -> None:
         help="CSV produced by select_references.py.",
     )
     parser.add_argument(
-        "--csv-output",
-        type=Path,
-        default=script_dir / "judge_quality.csv",
-        help="CSV output for per-judge metrics.",
-    )
-    parser.add_argument(
         "-o",
         "--output",
         type=Path,
-        default=script_dir / "results.md",
-        help="Markdown report output. Defaults to judgebench/results.md.",
+        default=script_dir / "judge_quality.md",
+        help="Markdown report output. Defaults to judgebench/judge_quality.md.",
     )
     parser.add_argument(
         "--raw",
@@ -125,12 +122,12 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s - %(message)s")
     logger = logging.getLogger("judgebench.results")
 
-    references = _load_reference_rows(args.selected_csv)
+    selected_rows = _load_selected_rows(args.selected_csv)
     observations_by_judge: Dict[str, List[Dict[str, object]]] = defaultdict(list)
 
     for eval_path in sorted(path for path in args.evaluations_dir.glob("*.txt") if path.is_file()):
-        reference = _match_reference(eval_path.name, references)
-        if reference is None:
+        selected_row = _match_selected_row(eval_path.name, selected_rows)
+        if selected_row is None:
             logger.warning("Skipping evaluation that does not match selected answers: %s", eval_path.name)
             continue
 
@@ -139,74 +136,48 @@ def main() -> None:
             logger.warning("No parseable judge score in %s", eval_path)
             continue
 
-        copied_answer_file = reference["copied_answer_file"]
+        copied_answer_file = selected_row["copied_answer_file"]
         judge_name = _extract_judge_name(eval_path.name, copied_answer_file)
-        reference_score = float(reference["reference_score"])
         observations_by_judge[judge_name].append(
             {
-                "category": reference["category"],
-                "question": reference["question"],
-                "quantile": reference["quantile"],
+                "category": selected_row["category"],
                 "answer_file": copied_answer_file,
-                "reference_score": reference_score,
                 "judge_score": judge_score,
-                "error": judge_score - reference_score,
             }
         )
 
-    categories = sorted({row["category"] for row in references if row.get("category")})
+    categories = sorted({row["category"] for row in selected_rows if row.get("category")})
     judge_rows: List[Dict[str, object]] = []
     for judge_name, observations in observations_by_judge.items():
-        reference_scores = [float(row["reference_score"]) for row in observations]
         judge_scores = [float(row["judge_score"]) for row in observations]
-        errors = [float(row["error"]) for row in observations]
-        abs_errors = [abs(error) for error in errors]
-        mae = average(abs_errors)
-        order_accuracy = pairwise_order_accuracy(reference_scores, judge_scores)
+        score_average = average(judge_scores)
+        score_stdev = population_stdev(judge_scores)
 
         judge_row: Dict[str, object] = {
             "judge": judge_name,
-            "quality_score": _quality_score(mae, order_accuracy),
+            "quality_score": _quality_score(score_average, score_stdev),
         }
 
         for category in categories:
             category_observations = [row for row in observations if row["category"] == category]
             if not category_observations:
-                judge_row[f"{category}_mae"] = None
-                judge_row[f"{category}_order_accuracy"] = None
+                judge_row[f"{category}_average"] = None
+                judge_row[f"{category}_stdev"] = None
                 continue
 
-            category_errors = [float(row["error"]) for row in category_observations]
-            category_reference = [float(row["reference_score"]) for row in category_observations]
             category_judge = [float(row["judge_score"]) for row in category_observations]
-            judge_row[f"{category}_mae"] = average(abs(error) for error in category_errors)
-            judge_row[f"{category}_order_accuracy"] = pairwise_order_accuracy(
-                category_reference,
-                category_judge,
-            )
+            judge_row[f"{category}_average"] = average(category_judge)
+            judge_row[f"{category}_stdev"] = population_stdev(category_judge)
 
         judge_rows.append(judge_row)
 
     judge_rows.sort(key=lambda row: (-float(row["quality_score"]), str(row["judge"]).lower()))
 
-    args.csv_output.parent.mkdir(parents=True, exist_ok=True)
-    with args.csv_output.open("w", newline="", encoding="utf-8") as file:
-        fieldnames = ["judge", "quality_score", *_category_columns(categories)]
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in judge_rows:
-            writer.writerow(
-                {
-                    key: _format_optional(row[key]) if isinstance(row.get(key), float) else row.get(key, "")
-                    for key in fieldnames
-                }
-            )
-
     markdown = _render_markdown(judge_rows, categories)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(markdown, encoding="utf-8")
     print(markdown, end="")
-    logger.info("Wrote JudgeBench reports to %s and %s", args.output, args.csv_output)
+    logger.info("Wrote JudgeBench report to %s", args.output)
 
 
 if __name__ == "__main__":

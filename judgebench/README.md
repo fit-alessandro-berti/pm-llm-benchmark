@@ -17,4 +17,4 @@ The selector chooses the question with the lowest `AVERAGE - STDEV` in each cate
 
 The judge prompt follows the main PM-LLM-Benchmark textual evaluation prompt and always includes the strict-evaluation clause.
 
-`results.py` produces one row per judge: judge name, a 0-100 synthetic quality score, and two columns per category (`MAE` and pairwise order accuracy).
+`results.py` writes `judge_quality.md` with one row per judge: judge name, a 0-100 synthetic quality score, and two columns per category (`average` and `stdev`). The quality score uses only the judge's own scores, rewarding lower average scores and higher standard deviation.

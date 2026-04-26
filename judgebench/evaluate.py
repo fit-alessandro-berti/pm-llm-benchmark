@@ -45,6 +45,18 @@ JUDGE_LLMS: Sequence[Tuple[Any, ...]] = [
         "grok-4-1-fast-reasoning",
         {"api_url": "https://api.x.ai/v1/responses", "api_key": os.environ["GROK_API_KEY"]},
     ),
+    (
+        "anthropic/claude-opus-4.7",
+        {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"], "additional_payload": {"reasoning": {"enabled": True}}}
+    ),
+    (
+        "google/gemini-3.1-pro-preview",
+        {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"]}
+    ),
+    (
+        "google/gemini-2.5-pro",
+        {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"]}
+    ),
 ]
 
 STRICT_EVALUATION_TEXT = (
