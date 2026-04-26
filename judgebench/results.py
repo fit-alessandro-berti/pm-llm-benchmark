@@ -48,7 +48,7 @@ def _format_optional(value: Optional[float], digits: int = 4) -> str:
 def _quality_score(score_average: float, score_stdev: float) -> float:
     lower_average_component = max(0.0, min(1.0, (10.0 - score_average) / 9.0))
     high_stdev_component = max(0.0, min(1.0, score_stdev / MAX_SCORE_STDEV))
-    return 100.0 * (0.5 * lower_average_component + 0.5 * high_stdev_component)
+    return 100.0 * (0.8 * lower_average_component + 0.2 * high_stdev_component)
 
 
 def _category_columns(categories: Sequence[str]) -> List[str]:
@@ -63,7 +63,7 @@ def _render_markdown(judge_rows: List[Dict[str, object]], categories: Sequence[s
         "# JudgeBench Results",
         "",
         "Quality is a 0-100 synthetic score using only the judge's assigned scores. "
-        "It rewards lower average scores and higher score standard deviation.",
+        "It rewards lower average scores strongly and higher score standard deviation secondarily.",
         "",
     ]
 
