@@ -30,6 +30,14 @@ JUDGE_LLMS: Sequence[Tuple[Any, ...]] = [
         },
     ),
     (
+        "gpt-5.4-mini",
+        {
+            "api_url": "https://api.openai.com/v1/responses",
+            "api_key": os.environ.get("OPENAI_API_KEY", ""),
+            "additional_payload": {"reasoning": {"effort": "medium"}},
+        },
+    ),
+    (
         "gpt-5.5",
         {
             "api_url": "https://api.openai.com/v1/responses",
