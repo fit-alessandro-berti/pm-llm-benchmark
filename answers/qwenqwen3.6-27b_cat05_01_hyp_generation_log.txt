@@ -1,0 +1,573 @@
+<think>
+Here's a thinking process:
+
+1.  **Understand User Input:**
+   - **Database Schema:** PostgreSQL with three tables: `order_event_log`, `orders`, `resources`.
+   - **Normal Process Flow:** 7 steps in a specific order: Register Order -> Perform Credit Check -> Validate Stock -> Confirm Shipment -> Ship Goods -> Issue Invoice -> Receive Payment.
+   - **Sample Data:** 4 cases (1001, 1002, 1003, 1004) with event logs showing activities, timestamps, resources, and additional info.
+   - **Goal:** The target LLM needs to:
+     - Identify anomalies/undesirable behaviors in the event log.
+     - Hypothesize causes for these anomalies.
+     - Propose SQL queries to investigate further.
+     - *Crucially:* Do this without hints/guidance from the prompt (the prompt is just setting up the scenario for the target LLM).
+
+2.  **Analyze the Data vs. Normal Flow:**
+   Let's check each case against the expected sequence:
+   *Expected:* Register Order -> Credit Check -> Validate Stock -> Confirm Shipment -> Ship Goods -> Issue Invoice -> Receive Payment
+
+   - **Case 1001:**
+     1. Register Order (08:15)
+     2. Perform Credit Check (08:30)
+     3. Validate Stock (09:00)
+     4. Confirm Shipment (09:15)
+     5. Ship Goods (09:45)
+     6. Issue Invoice (10:00)
+     7. Receive Payment (Feb 5, 15:00) -> *Note: Payment takes 4 days, but sequence is correct. Might be normal depending on payment terms, but worth noting.*
+     *Verdict:* Follows the expected sequence perfectly. Timing seems reasonable.
+
+   - **Case 1002:**
+     1. Register Order (08:20)
+     2. Confirm Shipment (08:25) -> *Anomaly: Skipped Credit Check & Validate Stock. Happened immediately after registration.*
+     3. Ship Goods (08:40) -> *Anomaly: Shipped before credit check & stock validation.*
+     4. Perform Credit Check (09:10) -> *Anomaly: Credit check done AFTER shipping.*
+     5. Validate Stock (09:15) -> *Anomaly: Stock validated AFTER shipping.*
+     6. Issue Invoice (09:30)
+     7. Receive Payment (Feb 2, 10:00)
+     *Verdict:* Major sequence violation. "Confirm Shipment" and "Ship Goods" happened before mandatory checks. `additional_info` says `attempted_early=Y`. This looks like a process bypass or emergency override.
+
+   - **Case 1003:**
+     1. Register Order (08:45)
+     2. Perform Credit Check (09:00)
+     3. Ship Goods (09:10) -> *Anomaly: Skipped Validate Stock & Confirm Shipment. Shipped immediately after credit check.*
+     4. Issue Invoice (09:30)
+     5. Confirm Shipment (09:45) -> *Anomaly: Confirmed shipment AFTER shipping. `additional_info`: `late_confirmation=Y`.*
+     6. Receive Payment (Feb 2, 11:00)
+     *Verdict:* Sequence violation. Missing "Validate Stock" entirely. "Confirm Shipment" happened after "Ship Goods". This suggests a system glitch, manual override, or poor process adherence.
+
+   - **Case 1004:**
+     1. Register Order (09:00)
+     2. Receive Payment (09:05) -> *Anomaly: Payment received immediately after registration, before credit check, shipping, or even invoice.*
+     3. Issue Invoice (09:20) -> *Anomaly: Invoice issued AFTER payment received.*
+     4. Confirm Shipment (09:25) -> `additional_info`: `shipment_scheduled=N`
+     5. Ship Goods (09:50)
+     *Verdict:* Extreme sequence violation. Payment before invoice. Missing "Perform Credit Check" and "Validate Stock". `shipment_scheduled=N` suggests maybe a failed or cancelled shipment, but it still shows "Ship Goods". This looks like a data entry error, system bug, or highly irregular process (e.g., pre-paid order handled incorrectly).
+
+3.  **Identify Anomalies & Hypothesize Causes:**
+   - *Sequence Violations:* Cases 1002, 1003, 1004 deviate significantly from the standard 7-step flow.
+   - *Missing Steps:* Credit Check and Validate Stock are missing or out of order in multiple cases.
+   - *Temporal Anomalies:* Payment before invoice (1004), late shipment confirmation (1003), extremely fast processing times (1002, 1004).
+   - *Hypotheses:*
+     - **Process Bypass/Override:** Staff skipping mandatory checks (credit/stock) for priority orders or due to pressure.
+     - **System/UI Flaws:** The system might allow next-step progression without completing prerequisites, or event logging is misordered.
+     - **Data Entry/Logging Errors:** Manual logging after the fact, or automated triggers firing out of sync.
+     - **Policy Violations:** "Attempted early" or "late confirmation" flags suggest ad-hoc decisions not aligned with standard operating procedures.
+     - **Pre-payment/Advance Payment Handling:** Case 1004 might be an advance payment scenario not properly mapped to the standard flow.
+
+4.  **Formulate SQL Queries for Investigation:**
+   Need queries that:
+   - Detect sequence violations.
+   - Identify missing steps.
+   - Analyze timing/duration between steps.
+   - Correlate with order type/customer/resource to find patterns.
+   - Use PostgreSQL features (window functions, JSON/regex if needed, but keep it standard).
+
+   *Query 1: Detect Sequence Violations (Activity Order)*
+   Use `LAG()` to check if the previous activity matches the expected predecessor.
+   Expected mapping: Register->Credit, Credit->Stock, Stock->Confirm, Confirm->Ship, Ship->Invoice, Invoice->Payment.
+   Actually, easier: assign a step number to each activity, then check if `step_number` is strictly increasing per `case_id`. If not, flag it.
+   Let's create a mapping in the query or use a `CASE` statement.
+   ```sql
+   WITH activity_steps AS (
+     SELECT case_id, event_id, activity, timestamp,
+            ROW_NUMBER() OVER(PARTITION BY case_id ORDER BY timestamp) as actual_order,
+            CASE activity
+              WHEN 'Register Order' THEN 1
+              WHEN 'Perform Credit Check' THEN 2
+              WHEN 'Validate Stock' THEN 3
+              WHEN 'Confirm Shipment' THEN 4
+              WHEN 'Ship Goods' THEN 5
+              WHEN 'Issue Invoice' THEN 6
+              WHEN 'Receive Payment' THEN 7
+              ELSE 8
+            END as expected_step
+     FROM order_event_log
+   )
+   SELECT case_id, event_id, activity, timestamp, actual_order, expected_step,
+          LAG(expected_step) OVER(PARTITION BY case_id ORDER BY timestamp) as prev_step
+   FROM activity_steps
+   WHERE expected_step < LAG(expected_step) OVER(PARTITION BY case_id ORDER BY timestamp)
+      OR expected_step > LAG(expected_step) OVER(PARTITION BY case_id ORDER BY timestamp) + 1
+   ```
+   Wait, the condition for violation is simpler: if `expected_step` is not strictly increasing by 1, or if any step is out of order. Actually, just checking `expected_step < prev_step` catches out-of-order. To catch skipped steps, check `expected_step > prev_step + 1`.
+   Let's refine:
+   ```sql
+   WITH activity_steps AS (
+     SELECT case_id, event_id, activity, timestamp,
+            CASE activity
+              WHEN 'Register Order' THEN 1
+              WHEN 'Perform Credit Check' THEN 2
+              WHEN 'Validate Stock' THEN 3
+              WHEN 'Confirm Shipment' THEN 4
+              WHEN 'Ship Goods' THEN 5
+              WHEN 'Issue Invoice' THEN 6
+              WHEN 'Receive Payment' THEN 7
+            END as step_num
+     FROM order_event_log
+   ),
+   ordered_events AS (
+     SELECT *,
+            LAG(step_num) OVER(PARTITION BY case_id ORDER BY timestamp) as prev_step,
+            LEAD(step_num) OVER(PARTITION BY case_id ORDER BY timestamp) as next_step
+     FROM activity_steps
+   )
+   SELECT case_id, event_id, activity, timestamp, step_num, prev_step, next_step
+   FROM ordered_events
+   WHERE prev_step IS NOT NULL AND (step_num < prev_step OR step_num > prev_step + 1)
+   ```
+   This will flag out-of-order and skipped steps.
+
+   *Query 2: Identify Missing Steps per Case*
+   Compare expected steps (1-7) with actual steps per case.
+   ```sql
+   WITH all_steps AS (
+     SELECT generate_series(1, 7) as step_num
+   ),
+   case_steps AS (
+     SELECT DISTINCT case_id,
+            CASE activity
+              WHEN 'Register Order' THEN 1
+              WHEN 'Perform Credit Check' THEN 2
+              WHEN 'Validate Stock' THEN 3
+              WHEN 'Confirm Shipment' THEN 4
+              WHEN 'Ship Goods' THEN 5
+              WHEN 'Issue Invoice' THEN 6
+              WHEN 'Receive Payment' THEN 7
+            END as step_num
+     FROM order_event_log
+   )
+   SELECT cs.case_id,
+          array_agg(s.step_num ORDER BY s.step_num) as missing_steps
+   FROM all_steps s
+   LEFT JOIN case_steps cs ON s.step_num = cs.step_num
+   GROUP BY cs.case_id
+   HAVING COUNT(cs.step_num) < 7; -- Actually, need to pivot or use a different approach
+   ```
+   Better approach for missing steps:
+   ```sql
+   WITH expected AS (
+     SELECT unnest(ARRAY[1,2,3,4,5,6,7]) as step_num
+   ),
+   actual AS (
+     SELECT DISTINCT case_id,
+            CASE activity
+              WHEN 'Register Order' THEN 1
+              WHEN 'Perform Credit Check' THEN 2
+              WHEN 'Validate Stock' THEN 3
+              WHEN 'Confirm Shipment' THEN 4
+              WHEN 'Ship Goods' THEN 5
+              WHEN 'Issue Invoice' THEN 6
+              WHEN 'Receive Payment' THEN 7
+            END as step_num
+     FROM order_event_log
+   )
+   SELECT a.case_id,
+          array_agg(e.step_num ORDER BY e.step_num) as missing_steps
+   FROM actual a
+   CROSS JOIN expected e
+   LEFT JOIN actual a2 ON a.case_id = a2.case_id AND e.step_num = a2.step_num
+   WHERE a2.step_num IS NULL
+   GROUP BY a.case_id;
+   ```
+   This works but is a bit verbose. I'll simplify it for the final output.
+
+   *Query 3: Analyze Timing/Duration for Specific Transitions*
+   Check time between "Issue Invoice" and "Receive Payment", or "Register Order" and "Ship Goods".
+   ```sql
+   WITH transitions AS (
+     SELECT case_id,
+            MAX(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) as invoice_time,
+            MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) as payment_time,
+            MAX(CASE WHEN activity = 'Register Order' THEN timestamp END) as reg_time,
+            MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) as ship_time
+     FROM order_event_log
+     GROUP BY case_id
+   )
+   SELECT case_id,
+          invoice_time, payment_time,
+          payment_time - invoice_time as payment_delay,
+          ship_time - reg_time as time_to_ship
+   FROM transitions
+   WHERE (payment_time < invoice_time) -- Payment before invoice
+      OR time_to_ship < INTERVAL '30 minutes'; -- Suspiciously fast shipping
+   ```
+
+   *Query 4: Correlate Anomalies with Order Type & Resources*
+   Join with `orders` and `resources` to see if priority orders or specific staff cause bypasses.
+   ```sql
+   SELECT o.case_id, o.order_type, o.order_value,
+          e.activity, e.timestamp, e.resource, r.role, r.department
+   FROM orders o
+   JOIN order_event_log e ON o.case_id = e.case_id
+   JOIN resources r ON e.resource = r.resource_id
+   WHERE e.activity IN ('Confirm Shipment', 'Ship Goods')
+     AND o.case_id IN (
+       -- Subquery for cases with sequence violations
+       SELECT DISTINCT case_id FROM (
+         WITH activity_steps AS (
+           SELECT case_id, activity, timestamp,
+                  CASE activity
+                    WHEN 'Register Order' THEN 1
+                    WHEN 'Perform Credit Check' THEN 2
+                    WHEN 'Validate Stock' THEN 3
+                    WHEN 'Confirm Shipment' THEN 4
+                    WHEN 'Ship Goods' THEN 5
+                    WHEN 'Issue Invoice' THEN 6
+                    WHEN 'Receive Payment' THEN 7
+                  END as step_num
+           FROM order_event_log
+         ),
+         ordered AS (
+           SELECT *, LAG(step_num) OVER(PARTITION BY case_id ORDER BY timestamp) as prev_step
+           FROM activity_steps
+         )
+         SELECT case_id FROM ordered
+         WHERE prev_step IS NOT NULL AND step_num < prev_step
+       )
+     )
+   ORDER BY o.case_id, e.timestamp;
+   ```
+
+5.  **Structure the Response:**
+   The prompt asks the *target LLM* to do these things. I need to generate the response *as if* I am the target LLM, or provide a structured output that fulfills the prompt's requirements. The prompt says: "The target model should be encouraged to: Identify anomalies... Hypothesize why... Propose relevant SQL queries...". I will directly provide the analysis, hypotheses, and queries as requested.
+
+   Structure:
+   - **Identified Anomalies & Undesirable Behaviors** (Case-by-case breakdown)
+   - **Hypothesized Root Causes** (Categorized: Process, System, Human, Data)
+   - **Investigative SQL Queries** (With explanations of what each does)
+   - Keep it concise, professional, and directly aligned with PostgreSQL syntax.
+
+   *Self-Correction/Refinement during thought:*
+   - Check Query 1 logic: `step_num < prev_step` catches out-of-order. `step_num > prev_step + 1` catches skipped steps. This is solid.
+   - Check Query 2: Missing steps. I'll use a simpler `LEFT JOIN` approach or `EXCEPT` for clarity.
+   - Check Query 3: Timing. I'll focus on "Payment before Invoice" and "Shipment before Credit Check/Stock Validation" as key temporal anomalies.
+   - I should ensure the SQL is strictly PostgreSQL compatible (e.g., `INTERVAL`, `ARRAY`, `LAG`, `CASE`).
+   - I'll add comments to explain each query's purpose.
+   - I'll make sure the hypotheses directly tie to the observed anomalies.
+
+   Let's draft it out carefully.
+   *Anomalies:*
+   - Case 1002: Steps 4 & 5 happened before 2 & 3. `attempted_early=Y`.
+   - Case 1003: Step 5 before 3 & 4. Step 4 after 5. `late_confirmation=Y`. Step 3 missing.
+   - Case 1004: Step 7 before 2, 3, 4, 5, 6. Step 6 after 7. Steps 2 & 3 missing. `shipment_scheduled=N`.
+   - General: Missing mandatory controls (Credit Check, Stock Validation) in 3/4 cases.
+   - Temporal: Extremely short durations between non-sequential steps.
+
+   *Hypotheses:*
+   - System allows unguarded navigation (no hard stops/prerequisites).
+   - Manual overrides for "priority" or VIP customers without proper logging.
+   - Event logging mechanism is event-driven but lacks sequence validation, leading to race conditions or manual backfilling.
+   - Staff training/process awareness gaps; relying on verbal approvals instead of system checks.
+
+   *SQL Queries:*
+   1. Sequence Violation Detector (using LAG)
+   2. Missing Step Identifier (using generate_series or array)
+   3. Temporal Anomaly Checker (Payment before Invoice, Pre-emptive Shipping)
+   4. Resource/Order Type Correlation (to find patterns)
+
+   All queries will be tested mentally for syntax.
+   Query 1:
+   ```sql
+   WITH activity_sequence AS (
+     SELECT
+       case_id, event_id, activity, timestamp,
+       CASE activity
+         WHEN 'Register Order' THEN 1
+         WHEN 'Perform Credit Check' THEN 2
+         WHEN 'Validate Stock' THEN 3
+         WHEN 'Confirm Shipment' THEN 4
+         WHEN 'Ship Goods' THEN 5
+         WHEN 'Issue Invoice' THEN 6
+         WHEN 'Receive Payment' THEN 7
+       END AS expected_step
+     FROM order_event_log
+   ),
+   ordered_events AS (
+     SELECT *,
+       LAG(expected_step) OVER (PARTITION BY case_id ORDER BY timestamp) AS prev_step
+     FROM activity_sequence
+   )
+   SELECT case_id, event_id, activity, timestamp, expected_step, prev_step
+   FROM ordered_events
+   WHERE prev_step IS NOT NULL
+     AND (expected_step < prev_step OR expected_step > prev_step + 1);
+   ```
+   This is clean.
+
+   Query 2 (Missing Steps):
+   ```sql
+   WITH all_expected_steps AS (
+     SELECT generate_series(1, 7) AS step_num
+   ),
+   case_actual_steps AS (
+     SELECT DISTINCT case_id,
+       CASE activity
+         WHEN 'Register Order' THEN 1 WHEN 'Perform Credit Check' THEN 2
+         WHEN 'Validate Stock' THEN 3 WHEN 'Confirm Shipment' THEN 4
+         WHEN 'Ship Goods' THEN 5 WHEN 'Issue Invoice' THEN 6
+         WHEN 'Receive Payment' THEN 7
+       END AS step_num
+     FROM order_event_log
+   )
+   SELECT a.case_id,
+     array_agg(e.step_num ORDER BY e.step_num) AS missing_steps
+   FROM case_actual_steps a
+   CROSS JOIN all_expected_steps e
+   LEFT JOIN case_actual_steps a2 ON a.case_id = a2.case_id AND e.step_num = a2.step_num
+   WHERE a2.step_num IS NULL
+   GROUP BY a.case_id;
+   ```
+   Works.
+
+   Query 3 (Temporal/Control Bypass):
+   ```sql
+   WITH case_timestamps AS (
+     SELECT
+       case_id,
+       MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) AS credit_check_time,
+       MAX(CASE WHEN activity = 'Validate Stock' THEN timestamp END) AS stock_check_time,
+       MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS ship_time,
+       MAX(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS invoice_time,
+       MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS payment_time
+     FROM order_event_log
+     GROUP BY case_id
+   )
+   SELECT
+     case_id,
+     CASE WHEN ship_time < credit_check_time THEN 'Shipped before Credit Check' END AS anomaly_credit,
+     CASE WHEN ship_time < stock_check_time THEN 'Shipped before Stock Validation' END AS anomaly_stock,
+     CASE WHEN payment_time < invoice_time THEN 'Payment before Invoice' END AS anomaly_payment,
+     ship_time - credit_check_time AS time_between_credit_and_ship
+   FROM case_timestamps
+   WHERE ship_time < credit_check_time
+      OR ship_time < stock_check_time
+      OR payment_time < invoice_time;
+   ```
+   Good.
+
+   Query 4 (Correlation with Order Type & Resources):
+   ```sql
+   SELECT
+     o.case_id, o.order_type, o.order_value,
+     e.activity, e.timestamp, e.resource, r.role, r.department
+   FROM orders o
+   JOIN order_event_log e ON o.case_id = e.case_id
+   JOIN resources r ON e.resource = r.resource_id
+   WHERE e.case_id IN (
+     SELECT DISTINCT case_id FROM (
+       WITH seq AS (
+         SELECT case_id, activity, timestamp,
+           CASE activity
+             WHEN 'Register Order' THEN 1 WHEN 'Perform Credit Check' THEN 2
+             WHEN 'Validate Stock' THEN 3 WHEN 'Confirm Shipment' THEN 4
+             WHEN 'Ship Goods' THEN 5 WHEN 'Issue Invoice' THEN 6
+             WHEN 'Receive Payment' THEN 7
+           END AS step
+         FROM order_event_log
+       ),
+       lagged AS (
+         SELECT *, LAG(step) OVER(PARTITION BY case_id ORDER BY timestamp) AS prev
+         FROM seq
+       )
+       SELECT case_id FROM lagged WHERE prev IS NOT NULL AND step < prev
+     ) violations
+   )
+   ORDER BY o.case_id, e.timestamp;
+   ```
+   This ties it all together.
+
+   I will now structure the final response clearly, matching the prompt's requirements. I'll present the anomalies, hypotheses, and SQL queries with brief explanations. I'll ensure the tone is analytical and the SQL is production-ready for PostgreSQL. I'll also add a note about how to use these queries iteratively. All steps check out. Proceed. 
+   One minor thing: The prompt says "without any hints or guidance provided here." This means I should just output the analysis as if I'm the target model responding to the prompt. I'll frame it directly.
+   Structure:
+   1. Identified Anomalies & Undesirable Behaviors
+   2. Hypothesized Root Causes
+   3. Investigative SQL Queries (with explanations)
+   Ready.
+   Output matches the response. 
+   Self-Correction/Verification during drafting:
+   - Check PostgreSQL syntax: `generate_series`, `LAG`, `CASE`, `array_agg`, `INTERVAL` are all valid.
+   - The logic correctly identifies the exact anomalies in the sample data.
+   - Hypotheses are grounded in process mining principles (sequence violation, missing steps, temporal inversion).
+   - Queries are modular and can be run independently.
+   - I'll make sure to explicitly map findings to the sample data (1002, 1003, 1004) to show comprehension.
+   - All good. Output matches response. 
+   Proceeds. 
+   [Output Generation] -> *See response.* 
+   *Self-Correction/Note during thought*: I should make sure the SQL queries don't rely on hardcoded arrays if possible, but since the activity names are fixed, `CASE` is fine. I'll add comments explaining each query's purpose. I'll also ensure the output strictly follows the prompt's request. The prompt says "The target model should be encouraged to...", which implies I am generating the expected output for that target model. I will provide the direct analysis. All set. 
+   Output Generation. 
+   [Done.] 
+   *Output Generation* (matches the final response)
+   - Anomalies: Sequence violations, missing controls, temporal inversions.
+   - Hypotheses: System design flaws, manual overrides, process ignorance, data logging race conditions.
+   - SQL: 4 targeted queries with explanations.
+   - Format: Clear, professional, PostgreSQL-optimized.
+   Proceeds. 
+   [Output Generation] -> *Proceeds.*
+
+</think>
+Based on the provided schema, normal process flow, and sample event logs, here is a structured analysis identifying anomalies, hypothesizing root causes, and providing targeted PostgreSQL queries for further investigation.
+
+---
+
+###  Identified Anomalies & Undesirable Behaviors
+
+| Case ID | Observed Deviation from Standard Flow | Key Indicators |
+|---------|--------------------------------------|----------------|
+| **1001** | Follows expected sequence perfectly. | Payment takes ~4 days (may be normal depending on terms, but worth monitoring). |
+| **1002** | **Major sequence bypass**: `Confirm Shipment` & `Ship Goods` occur *before* `Perform Credit Check` & `Validate Stock`. | `additional_info`: `attempted_early=Y`. Credit check shows low score (`650`), yet goods shipped first. |
+| **1003** | **Missing & inverted steps**: `Validate Stock` is completely absent. `Ship Goods` happens before `Confirm Shipment`, which is logged later. | `additional_info`: `late_confirmation=Y`. Process control step skipped entirely. |
+| **1004** | **Extreme temporal inversion & missing controls**: `Receive Payment` occurs 5 mins after registration, *before* credit check, stock validation, or even `Issue Invoice`. Steps 2 & 3 are missing. | `additional_info`: `shipment_scheduled=N` yet `Ship Goods` is logged. Suggests possible cancellation, data entry error, or pre-payment misrouting. |
+
+**Cross-Case Patterns:**
+- 3 out of 4 cases bypass mandatory financial/logistical controls (`Credit Check`, `Validate Stock`).
+- Multiple cases exhibit **step inversion** (later steps logged before earlier ones).
+- `additional_info` flags (`attempted_early=Y`, `late_confirmation=Y`, `shipment_scheduled=N`) indicate manual overrides or system warnings that were ignored.
+
+---
+
+###  Hypothesized Root Causes
+
+1. **System Design / UI Flaw**: The workflow engine likely lacks hard prerequisites or state guards. Users can manually trigger downstream events without completing upstream validations.
+2. **Manual Override / Policy Bypass**: Staff may be using emergency or VIP bypass protocols without proper audit logging. The `attempted_early` and `late_confirmation` flags suggest ad-hoc decisions overriding standard SOPs.
+3. **Event Logging Race Conditions / Asynchronous Triggers**: If events are logged via separate microservices or webhook callbacks, network delays or retry mechanisms could cause out-of-order inserts. Manual backfilling of events is also possible.
+4. **Training / Process Awareness Gaps**: Resources may not understand the risk of skipping credit/stock checks, especially for high-value or priority orders.
+5. **Pre-Payment / Advance Order Misconfiguration**: Case 1004 resembles an advance-payment scenario, but the system forces it through the standard flow, causing invoice/payment inversion and missing validation steps.
+
+---
+
+###  Investigative SQL Queries (PostgreSQL)
+
+#### 1. Detect Sequence Violations & Skipped Steps
+Identifies cases where activities occur out of order or skip mandatory steps.
+```sql
+WITH activity_steps AS (
+  SELECT 
+    case_id, event_id, activity, timestamp,
+    CASE activity
+      WHEN 'Register Order' THEN 1
+      WHEN 'Perform Credit Check' THEN 2
+      WHEN 'Validate Stock' THEN 3
+      WHEN 'Confirm Shipment' THEN 4
+      WHEN 'Ship Goods' THEN 5
+      WHEN 'Issue Invoice' THEN 6
+      WHEN 'Receive Payment' THEN 7
+    END AS expected_step
+  FROM order_event_log
+),
+ordered_events AS (
+  SELECT *,
+    LAG(expected_step) OVER (PARTITION BY case_id ORDER BY timestamp) AS prev_step
+  FROM activity_steps
+)
+SELECT 
+  case_id, event_id, activity, timestamp, expected_step, prev_step,
+  CASE 
+    WHEN expected_step < prev_step THEN 'OUT_OF_ORDER'
+    WHEN expected_step > prev_step + 1 THEN 'STEP_SKIPPED'
+  END AS violation_type
+FROM ordered_events
+WHERE prev_step IS NOT NULL
+  AND (expected_step < prev_step OR expected_step > prev_step + 1)
+ORDER BY case_id, timestamp;
+```
+
+#### 2. Identify Missing Control Steps per Case
+Flags cases lacking mandatory validation steps (`Credit Check`, `Validate Stock`).
+```sql
+WITH expected AS (
+  SELECT generate_series(1, 7) AS step_num
+),
+actual AS (
+  SELECT DISTINCT case_id,
+    CASE activity
+      WHEN 'Register Order' THEN 1 WHEN 'Perform Credit Check' THEN 2
+      WHEN 'Validate Stock' THEN 3 WHEN 'Confirm Shipment' THEN 4
+      WHEN 'Ship Goods' THEN 5 WHEN 'Issue Invoice' THEN 6
+      WHEN 'Receive Payment' THEN 7
+    END AS step_num
+  FROM order_event_log
+)
+SELECT 
+  a.case_id,
+  array_agg(e.step_num ORDER BY e.step_num) AS missing_steps
+FROM actual a
+CROSS JOIN expected e
+LEFT JOIN actual a2 ON a.case_id = a2.case_id AND e.step_num = a2.step_num
+WHERE a2.step_num IS NULL
+GROUP BY a.case_id;
+```
+
+#### 3. Temporal Anomaly Detector
+Catches cases where payments precede invoices, or shipments occur before credit/stock checks.
+```sql
+WITH case_timestamps AS (
+  SELECT 
+    case_id,
+    MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) AS credit_time,
+    MAX(CASE WHEN activity = 'Validate Stock' THEN timestamp END) AS stock_time,
+    MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS ship_time,
+    MAX(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS invoice_time,
+    MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS payment_time
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT 
+  case_id,
+  CASE WHEN payment_time < invoice_time THEN ' Payment before Invoice' END AS payment_anomaly,
+  CASE WHEN ship_time < credit_time THEN ' Shipped before Credit Check' END AS credit_anomaly,
+  CASE WHEN ship_time < stock_time THEN ' Shipped before Stock Validation' END AS stock_anomaly,
+  ship_time - credit_time AS time_credit_to_ship
+FROM case_timestamps
+WHERE payment_time < invoice_time
+   OR ship_time < credit_time
+   OR ship_time < stock_time;
+```
+
+#### 4. Correlate Anomalies with Order Type & Resources
+Joins anomalous cases with `orders` and `resources` to spot patterns (e.g., priority orders bypassing controls, specific staff repeatedly skipping steps).
+```sql
+SELECT 
+  o.case_id, o.order_type, o.order_value,
+  e.activity, e.timestamp, e.resource, r.role, r.department
+FROM orders o
+JOIN order_event_log e ON o.case_id = e.case_id
+JOIN resources r ON e.resource = r.resource_id
+WHERE e.case_id IN (
+  SELECT DISTINCT case_id FROM (
+    WITH seq AS (
+      SELECT case_id, activity, timestamp,
+        CASE activity
+          WHEN 'Register Order' THEN 1 WHEN 'Perform Credit Check' THEN 2
+          WHEN 'Validate Stock' THEN 3 WHEN 'Confirm Shipment' THEN 4
+          WHEN 'Ship Goods' THEN 5 WHEN 'Issue Invoice' THEN 6
+          WHEN 'Receive Payment' THEN 7
+        END AS step
+      FROM order_event_log
+    ),
+    lagged AS (
+      SELECT *, LAG(step) OVER(PARTITION BY case_id ORDER BY timestamp) AS prev
+      FROM seq
+    )
+    SELECT case_id FROM lagged WHERE prev IS NOT NULL AND step < prev
+  ) violations
+)
+ORDER BY o.case_id, e.timestamp;
+```
+
+---
+
+###  Recommended Next Steps
+1. Run Query 1 & 2 to quantify the scale of sequence violations and missing controls across the full dataset.
+2. Use Query 3 to isolate high-risk temporal inversions (especially payment/invoice mismatches).
+3. Apply Query 4 to determine if anomalies correlate with `order_type = 'priority'`, specific `department`s, or individual `resource_id`s.
+4. If system design is the culprit, implement **state-machine guards** or **prerequisite validation** at the application layer before allowing event logging.
+5. Audit `additional_info` flags (`attempted_early`, `late_confirmation`, `shipment_scheduled=N`) to formalize override protocols and ensure they trigger manager approvals.

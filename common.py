@@ -322,7 +322,8 @@ MODELS_DICT = {
             "z-ai/glm-5v-turbo", "arcee-ai/trinity-large-thinking",
             "z-ai/glm-5.1",
             "moonshotai/kimi-k2.6", "xiaomi/mimo-v2.5", "xiaomi/mimo-v2.5-pro",
-            "inclusionai/ling-2.6-1t:free", "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"
+            "inclusionai/ling-2.6-1t:free", "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro",
+            "qwen/qwen3.6-max-preview", "qwen/qwen3.6-27b", "qwen/qwen3.6-flash"
         }
     },
     "manual": {
@@ -617,7 +618,7 @@ def is_visual_model(model_name):
 
     for p in patterns:
         if p.lower() in model_name.lower():
-            if "haiku" not in model_name.lower():
+            if "haiku" not in model_name.lower() and "qwen3.6-max" not in model_name.lower():
                 return True
 
     return False
@@ -721,10 +722,12 @@ def get_llm_specific_settings() -> Dict[str, Any]:
         options["reasoning"] = {"enabled": True}
         #print(options)
 
+    """
     if "qwen3" in model_name.lower():
         options["top_p"] = 0.95
         options["top_k"] = 0.20
         options["min_p"] = 0
+    """
 
     if Shared.CUSTOM_TEMPERATURE is not None:
         options["temperature"] = Shared.CUSTOM_TEMPERATURE
