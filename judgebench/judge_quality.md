@@ -5,6 +5,7 @@ Quality is a 0-100 synthetic score using only the judge's assigned scores. It re
 | Judge | Quality | cat01_average | cat01_stdev | cat02_average | cat02_stdev | cat03_average | cat03_stdev | cat04_average | cat04_stdev | cat05_average | cat05_stdev | cat06_average | cat06_stdev |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | gpt-5.4 | 57.436 | 5.875 | 0.238 | 6.263 | 1.662 | 3.462 | 2.533 | 2.950 | 1.845 | 5.425 | 1.289 | 3.425 | 0.782 |
+| deepseekdeepseek-v4-pro | 57.417 | 6.625 | 1.709 | 7.750 | 2.278 | 5.000 | 3.317 | 3.000 | 0.816 | 3.125 | 1.431 | 3.750 | 2.487 |
 | googlegemini-3.1-pro-preview | 53.803 | 7.500 | 2.598 | 6.250 | 2.586 | 4.500 | 3.500 | 2.875 | 1.816 | 6.625 | 2.631 | 5.250 | 2.861 |
 | googlegemini-2.5-pro | 45.611 | 7.250 | 1.601 | 7.775 | 1.285 | 4.750 | 3.112 | 4.775 | 2.793 | 7.000 | 1.451 | 5.100 | 1.885 |
 | grok-4.20-0309-reasoning | 44.601 | 6.787 | 0.789 | 6.750 | 1.479 | 4.250 | 1.299 | 5.250 | 0.829 | 6.562 | 1.501 | 4.875 | 0.740 |
