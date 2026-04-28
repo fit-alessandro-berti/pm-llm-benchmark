@@ -73,6 +73,11 @@ JUDGE_LLMS: Sequence[Tuple[Any, ...]] = [
         "deepseek/deepseek-v4-pro",
         {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"],
          "additional_payload": {"reasoning": {"enabled": True}}}
+    ),
+    (
+        "deepseek-v4-pro",
+        {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"],
+         "additional_payload": {"reasoning": {"enabled": False}}}
     )
 ]
 

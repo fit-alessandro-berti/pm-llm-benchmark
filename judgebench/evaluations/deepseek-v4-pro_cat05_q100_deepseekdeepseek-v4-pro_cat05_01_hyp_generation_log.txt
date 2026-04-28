@@ -1,0 +1,171 @@
+Based on the provided event log and schema, I can identify multiple process anomalies and deviations from the assumed normal flow. These anomalies suggest potential policy violations, system workarounds, training gaps, or even fraudulent behavior. Below, I outline the observed anomalies, hypothesize plausible causes, and propose targeted SQL queries to further investigate these hypotheses.
+
+---
+
+### Anomalies and Deviations in the Event Log
+
+#### Case 1002 (Priority Order, Customer 502)
+- **Out-of-order execution:** `Confirm Shipment` (attempted_early=Y) and `Ship Goods` both occurred **before** `Perform Credit Check` and `Validate Stock`. The credit check (score=650) was only done after shipment was already initiated.
+- **Missing standard dependency:** Normal flow requires credit & stock validation before shipment. The `attempted_early=Y` flag suggests a deliberate override.
+
+#### Case 1003 (Standard Order, Customer 503)
+- **Missing mandatory activity:** `Validate Stock` never occurred.
+- **Out-of-order steps:** `Ship Goods` took place **before** `Confirm Shipment`. The confirmation happened later with the flag `late_confirmation=Y`.
+
+#### Case 1004 (Standard Order, Customer 504)
+- **Missing activities:** `Perform Credit Check` and `Validate Stock` are entirely absent.
+- **Inverted financial sequence:** `Receive Payment` occurs **before** `Issue Invoice`, which is the reverse of the normal billing cycle.
+- **Shipment despite `shipment_scheduled=N`:** The subsequent `Ship Goods` activity occurred even though the confirmation indicated no scheduled shipment.
+
+---
+
+### Hypotheses for Anomalous Behavior
+
+1. **Performance pressure / KPI manipulation**  
+   Logistics personnel may expedite shipment to meet delivery targets, bypassing credit and stock checks. The `attempted_early` flag in case 1002 strongly indicates intentional early confirmation.
+
+2. **System or interface loopholes**  
+   A permissive system might allow `Confirm Shipment` and `Ship Goods` without upstream validations if the activity order is not enforced at the application level.
+
+3. **Insufficient training or unclear process**  
+   Staff may not be aware that credit checks, stock validation, and proper confirmation timing are mandatory. The `late_confirmation` in case 1003 might be an after-the-fact correction following a training-related error.
+
+4. **Workarounds for “priority” or VIP customers**  
+   Case 1002 is a priority order. Although the credit check eventually occurred, the early shipment could reflect a deliberate (but risky) shortcut to satisfy important clients. Case 1004, with high order value (3000.00) and no credit check, might be a VIP/trusted customer where checks were waived – or an oversight.
+
+5. **Fraud / collusion**  
+   Receiving payment before issuing an invoice (case 1004) is highly atypical; it may indicate off-book transactions or an attempt to create a fictitious paper trail. The absence of credit and stock checks in the same case could signal collusion between sales, finance, and logistics.
+
+6. **External system failures**  
+   A temporary outage in credit or inventory systems might have forced teams to proceed and then backfill activities later (as seen in case 1002 and the late confirmation in case 1003).
+
+---
+
+### Proposed SQL Queries for Further Investigation
+
+All queries use PostgreSQL and assume the tables `order_event_log`, `orders`, and `resources` as given.
+
+#### 1. Find Cases Where ‘Ship Goods’ Occurred Before ‘Confirm Shipment’
+This pinpoints the out-of-order execution seen in case 1003.
+
+```sql
+SELECT case_id,
+       MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS first_ship_time,
+       MIN(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) AS first_confirm_time
+FROM order_event_log
+GROUP BY case_id
+HAVING MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) <
+       MIN(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END);
+```
+
+#### 2. Find Cases Where ‘Ship Goods’ Happened Before ‘Perform Credit Check’
+Directly targets the high-risk behavior in case 1002.
+
+```sql
+SELECT case_id,
+       MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS ship_time,
+       MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) AS credit_time
+FROM order_event_log
+GROUP BY case_id
+HAVING MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) IS NOT NULL
+   AND MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) IS NOT NULL
+   AND MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) <
+       MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END);
+```
+
+#### 3. Identify Cases Missing a Mandatory Activity (e.g., Validate Stock)
+Checks for any case that lacks a required step.
+
+```sql
+-- List of required activities (from normal flow)
+WITH required AS (
+    SELECT unnest(ARRAY['Register Order', 'Perform Credit Check', 'Validate Stock',
+                        'Confirm Shipment', 'Ship Goods', 'Issue Invoice', 'Receive Payment']) AS act
+)
+SELECT o.case_id, r.act AS missing_activity
+FROM (SELECT DISTINCT case_id FROM order_event_log) o
+CROSS JOIN required r
+WHERE NOT EXISTS (
+    SELECT 1 FROM order_event_log e
+    WHERE e.case_id = o.case_id AND e.activity = r.act
+)
+ORDER BY o.case_id, r.act;
+```
+
+#### 4. Detect Early Shipment Confirmations (attempted_early Flag) and the Involved Resources
+Exposes which resources are triggering early confirmations and their roles.
+
+```sql
+SELECT oel.case_id,
+       oel.timestamp AS confirm_time,
+       oel.resource,
+       r.role,
+       r.department,
+       oel.additional_info
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+WHERE oel.activity = 'Confirm Shipment'
+  AND oel.additional_info LIKE '%attempted_early%';
+```
+
+#### 5. Cases Where Payment Was Received Before Invoice Issued
+Flags the unusual financial sequence in case 1004.
+
+```sql
+SELECT case_id,
+       MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS pay_time,
+       MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS inv_time
+FROM order_event_log
+GROUP BY case_id
+HAVING MIN(CASE WHEN activity = 'Receive Payment' THEN timestamp END) <
+       MIN(CASE WHEN activity = 'Issue Invoice' THEN timestamp END);
+```
+
+#### 6. Correlation of Anomalies with Order Type or Customer
+Investigates whether priority orders or specific customers are associated with missing checks.
+
+```sql
+SELECT o.case_id,
+       o.order_type,
+       o.customer_id,
+       o.order_value,
+       -- Indicator: at least one of the two checks is missing
+       NOT (bool_or(e.activity = 'Perform Credit Check') AND
+            bool_or(e.activity = 'Validate Stock')) AS any_checks_missing,
+       MIN(CASE WHEN e.activity = 'Perform Credit Check' THEN e.timestamp END) AS credit_time,
+       MIN(CASE WHEN e.activity = 'Validate Stock' THEN e.timestamp END) AS stock_time
+FROM orders o
+LEFT JOIN order_event_log e ON o.case_id = e.case_id
+GROUP BY o.case_id, o.order_type, o.customer_id, o.order_value
+HAVING NOT (bool_or(e.activity = 'Perform Credit Check') AND
+            bool_or(e.activity = 'Validate Stock'))
+ORDER BY o.order_type, o.customer_id;
+```
+
+#### 7. Analyze Resource Patterns in Out-of-Order Cases
+Finds which resources are repeatedly involved in out-of-sequence events, possibly indicating behavioral patterns.
+
+```sql
+WITH out_of_order AS (
+    SELECT case_id
+    FROM order_event_log
+    GROUP BY case_id
+    HAVING MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) <
+           MIN(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END)
+       OR MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) <
+           MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END)
+)
+SELECT e.resource,
+       r.role,
+       r.department,
+       COUNT(DISTINCT e.case_id) AS anomalous_cases_involved
+FROM order_event_log e
+JOIN out_of_order oo ON e.case_id = oo.case_id
+JOIN resources r ON e.resource = r.resource_id
+GROUP BY e.resource, r.role, r.department
+ORDER BY anomalous_cases_involved DESC;
+```
+
+---
+
+These queries enable systematic detection of process deviations and can be extended to larger logs. The results would help confirm whether the anomalies are isolated incidents or systematic issues linked to specific roles, customers, or order types.
