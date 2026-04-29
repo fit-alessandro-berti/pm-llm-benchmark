@@ -10,7 +10,9 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | qwen3.59b              | **26.3** | :white_check_mark: | :x: | 4.9                  | **5.5**              | 2.1                  | 3.3                  | 3.6                  | 4.1                  | 2.8                  | 0.0                  |
 | inceptionmercury-2     | **26.1** | :white_check_mark: | :x: | 4.0                  | 4.5                  | :mage_woman: **3.4** | 3.8                  | 3.6                  | 3.7                  | **3.0**              | 0.0                  |
 | qwen3.54b              | **25.7** | :white_check_mark: | :x: | 4.6                  | 4.9                  | 2.1                  | 3.8                  | 3.2                  | 4.2                  | 2.9                  | 0.0                  |
+| poolsidelaguna-xs.2    | **25.6** | :white_check_mark: | :x: | 4.8                  | 4.3                  | 2.7                  | 3.7                  | 3.8                  | 3.8                  | 2.6                  | 0.0                  |
 | amazonnova-2-lite-v1   | **25.5** | :white_check_mark: | :x: | 4.3                  | 4.5                  | 1.9                  | 3.9                  | 3.8                  | 4.0                  | :mage_woman: **3.3** | 0.0                  |
+| poolsidelaguna-m.1     | **25.2** | :white_check_mark: | :x: | 3.9                  | 5.1                  | 2.5                  | 3.3                  | 3.6                  | 4.1                  | 2.6                  | 0.0                  |
 | ministral-14b-2512     | **24.4** | :white_check_mark: | :x: | 4.5                  | 3.7                  | 2.3                  | 3.6                  | 3.7                  | 3.9                  | 2.6                  | :mage_woman: **4.0** |
 | gemma4e4b              | **23.9** | :white_check_mark: | :x: | 4.4                  | 4.8                  | 2.0                  | 3.0                  | 3.6                  | 3.4                  | 2.7                  | 0.0                  |
 | mistral-small-2506     | **23.8** | :white_check_mark: | :x: | 4.5                  | 4.0                  | 2.6                  | 3.5                  | 3.3                  | 3.6                  | 2.2                  | 3.5                  |
@@ -365,6 +367,62 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 6.0   |
 | cat08_05_task_schedul              | 5.3   |
 
+### poolsidelaguna-xs.2free   => 25.6 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 4.5   |
+| cat01_02_activity_context          | 7.0   |
+| cat01_03_high_level_events         | 7.1   |
+| cat01_04_sensor_recordings         | 6.4   |
+| cat01_05_merge_two_logs            | 6.4   |
+| cat01_06_system_logs               | 3.2   |
+| cat01_07_interv_to_pseudo_bpmn     | 6.1   |
+| cat01_08_tables_to_log             | 7.1   |
+| cat02_01_conformance_textual       | 7.0   |
+| cat02_02_conf_desiderata           | 4.0   |
+| cat02_03_anomaly_event_log         | 3.5   |
+| cat02_04_powl_anomaly_detection    | 6.1   |
+| cat02_05_two_powls_anomalies       | 4.0   |
+| cat02_06_root_cause_1              | 2.5   |
+| cat02_07_root_cause_2              | 4.0   |
+| cat02_08_underfitting_process_tree | 6.0   |
+| cat02_09_fix_process_tree          | 5.8   |
+| cat03_01_process_tree_generation   | 2.5   |
+| cat03_02_powl_generation           | 7.7   |
+| cat03_03_log_skeleton_generation   | 3.0   |
+| cat03_04_declare_generation        | 3.0   |
+| cat03_05_temp_profile_generation   | 3.4   |
+| cat03_06_petri_net_generation      | 2.0   |
+| cat03_07_process_tree_discovery    | 2.0   |
+| cat03_08_powl_discovery            | 3.5   |
+| cat04_01_pseudo_bpmn_description   | 7.2   |
+| cat04_02_pseudo_bpmn_open_question | 5.9   |
+| cat04_03_declare_open_question     | 3.0   |
+| cat04_04_declare_description       | 2.5   |
+| cat04_05_sql_filt_num_events       | 9.6   |
+| cat04_06_sql_filt_three_df         | 3.0   |
+| cat04_07_sql_filt_top_k_vars       | 5.5   |
+| cat05_01_hyp_generation_log        | 4.0   |
+| cat05_02_hyp_gen_powl              | 4.8   |
+| cat05_03_hyp_gen_declare           | 4.3   |
+| cat05_04_hyp_gen_temp_profile      | 5.0   |
+| cat05_05_question_gen_nlp          | 6.7   |
+| cat05_06_question_pseudo_bpmn      | 5.9   |
+| cat05_07_question_interview        | 7.6   |
+| cat06_01_bias_text                 | 6.6   |
+| cat06_02_bias_event_log            | 5.6   |
+| cat06_03_bias_powl                 | 6.8   |
+| cat06_04_bias_two_logs             | 5.8   |
+| cat06_05_bias_two_logs_2           | 6.4   |
+| cat06_06_bias_mitigation_declare   | 3.0   |
+| cat06_07_fair_unfair_powl          | 3.5   |
+| cat08_01_queue_mining              | 5.7   |
+| cat08_02_instance_spanning         | 4.8   |
+| cat08_03_transport_opt             | 5.8   |
+| cat08_04_resource_assign           | 4.9   |
+| cat08_05_task_schedul              | 4.6   |
+
 ### amazonnova-2-lite-v1   => 25.5 points
 
 | Question                           | Score |
@@ -420,6 +478,62 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             | 6.6   |
 | cat08_04_resource_assign           | 7.2   |
 | cat08_05_task_schedul              | 6.7   |
+
+### poolsidelaguna-m.1free   => 25.2 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 8.0   |
+| cat01_02_activity_context          | 6.2   |
+| cat01_03_high_level_events         | 5.8   |
+| cat01_04_sensor_recordings         | 4.0   |
+| cat01_05_merge_two_logs            | 4.8   |
+| cat01_06_system_logs               | 3.5   |
+| cat01_07_interv_to_pseudo_bpmn     | 4.3   |
+| cat01_08_tables_to_log             | 2.0   |
+| cat02_01_conformance_textual       | 7.6   |
+| cat02_02_conf_desiderata           | 3.5   |
+| cat02_03_anomaly_event_log         | 7.4   |
+| cat02_04_powl_anomaly_detection    | 4.5   |
+| cat02_05_two_powls_anomalies       | 5.0   |
+| cat02_06_root_cause_1              | 4.4   |
+| cat02_07_root_cause_2              | 5.3   |
+| cat02_08_underfitting_process_tree | 7.2   |
+| cat02_09_fix_process_tree          | 6.0   |
+| cat03_01_process_tree_generation   | 4.5   |
+| cat03_02_powl_generation           | 2.5   |
+| cat03_03_log_skeleton_generation   | 2.5   |
+| cat03_04_declare_generation        | 2.0   |
+| cat03_05_temp_profile_generation   | 3.5   |
+| cat03_06_petri_net_generation      | 1.0   |
+| cat03_07_process_tree_discovery    | 6.5   |
+| cat03_08_powl_discovery            | 3.0   |
+| cat04_01_pseudo_bpmn_description   | 1.0   |
+| cat04_02_pseudo_bpmn_open_question | 5.8   |
+| cat04_03_declare_open_question     | 2.5   |
+| cat04_04_declare_description       | 2.2   |
+| cat04_05_sql_filt_num_events       | 8.8   |
+| cat04_06_sql_filt_three_df         | 6.0   |
+| cat04_07_sql_filt_top_k_vars       | 7.0   |
+| cat05_01_hyp_generation_log        | 4.7   |
+| cat05_02_hyp_gen_powl              | 4.8   |
+| cat05_03_hyp_gen_declare           | 2.8   |
+| cat05_04_hyp_gen_temp_profile      | 3.4   |
+| cat05_05_question_gen_nlp          | 7.1   |
+| cat05_06_question_pseudo_bpmn      | 7.7   |
+| cat05_07_question_interview        | 5.5   |
+| cat06_01_bias_text                 | 6.7   |
+| cat06_02_bias_event_log            | 5.3   |
+| cat06_03_bias_powl                 | 7.2   |
+| cat06_04_bias_two_logs             | 7.1   |
+| cat06_05_bias_two_logs_2           | 5.7   |
+| cat06_06_bias_mitigation_declare   | 2.5   |
+| cat06_07_fair_unfair_powl          | 6.8   |
+| cat08_01_queue_mining              | 5.3   |
+| cat08_02_instance_spanning         | 4.7   |
+| cat08_03_transport_opt             | 6.1   |
+| cat08_04_resource_assign           | 5.6   |
+| cat08_05_task_schedul              | 4.3   |
 
 ### ministral-14b-2512   => 24.4 points
 
