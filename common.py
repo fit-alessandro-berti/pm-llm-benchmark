@@ -323,7 +323,8 @@ MODELS_DICT = {
             "z-ai/glm-5.1",
             "moonshotai/kimi-k2.6", "xiaomi/mimo-v2.5", "xiaomi/mimo-v2.5-pro",
             "inclusionai/ling-2.6-1t:free", "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro",
-            "qwen/qwen3.6-max-preview", "qwen/qwen3.6-27b", "qwen/qwen3.6-flash"
+            "qwen/qwen3.6-max-preview", "qwen/qwen3.6-27b", "qwen/qwen3.6-flash",
+            "poolside/laguna-m.1:free", "poolside/laguna-xs.2:free"
         }
     },
     "manual": {
@@ -696,9 +697,21 @@ def callback_write(response_message, target_path):
         response_message = strip_non_unicode_characters(response_message)
 
         if response_message:
-            F = open(target_path, "w")
-            F.write(response_message)
-            F.close()
+            target_dir = os.path.dirname(target_path)
+            if target_dir:
+                os.makedirs(target_dir, exist_ok=True)
+
+            temp_path = f"{target_path}.tmp-{os.getpid()}-{threading.get_ident()}"
+            with open(temp_path, "w", encoding="utf-8") as handler:
+                handler.write(response_message)
+            os.replace(temp_path, target_path)
+
+
+def is_completed_output(path):
+    try:
+        return os.path.isfile(path) and os.path.getsize(path) > 0
+    except OSError:
+        return False
 
 
 def get_llm_specific_settings() -> Dict[str, Any]:

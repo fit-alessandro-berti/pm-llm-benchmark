@@ -19,11 +19,11 @@ def process_single_question(q, model_name, alias_model_name, use_rate_limit=Fals
     answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
         ".png", ".txt")
     
-    if not os.path.exists(answer_path):
+    if not common.is_completed_output(answer_path):
         # Check if file is already being processed
         if use_rate_limit and RATE_LIMITER.is_file_processing(answer_path):
             print(f"File {answer_path} already being processed, skipping")
-            return False
+            return None
         
         try:
             if question_path.endswith(".txt"):
@@ -35,18 +35,22 @@ def process_single_question(q, model_name, alias_model_name, use_rate_limit=Fals
                 else:
                     query_text_simple(question_path, answer_path, callback_write)
                     time.sleep(TIME_BETWEEN_ANSWERS)
-                return True
             elif is_visual_model(model_name):
-                try:
-                    print("Executing", question_path)
-                    if use_rate_limit:
-                        query_image_simple_with_rate_limit(question_path, answer_path, callback_write,
-                                                          use_rate_limit=True)
-                    else:
-                        query_image_simple(question_path, answer_path, callback_write)
-                except:
-                    traceback.print_exc()
+                print("Executing", question_path)
+                if use_rate_limit:
+                    query_image_simple_with_rate_limit(question_path, answer_path, callback_write,
+                                                      use_rate_limit=True)
+                else:
+                    query_image_simple(question_path, answer_path, callback_write)
+            else:
+                return False
+
+            if common.is_completed_output(answer_path):
                 return True
+
+            print(f"No completed answer was written for {question_path}; retrying")
+            time.sleep(WAITING_TIME_RETRY)
+            return None
         except SystemExit as e:
             sys.exit(0)
         except Exception as e:
@@ -54,15 +58,10 @@ def process_single_question(q, model_name, alias_model_name, use_rate_limit=Fals
                 return False
             
             traceback.print_exc()
-            
-            if not use_rate_limit:
-                # If not using rate limit, sleep and retry (original behavior)
-                print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
-                time.sleep(WAITING_TIME_RETRY)
-                return None  # Indicates retry needed
-            else:
-                # With rate limiting, the retry is handled by the rate limiter
-                return False
+
+            print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
+            time.sleep(WAITING_TIME_RETRY)
+            return None  # Indicates retry needed
     return False
 
 
@@ -97,29 +96,69 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
                 answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
                     ".png", ".txt")
                 
-                if not os.path.exists(answer_path):
+                if not common.is_completed_output(answer_path):
                     # Submit task to thread pool
                     future = executor.submit(process_single_question, q, model_name, alias_model_name, 
                                            use_rate_limit=True)
                     futures.append((q, future))
             
             # Wait for all tasks to complete
+            retry_questions = []
             for q, future in futures:
                 try:
                     result = future.result(timeout=1200)  # 20 minute timeout per question
                     if result:
                         print(f"Successfully processed {q}")
+                    elif result is None:
+                        retry_questions.append(q)
                 except Exception as e:
                     print(f"Failed to process {q}: {e}")
                     traceback.print_exc()
+                    retry_questions.append(q)
+
+            while retry_questions:
+                retry_questions = [
+                    q for q in retry_questions
+                    if not common.is_completed_output(
+                        os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
+                            ".png", ".txt")
+                    )
+                ]
+                if not retry_questions:
+                    break
+
+                print(f"Retrying {len(retry_questions)} question(s) after transient failures")
+                time.sleep(WAITING_TIME_RETRY)
+
+                with ThreadPoolExecutor(max_workers=MAX_WORKERS) as retry_executor:
+                    retry_futures = [
+                        (q, retry_executor.submit(process_single_question, q, model_name, alias_model_name,
+                                                  use_rate_limit=True))
+                        for q in retry_questions
+                    ]
+
+                    next_retry_questions = []
+                    for q, future in retry_futures:
+                        try:
+                            result = future.result(timeout=1200)
+                            if result:
+                                print(f"Successfully processed {q}")
+                            elif result is None:
+                                next_retry_questions.append(q)
+                        except Exception as e:
+                            print(f"Failed to process {q}: {e}")
+                            traceback.print_exc()
+                            next_retry_questions.append(q)
+
+                    retry_questions = next_retry_questions
     else:
         # Single-threaded processing (original behavior)
         for q in questions:
             answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
                 ".png", ".txt")
 
-            if not os.path.exists(answer_path):
-                while not os.path.exists(answer_path):
+            if not common.is_completed_output(answer_path):
+                while not common.is_completed_output(answer_path):
                     result = process_single_question(q, model_name, alias_model_name, use_rate_limit=False)
                     if result is None:
                         # Retry needed

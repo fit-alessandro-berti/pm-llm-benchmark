@@ -65,10 +65,10 @@ def evaluate_single_question(q, answering_model_name, INCLUDE_EVALUATING_MNAME_I
         evaluation_path = os.path.join(base_evaluation_path, evaluation_path)
         evaluation_path = evaluation_path.replace(".png", ".txt")
         
-        if os.path.exists(answer_path) and not os.path.exists(evaluation_path):
+        if common.is_completed_output(answer_path) and not common.is_completed_output(evaluation_path):
             # Check if already being processed
             if RATE_LIMITER.is_file_processing(evaluation_path):
-                return False
+                return None
             
             print(f"Evaluating: {answer_path}")
             
@@ -88,7 +88,11 @@ def evaluate_single_question(q, answering_model_name, INCLUDE_EVALUATING_MNAME_I
                         else:
                             query_text_simple(None, evaluation_path, callback_write, question=inquiry)
                         
-                        return True
+                        if common.is_completed_output(evaluation_path):
+                            return True
+
+                        print(f"No completed evaluation was written for {question_path}; retrying")
+                        return None
                     elif is_visual_model(EVALUATING_MODEL_NAME):
                         inquiry, base64_image = forge_eval_prompt.forge(question_path, answer, answering_model_name=answering_model_name)
                         
@@ -100,15 +104,23 @@ def evaluate_single_question(q, answering_model_name, INCLUDE_EVALUATING_MNAME_I
                             query_image_simple(None, evaluation_path, callback_write, 
                                              base64_image=base64_image, text=inquiry)
                         
-                        return True
-                except:
+                        if common.is_completed_output(evaluation_path):
+                            return True
+
+                        print(f"No completed evaluation was written for {question_path}; retrying")
+                        return None
+                except Exception as e:
+                    if "context length" in str(e):
+                        return False
                     traceback.print_exc()
-                    return False
+                    return None
         return False
     except Exception as e:
         print(f"Error processing {q}: {e}")
+        if "context length" in str(e):
+            return False
         traceback.print_exc()
-        return False
+        return None
 
 
 def perform_evaluation(answering_model_name=None):
@@ -140,9 +152,12 @@ def perform_evaluation(answering_model_name=None):
                         if result:
                             missing = True
                             something_ever_changed = True
+                        elif result is None:
+                            missing = True
                     except Exception as e:
                         print(f"Task failed: {e}")
                         traceback.print_exc()
+                        missing = True
         else:
             # Single-threaded processing (original behavior)
             for q in questions:
@@ -150,6 +165,8 @@ def perform_evaluation(answering_model_name=None):
                 if result:
                     missing = True
                     something_ever_changed = True
+                elif result is None:
+                    missing = True
 
         m_name = common.clean_model_name(answering_model_name)
         e_m_name = common.clean_model_name(EVALUATING_MODEL_NAME)
@@ -158,7 +175,7 @@ def perform_evaluation(answering_model_name=None):
         last_hour_answers = files_modified_last_hour("answers", m_name)
         last_hour_evaluations = files_modified_last_hour(base_evaluation_path, m_name)
 
-        if not something_ever_changed:
+        if not something_ever_changed and not missing:
             break
 
         if Shared.MASS_EVAL:
