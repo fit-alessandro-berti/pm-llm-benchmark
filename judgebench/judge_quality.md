@@ -4,6 +4,7 @@ Quality is a 0-100 synthetic score using only the judge's assigned scores. It re
 
 | Judge | Quality | cat01_average | cat01_stdev | cat02_average | cat02_stdev | cat03_average | cat03_stdev | cat04_average | cat04_stdev | cat05_average | cat05_stdev | cat06_average | cat06_stdev |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| moonshotaikimi-k2.6 | 58.212 | 6.000 | 1.871 | 5.833 | 0.624 | 2.333 | 0.471 | 2.625 | 1.083 | 5.938 | 1.204 | 3.625 | 0.820 |
 | gpt-5.4 | 57.436 | 5.875 | 0.238 | 6.263 | 1.662 | 3.462 | 2.533 | 2.950 | 1.845 | 5.425 | 1.289 | 3.425 | 0.782 |
 | deepseekdeepseek-v4-pro | 57.417 | 6.625 | 1.709 | 7.750 | 2.278 | 5.000 | 3.317 | 3.000 | 0.816 | 3.125 | 1.431 | 3.750 | 2.487 |
 | googlegemini-3.1-pro-preview | 53.803 | 7.500 | 2.598 | 6.250 | 2.586 | 4.500 | 3.500 | 2.875 | 1.816 | 6.625 | 2.631 | 5.250 | 2.861 |
