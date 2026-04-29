@@ -78,7 +78,17 @@ JUDGE_LLMS: Sequence[Tuple[Any, ...]] = [
         "deepseek-v4-pro",
         {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"],
          "additional_payload": {"reasoning": {"enabled": False}}}
-    )
+    ),
+    (
+        "qwen/qwen3.6-35b-a3b",
+        {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"],
+         "additional_payload": {"reasoning": {"effort": "low"}}}
+    ),
+    (
+        "qwen/qwen3.6-plus",
+        {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"],
+         "additional_payload": {"reasoning": {"effort": "low"}}}
+    ),
 ]
 
 STRICT_EVALUATION_TEXT = (
