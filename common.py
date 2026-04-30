@@ -254,7 +254,7 @@ MODELS_DICT = {
         "models": {
             "mistral-small-2506", "mistral-medium-2508",
             "ministral-3b-2512", "ministral-8b-2512", "ministral-14b-2512", "mistral-large-2512",
-            "mistral-small-2603"
+            "mistral-small-2603", "mistral-medium-3.5"
         }
     },
     "grok": {
@@ -344,6 +344,11 @@ MODELS_DICT = {
             "mistral-small-2603-thinkhigh": {
                 "provider": "mistral",
                 "base_model": "mistral-small-2603",
+                "reasoning_effort": "high"
+            },
+            "mistral-medium-3.5-thinkhigh": {
+                "provider": "mistral",
+                "base_model": "mistral-medium-3.5",
                 "reasoning_effort": "high"
             },
             "gpt-5.2-2025-12-11-HIGH": {
@@ -655,7 +660,7 @@ def is_large_reasoning_model(m_name):
 
 def force_custom_evaluation_lrm(answering_model_name):
     model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous", "qwen3-next-80b-a3b-thinking", "nemotron-nano-9b-v2-thinking", "nemotron-3-nano-30b-a3b", "deepseek-v3.2-exp-thinking", "deepseek-v3.2-thinking", "deepseek-v3.2-speciale-thinking", "nemotron-super-49b-v1.5-thinking", "kimi-k2-thinking", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "glm", "minimax-m2.1", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5", "qwen3.5-35b", "qwen3.5-397b", "qwen3.5-122b", "qwen3.5-27b", "nemotron-3", "mistral-small-2603-thinkhigh", "minimax-m2.7", "mimo-v2-omni", "mimo-v2-pro", "trinity-large-thinking", "qwen3.6", "kimi-k2.6", "mimo-v2.5", "deepseek-v4"]:
+    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous", "qwen3-next-80b-a3b-thinking", "nemotron-nano-9b-v2-thinking", "nemotron-3-nano-30b-a3b", "deepseek-v3.2-exp-thinking", "deepseek-v3.2-thinking", "deepseek-v3.2-speciale-thinking", "nemotron-super-49b-v1.5-thinking", "kimi-k2-thinking", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "glm", "minimax-m2.1", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5", "qwen3.5-35b", "qwen3.5-397b", "qwen3.5-122b", "qwen3.5-27b", "nemotron-3", "mistral-small-2603-thinkhigh", "minimax-m2.7", "mimo-v2-omni", "mimo-v2-pro", "trinity-large-thinking", "qwen3.6", "kimi-k2.6", "mimo-v2.5", "deepseek-v4", "mistral-medium-3.5-thinkhigh"]:
         if p in model_name and not ("deepseek-v3" in model_name and not ("-reasoner" in model_name or "-thinking" in model_name)):
             if (not "qwen3" in model_name) or ("qwen3" in model_name and not ("nstruct" in model_name or "coder" in model_name)):
                 return True

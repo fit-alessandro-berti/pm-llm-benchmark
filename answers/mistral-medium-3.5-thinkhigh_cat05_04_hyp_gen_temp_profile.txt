@@ -1,0 +1,518 @@
+<think>
+Let me analyze this scenario carefully.
+
+The user has provided:
+1. A database schema for insurance claim handling with tables: claims, adjusters, claim_events
+2. A temporal profile model showing average times between activity pairs
+3. Some identified anomalies in that model
+4. A prompt asking me to identify anomalies, generate hypotheses, and propose SQL verification queries
+
+My task is to:
+- Identify anomalies in the temporal profile
+- Generate hypotheses for why they exist
+- Propose SQL queries to verify these anomalies
+
+Let me start by examining the temporal profile:
+
+```python
+temporal_profile = {
+    ('R', 'A'): (3600, 600),     # On average 1 hour between Receive and Assign, STDEV = 10 minutes
+    ('R', 'E'): (86400, 28800),  # On average 1 day between Receive and Evaluate, STDEV = 8 hours
+    ('R', 'P'): (90000, 3600),   # On average ~1.04 days between Receive and Approve, STDEV = 1 hour (Suspiciously low STDEV)
+    ('A', 'C'): (7200, 3600),    # On average 2 hours between Assign and Close, STDEV = 1 hour
+    ('E', 'N'): (300, 60),       # On average 5 minutes between Evaluate and Notify, STDEV = 1 minute
+    ('E', 'C'): (3600, 3000),    # On average 1 hour between Evaluate and Close, STDEV = 50 minutes
+    ('P', 'N'): (604800, 172800),# On average 7 days between Approve and Notify, STDEV = 2 days (Long waiting time)
+    ('N', 'C'): (1800, 300)      # On average 30 minutes between Notify and Close, STDEV = 5 minutes
+}
+```
+
+The intended process flow is: R  A  E  P  N  C
+
+Now let me identify anomalies:
+
+1. **R to P (Receive to Approve)**: Average ~25 hours (90000 seconds) with STDEV of only 1 hour (3600 seconds). This is suspiciously low variability. Normally, approval times should vary more based on claim complexity, adjuster availability, etc. A low STDEV suggests either:
+   - The data is artificially constrained
+   - There's a fixed schedule for approvals
+   - The sample size is very small
+   - There's some automation forcing a fixed delay
+
+2. **P to N (Approve to Notify)**: Average 7 days (604800 seconds) with STDEV of 2 days (172800 seconds). This is extremely long. Normally, notification should happen quickly after approval. This suggests:
+   - Manual notification process with delays
+   - Backlog in notification system
+   - Batch processing of notifications
+   - Resource constraints
+
+3. **A to C (Assign to Close)**: Average 2 hours with STDEV of 1 hour. This is very quick. The normal flow should go through Evaluate, Approve, Notify before Close. A 2-hour turnaround suggests:
+   - Some claims are being closed immediately after assignment without proper evaluation
+   - "Fast-track" claims that bypass normal steps
+   - Data errors where Close events are recorded incorrectly
+
+4. **E to N (Evaluate to Notify)**: Average 5 minutes with STDEV of 1 minute. This is extremely fast. Normally, there should be approval between Evaluate and Notify. This suggests:
+   - Approval step is being skipped
+   - Notification is happening too quickly after evaluation
+   - Possible data recording errors
+   - Automated system that notifies immediately after evaluation
+
+5. **E to C (Evaluate to Close)**: Average 1 hour with STDEV of 50 minutes. This is also fast. Similar issues as A to C - suggests premature closure.
+
+6. **N to C (Notify to Close)**: Average 30 minutes with STDEV of 5 minutes. This seems reasonable, but combined with the long P to N time, it suggests the bottleneck is at notification.
+
+Now, let's think about the intended process: R  A  E  P  N  C
+
+Some pairs are not in the direct sequence but are in the model:
+- R to P: This should be RAEP, so R to P should be roughly RA + AE + EP
+- A to C: Should be AEPNC
+- E to N: Should be EPN
+- E to C: Should be EPNC
+
+The anomalies suggest that the actual process doesn't always follow the intended sequence. Some steps might be skipped, or there might be parallel paths.
+
+Hypotheses:
+
+1. **R to P low STDEV**: There might be a business rule that all claims must be approved within exactly 25 hours of receipt, causing artificial constraint. Or, the data might be from a period where approvals were batched at fixed intervals.
+
+2. **P to N long delay**: Notification might be a manual process done at the end of the week, causing the 7-day average. Or, there might be a separate team that handles notifications with limited capacity.
+
+3. **A to C short time**: Some claims might be auto-closed if they meet certain criteria (e.g., very small claims). Or, there might be data errors where Close events are recorded with wrong timestamps.
+
+4. **E to N short time**: The Approve step might be missing from the event log for some claims, making E to N appear direct. Or, notification might be automated to happen immediately after evaluation for some claim types.
+
+5. **E to C short time**: Similar to A to C, some claims might be closed immediately after evaluation.
+
+Verification SQL Queries:
+
+I need to write queries that:
+1. Identify claims with unusual timing between specific activity pairs
+2. Correlate with adjusters, claim types, regions, etc.
+3. Find patterns like claims closed immediately after assignment
+
+Let me start with the most obvious anomalies:
+
+**Anomaly 1: P to N (Approve to Notify) - 7 days average**
+
+Query to find claims where P to N > 14 days (2*avg):
+```sql
+WITH event_pairs AS (
+  SELECT
+    ce1.claim_id,
+    ce1.timestamp AS approve_time,
+    ce2.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_diff
+  FROM claim_events ce1
+  JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+  WHERE ce1.activity = 'P' AND ce2.activity = 'N'
+    AND ce1.timestamp < ce2.timestamp
+    -- Ensure no other events between them that would break the sequence
+    AND NOT EXISTS (
+      SELECT 1 FROM claim_events ce3
+      WHERE ce3.claim_id = ce1.claim_id
+        AND ce3.timestamp > ce1.timestamp
+        AND ce3.timestamp < ce2.timestamp
+    )
+)
+SELECT
+  claim_id,
+  approve_time,
+  notify_time,
+  seconds_diff,
+  seconds_diff / 3600 AS hours_diff
+FROM event_pairs
+WHERE seconds_diff > 604800 * 2  -- More than 14 days
+ORDER BY seconds_diff DESC;
+```
+
+But this might be too strict with the "no other events" condition. Maybe better to just look at all P to N pairs regardless of intermediate events:
+
+```sql
+SELECT
+  ce1.claim_id,
+  ce1.timestamp AS approve_time,
+  ce2.timestamp AS notify_time,
+  EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_diff,
+  EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) / 3600 AS hours_diff,
+  c.claim_type,
+  c.claim_amount,
+  ce1.resource AS approver,
+  ce2.resource AS notifier
+FROM claim_events ce1
+JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+JOIN claims c ON ce1.claim_id = c.claim_id
+WHERE ce1.activity = 'P' AND ce2.activity = 'N'
+  AND ce1.timestamp < ce2.timestamp
+  AND EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) > 604800 * 1.5  -- More than 10.5 days (1.5 * avg)
+ORDER BY seconds_diff DESC;
+```
+
+**Anomaly 2: A to C (Assign to Close) - 2 hours average**
+
+Query to find claims closed within 4 hours of assignment (2*avg):
+
+```sql
+SELECT
+  ce1.claim_id,
+  ce1.timestamp AS assign_time,
+  ce2.timestamp AS close_time,
+  EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_diff,
+  EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) / 3600 AS hours_diff,
+  c.claim_type,
+  c.claim_amount,
+  ce1.resource AS assigner,
+  ce2.resource AS closer
+FROM claim_events ce1
+JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+JOIN claims c ON ce1.claim_id = c.claim_id
+WHERE ce1.activity = 'A' AND ce2.activity = 'C'
+  AND ce1.timestamp < ce2.timestamp
+  AND EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) < 7200 * 2  -- Less than 4 hours
+  -- Check if there are missing intermediate steps
+  AND NOT EXISTS (
+    SELECT 1 FROM claim_events ce3
+    WHERE ce3.claim_id = ce1.claim_id
+      AND ce3.activity IN ('E', 'P', 'N')
+      AND ce3.timestamp > ce1.timestamp
+      AND ce3.timestamp < ce2.timestamp
+  )
+ORDER BY seconds_diff;
+```
+
+**Anomaly 3: E to N (Evaluate to Notify) - 5 minutes average**
+
+Query to find claims where E to N < 10 minutes:
+
+```sql
+SELECT
+  ce1.claim_id,
+  ce1.timestamp AS evaluate_time,
+  ce2.timestamp AS notify_time,
+  EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_diff,
+  c.claim_type,
+  c.claim_amount,
+  ce1.resource AS evaluator,
+  ce2.resource AS notifier
+FROM claim_events ce1
+JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+JOIN claims c ON ce1.claim_id = c.claim_id
+WHERE ce1.activity = 'E' AND ce2.activity = 'N'
+  AND ce1.timestamp < ce2.timestamp
+  AND EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) < 600  -- Less than 10 minutes
+  -- Check if Approve is missing
+  AND NOT EXISTS (
+    SELECT 1 FROM claim_events ce3
+    WHERE ce3.claim_id = ce1.claim_id
+      AND ce3.activity = 'P'
+      AND ce3.timestamp > ce1.timestamp
+      AND ce3.timestamp < ce2.timestamp
+  )
+ORDER BY seconds_diff;
+```
+
+**Anomaly 4: R to P (Receive to Approve) - low STDEV**
+
+Query to check the distribution of R to P times:
+
+```sql
+SELECT
+  EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_diff,
+  COUNT(*) as count
+FROM claim_events ce1
+JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+WHERE ce1.activity = 'R' AND ce2.activity = 'P'
+  AND ce1.timestamp < ce2.timestamp
+GROUP BY seconds_diff
+ORDER BY seconds_diff;
+```
+
+And to find outliers:
+
+```sql
+WITH rp_times AS (
+  SELECT
+    ce1.claim_id,
+    EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) AS seconds_diff
+  FROM claim_events ce1
+  JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+  WHERE ce1.activity = 'R' AND ce2.activity = 'P'
+    AND ce1.timestamp < ce2.timestamp
+)
+SELECT
+  claim_id,
+  seconds_diff,
+  seconds_diff / 3600 AS hours_diff
+FROM rp_times
+WHERE seconds_diff < 90000 - 3*3600 OR seconds_diff > 90000 + 3*3600  -- Outside 3 SD
+ORDER BY ABS(seconds_diff - 90000);
+```
+
+Now, for correlation with adjusters, claim types, etc.:
+
+```sql
+-- Claims with fast A to C, grouped by adjuster
+SELECT
+  a.adjuster_id,
+  a.name,
+  a.specialization,
+  a.region,
+  COUNT(*) as fast_close_count,
+  AVG(EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp))) / 3600 AS avg_hours_to_close
+FROM claim_events ce1
+JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+JOIN claims c ON ce1.claim_id = c.claim_id
+JOIN adjusters a ON ce1.resource = a.name  -- Assuming resource is adjuster name
+WHERE ce1.activity = 'A' AND ce2.activity = 'C'
+  AND ce1.timestamp < ce2.timestamp
+  AND EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) < 7200 * 2
+GROUP BY a.adjuster_id, a.name, a.specialization, a.region
+ORDER BY fast_close_count DESC;
+```
+
+```sql
+-- Claims with long P to N, grouped by claim type
+SELECT
+  c.claim_type,
+  COUNT(*) as delayed_notification_count,
+  AVG(EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp))) / 86400 AS avg_days_to_notify
+FROM claim_events ce1
+JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+JOIN claims c ON ce1.claim_id = c.claim_id
+WHERE ce1.activity = 'P' AND ce2.activity = 'N'
+  AND ce1.timestamp < ce2.timestamp
+  AND EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) > 604800
+GROUP BY c.claim_type
+ORDER BY avg_days_to_notify DESC;
+```
+
+Now, let me organize this into a clear response.
+
+Anomalies identified:
+1. R to P: Very low standard deviation (1 hour) for a ~25 hour average suggests artificial constraint
+2. P to N: Extremely long average (7 days) with high variability (2 days SD)
+3. A to C: Very short average (2 hours) suggests premature closure
+4. E to N: Extremely short average (5 minutes) suggests skipped steps
+5. E to C: Short average (1 hour) also suggests premature closure
+
+Hypotheses:
+- For R to P: Possible fixed approval schedule or batch processing
+- For P to N: Manual notification process with backlogs or batch processing
+- For A to C: Auto-closure for simple claims or data entry errors
+- For E to N: Approval step being skipped, especially for certain claim types
+- For E to C: Similar to A to C, claims being closed before full processing
+
+Verification queries should:
+1. Identify specific claims with extreme timing
+2. Check for missing intermediate steps
+3. Correlate with claim attributes (type, amount) and resources (adjusters)
+
+Let me write the final response now.
+</think>
+
+### **Anomalies in the Temporal Profile Model**
+
+1. **Receive (R)  Approve (P):**
+   - **Issue:** Average time of **~25 hours** with an **extremely low standard deviation (1 hour)**.
+   - **Why anomalous?** Approval times typically vary significantly due to claim complexity, adjuster workload, or verification steps. A near-constant interval suggests artificial constraints (e.g., batch processing, automated triggers, or data tampering).
+
+2. **Approve (P)  Notify (N):**
+   - **Issue:** Average delay of **7 days** with a **high standard deviation (2 days)**.
+   - **Why anomalous?** Notifications should ideally occur within hours of approval. A week-long gap indicates severe bottlenecks (e.g., manual processes, backlogged notifications, or third-party dependencies).
+
+3. **Assign (A)  Close (C):**
+   - **Issue:** Average time of **2 hours** (with 1-hour SD).
+   - **Why anomalous?** The intended flow requires intermediate steps (Evaluate, Approve, Notify). A 2-hour turnaround suggests **premature closures**—either auto-closing trivial claims or data errors (e.g., mislabeled events).
+
+4. **Evaluate (E)  Notify (N):**
+   - **Issue:** Average time of **5 minutes** (with 1-minute SD).
+   - **Why anomalous?** Notification should follow *Approval*, not directly from Evaluation. This implies **skipped steps** (e.g., Approval is omitted for certain claims) or misrecorded timestamps.
+
+5. **Evaluate (E)  Close (C):**
+   - **Issue:** Average time of **1 hour** (with 50-minute SD).
+   - **Why anomalous?** Closure should require Approval and Notification. Short intervals here reinforce the hypothesis of **incomplete process execution** (e.g., fast-tracked or erroneous closures).
+
+---
+
+---
+
+### **Hypotheses for Root Causes**
+
+| **Anomaly**       | **Possible Causes**                                                                                     | **Business Impact**                                                                 |
+|-------------------|--------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
+| **RP Low Variability** | - Fixed SLA enforcing 25-hour approvals (e.g., regulatory requirement).<br>- Batch approvals at specific times (e.g., end-of-day).<br>- Synthetic data or logging errors. | Masked inefficiencies; may hide delays in other steps.                           |
+| **PN Long Delay**    | - Manual notification process (e.g., paper mail).<br>- Backlog in customer service team.<br>- Notifications batched weekly.<br>- Integration failure with notification system. | Poor customer experience; potential compliance violations for untimely updates. |
+| **AC Short Time**    | - **Auto-closure** for low-value/low-risk claims (e.g., <$100).<br>- Data errors (e.g., "Close" events mislabeled as occurring after "Assign").<br>- Adjusters bypassing steps for "obvious" claims. | Risk of unvalidated closures; audit failures.                                    |
+| **EN Short Time**    | - **Approval step skipped** for certain claim types (e.g., pre-approved policies).<br>- Automated systems triggering notifications immediately after evaluation.<br>- Timestamp granularity issues (e.g., rounded to nearest minute). | Non-compliance with internal controls; missed fraud checks.                     |
+| **EC Short Time**    | - **Parallel processing**: Close triggered concurrently with Evaluation (e.g., for rejected claims).<br>- Data corruption (e.g., "Close" events backdated). | Incomplete claim handling; potential financial losses.                          |
+
+---
+
+---
+
+### **Verification Approaches Using SQL Queries**
+
+---
+
+#### **1. Identify Claims with Suspiciously Fast/Slow Transitions**
+**Goal:** Flag claims where activity intervals deviate significantly from the temporal profile.
+
+**Query for PN Delays (>10 days):**
+```sql
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    ce_approve.timestamp AS approve_time,
+    ce_notify.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (ce_notify.timestamp - ce_approve.timestamp)) / 86400 AS days_delay,
+    ce_approve.resource AS approver,
+    ce_notify.resource AS notifier
+FROM claims c
+JOIN claim_events ce_approve ON c.claim_id = ce_approve.claim_id AND ce_approve.activity = 'P'
+JOIN claim_events ce_notify ON c.claim_id = ce_notify.claim_id AND ce_notify.activity = 'N'
+WHERE ce_approve.timestamp < ce_notify.timestamp
+  AND EXTRACT(EPOCH FROM (ce_notify.timestamp - ce_approve.timestamp)) > 864000  -- >10 days (864000 seconds)
+ORDER BY days_delay DESC;
+```
+
+**Query for AC Short Intervals (<4 hours):**
+```sql
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    ce_assign.timestamp AS assign_time,
+    ce_close.timestamp AS close_time,
+    EXTRACT(EPOCH FROM (ce_close.timestamp - ce_assign.timestamp)) / 3600 AS hours_to_close,
+    ce_assign.resource AS adjuster
+FROM claims c
+JOIN claim_events ce_assign ON c.claim_id = ce_assign.claim_id AND ce_assign.activity = 'A'
+JOIN claim_events ce_close ON c.claim_id = ce_close.claim_id AND ce_close.activity = 'C'
+WHERE ce_assign.timestamp < ce_close.timestamp
+  AND EXTRACT(EPOCH FROM (ce_close.timestamp - ce_assign.timestamp)) < 14400  -- <4 hours
+  -- Check if intermediate steps (E, P, N) are missing
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events ce
+      WHERE ce.claim_id = c.claim_id
+        AND ce.activity IN ('E', 'P', 'N')
+        AND ce.timestamp BETWEEN ce_assign.timestamp AND ce_close.timestamp
+  )
+ORDER BY hours_to_close;
+```
+
+---
+
+#### **2. Check for Skipped Steps (EN Without Approval)**
+**Goal:** Verify if Approval is omitted between Evaluation and Notification.
+
+```sql
+SELECT
+    c.claim_id,
+    c.claim_type,
+    ce_eval.timestamp AS eval_time,
+    ce_notify.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (ce_notify.timestamp - ce_eval.timestamp)) AS seconds_diff,
+    ce_eval.resource AS evaluator
+FROM claims c
+JOIN claim_events ce_eval ON c.claim_id = ce_eval.claim_id AND ce_eval.activity = 'E'
+JOIN claim_events ce_notify ON c.claim_id = ce_notify.claim_id AND ce_notify.activity = 'N'
+WHERE ce_eval.timestamp < ce_notify.timestamp
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events ce_approve
+      WHERE ce_approve.claim_id = c.claim_id
+        AND ce_approve.activity = 'P'
+        AND ce_approve.timestamp BETWEEN ce_eval.timestamp AND ce_notify.timestamp
+  )
+  AND EXTRACT(EPOCH FROM (ce_notify.timestamp - ce_eval.timestamp)) < 1800  -- <30 minutes
+ORDER BY seconds_diff;
+```
+
+---
+
+#### **3. Correlate Anomalies with Adjusters, Claim Types, or Regions**
+**Goal:** Determine if specific adjusters, claim types, or regions exhibit patterns.
+
+**Fast AC Closures by Adjuster:**
+```sql
+SELECT
+    a.adjuster_id,
+    a.name,
+    a.specialization,
+    a.region,
+    COUNT(*) AS premature_closures,
+    AVG(EXTRACT(EPOCH FROM (ce_close.timestamp - ce_assign.timestamp))) / 3600 AS avg_hours_to_close
+FROM claim_events ce_assign
+JOIN claim_events ce_close ON ce_assign.claim_id = ce_close.claim_id
+JOIN adjusters a ON ce_assign.resource = a.name
+WHERE ce_assign.activity = 'A' AND ce_close.activity = 'C'
+  AND ce_assign.timestamp < ce_close.timestamp
+  AND EXTRACT(EPOCH FROM (ce_close.timestamp - ce_assign.timestamp)) < 7200  -- <2 hours
+GROUP BY a.adjuster_id, a.name, a.specialization, a.region
+ORDER BY premature_closures DESC;
+```
+
+**Long PN Delays by Claim Type:**
+```sql
+SELECT
+    c.claim_type,
+    COUNT(*) AS delayed_notifications,
+    AVG(EXTRACT(EPOCH FROM (ce_notify.timestamp - ce_approve.timestamp))) / 86400 AS avg_days_delay,
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (ce_notify.timestamp - ce_approve.timestamp))) / 86400 AS median_days_delay
+FROM claims c
+JOIN claim_events ce_approve ON c.claim_id = ce_approve.claim_id AND ce_approve.activity = 'P'
+JOIN claim_events ce_notify ON c.claim_id = ce_notify.claim_id AND ce_notify.activity = 'N'
+WHERE ce_approve.timestamp < ce_notify.timestamp
+GROUP BY c.claim_type
+HAVING AVG(EXTRACT(EPOCH FROM (ce_notify.timestamp - ce_approve.timestamp))) > 604800  -- >7 days
+ORDER BY avg_days_delay DESC;
+```
+
+---
+---
+#### **4. Validate RP Low Variability**
+**Goal:** Check if approvals are clustered at specific times (e.g., batch processing).
+
+```sql
+SELECT
+    DATE_TRUNC('hour', ce_approve.timestamp) AS approval_hour,
+    COUNT(*) AS approval_count,
+    AVG(EXTRACT(EPOCH FROM (ce_approve.timestamp - ce_receive.timestamp))) / 3600 AS avg_hours_from_receive
+FROM claim_events ce_receive
+JOIN claim_events ce_approve ON ce_receive.claim_id = ce_approve.claim_id
+WHERE ce_receive.activity = 'R' AND ce_approve.activity = 'P'
+  AND ce_receive.timestamp < ce_approve.timestamp
+GROUP BY DATE_TRUNC('hour', ce_approve.timestamp)
+ORDER BY approval_count DESC;
+```
+
+---
+---
+#### **5. Detect Claims with Incomplete Process Flows**
+**Goal:** Find claims missing critical steps (e.g., no Evaluation before Approval).
+
+```sql
+-- Claims with Approve but no prior Evaluate
+SELECT
+    c.claim_id,
+    c.claim_type,
+    ce_approve.timestamp AS approve_time,
+    ce_receive.timestamp AS receive_time
+FROM claims c
+JOIN claim_events ce_receive ON c.claim_id = ce_receive.claim_id AND ce_receive.activity = 'R'
+JOIN claim_events ce_approve ON c.claim_id = ce_approve.claim_id AND ce_approve.activity = 'P'
+WHERE ce_receive.timestamp < ce_approve.timestamp
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events ce_eval
+      WHERE ce_eval.claim_id = c.claim_id AND ce_eval.activity = 'E'
+        AND ce_eval.timestamp BETWEEN ce_receive.timestamp AND ce_approve.timestamp
+  )
+ORDER BY c.claim_id;
+```
+
+---
+---
+### **Recommended Next Steps**
+1. **Audit the fastest/slowest 10% of claims** for each anomalous pair (e.g., AC < 2 hours, PN > 10 days).
+2. **Interview adjusters** with high rates of premature closures or long notification delays.
+3. **Review system logs** for batch jobs or scheduled tasks that might enforce rigid timings (e.g., RP).
+4. **Validate data integrity**: Check for:
+   - Backdated timestamps.
+   - Missing or mislabeled events (e.g., "Close" recorded before "Assign").
+   - Duplicate events for the same claim.

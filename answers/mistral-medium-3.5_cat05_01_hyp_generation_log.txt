@@ -1,0 +1,240 @@
+# Analysis of Order Event Log Anomalies
+
+## Identified Anomalies and Undesirable Behaviors
+
+1. **Out-of-Sequence Activities (Case 1002)**
+   - Normal flow: Register Order  Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Invoice  Payment
+   - Actual flow: Register Order  Confirm Shipment  Ship Goods  Credit Check  Validate Stock  Invoice  Payment
+   - **Issue**: Shipment confirmation and goods shipping occurred before credit check and stock validation
+
+2. **Out-of-Sequence Activities (Case 1003)**
+   - Normal flow: Register Order  Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Invoice  Payment
+   - Actual flow: Register Order  Credit Check  Ship Goods  Invoice  Confirm Shipment  Payment
+   - **Issue**: Goods shipped before shipment confirmation; invoice issued before shipment confirmation
+
+3. **Missing Activities (Case 1004)**
+   - Normal flow should include: Credit Check, Validate Stock
+   - Actual flow: Register Order  Receive Payment  Issue Invoice  Confirm Shipment  Ship Goods
+   - **Issue**: Credit check and stock validation completely skipped; payment received before invoice issued
+
+4. **Premature Payment (Case 1004)**
+   - Payment received before invoice was issued (timestamp 09:05 vs 09:20)
+   - **Issue**: Payment processing before proper invoicing
+
+5. **Negative Shipment Confirmation (Case 1004)**
+   - Confirm Shipment activity has `shipment_scheduled=N` but goods were shipped anyway
+   - **Issue**: Inconsistency between shipment confirmation and actual shipping
+
+## Hypothesized Causes
+
+1. **Process Shortcuts**:
+   - Sales team may be pressuring logistics to ship quickly (Case 1002)
+   - Finance team may be processing payments too quickly (Case 1004)
+
+2. **System Errors**:
+   - Possible timestamp recording errors (Case 1003)
+   - Missing automated workflow triggers (Case 1004 - skipped steps)
+
+3. **Policy Violations**:
+   - Shipping without proper credit check (Case 1002)
+   - Invoicing before shipment confirmation (Case 1003)
+   - Accepting payment before invoice (Case 1004)
+
+4. **Training Issues**:
+   - Staff may not be properly trained on the required sequence
+   - Logistics staff may not understand the importance of confirmation before shipping
+
+5. **Workarounds**:
+   - Manual overrides in the system to bypass normal workflow
+   - "Shipment scheduled=N" but goods shipped anyway suggests system bypass
+
+## SQL Queries for Investigation
+
+### 1. Find all cases with out-of-sequence activities
+```sql
+WITH normal_sequence AS (
+  SELECT
+    case_id,
+    MAX(CASE WHEN activity = 'Register Order' THEN timestamp END) AS register_time,
+    MAX(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) AS credit_check_time,
+    MAX(CASE WHEN activity = 'Validate Stock' THEN timestamp END) AS stock_check_time,
+    MAX(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) AS confirm_ship_time,
+    MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) AS ship_time,
+    MAX(CASE WHEN activity = 'Issue Invoice' THEN timestamp END) AS invoice_time,
+    MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) AS payment_time
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT
+  case_id,
+  register_time < credit_check_time AS seq1_ok,
+  credit_check_time < stock_check_time AS seq2_ok,
+  stock_check_time < confirm_ship_time AS seq3_ok,
+  confirm_ship_time < ship_time AS seq4_ok,
+  ship_time < invoice_time AS seq5_ok,
+  invoice_time < payment_time AS seq6_ok
+FROM normal_sequence
+WHERE NOT (seq1_ok AND seq2_ok AND seq3_ok AND seq4_ok AND seq5_ok AND seq6_ok);
+```
+
+### 2. Find cases where activities are missing from the normal flow
+```sql
+WITH expected_activities AS (
+  SELECT DISTINCT case_id
+  FROM order_event_log
+),
+actual_activities AS (
+  SELECT
+    case_id,
+    MAX(CASE WHEN activity = 'Register Order' THEN 1 ELSE 0 END) AS has_register,
+    MAX(CASE WHEN activity = 'Perform Credit Check' THEN 1 ELSE 0 END) AS has_credit_check,
+    MAX(CASE WHEN activity = 'Validate Stock' THEN 1 ELSE 0 END) AS has_stock_check,
+    MAX(CASE WHEN activity = 'Confirm Shipment' THEN 1 ELSE 0 END) AS has_confirm_ship,
+    MAX(CASE WHEN activity = 'Ship Goods' THEN 1 ELSE 0 END) AS has_ship,
+    MAX(CASE WHEN activity = 'Issue Invoice' THEN 1 ELSE 0 END) AS has_invoice,
+    MAX(CASE WHEN activity = 'Receive Payment' THEN 1 ELSE 0 END) AS has_payment
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT
+  aa.case_id,
+  CASE WHEN aa.has_register = 0 THEN 'Missing Register Order' ELSE NULL END AS missing_register,
+  CASE WHEN aa.has_credit_check = 0 THEN 'Missing Credit Check' ELSE NULL END AS missing_credit_check,
+  CASE WHEN aa.has_stock_check = 0 THEN 'Missing Stock Validation' ELSE NULL END AS missing_stock_check,
+  CASE WHEN aa.has_confirm_ship = 0 THEN 'Missing Shipment Confirmation' ELSE NULL END AS missing_confirm_ship,
+  CASE WHEN aa.has_ship = 0 THEN 'Missing Ship Goods' ELSE NULL END AS missing_ship,
+  CASE WHEN aa.has_invoice = 0 THEN 'Missing Invoice' ELSE NULL END AS missing_invoice,
+  CASE WHEN aa.has_payment = 0 THEN 'Missing Payment' ELSE NULL END AS missing_payment
+FROM actual_activities aa
+JOIN expected_activities ea ON aa.case_id = ea.case_id
+WHERE aa.has_register = 0
+   OR aa.has_credit_check = 0
+   OR aa.has_stock_check = 0
+   OR aa.has_confirm_ship = 0
+   OR aa.has_ship = 0
+   OR aa.has_invoice = 0
+   OR aa.has_payment = 0;
+```
+
+### 3. Find cases where payment was received before invoice was issued
+```sql
+SELECT
+  oel1.case_id,
+  oel1.timestamp AS payment_time,
+  oel2.timestamp AS invoice_time,
+  oel1.timestamp < oel2.timestamp AS payment_before_invoice
+FROM order_event_log oel1
+JOIN order_event_log oel2 ON oel1.case_id = oel2.case_id
+WHERE oel1.activity = 'Receive Payment'
+  AND oel2.activity = 'Issue Invoice'
+  AND oel1.timestamp < oel2.timestamp;
+```
+
+### 4. Find cases where goods were shipped despite negative confirmation
+```sql
+WITH shipment_confirmations AS (
+  SELECT
+    case_id,
+    MAX(CASE WHEN activity = 'Confirm Shipment' AND additional_info LIKE '%shipment_scheduled=N%' THEN 1 ELSE 0 END) AS negative_confirmation,
+    MAX(CASE WHEN activity = 'Ship Goods' THEN 1 ELSE 0 END) AS goods_shipped
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT case_id
+FROM shipment_confirmations
+WHERE negative_confirmation = 1 AND goods_shipped = 1;
+```
+
+### 5. Find cases where credit check was performed after shipping
+```sql
+SELECT
+  oel1.case_id,
+  oel1.timestamp AS credit_check_time,
+  oel2.timestamp AS ship_time,
+  oel1.timestamp > oel2.timestamp AS credit_after_ship
+FROM order_event_log oel1
+JOIN order_event_log oel2 ON oel1.case_id = oel2.case_id
+WHERE oel1.activity = 'Perform Credit Check'
+  AND oel2.activity = 'Ship Goods'
+  AND oel1.timestamp > oel2.timestamp;
+```
+
+### 6. Analyze resource patterns in anomalous cases
+```sql
+WITH anomalous_cases AS (
+  -- Using one of the previous queries to identify anomalous cases
+  SELECT DISTINCT case_id
+  FROM (
+    -- Example: cases with out-of-sequence activities
+    SELECT case_id
+    FROM order_event_log oel1
+    JOIN order_event_log oel2 ON oel1.case_id = oel2.case_id
+    WHERE ((oel1.activity = 'Ship Goods' AND oel2.activity = 'Perform Credit Check' AND oel1.timestamp < oel2.timestamp)
+           OR (oel1.activity = 'Issue Invoice' AND oel2.activity = 'Confirm Shipment' AND oel1.timestamp < oel2.timestamp))
+  ) AS subq
+)
+SELECT
+  r.department,
+  r.role,
+  COUNT(DISTINCT oel.case_id) AS involved_in_anomalies,
+  COUNT(DISTINCT CASE WHEN oel.activity = 'Ship Goods' THEN oel.case_id END) AS shipped_early,
+  COUNT(DISTINCT CASE WHEN oel.activity = 'Perform Credit Check' THEN oel.case_id END) AS late_credit_check
+FROM anomalous_cases ac
+JOIN order_event_log oel ON ac.case_id = oel.case_id
+JOIN resources r ON oel.resource = r.resource_id
+GROUP BY r.department, r.role
+ORDER BY involved_in_anomalies DESC;
+```
+
+### 7. Check for correlation between order type and anomalies
+```sql
+WITH anomalous_cases AS (
+  -- Using one of the previous queries to identify anomalous cases
+  SELECT DISTINCT case_id
+  FROM (
+    -- Example: cases with missing activities
+    SELECT case_id
+    FROM order_event_log
+    GROUP BY case_id
+    HAVING COUNT(DISTINCT activity) < 7 -- Normal process has 7 activities
+  ) AS subq
+)
+SELECT
+  o.order_type,
+  COUNT(DISTINCT ac.case_id) AS anomaly_count,
+  COUNT(DISTINCT o.case_id) AS total_count,
+  ROUND(COUNT(DISTINCT ac.case_id) * 100.0 / COUNT(DISTINCT o.case_id), 2) AS anomaly_percentage
+FROM orders o
+LEFT JOIN anomalous_cases ac ON o.case_id = ac.case_id
+GROUP BY o.order_type
+ORDER BY anomaly_percentage DESC;
+```
+
+### 8. Find cases with unusually short time between activities
+```sql
+WITH time_deltas AS (
+  SELECT
+    oel1.case_id,
+    oel1.activity AS activity1,
+    oel2.activity AS activity2,
+    EXTRACT(EPOCH FROM (oel2.timestamp - oel1.timestamp)) AS seconds_between
+  FROM order_event_log oel1
+  JOIN order_event_log oel2 ON oel1.case_id = oel2.case_id
+  WHERE oel1.event_id < oel2.event_id
+    AND (
+      (oel1.activity = 'Register Order' AND oel2.activity = 'Receive Payment')
+      OR (oel1.activity = 'Register Order' AND oel2.activity = 'Ship Goods')
+    )
+)
+SELECT
+  case_id,
+  activity1,
+  activity2,
+  seconds_between,
+  seconds_between/60 AS minutes_between
+FROM time_deltas
+WHERE seconds_between < 300 -- Less than 5 minutes between order registration and payment/shipment
+ORDER BY minutes_between;
+```
+
+These queries should help identify the scope of the anomalies, the resources involved, and potential patterns that might explain why these deviations from the normal process are occurring.

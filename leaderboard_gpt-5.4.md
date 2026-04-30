@@ -55,6 +55,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | o4-mini-2025-04-16-HIGH           | **31.3** | :x:                | :white_check_mark: | 5.5                  | 6.2                  | 4.2                  | 3.6                  | 4.5                  | 4.2                  | 3.2                  | **4.6**              |
 | gemini-3-flash-preview-nothink    | **31.3** | :x:                | :x:                | 5.4                  | 5.7                  | 4.5                  | 4.0                  | 4.5                  | 4.3                  | 2.8                  | **4.6**              |
 | o3-2025-04-16                     | **31.0** | :x:                | :white_check_mark: | 5.7                  | 5.6                  | 3.6                  | 3.7                  | 4.8                  | 4.4                  | 3.3                  | 4.0                  |
+| mistral-medium-3.5-thinkhigh      | **31.0** | :x:                | :white_check_mark: | 5.8                  | 5.7                  | 3.7                  | 4.3                  | 4.7                  | 3.9                  | 2.8                  | 3.4                  |
 | gemini-2.5-pro-thinkhigh          | **30.9** | :x:                | :white_check_mark: | 5.2                  | 6.2                  | 4.0                  | 3.2                  | 4.6                  | 4.6                  | 3.3                  | 4.2                  |
 | gemini-3-flash-preview-thinkhigh  | **30.9** | :x:                | :white_check_mark: | 5.2                  | 6.1                  | 4.4                  | 3.7                  | 4.6                  | 4.1                  | 2.7                  | **4.6**              |
 | xiaomimimo-v2-pro                 | **30.8** | :x:                | :white_check_mark: | 5.5                  | 5.7                  | 3.7                  | 3.8                  | 4.5                  | 4.3                  | 3.3                  | 0.0                  |
@@ -91,6 +92,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | xiaomimimo-v2.5                   | **28.3** | :x:                | :white_check_mark: | 5.0                  | 5.5                  | 3.1                  | 3.1                  | 4.3                  | 4.5                  | 2.8                  | 0.0                  |
 | gemini-3.1-flash-lite-preview     | **27.7** | :x:                | :x:                | 4.7                  | 5.3                  | 3.1                  | 4.0                  | 4.1                  | 4.3                  | 2.2                  | **4.5**              |
 | claude-haiku-4-5-20251001         | **27.7** | :x:                | :x:                | 5.2                  | 4.5                  | 2.9                  | 3.7                  | 4.5                  | 4.3                  | 2.6                  | 0.0                  |
+| mistral-medium-3.5                | **27.5** | :x:                | :x:                | 5.0                  | 4.6                  | 2.8                  | 3.8                  | 4.0                  | 4.2                  | 3.1                  | 4.0                  |
 | grok-3                            | **27.4** | :x:                | :x:                | 5.0                  | 5.0                  | 3.0                  | 3.0                  | 4.2                  | 4.4                  | 2.8                  | 0.0                  |
 | gemini-3.1-flash-lite-preview     | **26.9** | :x:                | :white_check_mark: | 4.2                  | 5.2                  | 3.0                  | 3.5                  | 4.2                  | 4.4                  | 2.4                  | 4.3                  |
 | mistral-medium-2508               | **26.9** | :x:                | :x:                | 5.0                  | 4.6                  | 2.5                  | 3.5                  | 4.1                  | 4.2                  | 2.9                  | 3.9                  |
@@ -3218,6 +3220,68 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 6.6   |
 | cat08_05_task_schedul              | 7.0   |
 
+### mistral-medium-3.5-thinkhigh   => 31.0 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 8.9   |
+| cat01_02_activity_context          | 6.7   |
+| cat01_03_high_level_events         | 7.4   |
+| cat01_04_sensor_recordings         | 6.8   |
+| cat01_05_merge_two_logs            | 6.1   |
+| cat01_06_system_logs               | 7.3   |
+| cat01_07_interv_to_pseudo_bpmn     | 6.9   |
+| cat01_08_tables_to_log             | 8.2   |
+| cat02_01_conformance_textual       | 8.4   |
+| cat02_02_conf_desiderata           | 7.5   |
+| cat02_03_anomaly_event_log         | 7.5   |
+| cat02_04_powl_anomaly_detection    | 6.7   |
+| cat02_05_two_powls_anomalies       | 3.3   |
+| cat02_06_root_cause_1              | 6.9   |
+| cat02_07_root_cause_2              | 6.9   |
+| cat02_08_underfitting_process_tree | 7.2   |
+| cat02_09_fix_process_tree          | 2.8   |
+| cat03_01_process_tree_generation   | 2.8   |
+| cat03_02_powl_generation           | 8.0   |
+| cat03_03_log_skeleton_generation   | 2.8   |
+| cat03_04_declare_generation        | 2.2   |
+| cat03_05_temp_profile_generation   | 7.3   |
+| cat03_06_petri_net_generation      | 5.0   |
+| cat03_07_process_tree_discovery    | 1.7   |
+| cat03_08_powl_discovery            | 7.4   |
+| cat04_01_pseudo_bpmn_description   | 6.9   |
+| cat04_02_pseudo_bpmn_open_question | 7.2   |
+| cat04_03_declare_open_question     | 4.0   |
+| cat04_04_declare_description       | 2.8   |
+| cat04_05_sql_filt_num_events       | 7.8   |
+| cat04_06_sql_filt_three_df         | 7.5   |
+| cat04_07_sql_filt_top_k_vars       | 7.3   |
+| cat05_01_hyp_generation_log        | 6.6   |
+| cat05_02_hyp_gen_powl              | 6.3   |
+| cat05_03_hyp_gen_declare           | 3.3   |
+| cat05_04_hyp_gen_temp_profile      | 6.4   |
+| cat05_05_question_gen_nlp          | 8.7   |
+| cat05_06_question_pseudo_bpmn      | 7.7   |
+| cat05_07_question_interview        | 7.6   |
+| cat06_01_bias_text                 | 7.6   |
+| cat06_02_bias_event_log            | 3.3   |
+| cat06_03_bias_powl                 | 7.1   |
+| cat06_04_bias_two_logs             | 3.3   |
+| cat06_05_bias_two_logs_2           | 6.7   |
+| cat06_06_bias_mitigation_declare   | 3.9   |
+| cat06_07_fair_unfair_powl          | 7.0   |
+| cat07_01_ocdfg                     | 6.7   |
+| cat07_02_bpmn_orders               | 6.7   |
+| cat07_03_bpmn_dispatch             | 6.9   |
+| cat07_04_causal_net                | 6.1   |
+| cat07_05_proclets                  | 3.9   |
+| cat07_06_perf_spectrum             | 3.9   |
+| cat08_01_queue_mining              | 7.1   |
+| cat08_02_instance_spanning         | 3.1   |
+| cat08_03_transport_opt             | 6.4   |
+| cat08_04_resource_assign           | 6.0   |
+| cat08_05_task_schedul              | 5.2   |
+
 ### gemini-2.5-pro-thinkhigh   => 30.9 points
 
 | Question                           | Score |
@@ -5335,6 +5399,68 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             | 5.9   |
 | cat08_04_resource_assign           | 5.6   |
 | cat08_05_task_schedul              | 4.0   |
+
+### mistral-medium-3.5   => 27.5 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 8.6   |
+| cat01_02_activity_context          | 7.0   |
+| cat01_03_high_level_events         | 4.5   |
+| cat01_04_sensor_recordings         | 6.9   |
+| cat01_05_merge_two_logs            | 5.3   |
+| cat01_06_system_logs               | 4.5   |
+| cat01_07_interv_to_pseudo_bpmn     | 6.8   |
+| cat01_08_tables_to_log             | 6.0   |
+| cat02_01_conformance_textual       | 7.2   |
+| cat02_02_conf_desiderata           | 3.2   |
+| cat02_03_anomaly_event_log         | 5.8   |
+| cat02_04_powl_anomaly_detection    | 5.8   |
+| cat02_05_two_powls_anomalies       | 3.5   |
+| cat02_06_root_cause_1              | 5.4   |
+| cat02_07_root_cause_2              | 4.4   |
+| cat02_08_underfitting_process_tree | 5.0   |
+| cat02_09_fix_process_tree          | 6.0   |
+| cat03_01_process_tree_generation   | 4.0   |
+| cat03_02_powl_generation           | 3.0   |
+| cat03_03_log_skeleton_generation   | 2.5   |
+| cat03_04_declare_generation        | 3.0   |
+| cat03_05_temp_profile_generation   | 3.0   |
+| cat03_06_petri_net_generation      | 6.0   |
+| cat03_07_process_tree_discovery    | 2.5   |
+| cat03_08_powl_discovery            | 3.5   |
+| cat04_01_pseudo_bpmn_description   | 5.8   |
+| cat04_02_pseudo_bpmn_open_question | 6.8   |
+| cat04_03_declare_open_question     | 3.0   |
+| cat04_04_declare_description       | 3.1   |
+| cat04_05_sql_filt_num_events       | 7.8   |
+| cat04_06_sql_filt_three_df         | 7.2   |
+| cat04_07_sql_filt_top_k_vars       | 4.5   |
+| cat05_01_hyp_generation_log        | 4.2   |
+| cat05_02_hyp_gen_powl              | 4.3   |
+| cat05_03_hyp_gen_declare           | 4.3   |
+| cat05_04_hyp_gen_temp_profile      | 4.6   |
+| cat05_05_question_gen_nlp          | 7.8   |
+| cat05_06_question_pseudo_bpmn      | 7.8   |
+| cat05_07_question_interview        | 6.9   |
+| cat06_01_bias_text                 | 7.4   |
+| cat06_02_bias_event_log            | 7.6   |
+| cat06_03_bias_powl                 | 7.3   |
+| cat06_04_bias_two_logs             | 5.8   |
+| cat06_05_bias_two_logs_2           | 6.2   |
+| cat06_06_bias_mitigation_declare   | 3.8   |
+| cat06_07_fair_unfair_powl          | 4.0   |
+| cat07_01_ocdfg                     | 6.5   |
+| cat07_02_bpmn_orders               | 6.5   |
+| cat07_03_bpmn_dispatch             | 7.2   |
+| cat07_04_causal_net                | 7.0   |
+| cat07_05_proclets                  | 7.7   |
+| cat07_06_perf_spectrum             | 5.5   |
+| cat08_01_queue_mining              | 6.6   |
+| cat08_02_instance_spanning         | 5.4   |
+| cat08_03_transport_opt             | 6.9   |
+| cat08_04_resource_assign           | 6.4   |
+| cat08_05_task_schedul              | 5.7   |
 
 ### grok-3   => 27.4 points
 
