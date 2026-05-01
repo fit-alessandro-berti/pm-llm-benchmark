@@ -1,0 +1,134 @@
+**1. Identified Anomalies in the Temporal Profile Model**
+
+- **R  P (Receive  Approve)**
+  - **Average:** ~25hours (~90000seconds)
+  - **Standard Deviation:** 1hour (3600seconds) – *very low*
+  - **Anomaly:** The nearzero variance suggests that approvals occur on a rigid schedule, which may not reflect actual processing variability.
+
+- **P  N (Approve  Notify)**
+  - **Average:** 7days (~604800seconds)
+  - **Standard Deviation:** 2days (172800seconds) – *high*
+  - **Anomaly:** The long mean delay combined with considerable spread indicates inconsistent notification timing—either occasional fast notifications or frequent backlog periods.
+
+- **A  C (Assign  Close)**
+  - **Average:** 2hours (7200seconds)
+  - **Standard Deviation:** 1hour (3600seconds)
+  - **Anomaly:** Such a brief interval without required intermediate steps (Evaluate, Approve) suggests premature closures or skipped stages.
+
+- **E  N (Evaluate  Notify)**
+  - **Average:** 5minutes (300seconds)
+  - **Standard Deviation:** 1minute (60seconds)
+  - **Anomaly:** Extremely rapid transition implies either a shortcut in the process or an oversight that bypasses additional review.
+
+**2. Hypotheses for the Anomalies**
+
+- **R  P (Fast Approvals)**
+  - *Reason:* Automated approval rules that evaluate claims based on claim amount or type, causing nearinstant approval for certain segments.
+  - *Alternative:* Staff may be using a preset approval window that overrides true evaluation time.
+
+- **P  N (Variable Notifications)**
+  - *Reason:* Notification may depend on external factors such as regulatory reporting windows, leading to delays for some claims while others receive prompt updates.
+  - *Alternative:* Backlog of pending approvals results in batches of notifications released at irregular intervals.
+
+- **A  C (Premature Closures)**
+  - *Reason:* Adjusters may be closing claims after minimal interaction if the claim type is lowrisk or if the assigner is overallocated.
+  - *Alternative:* Errors in the system where the “Close” event is logged prematurely without proper preceding steps.
+
+- **E  N (Rapid Notification)**
+  - *Reason:* Immediate notification after evaluation could be a policy for lowvalue claims to expedite customer communication.
+  - *Alternative:* A bug where the notification trigger fires instantly once evaluation is marked complete, bypassing intended buffers.
+
+**3. Proposed Verification Approaches Using SQL Queries**
+
+1. **Identify Claims Exceeding Expected Intervals for R  P**
+
+```sql
+SELECT
+    claim_id,
+    EXTRACT_EPOCH(event_timestamp('R')) AS epoch_R,
+    EXTRACT_EPOCH(event_timestamp('P')) AS epoch_P,
+    (epoch_P - epoch_R) / 3600 AS hours_between_R_and_P
+FROM (
+    SELECT
+        claim_id,
+        MIN(CASE WHEN activity = 'R' THEN timestamp END) AS R_ts,
+        MAX(CASE WHEN activity = 'P' THEN timestamp END) AS P_ts
+    FROM claim_events
+    GROUP BY claim_id
+    HAVING MIN(CASE WHEN activity = 'R' THEN timestamp END) IS NOT NULL
+       AND MAX(CASE WHEN activity = 'P' THEN timestamp END) IS NOT NULL
+) sub
+WHERE (epoch_P - epoch_R) NOT BETWEEN (90000 - 3600) AND (90000 + 3600);
+```
+*Purpose:* Pull claims where the time from Receive to Approve deviates from the expected 25hours±1hour window.
+
+2. **Correlate P  N Delays with Adjuster or Claim Type**
+
+```sql
+SELECT
+    claim_id,
+    adjuster_id,
+    claim_type,
+    EXTRACT_EPOCH(event_timestamp('P')) AS epoch_P,
+    EXTRACT_EPOCH(event_timestamp('N')) AS epoch_N,
+    (epoch_N - epoch_P) / 86400 AS days_between_P_and_N
+FROM (
+    SELECT
+        ce.claim_id,
+        a.adjuster_id,
+        cl.claim_type,
+        MIN(CASE WHEN ce.activity = 'P' THEN ce.timestamp END) AS P_ts,
+        MAX(CASE WHEN ce.activity = 'N' THEN ce.timestamp END) AS N_ts
+    FROM claim_events ce
+    JOIN claims cl ON ce.claim_id = cl.claim_id
+    LEFT JOIN adjusters a ON ce.resource = a.adjuster_id
+    GROUP BY ce.claim_id, a.adjuster_id, cl.claim_type
+    HAVING MIN(CASE WHEN ce.activity = 'P' THEN ce.timestamp END) IS NOT NULL
+       AND MAX(CASE WHEN ce.activity = 'N' THEN ce.timestamp END) IS NOT NULL
+) q
+WHERE (epoch_N - epoch_P) > (604800 + 172800) OR (epoch_N - epoch_P) < (604800 - 172800);
+```
+*Purpose:* Find claims with unusually long or unusually short notification after approval, and tag them by adjuster and claim type for pattern analysis.
+
+3. **Detect Premature Closures (Assign  Close) without intervening Evaluate/Approve**
+
+```sql
+SELECT
+    claim_id,
+    EXTRACT_EPOCH(event_timestamp('A')) AS epoch_A,
+    EXTRACT_EPOCH(event_timestamp('C')) AS epoch_C,
+    (epoch_C - epoch_A) / 3600 AS hours_between_A_and_C,
+    COUNT(*) FILTER (WHERE activity = 'E') AS eval_count,
+    COUNT(*) FILTER (WHERE activity = 'P') AS approve_count
+FROM claim_events
+GROUP BY claim_id
+HAVING (epoch_C - epoch_A) / 3600 < 2          -- <2hours looks premature
+   AND (eval_count + approve_count) = 0;      -- No Evaluate or Approve in between
+```
+*Purpose:* Highlight claims closed immediately after assignment, lacking required evaluation/approval stages.
+
+4. **Find Extremely Rapid Evaluation  Notification Transitions for E  N**
+
+```sql
+SELECT
+    claim_id,
+    EXTRACT_EPOCH(event_timestamp('E')) AS epoch_E,
+    EXTRACT_EPOCH(event_timestamp('N')) AS epoch_N,
+    (epoch_N - epoch_E) / 60 AS minutes_between_E_and_N
+FROM (
+    SELECT
+        claim_id,
+        MIN(CASE WHEN activity = 'E' THEN timestamp END) AS E_ts,
+        MAX(CASE WHEN activity = 'N' THEN timestamp END) AS N_ts
+    FROM claim_events
+    GROUP BY claim_id
+    HAVING MIN(CASE WHEN activity = 'E' THEN timestamp END) IS NOT NULL
+       AND MAX(CASE WHEN activity = 'N' THEN timestamp END) IS NOT NULL
+) sub
+WHERE (epoch_N - epoch_E) NOT BETWEEN 240 AND 360;  -- Outside 46minutes range
+```
+*Purpose:* Capture claims where notification follows evaluation in an unusually short span, potentially indicating skipped review steps.
+
+**Summary**
+
+These queries will surface the specific claims that deviate from expected temporal behaviors, allowing further investigation into whether the anomalies stem from process design, system automation, staffing issues, or data anomalies. By linking the deviations to adjusters, claim types, or regions, deeper insights can be gained to refine the insurance claim handling workflow.

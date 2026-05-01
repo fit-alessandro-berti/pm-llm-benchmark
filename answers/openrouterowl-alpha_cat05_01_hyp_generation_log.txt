@@ -1,0 +1,363 @@
+# Process Mining Anomaly Detection Report
+
+## Executive Summary
+
+After analyzing the event log across four order cases (1001–1004), I've identified several significant deviations from the assumed normal process flow. Below is a comprehensive breakdown of each anomaly, hypothesized root causes, and proposed SQL queries for further investigation.
+
+---
+
+## Anomaly 1: Out-of-Sequence Activities (Case 1002)
+
+### Description
+Case 1002 violates the expected process order in multiple ways:
+- **Confirm Shipment** (event_id 9) occurs *before* both **Perform Credit Check** and **Validate Stock**
+- **Ship Goods** (event_id 10) occurs before **Perform Credit Check** and **Validate Stock**
+- **Issue Invoice** (event_id 13) occurs before **Validate Stock**
+
+### Hypotheses
+1. **Expedited/Priority Order Bypass**: This is a `priority` order type — there may be a policy allowing priority orders to skip or reorder certain steps.
+2. **System Integration Error**: A misconfigured workflow engine may have auto-triggered shipment confirmation and goods dispatch before upstream validations completed.
+3. **Human Error / Training Gap**: The logistics and warehouse teams may have manually pushed the order forward without verifying prerequisite steps.
+4. **Parallel Processing Misclassification**: Some activities may have been designed to run in parallel but were logged sequentially out of order due to timing delays event recording.
+
+### Proposed SQL Queries
+
+```sql
+-- Check if priority orders systematically skip or reorder steps
+SELECT o.case_id, o.order_type, oel.event_id, oel.activity, oel.timestamp
+FROM order_event_log oel
+JOIN orders o ON oel.case_id = o.case_id
+ORDER BY o.case_id, oel.event_id;
+```
+
+```sql
+-- Specifically: find cases where Ship Goods occurs before Credit Check or Validate Stock
+WITH activity_order AS (
+  SELECT 
+    case_id,
+    activity,
+    ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS seq_order
+  FROM order_event_log
+)
+SELECT a.case_id
+FROM activity_order a
+JOIN activity_order b ON a.case_id = b.case_id
+WHERE a.activity = 'Ship Goods'
+  AND b.activity IN ('Perform Credit Check', 'Validate Stock')
+  AND a.seq_order < b.seq_order;
+```
+
+---
+
+## Anomaly 2: Out-of-Sequence Activities (Case 1003)
+
+### Description
+- **Ship Goods** (event_id 17) occurs *before* **Validate Stock** and **Confirm Shipment**
+- **Confirm Shipment** (event_id 19) occurs *after* **Ship Goods**  logically impossible in a standard flow; the shipment cannot be confirmed after goods are already shipped
+
+### Hypotheses
+1. **Late Logging / Backdating**: The Confirm Shipment entry may have been recorded retroactively after goods were shipped, suggesting the logistics team forgot to log the confirmation in real time.
+2. **Workflow Engine Bug**: The system may have auto-logged the activity with a stale timestamp or processed events out of order.
+3. **Procedural Violation**: Warehouse staff may have shipped goods without the required logistics manager confirmation, indicating a breakdown in process governance.
+4. **Timestamp Synchronization Issue**: Distributed systems with unsynchronized clocks could record events in an order that doesn't reflect the actual sequence.
+
+### Proposed SQL Queries
+
+```sql
+-- Find all cases where Ship Goods occurs before Confirm Shipment
+WITH activity_order AS (
+  SELECT 
+    case_id,
+    activity,
+    ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS seq_order
+  FROM order_event_log
+)
+SELECT DISTINCT a.case_id
+FROM activity_order a
+JOIN activity_order b ON a.case_id = b.case_id
+WHERE a.activity = 'Ship Goods'
+  AND b.activity = 'Confirm Shipment'
+  AND a.seq_order < b.seq_order;
+```
+
+```sql
+-- Flag cases where Validate Stock never appears at all
+SELECT DISTINCT oel.case_id
+FROM order_event_log oel
+WHERE oel.case_id NOT IN (
+  SELECT case_id FROM order_event_log WHERE activity = 'Validate Stock'
+);
+```
+
+---
+
+## Anomaly 3: Out-of-Sequence Activities (Case 1004)
+
+### Description
+Case 1004 has the most severe ordering violations:
+- **Receive Payment** (event_id 22) occurs immediately after **Register Order** — *before* any fulfillment or invoicing steps
+- **Issue Invoice** (event_id 23) occurs before **Validate Stock**, **Confirm Shipment**, and **Ship Goods**
+- **Ship Goods** (event_id 25) occurs after invoicing and after receiving payment
+
+Additionally: **Validate Stock is completely missing** from this case.
+
+And **Confirm Shipment has `shipment_scheduled=N`**, yet goods were still shipped.
+
+### Hypotheses
+1. **Prepaid / Advance Payment**: The customer may have paid upfront (e.g., online prepayment), and the system logged payment early. However, this still doesn't justify shipping before stock validation.
+2. **Partial/Automated Process Execution**: A system or bot may have processed invoice and payment steps automatically based on order registration, while fulfillment was handled separately or delayed.
+3. **Fraud or Policy Violation**: Receiving payment before shipping without stock validation is a significant exposure — goods might not exist in inventory, leading to fulfillment failures or customer disputes.
+4. **Order Type Exception**: There may be a special order or customer tier (e.g., VIP, corporate prepaid) that the current analysis isn't accounting for.
+5. **Data Entry or Migration Error**: The event log may be corrupted, truncated, or improperly imported for this case.
+
+### Proposed SQL Queries
+
+```sql
+-- Find cases where Receive Payment occurs before Issue Invoice
+WITH activity_order AS (
+  SELECT case_id, activity,
+    ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS seq_order
+  FROM order_event_log
+)
+SELECT DISTINCT a.case_id
+FROM activity_order a
+JOIN activity_order b ON a.case_id = b.case_id
+WHERE a.activity = 'Receive Payment'
+  AND b.activity = 'Issue Invoice'
+  AND a.seq_order < b.seq_order;
+```
+
+```sql
+-- Find cases where any activity occurs before Perform Credit Check (excluding Register Order)
+WITH activity_order AS (
+  SELECT case_id, activity,
+    ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS seq_order
+  FROM order_event_log
+)
+SELECT DISTINCT a.case_id, a.activity
+FROM activity_order a
+JOIN activity_order b ON a.case_id = b.case_id
+WHERE b.activity = 'Perform Credit Check'
+  AND a.seq_order < b.seq_order
+  AND a.activity != 'Register Order';
+```
+
+```sql
+-- Verify Validate Stock is missing for case 1004
+SELECT case_id, COUNT(*) FILTER (WHERE activity = 'Validate Stock') AS stock_validations
+FROM order_event_log
+GROUP BY case_id
+HAVING COUNT(*) FILTER (WHERE activity = 'Validate Stock') = 0;
+```
+
+---
+
+## Anomaly 4: Missing Activities Across Cases
+
+| Case | Missing Activities |
+|------|-------------------|
+| 1003 | **Validate Stock** — not present at all |
+| 1004 | **Validate Stock** — not present at all; **Perform Credit Check** — not present at all |
+
+### Hypotheses
+1. **Optional Step Configuration**: Validate Stock might be conditional (e.g., only for non-standard items, low-stock items, or certain product categories).
+2. **System Integration Gap**: A warehouse management system (WMS) may perform stock validation but fail to write back to the central event log.
+3. **Log Truncation or Filtering**: Events may have been selectively logged or filtered from the data pipeline.
+4. **Process Drift**: Over time, teams may have informally dropped stock validation, relying on automated inventory systems that don't log discrete events.
+
+### Proposed SQL Queries
+
+```sql
+-- Comprehensive missing activity analysis
+WITH expected_activities AS (
+  SELECT unnest(ARRAY[
+    'Register Order', 'Perform Credit Check', 'Validate Stock',
+    'Confirm Shipment', 'Ship Goods', 'Issue Invoice', 'Receive Payment'
+  ]) AS activity
+),
+cases AS (
+  SELECT DISTINCT case_id FROM order_event_log
+)
+SELECT c.case_id, ea.activity AS missing_activity
+FROM cases c
+CROSS JOIN expected_activities ea
+WHERE NOT EXISTS (
+  SELECT 1 FROM order_event_log oel
+  WHERE oel.case_id = c.case_id AND oel.activity = ea.activity
+)
+ORDER BY c.case_id, ea.activity;
+```
+
+---
+
+## Anomaly 5: Confirm Shipment with `shipment_scheduled=N` Followed by Actual Shipment (Case 1004)
+
+### Description
+In case 1004, the **Confirm Shipment** event has `additional_info = 'shipment_scheduled=N'`, indicating the system or manager explicitly declined to schedule the shipment. However, **Ship Goods** still occurs 35 minutes later.
+
+### Hypotheses
+1. **Override/Escalation**: A senior manager may have overridden the system's recommendation and authorized shipment despite the initial decline.
+2. **Data Field Misinterpretation**: The field `shipment_scheduled=N` might mean something different than expected (e.g., "not yet scheduled at time of entry" rather than "will not ship").
+3. **Warehouse Ignoring Logistics Decision**: The warehouse team may have proceeded with shipping without waiting for logistics approval — a serious process breach.
+4. **System Race Condition**: The shipment confirmation and goods dispatch may have been triggered simultaneously by parallel automated processes.
+
+### Proposed SQL Queries
+
+```sql
+-- Find cases where Confirm Shipment indicates N but Ship Goods still occurs
+WITH confirm_decline AS (
+  SELECT case_id, timestamp
+  FROM order_event_log
+  WHERE activity = 'Confirm Shipment'
+    AND additional_info LIKE '%shipment_scheduled=N%'
+),
+ship_after_decline AS (
+  SELECT cd.case_id
+  FROM confirm_decline cd
+  JOIN order_event_log oel
+    ON cd.case_id = oel.case_id
+    AND oel.activity = 'Ship Goods'
+    AND oel.timestamp > cd.timestamp
+)
+SELECT * FROM ship_after_decline;
+```
+
+---
+
+## Anomaly 6: Customer 502 (Case 1002) Has Low Credit Score but Paid Early
+
+### Description
+Case 1002 has `credit_score=650` (the lowest among all cases) and is a `priority` order, yet it was the first to receive payment (2024-02-02 10:00:00). The order value is $2,000 despite the borderline credit score.
+
+### Hypotheses
+1. **Manual Credit Override**: A credit officer may have manually approved the order despite the low score, possibly due to customer relationship considerations.
+2. **Priority Order Policy**: Priority orders may have relaxed credit thresholds to expedite processing.
+3. **Prepayment Requirement**: The customer may have been required to prepay due to credit risk, explaining early payment.
+4. **Incentive-Driven Behavior**: The customer may have paid early to maintain the relationship or receive a discount.
+
+### Proposed SQL Queries
+
+```sql
+-- Correlation between credit score, order value, and time to payment
+SELECT 
+  oel_credit.case_id,
+  oel_credit.additional_info AS credit_info,
+  oel_pay.additional_info AS payment_info,
+  EXTRACT(EPOCH FROM (oel_pay.timestamp - oel_reg.timestamp)) / 3600 AS hours_to_payment
+FROM order_event_log oel_credit
+JOIN order_event_log oel_pay 
+  ON oel_credit.case_id = oel_pay.case_id AND oel_pay.activity = 'Receive Payment'
+JOIN order_event_log oel_reg 
+  ON oel_credit.case_id = oel_reg.case_id AND oel_reg.activity = 'Register Order'
+WHERE oel_credit.activity = 'Perform Credit Check'
+ORDER BY 
+  CAST(SPLIT_PART(oel_credit.additional_info, '=', 2) AS INTEGER);
+```
+
+---
+
+## Anomaly 7: Duplicate / Cross-Department Resource Utilization
+
+### Description
+- `WarehouseClerk_3` appears in both case 1001 (Ship Goods) and case 1003 (Ship Goods) at nearly the same time
+- `FinanceTeam_02` handles payment in cases 1001, 1002, 1003, and 1004 — potentially a single point of failure
+- `CreditOfficer_1` handles credit checks for cases 1001 and 1003
+
+### Hypotheses
+1. **Workload Bottleneck**: FinanceTeam_02 may be the only cashier, creating a processing bottleneck.
+2. **Shared Resource Pool**: This may be expected if resources are pooled across orders.
+3. **Capacity Planning Issue**: A single cashier handling all payments could lead to delays during peak volume.
+4. **Fraud/Control Risk**: One resource handling all payments without segregation of duties could be a control weakness.
+
+### Proposed SQL Queries
+
+```sql
+-- Analyze resource utilization concentration
+SELECT 
+  r.resource_id,
+  r.role,
+  r.department,
+  COUNT(DISTINCT oel.case_id) AS cases_handled,
+  COUNT(oel.event_id) AS total_events
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+GROUP BY r.resource_id, r.role, r.department
+ORDER BY cases_handled DESC;
+```
+
+```sql
+-- Check for same resource handling consecutive events across overlapping time windows
+SELECT 
+  a.resource,
+  a.case_id AS case_a,
+  b.case_id AS case_b,
+  a.activity AS activity_a,
+  b.activity AS activity_b,
+  a.timestamp AS time_a,
+  b.timestamp AS time_b
+FROM order_event_log a
+JOIN order_event_log b 
+  ON a.resource = b.resource
+  AND a.event_id != b.event_id
+  AND a.case_id != b.case_id
+  AND ABS(EXTRACT(EPOCH FROM (a.timestamp - b.timestamp))) < 300
+ORDER BY a.resource, a.timestamp;
+```
+
+---
+
+## Anomaly 8: Order 1004 Payment vs. Invoice Temporal Gap Issue
+
+### Description
+In case 1004:
+- **Receive Payment** at 09:05:00
+- **Issue Invoice** at 09:20:00
+
+Payment was received **15 minutes before** the invoice was issued. This is a fundamental process violation — you cannot receive payment for an invoice that doesn't exist yet.
+
+### Hypotheses
+1. **Prepayment/Deposit Model**: The order may require advance payment, and the invoice is generated afterward as a receipt.
+2. **System Misconfiguration**: The "Receive Payment" event may actually represent an authorization hold or deposit, not final payment.
+3. **Third-Party Payment Gateway**: The payment may have been auto-captured by a payment gateway at order creation, while invoice generation runs on a separate, delayed workflow.
+
+### Proposed SQL Queries
+
+```sql
+-- Find all cases where payment is received before invoice is issued
+SELECT 
+  pay.case_id,
+  pay.timestamp AS payment_time,
+  inv.timestamp AS invoice_time,
+  EXTRACT(EPOCH FROM (inv.timestamp - pay.timestamp)) / 60 AS minutes_diff
+FROM order_event_log pay
+JOIN order_event_log inv 
+  ON pay.case_id = inv.case_id AND inv.activity = 'Issue Invoice'
+WHERE pay.activity = 'Receive Payment'
+  AND pay.timestamp < inv.timestamp;
+```
+
+---
+
+## Summary Severity Matrix
+
+| Case | Anomaly | Severity | Category |
+|------|---------|----------|----------|
+| 1002 | Ship before credit check & stock validation |  High | Process Violation |
+| 1002 | Invoice before stock validation |  Medium | Out-of-Sequence |
+| 1003 | Ship before stock validation & confirmation |  High | Process Violation |
+| 1003 | Missing Validate Stock entirely |  High | Missing Activity |
+| 1004 | Receive payment before invoice issued |  High | Financial Risk |
+| 1004 | Missing Perform Credit Check entirely |  High | Missing Activity |
+| 1004 | Shipment confirmed N, yet goods shipped |  High | Control Breach |
+| 1004 | Missing Validate Stock |  High | Missing Activity |
+| 1004 | Issue Invoice before fulfillment steps |  Medium | Out-of-Sequence |
+| All | Single cashier (FinanceTeam_02) for all payments |  Medium | Resource Risk |
+
+---
+
+## Recommendations
+
+1. **Immediate**: Investigate cases 1003 and 1004 for potential fraud or systemic process failures — missing credit checks combined with early invoicing/payment and ignoring shipment declines represent the highest risk scenarios.
+2. **Short-term**: Implement database-level constraints or application-level workflow guards to enforce prerequisite activity completion before downstream steps are allowed.
+3. **Medium-term**: Build a process conformance dashboard using the SQL queries above to monitor real-time deviations.
+4. **Long-term**: Review the `priority` order workflow to understand if the relaxed sequencing is intentional policy or an undocumented bypass that should be formalized or eliminated.

@@ -1,0 +1,134 @@
+Below is an independent analysis of anomalies observed in the temporal profile model, along with plausible hypotheses for their occurrence and corresponding SQL-based verification strategies derived from the provided database schema.  
+
+---
+
+### **Identified Anomalies in the Temporal Profile Model**
+
+1. **('R', 'P'): Average 25 hours with very low standard deviation (1 hour)**  
+   - **Observation:** The near-fixed timing between claim receipt and approval is unrealistic in a manual or semi-manual claims process. Natural variability in review needs, claimant responsiveness, or workload would typically produce higher variance.
+
+2. **('P', 'N'): Average 7 days with high standard deviation (2 days)**  
+   - **Observation:** Notification occurs a week on average after approval—far too long for customer communication. The large spread suggests inconsistent handling, possibly indicating batch processing, system failures, or manual intervention delays.
+
+3. **('A', 'C'): Average 2 hours from Assign to Close**  
+   - **Observation:** Claims appear to be closed within ~2 hours of assignment without reliably passing through required intermediate steps (Evaluate, Approve, Notify), which contradicts the intended workflow.
+
+4. **('E', 'N'): Average 5 minutes between Evaluate and Notify**  
+   - **Observation:** This extremely tight interval suggests evaluation and notification may be automated as a single step or that the "Evaluate" activity is recorded prematurely—potentially bypassing formal approval.
+
+---
+
+### **Plausible Hypotheses for Anomalies**
+
+- **Automated/scripted claim processing:** Certain high-volume or low-value claims might be auto-approved and notified rapidly, explaining low variability in RP and tight EN intervals.
+- **Backlog in notification system:** A downstream bottleneck (e.g., email/SMS gateway failure, cron job delay) could cause spikes in PN duration.
+- **Informal closing practices:** Adjusters or system rules may allow premature closure after assignment, especially for denied or ineligible claims that skip standard evaluation.
+- **Data recording artifacts:** Timestamps may reflect system batch jobs (e.g., nightly runs) rather than real-time actions, inflating or compressing observed durations.
+- **Regional or adjuster-specific behavior:** Resource constraints or differing workflows across regions/adjusters could drive inconsistent timing patterns.
+
+---
+
+### **SQL-Based Verification Queries**
+
+#### 1. **Detect premature claim closures (Assign  Close without intermediate steps)**
+```sql
+WITH closed_swiftly AS (
+    SELECT a.claim_id,
+           MIN(CASE WHEN a.activity = 'A' THEN a.timestamp END) AS assigned_at,
+           MIN(CASE WHEN a.activity = 'C' THEN a.timestamp END) AS closed_at
+    FROM claim_events a
+    GROUP BY a.claim_id
+    HAVING MIN(CASE WHEN a.activity = 'A' THEN a.timestamp END) IS NOT NULL
+       AND MIN(CASE WHEN a.activity = 'C' THEN a.timestamp END) IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1 
+           FROM claim_events e 
+           WHERE e.claim_id = a.claim_id 
+             AND e.activity IN ('E', 'P', 'N')
+       )
+)
+SELECT c.claim_id, cl.claim_type, cl.adjuster_id, cs.assigned_at, cs.closed_at
+FROM closed_swiftly cs
+JOIN claims cl ON cs.claim_id = cl.claim_id
+ORDER BY cs.assigned_at;
+```
+
+#### 2. **Analyze extreme delays between Approve and Notify**
+```sql
+SELECT p_n.claim_id,
+       EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS seconds_approve_to_notify,
+       c.claim_type,
+       a.region,
+       a.specialization
+FROM (
+    SELECT claim_id, MIN(timestamp) AS timestamp
+    FROM claim_events
+    WHERE activity = 'P'
+    GROUP BY claim_id
+) p
+JOIN (
+    SELECT claim_id, MIN(timestamp) AS timestamp
+    FROM claim_events
+    WHERE activity = 'N'
+    GROUP BY claim_id
+) n ON p.claim_id = n.claim_id
+JOIN claims c ON p.claim_id = c.claim_id
+JOIN adjusters a ON c.adjuster_id = a.adjuster_id
+WHERE EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) > 604800  -- >7 days
+ORDER BY seconds_approve_to_notify DESC;
+```
+
+#### 3. **Examine consistency of Receive-to-Approve timing by adjuster region**
+```sql
+SELECT a.region,
+       COUNT(*) AS num_claims,
+       AVG(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp))) AS avg_sec_R_to_P,
+       STDDEV(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp))) AS stddev_sec_R_to_P,
+       MIN(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp))) AS min_sec,
+       MAX(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp))) AS max_sec
+FROM (
+    SELECT claim_id, MIN(timestamp) AS timestamp
+    FROM claim_events
+    WHERE activity = 'R'
+    GROUP BY claim_id
+) r
+JOIN (
+    SELECT claim_id, MIN(timestamp) AS timestamp
+    FROM claim_events
+    WHERE activity = 'P'
+    GROUP BY claim_id
+) p ON r.claim_id = p.claim_id
+JOIN claims c ON r.claim_id = c.claim_id
+JOIN adjusters a ON c.adjuster_id = a.adjuster_id
+GROUP BY a.region
+HAVING COUNT(*) > 10
+ORDER BY stddev_sec_R_to_P ASC;  -- Regions with unnaturally low variance
+```
+
+#### 4. **Check for EvaluateNotify pairs occurring within seconds (possible data recording issue)**
+```sql
+SELECT e_n.claim_id,
+       EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS sec_eval_to_notify,
+       ce.resource,
+       s.submission_date
+FROM (
+    SELECT claim_id, MIN(timestamp) AS timestamp
+    FROM claim_events
+    WHERE activity = 'E'
+    GROUP BY claim_id
+) e
+JOIN (
+    SELECT claim_id, MIN(timestamp) AS timestamp
+    FROM claim_events
+    WHERE activity = 'N'
+    GROUP BY claim_id
+) n ON e.claim_id = n.claim_id
+JOIN claim_events ce ON e.claim_id = ce.claim_id AND ce.activity = 'E'
+JOIN claims s ON e.claim_id = s.claim_id
+WHERE EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) < 60  -- <1 minute
+ORDER BY sec_eval_to_notify ASC;
+```
+
+---
+
+These queries enable targeted investigation of the suspected anomalies by linking temporal irregularities to operational dimensions such as geography, claim type, adjuster, and resource activity patterns.

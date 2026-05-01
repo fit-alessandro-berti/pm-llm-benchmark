@@ -325,7 +325,8 @@ MODELS_DICT = {
             "moonshotai/kimi-k2.6", "xiaomi/mimo-v2.5", "xiaomi/mimo-v2.5-pro",
             "inclusionai/ling-2.6-1t:free", "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro",
             "qwen/qwen3.6-max-preview", "qwen/qwen3.6-27b", "qwen/qwen3.6-flash",
-            "poolside/laguna-m.1:free", "poolside/laguna-xs.2:free"
+            "poolside/laguna-m.1:free", "poolside/laguna-xs.2:free",
+            "openrouter/owl-alpha", "ibm-granite/granite-4.1-8b"
         }
     },
     "manual": {
