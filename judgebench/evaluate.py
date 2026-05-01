@@ -50,6 +50,10 @@ JUDGE_LLMS: Sequence[Tuple[Any, ...]] = [
         {"api_url": "https://api.x.ai/v1/responses", "api_key": os.environ["GROK_API_KEY"]},
     ),
     (
+        "grok-4.20-0309-non-reasoning",
+        {"api_url": "https://api.x.ai/v1/responses", "api_key": os.environ["GROK_API_KEY"]},
+    ),
+    (
         "grok-4-1-fast-reasoning",
         {"api_url": "https://api.x.ai/v1/responses", "api_key": os.environ["GROK_API_KEY"]},
     ),
