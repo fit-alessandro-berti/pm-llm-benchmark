@@ -1,0 +1,432 @@
+<think>
+Thinking Process:
+
+1.  **Deconstruct the Request:**
+    *   **Context:** PostgreSQL database with `claims`, `adjusters`, `claim_events`.
+    *   **Schema:** `claim_events` has `claim_id`, `activity` (R, A, E, P, N, C), `timestamp`, `resource`.
+    *   **Temporal Profile:** A dictionary of tuples `(Activity1, Activity2)` mapping to `(AVG, STDEV)`.
+    *   **Profile Data:**
+        *   `('R', 'A'): (3600, 600)` -> 1h avg, 10m stdev.
+        *   `('R', 'E'): (86400, 28800)` -> 1d avg, 8h stdev.
+        *   `('R', 'P'): (90000, 3600)` -> ~25h avg, 1h stdev. *Anomaly noted: Low stdev for long duration.*
+        *   `('A', 'C'): (7200, 3600)` -> 2h avg, 1h stdev. *Anomaly noted: Short closure after assign.*
+        *   `('E', 'N'): (300, 60)` -> 5m avg, 1m stdev. *Anomaly noted: Very quick.*
+        *   `('E', 'C'): (3600, 3000)` -> 1h avg, 50m stdev.
+        *   `('P', 'N'): (604800, 172800)` -> 7d avg, 2d stdev. *Anomaly noted: Long delay, high variance.*
+        *   `('N', 'C'): (1800, 300)` -> 30m avg, 5m stdev.
+    *   **Tasks:**
+        *   Identify anomalies.
+        *   Generate hypotheses.
+        *   Propose SQL verification queries.
+
+2.  **Analyze Anomalies & Hypotheses:**
+    *   *Anomaly 1: `R->P` (Receive to Approve).*
+        *   Stats: Avg ~25h, STDEV 1h.
+        *   Observation: The STDEV is very small relative to the mean (CV = 1/25 = 0.04). This implies almost every claim goes from R to P in roughly 25h +/- 1h.
+        *   Hypothesis: This is too consistent for a human process. Likely a batch process, a hard-coded SLA trigger, or a system bug where `P` is automatically generated at a fixed offset from `R`. Or perhaps `P` is missing and the model is skipping steps incorrectly, but the low STDEV suggests automation.
+        *   *Check:* Does `E` and `A` happen? If `R->P` is tight, maybe `E` is skipped? The profile has `R->E` with high variance, so `E` exists. Maybe `E` happens, but `P` is rigid? Or maybe `P` is timestamped incorrectly?
+
+    *   *Anomaly 2: `P->N` (Approve to Notify).*
+        *   Stats: Avg 7 days, STDEV 2 days.
+        *   Observation: Huge delay. 7 days is a long time to notify a customer after approval. High variance means some are fast, some are very slow.
+        *   Hypothesis: Manual notification backlog. Email server issues? Customer communication is done via a separate system not integrated? Or perhaps `N` is only done for specific claim types? High variance suggests resource constraints or manual intervention delays.
+
+    *   *Anomaly 3: `A->C` (Assign to Close).*
+        *   Stats: Avg 2h, STDEV 1h.
+        *   Observation: Claims are closed very quickly after assignment.
+        *   Hypothesis: Premature closure. Claims are assigned and immediately closed without evaluation? Or `C` is triggered by a system error? Or maybe `C` is being logged incorrectly? If `A->C` is 2h, and `A->E` or `E->C` should exist, this suggests `C` happens too soon. Could be a "Reject" claim that is closed fast? But `C` is just "Close". Maybe rejected claims are closed immediately? Or `C` is a typo for something else?
+
+    *   *Anomaly 4: `E->N` (Evaluate to Notify).*
+        *   Stats: Avg 5 min, STDEV 1 min.
+        *   Observation: Extremely fast. 5 minutes from evaluation to notification.
+        *   Hypothesis: Automated notification immediately after evaluation. If the process requires manual review or approval between E and N, this is a violation. Or `N` is an automated status update, not a customer notification? Or the timestamp is wrong? Low STDEV suggests automation.
+
+    *   *Anomaly 5: `E->C` vs `A->C`.
+        *   `A->C` is 2h. `E->C` is 1h.
+        *   This implies `C` happens very close to `E` as well.
+        *   If `A->C` is 2h, and `E` usually happens after `A`, then `E->C` being 1h is consistent with `C` happening right after `E`.
+        *   This reinforces the "Premature Closure" or "Rapid Closure" hypothesis. Claims are being closed almost immediately after evaluation/assignment.
+
+3.  **Structure the Output:**
+    *   The user asked for: Anomalies, Hypotheses, SQL Queries.
+    *   I should group these logically.
+    *   *Anomalies Section:* List the pairs with issues.
+    *   *Hypotheses Section:* Map hypotheses to anomalies.
+    *   *SQL Section:* Provide queries.
+
+4.  **Draft SQL Queries:**
+    *   *Goal 1: Identify claims with deviations.*
+        *   Need to calculate time between activities for each claim.
+        *   `claim_events` has `activity`. Need to pivot or self-join.
+        *   Self-join is safer in standard SQL.
+        *   Query to find `R->P` times:
+            ```sql
+            SELECT ce1.claim_id,
+                   ce1.timestamp as r_time,
+                   ce2.timestamp as p_time,
+                   EXTRACT(EPOCH FROM (ce2.timestamp - ce1.timestamp)) as diff_seconds
+            FROM claim_events ce1
+            JOIN claim_events ce2 ON ce1.claim_id = ce2.claim_id
+            WHERE ce1.activity = 'R' AND ce2.activity = 'P'
+            AND ce1.timestamp < ce2.timestamp;
+            ```
+        *   Filter by Z-score or range.
+        *   Z-score logic: `ABS(diff - avg) / stdev > threshold`.
+        *   For `R->P`: Avg 90000, Stdev 3600.
+        *   Query: `WHERE ABS(diff - 90000) / 3600 > 2` (or similar).
+
+    *   *Goal 2: Correlate with resources/adjusters.*
+        *   Join with `adjusters` via `resource`? `claim_events.resource` is VARCHAR. `adjusters.adjuster_id` is INTEGER.
+        *   Wait, `claim_events.resource` is VARCHAR, `adjusters` has `adjuster_id` INTEGER and `name` VARCHAR.
+        *   The prompt says `resource` is "The resource performing the activity".
+        *   Usually, `resource` might match `adjuster_id` cast to string, or `name`.
+        *   I should assume `claim_events.resource` can be joined to `adjusters` or at least used to filter.
+        *   Query to check `A->C` by adjuster:
+            ```sql
+            SELECT a.name, COUNT(*), AVG(...)
+            FROM claim_events ce
+            JOIN adjusters a ON a.name = ce.resource -- Assumption based on schema ambiguity
+            WHERE ce.activity IN ('A', 'C')
+            ...
+            ```
+        *   Better to use `resource` directly if the join is tricky, or suggest the join condition.
+        *   I'll propose a query that groups by `resource` to find outliers.
+
+    *   *Goal 3: Filter specific patterns.*
+        *   `P->N` long delay.
+        *   `A->C` short closure.
+        *   Query for `A->C` < threshold:
+            ```sql
+            SELECT ce.claim_id, ce.resource
+            FROM claim_events ce
+            JOIN claim_events ce_close ON ...
+            WHERE ce.activity = 'A' AND ce_close.activity = 'C'
+            AND diff < 7200 - 2*3600; -- 2 hours - 2 stdevs
+            ```
+
+    *   *Refining SQL for PostgreSQL:*
+        *   Use `EXTRACT(EPOCH FROM ...)` for seconds.
+        *   Use `LAG`/`LEAD`? Self-join is more robust for arbitrary pairs.
+        *   Window functions could work if events are ordered, but self-join is clearer for "Time between Activity X and Activity Y".
+        *   I'll provide self-join based queries as they are standard and clear.
+
+    *   *Specific Query Ideas:*
+        *   *Query 1: R->P Anomaly Detection.*
+            ```sql
+            WITH r_p_times AS (
+                SELECT ce_r.claim_id,
+                       EXTRACT(EPOCH FROM (ce_p.timestamp - ce_r.timestamp)) as time_diff
+                FROM claim_events ce_r
+                JOIN claim_events ce_p ON ce_r.claim_id = ce_p.claim_id
+                WHERE ce_r.activity = 'R' AND ce_p.activity = 'P'
+                  AND ce_r.timestamp < ce_p.timestamp
+            )
+            SELECT claim_id, time_diff,
+                   (time_diff - 90000) / 3600 as z_score
+            FROM r_p_times
+            WHERE ABS((time_diff - 90000) / 3600) > 2;
+            ```
+        *   *Query 2: A->C Premature Closure.*
+            ```sql
+            WITH a_c_times AS (
+                SELECT ce_a.claim_id, ce_a.resource as assign_resource,
+                       EXTRACT(EPOCH FROM (ce_c.timestamp - ce_a.timestamp)) as time_diff
+                FROM claim_events ce_a
+                JOIN claim_events ce_c ON ce_a.claim_id = ce_c.claim_id
+                WHERE ce_a.activity = 'A' AND ce_c.activity = 'C'
+                  AND ce_a.timestamp < ce_c.timestamp
+            )
+            SELECT claim_id, assign_resource, time_diff
+            FROM a_c_times
+            WHERE time_diff < 7200 - (2 * 3600); -- Less than 2 hours - 2 stdevs
+            ```
+        *   *Query 3: P->N Delay Analysis by Resource.*
+            ```sql
+            WITH p_n_times AS (
+                SELECT ce_p.claim_id, ce_p.resource,
+                       EXTRACT(EPOCH FROM (ce_n.timestamp - ce_p.timestamp)) as time_diff
+                FROM claim_events ce_p
+                JOIN claim_events ce_n ON ce_p.claim_id = ce_n.claim_id
+                WHERE ce_p.activity = 'P' AND ce_n.activity = 'N'
+                  AND ce_p.timestamp < ce_n.timestamp
+            )
+            SELECT resource, COUNT(*), AVG(time_diff), STDDEV(time_diff)
+            FROM p_n_times
+            GROUP BY resource
+            HAVING AVG(time_diff) > 604800 + (2 * 172800); -- Above mean + 2 stdevs
+            ```
+        *   *Query 4: E->N Automation Check.*
+            ```sql
+            SELECT claim_id, resource,
+                   EXTRACT(EPOCH FROM (ce_n.timestamp - ce_e.timestamp)) as time_diff
+            FROM claim_events ce_e
+            JOIN claim_events ce_n ON ce_e.claim_id = ce_n.claim_id
+            WHERE ce_e.activity = 'E' AND ce_n.activity = 'N'
+              AND ce_e.timestamp < ce_n.timestamp
+            ORDER BY time_diff ASC
+            LIMIT 20; -- Check for very short times
+            ```
+
+5.  **Review and Refine Content:**
+    *   *Anomalies:*
+        *   `R->P`: Low STDEV (1h) for ~25h avg. Indicates rigidity/automation.
+        *   `P->N`: High avg (7d), High STDEV (2d). Indicates backlog/inconsistency.
+        *   `A->C`: Low avg (2h). Indicates rapid closure, potential skip of E/P.
+        *   `E->N`: Very low avg (5m). Indicates automation or missing steps.
+        *   *Cross-check:* `R->P` is 25h. `R->E` is 24h. `R->P` and `R->E` are similar?
+        *   `R->E` avg 86400 (24h). `R->P` avg 90000 (25h).
+        *   This is interesting. `R->P` is only 1 hour longer than `R->E`.
+        *   This suggests `P` happens almost immediately after `E`.
+        *   If `R->E` is 24h and `R->P` is 25h, then `E->P` is roughly 1h.
+        *   The profile doesn't list `E->P`.
+        *   This supports the hypothesis that `P` is tightly coupled to `E`.
+        *   If `P` is automated after `E`, that explains `R->P` low STDEV?
+        *   Maybe `E` has variance, but `E->P` is fixed?
+        *   If `E->P` is fixed, `R->P` STDEV should equal `R->E` STDEV.
+        *   `R->E` STDEV is 28800 (8h). `R->P` STDEV is 3600 (1h).
+        *   This contradicts the math. If `R->P = R->E + E->P`, then STDEV(R->P) >= STDEV(R->E).
+        *   Here STDEV(R->P) < STDEV(R->E).
+        *   This implies `R->P` and `R->E` are not simply additive, or the data has issues.
+        *   Or `P` is sometimes generated directly from `R`?
+        *   Or `E` is missing for some claims, and `P` is generated from `R`?
+        *   If `P` is generated from `R` for some claims, and `E` happens for others, the distribution of `R->P` might be bimodal or compressed?
+        *   Actually, if `P` is generated from `R` with low variance, and `E` happens with high variance, the presence of `E` shouldn't reduce the variance of `R->P` unless `E` is correlated with `P` in a way that reduces variance?
+        *   No, mathematically, if `P` depends on `E`, variance adds.
+        *   The fact that `R->P` has lower variance than `R->E` is a strong anomaly.
+        *   It suggests `P` might be timestamped incorrectly, or `P` is not actually dependent on `E` in the data generation, or `P` is a batch event that overwrites timestamps?
+        *   Or `R->P` measures time to *first* P, and `R->E` measures time to *first* E.
+        *   If `P` is automated at 25h regardless of `E`, and `E` happens at 24h +/- 8h, then for claims where `E` happens late, `P` still happens at 25h?
+        *   That would mean `P` happens before `E` in some cases?
+        *   If `P` happens before `E`, then `R->P` would be 25h, and `R->E` could be 30h.
+        *   Then `R->P` variance is low because it's fixed, and `R->E` variance is high because `E` is delayed.
+        *   This implies `P` occurs before `E` in some cases.
+        *   This is a process violation: Approve before Evaluate.
+        *   This is a crucial insight!
+        *   I should add this to anomalies: `R->P` variance < `R->E` variance suggests `P` may precede `E` or is independent of `E`.
+
+    *   *Hypotheses Refinement:*
+        *   `R->P` vs `R->E`: `P` might occur before `E`. Process violation. Or `P` is a system artifact.
+        *   `A->C`: Claims closed in 2h. Likely `C` is logged for rejected claims or system errors. Or `C` is premature.
+        *   `P->N`: 7 days delay. Manual email queue? Or `N` is only sent on batch?
+        *   `E->N`: 5 mins. Automation.
+
+    *   *SQL Refinement:*
+        *   Add query to check `P` before `E`.
+        *   `SELECT claim_id FROM ... WHERE p.timestamp < e.timestamp`.
+        *   This verifies the variance anomaly.
+
+6.  **Final Polish:**
+    *   Organize by Anomalies, Hypotheses, SQL.
+    *   Ensure SQL uses PostgreSQL syntax (`EXTRACT(EPOCH FROM ...)`, `ABS`, etc.).
+    *   Make SQL queries copy-pasteable and clear.
+    *   Add comments explaining the logic.
+    *   Mention `ZETA` factor concept in queries (e.g., `> 2` or `> 3` standard deviations).
+    *   Result looks solid.
+
+</think>
+### 1. Identified Anomalies in Temporal Profile
+
+Based on the provided temporal profile, the following anomalies indicate deviations from a stable, human-driven process flow:
+
+*   **`R`  `P` (Receive to Approve): Suspiciously Low Variance**
+    *   **Observation:** Average time is ~25 hours with a standard deviation of only 1 hour.
+    *   **Anomaly:** The coefficient of variation is extremely low (~4%). In a manual or semi-automated process, approval timing usually correlates with evaluation complexity, leading to higher variance. A rigid 25h ± 1h window suggests a fixed schedule, batch processing, or an automated trigger that is decoupled from actual claim content.
+    *   **Cross-Check:** The average time `R`  `E` is ~24 hours with a high standard deviation (8 hours). Mathematically, if `P` depended on `E`, the variance of `R`  `P` should be at least as large as `R`  `E`. The fact that `R`  `P` has *lower* variance suggests `P` may be generated independently of `E`, or `P` occurs *before* `E` in some cases, violating process logic.
+
+*   **`P`  `N` (Approve to Notify): Excessive Delay and High Variance**
+    *   **Observation:** Average delay is 7 days with a standard deviation of 2 days.
+    *   **Anomaly:** A week-long delay between approval and customer notification is unusually long and inconsistent. This indicates a severe bottleneck, likely due to manual notification queues, email server issues, or a lack of integration between the approval system and the notification module.
+
+*   **`A`  `C` (Assign to Close): Premature Closure**
+    *   **Observation:** Average time is only 2 hours.
+    *   **Anomaly:** Claims are being closed very shortly after assignment. Given the process flow, claims should undergo Evaluation (`E`) and Approval (`P`) before closure. A 2-hour average suggests claims are being closed prematurely, possibly due to system errors, auto-closure of rejected claims, or incorrect logging of the `C` activity.
+
+*   **`E`  `N` (Evaluate to Notify): Rapid Transition**
+    *   **Observation:** Average time is 5 minutes.
+    *   **Anomaly:** Notification occurs almost immediately after evaluation. This low latency suggests an automated notification triggered instantly upon evaluation completion, potentially bypassing manual review steps or approval gates.
+
+---
+
+### 2. Hypotheses for Anomalies
+
+*   **Hypothesis 1: Automated/Rigid Approval Logic (`R`  `P`)**
+    The system may be generating an `Approve` event at a fixed offset from submission (e.g., 25 hours) regardless of claim status. Alternatively, `P` might be a system artifact or a batch job that overwrites timestamps, explaining the low variance. The variance discrepancy with `R`  `E` strongly suggests `P` may not be causally linked to `E`, or `P` precedes `E` in some executions.
+
+*   **Hypothesis 2: Process Violation – Approval Before Evaluation (`R`  `P` vs `R`  `E`)**
+    Due to the low variance of `R`  `P` compared to `R`  `E`, it is possible that for some claims, the `Approve` event is timestamped before the `Evaluate` event. This indicates a data integrity issue or a workflow bug where approvals are generated prematurely.
+
+*   **Hypothesis 3: Premature Closure or Error Logging (`A`  `C`)**
+    The short `A`  `C` interval suggests that claims are being closed without completing the core workflow. This could be caused by:
+    *   Auto-closure of clearly invalid or duplicate claims.
+    *   A bug where the `Close` activity is triggered immediately after `Assign`.
+    *   Incorrect mapping of activities (e.g., `C` being used for "Cancel" or "Reject" in the database).
+
+*   **Hypothesis 4: Notification Backlog (`P`  `N`)**
+    The 7-day delay and high variance indicate that notifications are not sent automatically upon approval. A manual process or a separate notification service with a large backlog is likely causing delays. The variance suggests resource constraints vary significantly over time.
+
+*   **Hypothesis 5: Automated Evaluation Notifications (`E`  `N`)**
+    The 5-minute interval suggests that notifications are triggered automatically by the evaluation module, possibly sending status updates to the system or customer without requiring human intervention or approval.
+
+---
+
+### 3. SQL Verification Queries
+
+The following PostgreSQL queries are designed to verify the anomalies and hypotheses. They calculate time differences in seconds, compute Z-scores based on the temporal profile, and correlate findings with resources and claim attributes.
+
+#### Query 1: Detect `R`  `P` Anomalies and Check for `P` Before `E`
+Verifies the rigid timing of `R`  `P` and checks if `P` occurs before `E` (which would explain the variance anomaly).
+
+```sql
+WITH r_p_times AS (
+    SELECT 
+        ce_r.claim_id,
+        EXTRACT(EPOCH FROM (ce_p.timestamp - ce_r.timestamp)) AS time_diff_seconds,
+        (EXTRACT(EPOCH FROM (ce_p.timestamp - ce_r.timestamp)) - 90000) / 3600 AS z_score
+    FROM claim_events ce_r
+    JOIN claim_events ce_p 
+        ON ce_r.claim_id = ce_p.claim_id
+    WHERE ce_r.activity = 'R' 
+      AND ce_p.activity = 'P' 
+      AND ce_r.timestamp < ce_p.timestamp
+),
+r_e_times AS (
+    SELECT 
+        ce_r.claim_id,
+        EXTRACT(EPOCH FROM (ce_e.timestamp - ce_r.timestamp)) AS time_diff_seconds
+    FROM claim_events ce_r
+    JOIN claim_events ce_e 
+        ON ce_r.claim_id = ce_e.claim_id
+    WHERE ce_r.activity = 'R' 
+      AND ce_e.activity = 'E' 
+      AND ce_r.timestamp < ce_e.timestamp
+),
+p_before_e AS (
+    SELECT 
+        r_p.claim_id,
+        r_p.time_diff_seconds AS r_p_time,
+        r_e.time_diff_seconds AS r_e_time,
+        r_e.time_diff_seconds - r_p.time_diff_seconds AS p_before_e_delta
+    FROM r_p_times r_p
+    JOIN r_e_times r_e ON r_p.claim_id = r_e.claim_id
+    WHERE r_p.time_diff_seconds < r_e.time_diff_seconds
+)
+SELECT 
+    'R_P_ANOMALY' AS anomaly_type,
+    claim_id,
+    time_diff_seconds,
+    z_score
+FROM r_p_times
+WHERE ABS(z_score) > 2.0  -- More than 2 standard deviations from mean
+
+UNION ALL
+
+SELECT 
+    'P_BEFORE_E' AS anomaly_type,
+    claim_id,
+    r_p_time,
+    p_before_e_delta AS z_score  -- Using delta instead of Z for this check
+FROM p_before_e
+WHERE p_before_e_delta < 0;   -- P happened before E
+```
+
+#### Query 2: Identify Premature Closures (`A`  `C`)
+Finds claims closed within 2 hours of assignment (mean - 2) and correlates with claim type and adjuster.
+
+```sql
+WITH a_c_times AS (
+    SELECT 
+        ce_a.claim_id,
+        ce_a.resource AS assign_resource,
+        EXTRACT(EPOCH FROM (ce_c.timestamp - ce_a.timestamp)) AS time_diff_seconds,
+        (EXTRACT(EPOCH FROM (ce_c.timestamp - ce_a.timestamp)) - 7200) / 3600 AS z_score
+    FROM claim_events ce_a
+    JOIN claim_events ce_c 
+        ON ce_a.claim_id = ce_c.claim_id
+    WHERE ce_a.activity = 'A' 
+      AND ce_c.activity = 'C' 
+      AND ce_a.timestamp < ce_c.timestamp
+)
+SELECT 
+    act.claim_id,
+    act.assign_resource,
+    act.time_diff_seconds,
+    c.claim_type,
+    c.claim_amount,
+    a.specialization,
+    a.region
+FROM a_c_times act
+JOIN claims c ON act.claim_id = c.claim_id
+LEFT JOIN adjusters a ON a.name = act.assign_resource  -- Assuming resource matches adjuster name
+WHERE act.time_diff_seconds < 7200 - (2 * 3600)  -- Less than 2 hours - 2 stdevs
+ORDER BY act.time_diff_seconds ASC;
+```
+
+#### Query 3: Analyze `P`  `N` Delays by Resource
+Identifies resources (adjusters/systems) associated with excessive notification delays.
+
+```sql
+WITH p_n_times AS (
+    SELECT 
+        ce_p.claim_id,
+        ce_p.resource AS notify_resource,
+        EXTRACT(EPOCH FROM (ce_n.timestamp - ce_p.timestamp)) AS time_diff_seconds,
+        (EXTRACT(EPOCH FROM (ce_n.timestamp - ce_p.timestamp)) - 604800) / 172800 AS z_score
+    FROM claim_events ce_p
+    JOIN claim_events ce_n 
+        ON ce_p.claim_id = ce_n.claim_id
+    WHERE ce_p.activity = 'P' 
+      AND ce_n.activity = 'N' 
+      AND ce_p.timestamp < ce_n.timestamp
+)
+SELECT 
+    notify_resource,
+    COUNT(*) AS claim_count,
+    AVG(time_diff_seconds) AS avg_delay_seconds,
+    STDDEV(time_diff_seconds) AS stdev_delay_seconds,
+    MAX(time_diff_seconds) AS max_delay_seconds
+FROM p_n_times
+WHERE ABS(z_score) > 2.0  -- Focus on extreme delays
+GROUP BY notify_resource
+HAVING AVG(time_diff_seconds) > 604800 + (2 * 172800)  -- Average delay > Mean + 2
+ORDER BY avg_delay_seconds DESC;
+```
+
+#### Query 4: Check for Automated `E`  `N` Transitions
+Retrieves claims where evaluation to notification is extremely fast (< 10 minutes), suggesting automation.
+
+```sql
+SELECT 
+    ce_e.claim_id,
+    ce_e.resource AS eval_resource,
+    ce_n.resource AS notify_resource,
+    EXTRACT(EPOCH FROM (ce_n.timestamp - ce_e.timestamp)) AS time_diff_seconds,
+    c.claim_type
+FROM claim_events ce_e
+JOIN claim_events ce_n 
+    ON ce_e.claim_id = ce_n.claim_id
+JOIN claims c ON ce_e.claim_id = c.claim_id
+WHERE ce_e.activity = 'E' 
+  AND ce_n.activity = 'N' 
+  AND ce_e.timestamp < ce_n.timestamp
+  AND EXTRACT(EPOCH FROM (ce_n.timestamp - ce_e.timestamp)) < 600  -- Less than 10 minutes
+ORDER BY time_diff_seconds ASC
+LIMIT 50;
+```
+
+#### Query 5: Correlate `R`  `E` Variance with Claim Attributes
+Investigates why `R`  `E` has high variance (8 hours) by checking if claim type or amount influences evaluation time.
+
+```sql
+SELECT 
+    c.claim_type,
+    c.claim_amount,
+    EXTRACT(EPOCH FROM (ce_e.timestamp - c.submission_date)) AS time_to_eval_seconds,
+    (EXTRACT(EPOCH FROM (ce_e.timestamp - c.submission_date)) - 86400) / 28800 AS z_score
+FROM claim_events ce_e
+JOIN claims c ON ce_e.claim_id = c.claim_id
+WHERE ce_e.activity = 'E'
+  AND EXTRACT(EPOCH FROM (ce_e.timestamp - c.submission_date)) > 86400 + (2 * 28800)  -- > Mean + 2
+ORDER BY time_to_eval_seconds DESC;
+```
+
+These queries allow for targeted verification of the temporal anomalies, helping to pinpoint whether the issues stem from system automation, process violations, resource bottlenecks, or data integrity errors.

@@ -279,7 +279,7 @@ MODELS_DICT = {
         "models": {
             "phi4-reasoning", "phi4-reasoning:plus",
             "granite4:small-h",
-            "qwen3.5:4b", "qwen3.5:9b", "gemma4:e2b", "gemma4:e4b", "qwen3.6:35b-a3b"
+            "qwen3.5:4b", "qwen3.5:9b", "gemma4:e2b", "gemma4:e4b"
         }
     },
     "qwen": {
@@ -326,7 +326,8 @@ MODELS_DICT = {
             "inclusionai/ling-2.6-1t:free", "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro",
             "qwen/qwen3.6-max-preview", "qwen/qwen3.6-27b", "qwen/qwen3.6-flash",
             "poolside/laguna-m.1:free", "poolside/laguna-xs.2:free",
-            "openrouter/owl-alpha", "ibm-granite/granite-4.1-8b"
+            "openrouter/owl-alpha", "ibm-granite/granite-4.1-8b",
+            "qwen/qwen3.6-35b-a3b",
         }
     },
     "manual": {
