@@ -1,10 +1,18 @@
 import os
 import pandas as pd
 
+try:
+    from utils.script_bootstrap import chdir_repo_root
+except ModuleNotFoundError:
+    from script_bootstrap import chdir_repo_root
+
+
+chdir_repo_root()
+
 
 models_counter = {}
-answers_folder = "../answers"
-target_file = "../response_length.md"
+answers_folder = "answers"
+target_file = "response_length.md"
 
 for file_name in os.listdir(answers_folder):
     if file_name.endswith(".txt"):

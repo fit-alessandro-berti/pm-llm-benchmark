@@ -1,8 +1,16 @@
 import os
-import pyperclip
 import subprocess
 import sys
+
+try:
+    from utils.script_bootstrap import chdir_repo_root
+except ModuleNotFoundError:
+    from script_bootstrap import chdir_repo_root
+
 from common import clean_model_name
+
+
+chdir_repo_root()
 
 
 def read_contents(file_path):
@@ -20,8 +28,16 @@ def read_contents(file_path):
     return content
 
 
-questions_folder = "../questions"
-answers_folder = "../answers"
+def copy_to_clipboard(text):
+    try:
+        import pyperclip
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("pyperclip is required for clipboard operations.") from exc
+    pyperclip.copy(text)
+
+
+questions_folder = "questions"
+answers_folder = "answers"
 
 questions = [x for x in os.listdir(questions_folder) if x.endswith("txt")]
 graphical_questions = [x for x in os.listdir(questions_folder) if x.endswith("png")]
@@ -50,7 +66,7 @@ for q in questions:
             proceed = True
 
     if proceed:
-        pyperclip.copy(question)
+        copy_to_clipboard(question)
 
         F = open(answer_path, "w")
         F.close()
@@ -74,7 +90,7 @@ if also_graphical == "y":
                 proceed = True
 
         if proceed:
-            pyperclip.copy("Can you explain the provided visualization?")
+            copy_to_clipboard("Can you explain the provided visualization?")
 
             F = open(answer_path, "w")
             F.close()

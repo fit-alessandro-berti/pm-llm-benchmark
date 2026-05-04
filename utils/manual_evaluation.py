@@ -1,8 +1,17 @@
 import os
+
+try:
+    from utils.script_bootstrap import chdir_repo_root
+except ModuleNotFoundError:
+    from script_bootstrap import chdir_repo_root
+
 import common
 from utils import forge_eval_prompt
-import pyperclip
 import subprocess
+
+
+chdir_repo_root()
+
 
 def read_contents(file_path):
     try:
@@ -13,6 +22,14 @@ def read_contents(file_path):
     return content
 
 
+def copy_to_clipboard(text):
+    try:
+        import pyperclip
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("pyperclip is required for clipboard operations.") from exc
+    pyperclip.copy(text)
+
+
 ANSWERING_MODEL_NAMES = ["gpt-4o-mini-2024-07-18"]
 EVALUATING_MODEL_NAME = "o1-2024-12-05"
 
@@ -20,10 +37,10 @@ for ANSWERING_MODEL_NAME in ANSWERING_MODEL_NAMES:
     m_name = common.clean_model_name(ANSWERING_MODEL_NAME)
     e_m_name = common.clean_model_name(EVALUATING_MODEL_NAME)
 
-    questions_path = "../questions"
-    answers_path = "../answers"
+    questions_path = "questions"
+    answers_path = "answers"
     base_evaluation_path = common.get_base_evaluation_path(e_m_name)
-    evaluation_path = os.path.join("..", base_evaluation_path)
+    evaluation_path = base_evaluation_path
 
     if not os.path.exists(evaluation_path):
         os.mkdir(evaluation_path)
@@ -54,7 +71,7 @@ for ANSWERING_MODEL_NAME in ANSWERING_MODEL_NAMES:
                 raise Exception("not existing!")
 
             inquiry, base64_image = forge_eval_prompt.forge(q_path, answer)
-            pyperclip.copy(inquiry)
+            copy_to_clipboard(inquiry)
 
             F = open(ev_path, "w")
             F.close()

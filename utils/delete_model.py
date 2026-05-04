@@ -1,6 +1,12 @@
 import os
+
+try:
+    from utils.script_bootstrap import chdir_repo_root
+except ModuleNotFoundError:
+    from script_bootstrap import chdir_repo_root
+
 from common import get_base_evaluation_path, EVALUATING_MODEL_NAME
-from overall_table import write_evaluation
+from utils.overall_table import write_evaluation
 
 
 def do_deletion(base_path, original_name):
@@ -16,12 +22,14 @@ def do_deletion(base_path, original_name):
 
 
 if __name__ == "__main__":
+    chdir_repo_root()
+
     original_name = "qwen3.635b-a3b_"
 
     if not original_name.endswith("_"):
         raise Exception("original_name must terminate with _")
 
-    do_deletion("../answers", original_name)
-    do_deletion(os.path.join("..", get_base_evaluation_path(EVALUATING_MODEL_NAME)), original_name)
+    do_deletion("answers", original_name)
+    do_deletion(get_base_evaluation_path(EVALUATING_MODEL_NAME), original_name)
 
-    write_evaluation("..", extra=True)
+    write_evaluation(".", extra=True)

@@ -1,9 +1,16 @@
+import argparse
 import os
 import sys
 import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+
+try:
+    from utils.script_bootstrap import chdir_repo_root
+except ModuleNotFoundError:
+    from script_bootstrap import chdir_repo_root
+
 from common import EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, \
     get_ordered_references_llms_with_scores, RATE_LIMITER, configure_rate_limiter
 
@@ -165,9 +172,16 @@ def perform_mass_eval(use_multithreading=True, max_workers=3, create_leaderboard
 
 
 if __name__ == "__main__":
-    current_directory = os.getcwd()
-    parent_directory = os.path.dirname(current_directory)
-    os.chdir(parent_directory)
+    parser = argparse.ArgumentParser(description="Run mass model evaluations.")
+    parser.add_argument(
+        "--exit-on-no-changes",
+        action="store_true",
+        default=False,
+        help="Exit instead of waiting for the next iteration when no evaluations changed.",
+    )
+    args = parser.parse_args()
+
+    chdir_repo_root()
     
     # Configure rate limiter
     configure_rate_limiter(
@@ -201,5 +215,8 @@ if __name__ == "__main__":
                                    create_leaderboard=create_leaderboard)
         
         if not changed:
+            if args.exit_on_no_changes:
+                print("No changes detected, exiting.")
+                break
             print("No changes detected, waiting before next iteration...")
             time.sleep(60)  # Wait 1 minute before checking again

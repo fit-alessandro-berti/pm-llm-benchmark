@@ -1,3 +1,10 @@
+try:
+    from utils.script_bootstrap import add_repo_root_to_path
+except ModuleNotFoundError:
+    from script_bootstrap import add_repo_root_to_path
+
+add_repo_root_to_path()
+
 from common import encode_image, force_custom_evaluation_lrm
 from common import Shared as CommonShared
 

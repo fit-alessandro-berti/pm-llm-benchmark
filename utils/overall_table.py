@@ -1,5 +1,11 @@
 import os
 import json
+
+try:
+    from utils.script_bootstrap import chdir_repo_root
+except ModuleNotFoundError:
+    from script_bootstrap import chdir_repo_root
+
 from utils.table_per_model import execute_script, index_evaluation_files, render_markdown_table
 from common import EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, is_open_source, is_large_reasoning_model, force_custom_evaluation_lrm, is_excluded_from_table
 
@@ -311,4 +317,5 @@ def write_evaluation(base_path, extra=True):
 
 
 if __name__ == "__main__":
-    write_evaluation("..", extra=True)
+    chdir_repo_root()
+    write_evaluation(".", extra=True)

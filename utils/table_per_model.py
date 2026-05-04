@@ -1,6 +1,12 @@
 import os
 import re
 import sys
+
+try:
+    from utils.script_bootstrap import chdir_repo_root
+except ModuleNotFoundError:
+    from script_bootstrap import chdir_repo_root
+
 from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, force_custom_evaluation_lrm
 
 
@@ -181,7 +187,9 @@ def execute_script(evaluation_folder, model_name, responses=None):
 
 
 if __name__ == "__main__":
-    evaluation_folder = os.path.join("..", get_base_evaluation_path(EVALUATING_MODEL_NAME)) if len(sys.argv) < 3 else sys.argv[2]
+    chdir_repo_root()
+
+    evaluation_folder = get_base_evaluation_path(EVALUATING_MODEL_NAME) if len(sys.argv) < 3 else sys.argv[2]
 
     model_name = ANSWERING_MODEL_NAME
     #model_name = "gpt-4o-2024-11-20"

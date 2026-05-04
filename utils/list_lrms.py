@@ -1,5 +1,14 @@
 import os
+
+try:
+    from utils.script_bootstrap import chdir_repo_root
+except ModuleNotFoundError:
+    from script_bootstrap import chdir_repo_root
+
 from common import force_custom_evaluation_lrm
+
+
+chdir_repo_root()
 
 
 def read_co(file_path):
@@ -15,15 +24,15 @@ def read_co(file_path):
     return ret
 
 
-llms = set(x.split("_")[0] for x in os.listdir("../answers"))
+llms = set(x.split("_")[0] for x in os.listdir("answers"))
 llms = {x.strip() for x in llms if x.strip()}
 llms = {x for x in llms if force_custom_evaluation_lrm(x)}
 llms1 = set()
 for x in llms:
-    answers = [os.path.join("../answers", y) for y in os.listdir("../answers") if y.startswith(x)]
+    answers = [os.path.join("answers", y) for y in os.listdir("answers") if y.startswith(x)]
     co = read_co(answers[0]).strip()
     if co.startswith("<"):
         llms1.add(x)
-F = open("lrms_list.txt", "w")
+F = open(os.path.join("utils", "lrms_list.txt"), "w")
 F.write("\n".join(llms1))
 F.close()

@@ -1,6 +1,12 @@
 import os
+
+try:
+    from utils.script_bootstrap import chdir_repo_root
+except ModuleNotFoundError:
+    from script_bootstrap import chdir_repo_root
+
 from common import get_base_evaluation_path, EVALUATING_MODEL_NAME
-from overall_table import write_evaluation
+from utils.overall_table import write_evaluation
 
 
 def do_renaming(base_path, original_name, novel_name):
@@ -18,6 +24,8 @@ def do_renaming(base_path, original_name, novel_name):
 
 
 if __name__ == "__main__":
+    chdir_repo_root()
+
     original_name = "gpt-5.1-2025-11-13_"
     novel_name = "gpt-5.1-2025-11-13-NONE_"
 
@@ -27,7 +35,7 @@ if __name__ == "__main__":
     if not novel_name.endswith("_"):
         raise Exception("novel_name must terminate with _")
 
-    do_renaming("../answers", original_name, novel_name)
-    do_renaming(os.path.join("..", get_base_evaluation_path(EVALUATING_MODEL_NAME)), original_name, novel_name)
+    do_renaming("answers", original_name, novel_name)
+    do_renaming(get_base_evaluation_path(EVALUATING_MODEL_NAME), original_name, novel_name)
 
-    write_evaluation("..", extra=True)
+    write_evaluation(".", extra=True)
