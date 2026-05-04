@@ -84,6 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tools-json", help="JSON payload for the manual tools field.")
     parser.add_argument("--config-json", help="Extra JSON object merged into the config.")
     parser.add_argument("--config-file", help="Path to a JSON file merged into the config.")
+    parser.add_argument(
+        "--skip-git-reset-clean",
+        action="store_true",
+        help="Skip the destructive git reset/git clean preflight and only git pull.",
+    )
     parser.add_argument("--python", default=sys.executable, help="Python executable for subprocess phases.")
     parser.add_argument("--dry-run", action="store_true", help="Print actions without executing them.")
     return parser
@@ -239,12 +244,16 @@ def run_subprocess(command: list[str], cwd: Path, dry_run: bool) -> None:
     subprocess.run(command, cwd=str(cwd), check=True)
 
 
-def sync_repository(dry_run: bool) -> None:
-    git_commands = [
-        ["git", "reset", "--hard", "HEAD"],
-        ["git", "clean", "-x", "-f"],
-        ["git", "pull"],
-    ]
+def sync_repository(dry_run: bool, skip_git_reset_clean: bool) -> None:
+    git_commands = []
+    if not skip_git_reset_clean:
+        git_commands.extend(
+            [
+                ["git", "reset", "--hard", "HEAD"],
+                ["git", "clean", "-x", "-f"],
+            ]
+        )
+    git_commands.append(["git", "pull"])
     for command in git_commands:
         run_subprocess(command, cwd=REPO_ROOT, dry_run=dry_run)
 
@@ -278,7 +287,6 @@ def execute_pipeline(config: Dict[str, Any], python_executable: str, dry_run: bo
 
     common_module = importlib.import_module("common")
     answer_module = importlib.import_module("answer")
-    evalscript_module = importlib.import_module("evalscript")
 
     common_module.insert_api_keys()
     answer_module.configure_rate_limiter(
@@ -287,13 +295,6 @@ def execute_pipeline(config: Dict[str, Any], python_executable: str, dry_run: bo
         tokens_per_minute=90000,
         tokens_per_hour=2000000,
         max_concurrent=50,
-    )
-    evalscript_module.configure_rate_limiter(
-        requests_per_minute=60,
-        requests_per_hour=1000,
-        tokens_per_minute=90000,
-        tokens_per_hour=2000000,
-        max_concurrent=10,
     )
 
     api_key = read_api_key(config)
@@ -311,10 +312,11 @@ def execute_pipeline(config: Dict[str, Any], python_executable: str, dry_run: bo
     finally:
         reset_shared_settings(common_module)
 
-    evalscript_module.Shared.MASS_EVAL = False
-    evalscript_module.Shared.USE_MULTITHREADING = True
-    evalscript_module.Shared.MAX_WORKERS = 75
-    evalscript_module.perform_evaluation(config["alias"])
+    run_subprocess(
+        [python_executable, "utils/perform_mass_eval.py", "--exit-on-no-changes"],
+        cwd=REPO_ROOT,
+        dry_run=False,
+    )
 
     target_prefix = common_module.clean_model_name(config["alias"]) + "_"
     base_evaluation_path = REPO_ROOT / common_module.get_base_evaluation_path(
@@ -350,7 +352,7 @@ def main() -> None:
     config = load_runtime_config(args)
     config["model_name"] = args.model_name
 
-    sync_repository(args.dry_run)
+    sync_repository(args.dry_run, args.skip_git_reset_clean)
     ensure_model_registered(config, args.dry_run)
     execute_pipeline(config, python_executable=args.python, dry_run=args.dry_run)
 
