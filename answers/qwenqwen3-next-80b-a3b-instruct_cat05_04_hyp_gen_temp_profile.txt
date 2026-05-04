@@ -1,0 +1,187 @@
+### Anomalies in the Temporal Profile Model
+
+1. **Receive to Approve (R  P):**  
+   Average time is approximately 25 hours with an unusually low standard deviation (1 hour). This suggests near-identical timing across all claims, which is implausible in a real-world process involving human review, documentation checks, or variable claim complexity.
+
+2. **Approve to Notify (P  N):**  
+   Average delay of 7 days with a very high standard deviation (2 days) indicates extreme inconsistency. Some claims are notified within hours, others wait over two weeks — a pattern inconsistent with standard notification workflows.
+
+3. **Assign to Close (A  C):**  
+   Average closure time of only 2 hours after assignment, without requiring evaluation or approval, implies claims may be closed without proper processing — potentially due to system errors, fraudulent activity, or mislabeled events.
+
+4. **Evaluate to Notify (E  N):**  
+   A 5-minute interval with a 1-minute standard deviation is implausibly fast. This suggests either automated notifications triggered without human validation, or that the “Notify” event is being recorded prematurely or incorrectly.
+
+---
+
+### Hypotheses for Anomalies
+
+1. **R  P (Suspiciously Consistent Timing):**  
+   The rigid 25-hour cycle may indicate that claims are being auto-approved after a fixed time window by a system rule, bypassing actual evaluation. Alternatively, timestamps may be artificially backdated or batch-processed, masking true processing delays.
+
+2. **P  N (Highly Variable Delay):**  
+   The 7-day average suggests a systemic bottleneck in the notification subsystem — possibly due to manual email dispatch, queue overload, or a third-party integration failure. The large standard deviation implies sporadic resolution (e.g., some claims get notified immediately when staff manually intervene).
+
+3. **A  C (Premature Closure):**  
+   Claims are being closed immediately after assignment without intermediate steps. This could indicate:
+   - Fraudulent claims being closed to avoid scrutiny.
+   - Misconfigured event logging where “Close” is recorded instead of “Reject” or “Cancel.”
+   - System glitches where events are duplicated or misaligned.
+
+4. **E  N (Implausibly Fast Notification):**  
+   A 5-minute gap implies notification occurs before any meaningful review. Likely causes:
+   - Automated notifications triggered on “Evaluate” without waiting for approval.
+   - The “Notify” event is being logged at the moment of evaluation initiation, not completion.
+   - Claims are being auto-approved and auto-notified in bulk, bypassing workflow controls.
+
+---
+
+### Verification Queries Using SQL
+
+#### 1. Identify claims with R  P timing outside expected range (25h ± 1h = 24–26 hours)
+```sql
+WITH r_p_intervals AS (
+    SELECT 
+        r.claim_id,
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS r_to_p_seconds
+    FROM claim_events r
+    JOIN claim_events p ON r.claim_id = p.claim_id
+    WHERE r.activity = 'R' 
+      AND p.activity = 'P'
+      AND p.timestamp > r.timestamp
+)
+SELECT 
+    claim_id,
+    r_to_p_seconds,
+    TO_TIMESTAMP(r_to_p_seconds) AS duration
+FROM r_p_intervals
+WHERE r_to_p_seconds < 86400 OR r_to_p_seconds > 93600;  -- Outside 24–26h range
+```
+
+#### 2. Identify claims with P  N delays exceeding 3 days (90% threshold)
+```sql
+WITH p_n_intervals AS (
+    SELECT 
+        p.claim_id,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS p_to_n_seconds
+    FROM claim_events p
+    JOIN claim_events n ON p.claim_id = n.claim_id
+    WHERE p.activity = 'P' 
+      AND n.activity = 'N'
+      AND n.timestamp > p.timestamp
+)
+SELECT 
+    p_n.claim_id,
+    p_n.p_to_n_seconds,
+    c.claim_amount,
+    c.claim_type,
+    e.name AS adjuster_name,
+    e.region
+FROM p_n_intervals p_n
+JOIN claims c ON p_n.claim_id = c.claim_id
+JOIN adjusters e ON p_n.claim_id IN (
+    SELECT claim_id FROM claim_events WHERE activity = 'A' AND resource = e.name
+)
+WHERE p_n.p_to_n_seconds > 259200  -- 3 days in seconds
+ORDER BY p_n.p_to_n_seconds DESC;
+```
+
+#### 3. Find claims closed immediately after assignment (A  C < 4 hours) without E or P events
+```sql
+WITH a_c_direct AS (
+    SELECT 
+        a.claim_id,
+        EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) AS a_to_c_seconds,
+        a.timestamp AS assign_time,
+        c.timestamp AS close_time
+    FROM claim_events a
+    JOIN claim_events c ON a.claim_id = c.claim_id
+    WHERE a.activity = 'A' 
+      AND c.activity = 'C'
+      AND c.timestamp > a.timestamp
+      AND EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) < 14400  -- < 4 hours
+),
+missing_steps AS (
+    SELECT ac.claim_id
+    FROM a_c_direct ac
+    WHERE NOT EXISTS (
+        SELECT 1 FROM claim_events e 
+        WHERE e.claim_id = ac.claim_id 
+          AND e.activity IN ('E', 'P') 
+          AND e.timestamp BETWEEN ac.assign_time AND ac.close_time
+    )
+)
+SELECT 
+    ms.claim_id,
+    c.claim_amount,
+    c.claim_type,
+    c.customer_id,
+    a.name AS assignee,
+    a.region
+FROM missing_steps ms
+JOIN claims c ON ms.claim_id = c.claim_id
+JOIN claim_events ae ON ms.claim_id = ae.claim_id AND ae.activity = 'A'
+JOIN adjusters a ON ae.resource = a.name
+ORDER BY c.claim_amount DESC;
+```
+
+#### 4. Detect E  N intervals under 300 seconds (5 minutes) to flag potentially premature notifications
+```sql
+WITH e_n_intervals AS (
+    SELECT 
+        e.claim_id,
+        EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS e_to_n_seconds,
+        e.timestamp AS eval_time,
+        n.timestamp AS notify_time
+    FROM claim_events e
+    JOIN claim_events n ON e.claim_id = n.claim_id
+    WHERE e.activity = 'E' 
+      AND n.activity = 'N'
+      AND n.timestamp > e.timestamp
+      AND EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) < 300
+)
+SELECT 
+    en.claim_id,
+    en.e_to_n_seconds,
+    c.claim_amount,
+    c.claim_type,
+    e.name AS adjuster,
+    e.specialization
+FROM e_n_intervals en
+JOIN claims c ON en.claim_id = c.claim_id
+JOIN adjusters e ON en.claim_id IN (
+    SELECT claim_id FROM claim_events WHERE activity = 'A' AND resource = e.name
+)
+ORDER BY en.e_to_n_seconds ASC;
+```
+
+#### 5. Correlate P  N delays with adjuster or region (to isolate bottlenecks)
+```sql
+WITH p_n_by_adjuster AS (
+    SELECT 
+        p.claim_id,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS p_to_n_seconds,
+        a.name AS adjuster_name,
+        a.region
+    FROM claim_events p
+    JOIN claim_events n ON p.claim_id = n.claim_id
+    JOIN claim_events ae ON p.claim_id = ae.claim_id AND ae.activity = 'A'
+    JOIN adjusters a ON ae.resource = a.name
+    WHERE p.activity = 'P' 
+      AND n.activity = 'N'
+      AND n.timestamp > p.timestamp
+)
+SELECT 
+    adjuster_name,
+    region,
+    COUNT(*) AS total_claims,
+    AVG(p_to_n_seconds) AS avg_delay_seconds,
+    STDDEV(p_to_n_seconds) AS stddev_delay_seconds,
+    MAX(p_to_n_seconds) AS max_delay_seconds
+FROM p_n_by_adjuster
+GROUP BY adjuster_name, region
+HAVING AVG(p_to_n_seconds) > 259200  -- > 3 days
+ORDER BY avg_delay_seconds DESC;
+```
+
+These queries enable targeted investigation into whether anomalies stem from specific adjusters, regions, claim types, or systemic automation flaws — providing actionable insights for process correction or audit.

@@ -1,0 +1,367 @@
+Based on the provided event log data and assumed normal process flow, several **anomalies and undesirable behaviors** are evident. Below is a structured analysis of these anomalies, hypotheses for their causes, and **relevant SQL queries** to investigate each hypothesis further.
+
+---
+
+##  **Anomaly 1: Credit Check Performed *After* Shipment (Order 1002)**
+
+###  Observation:
+- **Order 1002**: 
+  - `Confirm Shipment` (08:25)  `Ship Goods` (08:40)  `Perform Credit Check` (09:10)
+- This violates the assumed process flow: **Credit Check must precede shipment**.
+
+###  Hypotheses:
+1. **Policy Violation**: Staff bypassed credit check due to pressure to fulfill “priority” orders.
+2. **System Error**: Event logged out of order due to asynchronous or delayed event capture.
+3. **Data Entry Error**: Credit check was performed earlier but logged late (e.g., batch upload).
+4. **System Integration Issue**: Shipment system triggered independently of credit system.
+
+###  Investigative SQL Queries:
+
+```sql
+-- 1. Find all orders where credit check occurred AFTER shipment
+SELECT 
+    o.case_id,
+    o.order_type,
+    o.order_value,
+    MAX(CASE WHEN el.activity = 'Perform Credit Check' THEN el.timestamp END) AS credit_check_time,
+    MAX(CASE WHEN el.activity = 'Ship Goods' THEN el.timestamp END) AS ship_time
+FROM order_event_log el
+JOIN orders o ON el.case_id = o.case_id
+WHERE el.activity IN ('Perform Credit Check', 'Ship Goods')
+GROUP BY o.case_id, o.order_type, o.order_value
+HAVING MAX(CASE WHEN el.activity = 'Perform Credit Check' THEN el.timestamp END) > 
+       MAX(CASE WHEN el.activity = 'Ship Goods' THEN el.timestamp END);
+```
+
+```sql
+-- 2. Check if this anomaly is concentrated in "priority" orders
+SELECT 
+    o.order_type,
+    COUNT(*) AS num_anomalies
+FROM (
+    SELECT 
+        o.case_id,
+        o.order_type,
+        MAX(CASE WHEN el.activity = 'Perform Credit Check' THEN el.timestamp END) AS credit_check_time,
+        MAX(CASE WHEN el.activity = 'Ship Goods' THEN el.timestamp END) AS ship_time
+    FROM order_event_log el
+    JOIN orders o ON el.case_id = o.case_id
+    WHERE el.activity IN ('Perform Credit Check', 'Ship Goods')
+    GROUP BY o.case_id, o.order_type
+    HAVING MAX(CASE WHEN el.activity = 'Perform Credit Check' THEN el.timestamp END) > 
+           MAX(CASE WHEN el.activity = 'Ship Goods' THEN el.timestamp END)
+) AS anomalies
+JOIN orders o ON anomalies.case_id = o.case_id
+GROUP BY o.order_type;
+```
+
+```sql
+-- 3. Check who performed the delayed credit check and their department
+SELECT 
+    el.case_id,
+    el.activity,
+    el.timestamp,
+    r.role,
+    r.department
+FROM order_event_log el
+JOIN resources r ON el.resource = r.resource_id
+WHERE el.case_id IN (
+    SELECT 
+        o.case_id
+    FROM order_event_log el
+    JOIN orders o ON el.case_id = o.case_id
+    WHERE el.activity IN ('Perform Credit Check', 'Ship Goods')
+    GROUP BY o.case_id
+    HAVING MAX(CASE WHEN el.activity = 'Perform Credit Check' THEN el.timestamp END) > 
+           MAX(CASE WHEN el.activity = 'Ship Goods' THEN el.timestamp END)
+)
+AND el.activity = 'Perform Credit Check';
+```
+
+---
+
+##  **Anomaly 2: Shipment Confirmed *After* Goods Were Shipped (Order 1003)**
+
+###  Observation:
+- **Order 1003**:
+  - `Ship Goods` (09:10)  `Confirm Shipment` (09:45)
+- Confirmation should precede actual shipment to ensure logistics readiness.
+
+###  Hypotheses:
+1. **Process Deviation**: Warehouse shipped first, then notified logistics (lack of coordination).
+2. **System Misconfiguration**: “Confirm Shipment” event triggered manually after fact, perhaps to “close the loop.”
+3. **Manual Override**: Logistics manager confirmed shipment retroactively due to system delay.
+
+###  Investigative SQL Queries:
+
+```sql
+-- 1. Find all cases where 'Ship Goods' occurred before 'Confirm Shipment'
+SELECT 
+    o.case_id,
+    o.order_type,
+    MAX(CASE WHEN el.activity = 'Confirm Shipment' THEN el.timestamp END) AS confirm_time,
+    MAX(CASE WHEN el.activity = 'Ship Goods' THEN el.timestamp END) AS ship_time
+FROM order_event_log el
+JOIN orders o ON el.case_id = o.case_id
+WHERE el.activity IN ('Confirm Shipment', 'Ship Goods')
+GROUP BY o.case_id, o.order_type
+HAVING MAX(CASE WHEN el.activity = 'Ship Goods' THEN el.timestamp END) < 
+       MAX(CASE WHEN el.activity = 'Confirm Shipment' THEN el.timestamp END);
+```
+
+```sql
+-- 2. Check if the same resource is involved in both events (possible manual entry?)
+SELECT 
+    el1.case_id,
+    el1.resource AS ship_resource,
+    el2.resource AS confirm_resource,
+    el1.timestamp AS ship_time,
+    el2.timestamp AS confirm_time
+FROM order_event_log el1
+JOIN order_event_log el2 ON el1.case_id = el2.case_id
+JOIN orders o ON el1.case_id = o.case_id
+WHERE el1.activity = 'Ship Goods'
+  AND el2.activity = 'Confirm Shipment'
+  AND el1.timestamp < el2.timestamp
+  AND el1.resource = el2.resource;  -- Same person did both? Suspicious!
+```
+
+```sql
+-- 3. Check if this is correlated with "late_confirmation" in additional_info
+SELECT 
+    case_id,
+    additional_info,
+    timestamp,
+    resource
+FROM order_event_log
+WHERE activity = 'Confirm Shipment'
+  AND additional_info LIKE '%late_confirmation%';
+```
+
+---
+
+##  **Anomaly 3: Payment Received *Before* Invoice Issued (Order 1004)**
+
+###  Observation:
+- **Order 1004**:
+  - `Register Order` (09:00)  `Receive Payment` (09:05)  `Issue Invoice` (09:20)
+- Payment received *before* invoice — violates financial control principles.
+
+###  Hypotheses:
+1. **System Bug**: Payment system auto-processed payment (e.g., pre-authorized) before invoice generation.
+2. **Fraud Risk**: Customer paid first (e.g., cash deposit), and invoice was generated retroactively — possible accounting loophole.
+3. **Human Error**: Invoice delayed due to system failure, payment logged prematurely.
+4. **Prepayment Policy Violation**: No invoice generated for prepayments, but system lacks control.
+
+###  Investigative SQL Queries:
+
+```sql
+-- 1. Find all orders where payment was received before invoice
+SELECT 
+    o.case_id,
+    o.order_value,
+    MAX(CASE WHEN el.activity = 'Receive Payment' THEN el.timestamp END) AS payment_time,
+    MAX(CASE WHEN el.activity = 'Issue Invoice' THEN el.timestamp END) AS invoice_time
+FROM order_event_log el
+JOIN orders o ON el.case_id = o.case_id
+WHERE el.activity IN ('Receive Payment', 'Issue Invoice')
+GROUP BY o.case_id, o.order_value
+HAVING MAX(CASE WHEN el.activity = 'Receive Payment' THEN el.timestamp END) < 
+       MAX(CASE WHEN el.activity = 'Issue Invoice' THEN el.timestamp END);
+```
+
+```sql
+-- 2. Check if payment amount matches order value (possible mismatch or fraud?)
+SELECT 
+    o.case_id,
+    o.order_value,
+    el.additional_info AS payment_info,
+    SUBSTRING(el.additional_info FROM POSITION('amount=' IN el.additional_info) + 7) AS paid_amount_str
+FROM order_event_log el
+JOIN orders o ON el.case_id = o.case_id
+WHERE el.activity = 'Receive Payment'
+  AND el.case_id IN (
+    SELECT case_id
+    FROM order_event_log
+    WHERE activity IN ('Receive Payment', 'Issue Invoice')
+    GROUP BY case_id
+    HAVING MAX(CASE WHEN activity = 'Receive Payment' THEN timestamp END) < 
+           MAX(CASE WHEN activity = 'Issue Invoice' THEN timestamp END)
+  );
+```
+
+```sql
+-- 3. Who handled payment and invoice? Different people? Same department?
+SELECT 
+    el1.case_id,
+    el1.resource AS payment_resource,
+    r1.role AS payment_role,
+    el2.resource AS invoice_resource,
+    r2.role AS invoice_role
+FROM order_event_log el1
+JOIN order_event_log el2 ON el1.case_id = el2.case_id
+JOIN resources r1 ON el1.resource = r1.resource_id
+JOIN resources r2 ON el2.resource = r2.resource_id
+WHERE el1.activity = 'Receive Payment'
+  AND el2.activity = 'Issue Invoice'
+  AND el1.timestamp < el2.timestamp;
+```
+
+---
+
+##  **Anomaly 4: Missing "Validate Stock" Step (Order 1004)**
+
+###  Observation:
+- **Order 1004**:
+  - Missing `Validate Stock` entirely.
+- Stock validation is a critical control point — skipping it risks shipping out-of-stock items.
+
+###  Hypotheses:
+1. **Automated Stock Check**: System assumed stock was available based on pre-allocated inventory (no log generated).
+2. **Data Loss**: Event was logged but deleted or failed to insert.
+3. **Policy Exception**: High-priority or recurring customer orders bypass stock check (unrecorded).
+4. **System Integration Gap**: Stock system updated externally, but event not captured in `order_event_log`.
+
+###  Investigative SQL Queries:
+
+```sql
+-- 1. Find all cases missing 'Validate Stock' step
+SELECT 
+    o.case_id,
+    o.order_type,
+    o.order_value
+FROM orders o
+WHERE o.case_id NOT IN (
+    SELECT DISTINCT case_id
+    FROM order_event_log
+    WHERE activity = 'Validate Stock'
+);
+```
+
+```sql
+-- 2. Check if missing stock validation correlates with early payment or shipment
+SELECT 
+    o.case_id,
+    o.order_type,
+    MAX(CASE WHEN el.activity = 'Receive Payment' THEN el.timestamp END) AS payment_time,
+    MAX(CASE WHEN el.activity = 'Ship Goods' THEN el.timestamp END) AS ship_time,
+    MAX(CASE WHEN el.activity = 'Validate Stock' THEN el.timestamp END) AS validate_time
+FROM orders o
+LEFT JOIN order_event_log el ON o.case_id = el.case_id
+WHERE o.case_id IN (
+    SELECT case_id FROM orders
+    WHERE case_id NOT IN (
+        SELECT DISTINCT case_id FROM order_event_log WHERE activity = 'Validate Stock'
+    )
+)
+GROUP BY o.case_id, o.order_type, o.order_value
+HAVING MAX(CASE WHEN el.activity = 'Receive Payment' THEN el.timestamp END) IS NOT NULL
+   OR MAX(CASE WHEN el.activity = 'Ship Goods' THEN el.timestamp END) IS NOT NULL;
+```
+
+```sql
+-- 3. Check if same resource handled multiple steps (e.g., Sales + Logistics) — possible bypass?
+SELECT 
+    o.case_id,
+    STRING_AGG(DISTINCT r.role, ', ') AS roles_involved,
+    STRING_AGG(DISTINCT el.activity, ', ') AS activities_performed
+FROM order_event_log el
+JOIN resources r ON el.resource = r.resource_id
+JOIN orders o ON el.case_id = o.case_id
+WHERE o.case_id IN (
+    SELECT case_id FROM orders
+    WHERE case_id NOT IN (
+        SELECT DISTINCT case_id FROM order_event_log WHERE activity = 'Validate Stock'
+    )
+)
+GROUP BY o.case_id
+HAVING COUNT(DISTINCT el.activity) > 2; -- Check if single resource did multiple roles
+```
+
+---
+
+##  **Anomaly 5: Multiple Resources Performing Same Role in Critical Path (Potential Lack of Accountability)**
+
+###  Observation:
+- **FinanceTeam_01** issued invoice for order 1001 and 1004.
+- **FinanceTeam_02** received payment for *all* orders.
+- **WarehouseClerk_3** shipped orders 1001 and 1003 — same person doing multiple shipments?
+
+###  Hypotheses:
+1. **Lack of Role Segregation**: One person performs multiple roles (e.g., shipping and confirming), increasing fraud risk.
+2. **High Workload**: Staff overloaded, leading to multiple case handling.
+3. **Shared Resource Accounts**: Multiple users sharing the same `resource_id` (e.g., "FinanceTeam_02" is a shared mailbox).
+
+###  Investigative SQL Queries:
+
+```sql
+-- 1. Find resources handling multiple critical activities (e.g., both shipping and confirming)
+SELECT 
+    resource,
+    COUNT(DISTINCT activity) AS num_activities,
+    STRING_AGG(DISTINCT activity, ', ') AS activities
+FROM order_event_log
+WHERE activity IN ('Ship Goods', 'Confirm Shipment', 'Issue Invoice', 'Receive Payment')
+GROUP BY resource
+HAVING COUNT(DISTINCT activity) > 1
+ORDER BY num_activities DESC;
+```
+
+```sql
+-- 2. Check if any resource handles both 'Receive Payment' and 'Issue Invoice' (segregation of duties violation)
+SELECT 
+    el1.resource,
+    r.role,
+    COUNT(DISTINCT el1.case_id) AS cases_with_both
+FROM order_event_log el1
+JOIN order_event_log el2 ON el1.case_id = el2.case_id
+JOIN resources r ON el1.resource = r.resource_id
+WHERE el1.activity = 'Receive Payment'
+  AND el2.activity = 'Issue Invoice'
+GROUP BY el1.resource, r.role
+HAVING COUNT(DISTINCT el1.case_id) > 0;
+```
+
+```sql
+-- 3. Check if the same resource is consistently involved in anomaly cases (e.g., 1002, 1003, 1004)
+SELECT 
+    r.resource_id,
+    r.role,
+    COUNT(*) AS total_cases_involved,
+    COUNT(CASE WHEN el.case_id IN (1002, 1003, 1004) THEN 1 END) AS anomaly_cases_involved
+FROM order_event_log el
+JOIN resources r ON el.resource = r.resource_id
+WHERE el.case_id IN (1002, 1003, 1004)
+GROUP BY r.resource_id, r.role
+ORDER BY anomaly_cases_involved DESC;
+```
+
+---
+
+##  **Summary of Anomalies & Recommended Actions**
+
+| Anomaly | Risk Level | Root Cause Hypothesis | Recommended Action |
+|--------|------------|------------------------|---------------------|
+| Credit Check after Shipment |  High | Policy bypass for priority orders | Enforce workflow rules in system; audit priority order exceptions |
+| Shipment after Confirmation |  Medium | Manual override or system delay | Require “Confirm Shipment” as pre-condition in ERP |
+| Payment before Invoice |  High | Financial control failure | Implement invoice generation as mandatory pre-payment step |
+| Missing Stock Validation |  High | System gap or manual bypass | Log all stock checks; trigger alerts for missing steps |
+| Role Overlap (Same Resource) |  Medium | Lack of segregation of duties | Enforce role-based access controls; assign unique resource IDs per user |
+
+---
+
+##  Suggested System Improvements
+
+1. **Enforce Process Workflow Rules** in the system (e.g., via BPMN engine) — block events if predecessor not completed.
+2. **Add Validation Triggers** in database: `CHECK` constraints or triggers to prevent out-of-order events.
+3. **Log Resource Identity at Event Level**: Ensure every `resource` maps to a unique user (not shared accounts).
+4. **Audit Trail Dashboard**: Monitor real-time deviations using the above SQL queries as scheduled reports.
+5. **Training & Policy Review**: Re-train staff on order flow, especially for “priority” orders — no exceptions without approval logs.
+
+---
+
+##  Final Note
+
+These anomalies, while seemingly isolated, indicate **systemic process control weaknesses**. The fact that **3 out of 4 orders** exhibit deviations suggests the issue is not random noise — it’s likely **institutionalized behavior** due to system limitations or cultural workarounds.
+
+**Next Steps**: Run the above queries on the full dataset (not just sample) to quantify prevalence, then audit resources involved in anomalies for training or access revocation.
