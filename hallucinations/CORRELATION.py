@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
 import json
 from datetime import datetime
+from pathlib import Path
 import numpy as np
 from scipy import stats
 import pandas as pd
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+
+def resolve_script_path(filepath):
+    path = Path(filepath)
+    if path.is_absolute():
+        return path
+    return SCRIPT_DIR / path
+
 def parse_hallucination_report(filepath='hallucination_report.md'):
     """Parse the markdown table from hallucination report"""
     data = []
-    with open(filepath, 'r') as f:
+    with open(resolve_script_path(filepath), 'r') as f:
         lines = f.readlines()
     
     # Find the table (skip header lines)
@@ -45,7 +54,7 @@ def parse_hallucination_report(filepath='hallucination_report.md'):
 
 def load_json_data(filepath):
     """Load JSON file"""
-    with open(filepath, 'r') as f:
+    with open(resolve_script_path(filepath), 'r') as f:
         return json.load(f)
 
 def calculate_model_size(model_info):
@@ -101,7 +110,7 @@ def main():
     model_dates = load_json_data('model_date.json')
     
     # Open output file
-    output_file = open('CORRELATION.md', 'w')
+    output_file = open(SCRIPT_DIR / 'CORRELATION.md', 'w')
     
     # Helper function to write to file
     def write(text=""):

@@ -3,16 +3,19 @@ import json
 import os
 import glob
 import ast
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Read leaderboard stats
-with open('leaderboard_stats.md', 'r') as f:
+with open(SCRIPT_DIR / 'leaderboard_stats.md', 'r') as f:
     content = f.read()
 
 # Parse the JSON from markdown file
 leaderboard_data = ast.literal_eval(content)
 
 # Get unique model names from output directory
-output_files = glob.glob('output/*.txt')
+output_files = glob.glob(str(SCRIPT_DIR / 'output' / '*.txt'))
 real_model_names = set()
 for file in output_files:
     model_name = os.path.basename(file).split('_')[0]
@@ -68,15 +71,17 @@ matched_model_names = set(model_scores)
 
 # Handle model_date.json (publication dates)
 model_date = {}
-if os.path.exists('model_date.json'):
-    with open('model_date.json', 'r') as f:
+model_date_path = SCRIPT_DIR / 'model_date.json'
+if os.path.exists(model_date_path):
+    with open(model_date_path, 'r') as f:
         model_date = json.load(f)
     print(f"\nLoaded existing model_date.json with {len(model_date)} entries")
 
 # Handle model_info.json (model information like parameters)
 model_info = {}
-if os.path.exists('model_info.json'):
-    with open('model_info.json', 'r') as f:
+model_info_path = SCRIPT_DIR / 'model_info.json'
+if os.path.exists(model_info_path):
+    with open(model_info_path, 'r') as f:
         model_info = json.load(f)
     print(f"Loaded existing model_info.json with {len(model_info)} entries")
 
@@ -95,23 +100,23 @@ for real_name in matched_model_names:
         print(f"Added new model to model_info: {real_name}")
 
 # Write JSON files
-with open('model_scores.json', 'w') as f:
+with open(SCRIPT_DIR / 'model_scores.json', 'w') as f:
     json.dump(model_scores, f, indent=2)
     print(f"\nCreated model_scores.json with {len(model_scores)} entries")
 
-with open('model_is_reasoning.json', 'w') as f:
+with open(SCRIPT_DIR / 'model_is_reasoning.json', 'w') as f:
     json.dump(model_is_reasoning, f, indent=2)
     print(f"Created model_is_reasoning.json with {len(model_is_reasoning)} entries")
 
-with open('model_is_os.json', 'w') as f:
+with open(SCRIPT_DIR / 'model_is_os.json', 'w') as f:
     json.dump(model_is_os, f, indent=2)
     print(f"Created model_is_os.json with {len(model_is_os)} entries")
 
-with open('model_date.json', 'w') as f:
+with open(model_date_path, 'w') as f:
     json.dump(model_date, f, indent=2, sort_keys=True)
     print(f"Updated model_date.json with {len(model_date)} entries")
 
-with open('model_info.json', 'w') as f:
+with open(model_info_path, 'w') as f:
     json.dump(model_info, f, indent=2, sort_keys=True)
     print(f"Updated model_info.json with {len(model_info)} entries")
 

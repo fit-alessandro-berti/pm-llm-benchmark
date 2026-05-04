@@ -3,8 +3,11 @@ import argparse
 import csv
 import json
 import os
+from pathlib import Path
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Define the fixed category ordering
 CATEGORY_KEYS = [
@@ -222,25 +225,25 @@ def main():
     parser.add_argument(
         '--output_dir',
         type=str,
-        default='output',
+        default=str(SCRIPT_DIR / 'output'),
         help='Directory containing JSON report files and where to save reports'
     )
     parser.add_argument(
         '--report_name_md',
         type=str,
-        default='hallucination_report.md',
+        default=str(SCRIPT_DIR / 'hallucination_report.md'),
         help='Filename for the generated markdown report'
     )
     parser.add_argument(
         '--report_name_csv',
         type=str,
-        default='hallucination_report.csv',
+        default=str(SCRIPT_DIR / 'hallucination_report.csv'),
         help='Filename for the generated CSV report'
     )
     parser.add_argument(
         '--pm_llm_table',
         type=str,
-        default='pm_llm_category_table.md',
+        default=str(SCRIPT_DIR / 'pm_llm_category_table.md'),
         help='Filename for the PM-LLM category table'
     )
     args = parser.parse_args()

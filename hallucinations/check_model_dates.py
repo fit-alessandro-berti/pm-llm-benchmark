@@ -2,10 +2,13 @@
 import json
 from datetime import datetime
 import sys
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Load model_date.json
 try:
-    with open('model_date.json', 'r') as f:
+    with open(SCRIPT_DIR / 'model_date.json', 'r') as f:
         model_dates = json.load(f)
 except FileNotFoundError:
     print("Error: model_date.json not found. Please run create_model_json_files.py first.")

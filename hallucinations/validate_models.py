@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
 import json
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+
+def resolve_script_path(filepath):
+    path = Path(filepath)
+    if path.is_absolute():
+        return path
+    return SCRIPT_DIR / path
 
 def validate_model_info(json_file='model_info.json'):
-    with open(json_file, 'r') as f:
+    with open(resolve_script_path(json_file), 'r') as f:
         models = json.load(f)
     
     models_without_info = []

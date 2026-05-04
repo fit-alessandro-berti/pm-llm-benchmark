@@ -4,6 +4,10 @@ import threading
 import requests
 import argparse
 import json
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
 
 # List of required category keys
 CATEGORY_KEYS = [
@@ -263,11 +267,11 @@ if __name__ == '__main__':
         description="Process .txt files through OpenAI API with JSON validation"
     )
     parser.add_argument(
-        '--input_dir', type=str, default='../evaluation-gpt-5.4',
+        '--input_dir', type=str, default=str(REPO_ROOT / 'evaluation-gpt-5.4'),
         help='Path to the input directory containing .txt files'
     )
     parser.add_argument(
-        '--output_dir', type=str, default='output',
+        '--output_dir', type=str, default=str(SCRIPT_DIR / 'output'),
         help='Path to the directory for saving output .txt files'
     )
     parser.add_argument(

@@ -47,7 +47,7 @@ Processes model outputs to identify hallucinations:
 
 **Usage:**
 ```bash
-python detect.py --input_dir answers/ --output_dir output/ --max_threads 10 --model gpt-4o-mini
+python detect.py --input_dir answers/ --output_dir output/ --max_threads 10
 ```
 
 ### 2. Aggregation Phase (`aggregate.py`)
@@ -146,6 +146,17 @@ export OPENAI_API_KEY="your-api-key"
 ```
 
 ## Running the Complete Pipeline
+
+From the repository root in PowerShell/CMD, the default input/output paths are resolved relative to this folder:
+
+```powershell
+python .\hallucinations\detect.py
+python .\hallucinations\aggregate.py
+python .\hallucinations\CORRELATION.py
+python .\hallucinations\validate_models.py
+```
+
+You can also run the scripts from inside `hallucinations/`:
 
 ```bash
 # 1. Detect hallucinations in model outputs
