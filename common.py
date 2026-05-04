@@ -424,6 +424,7 @@ _REASONING_PATTERNS = (
 _HIDDEN_REASONING_PATTERNS = (
     r"(?:^|-)claude-",
     r"(?:^|-)gemini-",
+    r"(?:^|-)gemma",
     r"(?:^|-)o\d+(?:-|$)",
     r"(?:^|-)gpt-(?:[5-9]|\d{2,})(?:[.-]|-|$)",
     r"(?:^|-)chatgpt-(?:[5-9]|\d{2,})(?:[.-]|-|$)",
