@@ -382,27 +382,136 @@ def is_open_source(m_name):
     return True
 
 
+_REASONING_DISABLED_MARKERS = (
+    "non-reasoning",
+    "nothink",
+    "no-think",
+    "-none",
+)
+
+_REASONING_MARKERS = (
+    "reason",
+    "think",
+    "qwq",
+    "qvq",
+    "cogito",
+    "exaone",
+    "gpt-oss",
+    "grok-code",
+    "magistral",
+    "glm",
+    "kimi-k",
+    "marco",
+    "mimo-v",
+    "minimax-m",
+    "nemotron",
+    "olmo-",
+    "step-",
+    "trinity",
+    "intellect-",
+)
+
+_REASONING_PATTERNS = (
+    r"(?:^|-)o\d+(?:-|$)",
+    r"(?:^|-)gpt-(?:[5-9]|\d{2,})(?:[.-]|-|$)",
+    r"(?:^|-)chatgpt-(?:[5-9]|\d{2,})(?:[.-]|-|$)",
+    r"(?:^|-)gemini-(?:(?:2\.[5-9].*pro)|[3-9]|\d{2,})",
+    r"(?:^|-)grok-(?:[4-9]|\d{2,})(?:[.-]|-|$)",
+    r"deepseek.*(?:r\d|v[4-9]|\d{2,})",
+    r"(?:^|-)gemma-?[4-9]",
+)
+
+_HIDDEN_REASONING_PATTERNS = (
+    r"(?:^|-)claude-",
+    r"(?:^|-)gemini-",
+    r"(?:^|-)o\d+(?:-|$)",
+    r"(?:^|-)gpt-(?:[5-9]|\d{2,})(?:[.-]|-|$)",
+    r"(?:^|-)chatgpt-(?:[5-9]|\d{2,})(?:[.-]|-|$)",
+    r"(?:^|-)grok-(?:[4-9]|\d{2,})(?:[.-]|-|$)",
+)
+
+
+def _model_name_for_matching(model_name):
+    if not model_name:
+        return ""
+    model_name = str(model_name).lower()
+    return model_name.replace("/", "-").replace(":", "-").replace("_", "-").replace(" ", "-")
+
+
+def _model_name_aliases(model_name):
+    model_name = str(model_name).lower()
+    return {model_name, clean_model_name(model_name), _model_name_for_matching(model_name)}
+
+
+def _manual_model_config(model_name):
+    manual_models = MODELS_DICT.get("manual", {}).get("models", {})
+    aliases = _model_name_aliases(model_name)
+    for configured_name, config in manual_models.items():
+        if aliases & _model_name_aliases(configured_name):
+            return config
+    return {}
+
+
+def _payload_requests_reasoning(payload):
+    if not isinstance(payload, dict):
+        return False
+
+    reasoning = payload.get("reasoning")
+    if isinstance(reasoning, dict):
+        enabled = reasoning.get("enabled", True)
+        if isinstance(enabled, str):
+            enabled = enabled.lower()
+        return enabled not in (False, "false", "none", 0)
+    if reasoning:
+        return True
+
+    thinking = payload.get("thinking")
+    if isinstance(thinking, dict):
+        thinking_type = thinking.get("type")
+        if isinstance(thinking_type, str):
+            thinking_type = thinking_type.lower()
+        return thinking_type not in (None, "disabled", "none")
+    return bool(thinking)
+
+
+def _config_enables_reasoning(config):
+    effort = str(config.get("reasoning_effort", "")).lower()
+    thinking_tokens = int(config.get("thinking_tokens") or 0)
+    return (
+        bool(effort and effort != "none")
+        or thinking_tokens > 0
+        or _payload_requests_reasoning(config.get("added_to_payload"))
+    )
+
+
+def _qwen_reasoning_model(model_name):
+    return "qwen" in model_name and "instruct" not in model_name
+
+
 def is_large_reasoning_model(m_name):
-    m_name = m_name.lower()
-    patterns = ["o1-", "o3-", "-thinking-", "qwq", "marco", "deepseek-r1", "reason", "r1-1776", "exaone", "gemini-2.5-pro", "gemini-3", "-thinkenab", "grok-3-mini", "-think", "cogito", "o3-2", "o4-mini-2", "glm", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "grok-4", "gpt-oss", "gpt-5", "-reasoner", "grok-code", "nous", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "nemotron-3-nano-30b-a3b", "minimax-m2.1", "glm-4.7", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5", "qwen3-max-thinking", "qwen3.5-35b", "qwen3.5-397b", "qwen3.5-122b", "qwen3.5-27b", "nemotron-3", "thinkhigh", "minimax-m2.7", "mimo-v2-omni", "mimo-v2-pro", "gemma-4", "qwen3.6", "kimi-k2.6", "ChatGPT-5.5-Pro", "mimo-v2.5", "deepseek-v4", "grok-4.3"]
+    model_name = _model_name_for_matching(m_name)
+    if not model_name or any(marker in model_name for marker in _REASONING_DISABLED_MARKERS):
+        return False
 
-    for p in patterns:
-        if p in m_name:
-            if (not "qwen3" in m_name) or ("qwen3" in m_name and not ("nstruct" in m_name or "coder" in m_name or "max" in m_name)):
-                if not ("none" in m_name or "nothink" in m_name or "grok-4.1" in m_name):
-                    if not ("non-reasoning" in m_name):
-                        return True
-
-    return False
+    return (
+        _config_enables_reasoning(_manual_model_config(m_name))
+        or _qwen_reasoning_model(model_name)
+        or any(marker in model_name for marker in _REASONING_MARKERS)
+        or any(re.search(pattern, model_name) for pattern in _REASONING_PATTERNS)
+    )
 
 
 def force_custom_evaluation_lrm(answering_model_name):
-    model_name = answering_model_name.lower()
-    for p in ["qwq", "qvq", "deepseek-r1-distill", "deepseek-ai", "deepseek-r1-zero", "grok-3-beta-thinking", "deepseek-r1-dynamic-quant", "r1-1776", "sonar-reasoning", "exaone", "671b-hb", "-thinkenab", "grok-3-mini", "cogito", "qwen3", "phi4-mini-reasoning", "phi4-reasoning", "magistral", "gpt-oss", "-reasoner", "grok-code", "nous", "qwen3-next-80b-a3b-thinking", "nemotron-nano-9b-v2-thinking", "nemotron-3-nano-30b-a3b", "deepseek-v3.2-exp-thinking", "deepseek-v3.2-thinking", "deepseek-v3.2-speciale-thinking", "nemotron-super-49b-v1.5-thinking", "kimi-k2-thinking", "olmo-3-32b-think", "olmo-3-7b-think", "trinity-mini", "intellect-3", "glm", "minimax-m2.1", "lfm-2.5-1.2b-thinking", "kimi-k2.5", "step-3.5", "glm-5", "minimax-m2.5", "qwen3.5-35b", "qwen3.5-397b", "qwen3.5-122b", "qwen3.5-27b", "nemotron-3", "mistral-small-2603-thinkhigh", "minimax-m2.7", "mimo-v2-omni", "mimo-v2-pro", "trinity-large-thinking", "qwen3.6", "kimi-k2.6", "mimo-v2.5", "deepseek-v4", "mistral-medium-3.5-thinkhigh"]:
-        if p in model_name and not ("deepseek-v3" in model_name and not ("-reasoner" in model_name or "-thinking" in model_name)):
-            if (not "qwen3" in model_name) or ("qwen3" in model_name and not ("nstruct" in model_name or "coder" in model_name)):
-                return True
-    return False
+    model_name = _model_name_for_matching(answering_model_name)
+    if not is_large_reasoning_model(answering_model_name):
+        return False
+
+    config = _manual_model_config(answering_model_name)
+    if _qwen_reasoning_model(model_name):
+        return True
+    if config.get("provider") not in {"claude", "google", "openai"} and _payload_requests_reasoning(config.get("added_to_payload")):
+        return True
+    return not any(re.search(pattern, model_name) for pattern in _HIDDEN_REASONING_PATTERNS)
 
 
 def set_api_key(type_key):
