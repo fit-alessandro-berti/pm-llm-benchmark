@@ -148,6 +148,17 @@ def validate_json_response(response_str):
     return True
 
 
+def resolve_input_dir(input_dir):
+    return Path(input_dir).resolve()
+
+
+def resolve_output_dir(output_dir):
+    output_path = Path(output_dir)
+    if not output_path.is_absolute():
+        output_path = SCRIPT_DIR / output_path
+    return output_path.resolve()
+
+
 def process_file(input_path, output_path, semaphore, model):
     """
     Read the input file, send its contents to the OpenAI API, and write the response.
@@ -206,37 +217,41 @@ def process_file(input_path, output_path, semaphore, model):
         semaphore.release()
 
 
-def main(input_dir, output_dir, max_threads):
-    # Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
-
-    # ----- Cleanup orphaned outputs -----
-    for fname in os.listdir(output_dir):
-        if not fname.lower().endswith('.txt'):
+def cleanup_orphaned_outputs(input_dir, output_dir):
+    for output_path in output_dir.iterdir():
+        if not output_path.is_file() or output_path.suffix.lower() != ".txt":
             continue
-        inp_path = os.path.join(input_dir, fname)
-        out_path = os.path.join(output_dir, fname)
-        if not os.path.exists(inp_path):
+        input_path = input_dir / output_path.name
+        if not input_path.exists():
             try:
-                os.remove(out_path)
-                print(f"[CLEANUP] Removed orphaned output {out_path}")
+                output_path.unlink()
+                print(f"[CLEANUP] Removed orphaned output {output_path}")
             except OSError as e:
-                print(f"[ERROR] Could not remove {out_path}: {e}")
-    # -------------------------------------
+                print(f"[ERROR] Could not remove {output_path}: {e}")
+
+
+def main(input_dir, output_dir, max_threads, cleanup_orphans=False):
+    input_dir = resolve_input_dir(input_dir)
+    output_dir = resolve_output_dir(output_dir)
+
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if cleanup_orphans:
+        cleanup_orphaned_outputs(input_dir, output_dir)
 
     model = "gpt-4.1-mini"
     while True:
         # Gather files that need processing
         to_process = []
-        for fname in os.listdir(input_dir):
-            if not fname.lower().endswith('.txt'):
+        for input_path in input_dir.iterdir():
+            if not input_path.is_file() or input_path.suffix.lower() != ".txt":
                 continue
-            inp_path = os.path.join(input_dir, fname)
-            out_path = os.path.join(output_dir, fname)
-            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            output_path = output_dir / input_path.name
+            if output_path.exists() and output_path.stat().st_size > 0:
                 pass
             else:
-                to_process.append((inp_path, out_path))
+                to_process.append((input_path, output_path))
 
         session = bool(to_process)
         print(f"[SESSION] Attempting to process files: {session}")
@@ -278,5 +293,10 @@ if __name__ == '__main__':
         '--max_threads', type=int, default=60,
         help='Maximum number of concurrent threads'
     )
+    parser.add_argument(
+        '--cleanup-orphans',
+        action='store_true',
+        help='Remove output files that do not have a matching input file.'
+    )
     args = parser.parse_args()
-    main(args.input_dir, args.output_dir, args.max_threads)
+    main(args.input_dir, args.output_dir, args.max_threads, cleanup_orphans=args.cleanup_orphans)

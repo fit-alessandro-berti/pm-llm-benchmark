@@ -349,7 +349,7 @@ def execute_pipeline(config: Dict[str, Any], python_executable: str, dry_run: bo
                 "--input_dir",
                 str(temp_input_dir),
                 "--output_dir",
-                "output",
+                str(REPO_ROOT / "hallucinations" / "output"),
             ],
             cwd=REPO_ROOT / "hallucinations",
             dry_run=False,
