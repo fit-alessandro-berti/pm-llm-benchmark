@@ -1,0 +1,187 @@
+**Anomalies in the Temporal Profile Model:**
+
+1. **(R  P): Receive to Approve**  
+   - *Anomaly:* Average time of ~25 hours (90,000 seconds) with a very low standard deviation of 3,600 seconds (1 hour). This suggests that approval occurs with near-identical timing across all claims, which is highly improbable in a real-world insurance process where claim complexity, adjuster workload, and type-specific review needs vary widely.
+
+2. **(P  N): Approve to Notify**  
+   - *Anomaly:* Average delay of 7 days (604,800 seconds) with a high standard deviation of 2 days (172,800 seconds). This indicates extreme inconsistency—some claims are notified immediately, others wait up to a week or more. Such variability suggests a lack of standardized workflow, possible batching delays, or manual intervention bottlenecks.
+
+3. **(A  C): Assign to Close**  
+   - *Anomaly:* Average of only 2 hours between assignment and closure, with a 1-hour standard deviation. Given that the natural process includes evaluation, approval, and notification steps, claims closing within 2 hours of assignment are likely to be either fraudulent, artificially closed, or missing critical steps in the event log.
+
+4. **(E  N): Evaluate to Notify**  
+   - *Anomaly:* Only 5 minutes (300 seconds) on average between evaluation and notification, with a 1-minute standard deviation. This ultra-quick transition raises concerns about whether notifications are being sent without proper review, or if the "Evaluate" step is being skipped or falsely recorded.
+
+---
+
+**Hypotheses on Root Causes:**
+
+1. **Artificial or automated approval timing (R  P):**  
+   - The rigid timing may indicate a scheduled batch job or workflow engine that approves claims after exactly 25 hours, regardless of actual evaluation completeness—potentially to meet SLA targets or due to a misconfigured automation rule.
+
+2. **Backlogged notification processing (P  N):**  
+   - The long and variable delay suggests that notifications are processed in bulk (e.g., daily or weekly batches) rather than in real time, possibly due to a downstream integration delay with a customer communication system or lack of prioritization.
+
+3. **Premature or fraudulent claim closures (A  C):**  
+   - Claims closing within 2 hours of assignment may reflect a systemic issue such as:
+     - Assigning claims to adjusters who immediately close them without evaluation.
+     - Misconfigured workflows that allow closure without required steps.
+     - Potential fraud or internal abuse where claims are closed to reduce workload without proper review.
+
+4. **Bypassed or rushed evaluation-to-notification flow (E  N):**  
+   - The 5-minute window could imply that notifications are auto-triggered immediately after evaluation, even if the claim is not fully processed, or that the "Evaluate" event is being logged prematurely (e.g., before a full assessment), which could indicate data entry errors or system logic flaws.
+
+---
+
+**Verification Approaches via SQL Queries:**
+
+1. **Identify claims with unusually short (or long) time between R and P:**
+   ```sql
+   WITH claim_timings AS (
+     SELECT 
+       c.claim_id,
+       MIN(CASE WHEN ce.activity = 'R' THEN ce.timestamp END) AS receive_time,
+       MIN(CASE WHEN ce.activity = 'P' THEN ce.timestamp END) AS approve_time,
+       EXTRACT(EPOCH FROM (MIN(CASE WHEN ce.activity = 'P' THEN ce.timestamp END) - 
+                           MIN(CASE WHEN ce.activity = 'R' THEN ce.timestamp END))) AS time_r_to_p_seconds
+     FROM claims c
+     JOIN claim_events ce ON c.claim_id = ce.claim_id
+     WHERE ce.activity IN ('R', 'P')
+     GROUP BY c.claim_id
+     HAVING MIN(CASE WHEN ce.activity = 'P' THEN ce.timestamp END) IS NOT NULL
+   )
+   SELECT 
+     claim_id,
+     time_r_to_p_seconds,
+     CASE 
+       WHEN time_r_to_p_seconds < 7200 THEN 'Too fast (under 2h)'
+       WHEN time_r_to_p_seconds > 144000 THEN 'Too slow (over 40h)'
+       ELSE 'Normal'
+     END AS anomaly_label
+   FROM claim_timings
+   WHERE time_r_to_p_seconds IS NOT NULL
+   ORDER BY time_r_to_p_seconds
+   LIMIT 50;
+   ```
+
+2. **Detect claims where approval is followed by notification after more than 7 days:**
+   ```sql
+   WITH approve_notify_times AS (
+     SELECT 
+       c.claim_id,
+       MIN(CASE WHEN ce.activity = 'P' THEN ce.timestamp END) AS approve_time,
+       MIN(CASE WHEN ce.activity = 'N' THEN ce.timestamp END) AS notify_time,
+       EXTRACT(EPOCH FROM (MIN(CASE WHEN ce.activity = 'N' THEN ce.timestamp END) - 
+                           MIN(CASE WHEN ce.activity = 'P' THEN ce.timestamp END))) AS time_p_to_n_seconds
+     FROM claims c
+     JOIN claim_events ce ON c.claim_id = ce.claim_id
+     WHERE ce.activity IN ('P', 'N')
+     GROUP BY c.claim_id
+     HAVING MIN(CASE WHEN ce.activity = 'N' THEN ce.timestamp END) IS NOT NULL
+   )
+   SELECT 
+     claim_id,
+     time_p_to_n_seconds,
+     time_p_to_n_seconds / 86400.0 AS days_delay,
+     CASE 
+       WHEN time_p_to_n_seconds > 604800 THEN 'Excessive delay (>7 days)'
+       ELSE 'Within expected range'
+     END AS anomaly_label
+   FROM approve_notify_times
+   WHERE time_p_to_n_seconds IS NOT NULL
+   ORDER BY time_p_to_n_seconds DESC
+   LIMIT 30;
+   ```
+
+3. **Find claims where assignment is followed by closure within 2 hours:**
+   ```sql
+   WITH assign_close_times AS (
+     SELECT 
+       c.claim_id,
+       MIN(CASE WHEN ce.activity = 'A' THEN ce.timestamp END) AS assign_time,
+       MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) AS close_time,
+       EXTRACT(EPOCH FROM (MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) - 
+                           MIN(CASE WHEN ce.activity = 'A' THEN ce.timestamp END))) AS time_a_to_c_seconds
+     FROM claims c
+     JOIN claim_events ce ON c.claim_id = ce.claim_id
+     WHERE ce.activity IN ('A', 'C')
+     GROUP BY c.claim_id
+     HAVING MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) IS NOT NULL
+   )
+   SELECT 
+     claim_id,
+     time_a_to_c_seconds,
+     CASE 
+       WHEN time_a_to_c_seconds <= 7200 THEN 'Suspiciously fast (2h)'
+       ELSE 'Normal'
+     END AS anomaly_label
+   FROM assign_close_times
+   WHERE time_a_to_c_seconds IS NOT NULL
+   ORDER BY time_a_to_c_seconds ASC
+   LIMIT 50;
+   ```
+
+4. **Check for claims with evaluation-to-notification delays under 5 minutes:**
+   ```sql
+   WITH eval_notify_times AS (
+     SELECT 
+       c.claim_id,
+       MIN(CASE WHEN ce.activity = 'E' THEN ce.timestamp END) AS eval_time,
+       MIN(CASE WHEN ce.activity = 'N' THEN ce.timestamp END) AS notify_time,
+       EXTRACT(EPOCH FROM (MIN(CASE WHEN ce.activity = 'N' THEN ce.timestamp END) - 
+                           MIN(CASE WHEN ce.activity = 'E' THEN ce.timestamp END))) AS time_e_to_n_seconds
+     FROM claims c
+     JOIN claim_events ce ON c.claim_id = ce.claim_id
+     WHERE ce.activity IN ('E', 'N')
+     GROUP BY c.claim_id
+     HAVING MIN(CASE WHEN ce.activity = 'N' THEN ce.timestamp END) IS NOT NULL
+   )
+   SELECT 
+     claim_id,
+     time_e_to_n_seconds,
+     CASE 
+       WHEN time_e_to_n_seconds < 300 THEN 'Unrealistically fast (<5 min)'
+       ELSE 'Normal'
+     END AS anomaly_label
+   FROM eval_notify_times
+   WHERE time_e_to_n_seconds IS NOT NULL
+   ORDER BY time_e_to_n_seconds ASC
+   LIMIT 30;
+   ```
+
+5. **Correlate anomalies with adjusters, claim types, or regions:**
+   ```sql
+   -- Example: Find adjusters associated with fast AC closures
+   WITH suspicious_closures AS (
+     SELECT 
+       c.claim_id,
+       a.name AS adjuster_name,
+       c.claim_type,
+       c.region,
+       MIN(CASE WHEN ce.activity = 'A' THEN ce.timestamp END) AS assign_time,
+       MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) AS close_time,
+       EXTRACT(EPOCH FROM (MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) - 
+                           MIN(CASE WHEN ce.activity = 'A' THEN ce.timestamp END))) AS time_a_to_c_seconds
+     FROM claims c
+     JOIN claim_events ce ON c.claim_id = ce.claim_id
+     JOIN adjusters a ON ce.resource = a.name
+     WHERE ce.activity IN ('A', 'C')
+       AND ce.resource IS NOT NULL
+     GROUP BY c.claim_id, a.name, c.claim_type, c.region
+     HAVING MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) IS NOT NULL
+   )
+   SELECT 
+     adjuster_name,
+     claim_type,
+     region,
+     COUNT(*) AS count_suspicious,
+     AVG(time_a_to_c_seconds) AS avg_time_a_to_c,
+     MIN(time_a_to_c_seconds) AS min_time,
+     MAX(time_a_to_c_seconds) AS max_time
+   FROM suspicious_closures
+   WHERE time_a_to_c_seconds <= 7200
+   GROUP BY adjuster_name, claim_type, region
+   ORDER BY count_suspicious DESC;
+   ```
+
+These SQL queries enable targeted investigation into the anomalies, helping to identify patterns linked to specific resources, claim types, or geographic regions—supporting root-cause analysis and process improvement.
