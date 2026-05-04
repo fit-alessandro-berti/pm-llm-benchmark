@@ -280,13 +280,26 @@ def reset_shared_settings(common_module: Any) -> None:
     common_module.Shared.ADDED_TO_PAYLOAD = None
 
 
+def import_benchmark_modules() -> tuple[Any, Any]:
+    original_argv = sys.argv[:]
+    try:
+        # pm-llm-benchmark/common.py reads ANSWERING_MODEL_NAME and
+        # EVALUATING_MODEL_NAME directly from sys.argv positional entries.
+        # This wrapper should not feed its own flags into that path.
+        sys.argv = [original_argv[0]]
+        common_module = importlib.import_module("common")
+        answer_module = importlib.import_module("answer")
+        return common_module, answer_module
+    finally:
+        sys.argv = original_argv
+
+
 def execute_pipeline(config: Dict[str, Any], python_executable: str, dry_run: bool) -> None:
     if dry_run:
         print(f"Would execute pm-llm-benchmark for alias={config['alias']} base_model={config['base_model']}")
         return
 
-    common_module = importlib.import_module("common")
-    answer_module = importlib.import_module("answer")
+    common_module, answer_module = import_benchmark_modules()
 
     common_module.insert_api_keys()
     answer_module.configure_rate_limiter(
