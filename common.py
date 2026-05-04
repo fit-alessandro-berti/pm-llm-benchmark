@@ -13,6 +13,34 @@ import sys
 
 from typing import Dict, Any
 
+PROVIDER_API_KEY_ENVS = {
+    "openrouter": "OPENROUTER_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "grok": "GROK_API_KEY",
+    "deepinfra": "DEEPINFRA_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+    "google": "GOOGLE_API_KEY",
+    "claude": "ANTHROPIC_API_KEY",
+    "qwen": "QWEN_API_KEY",
+    "nvidia": "NVIDIA_API_KEY",
+    "perplexity": "PERPLEXITY_API_KEY",
+    "groq": "GROQ_API_KEY",
+}
+
+PROVIDER_API_KEY_FILES = {
+    "openrouter": "../api_openrouter.txt",
+    "openai": "../api_openai.txt",
+    "grok": "../api_grok.txt",
+    "deepinfra": "../api_deepinfra.txt",
+    "mistral": "../api_mistral.txt",
+    "google": "../api_google.txt",
+    "claude": "../api_anthropic.txt",
+    "qwen": "../api_qwen.txt",
+    "nvidia": "../api_nvidia.txt",
+    "perplexity": "../api_perplexity.txt",
+    "groq": "../api_groq.txt",
+}
+
 # the model used to respond to the questions
 ANSWERING_MODEL_NAME = "ChatGPT-5.5-Pro-20260422" if len(sys.argv) < 3 else sys.argv[1]
 
@@ -1242,18 +1270,25 @@ def get_models():
     return models
 
 
+def _read_api_key(provider):
+    env_name = PROVIDER_API_KEY_ENVS.get(provider)
+    if env_name and os.environ.get(env_name):
+        return os.environ[env_name]
+
+    file_path = PROVIDER_API_KEY_FILES.get(provider)
+    if file_path:
+        candidate = os.path.abspath(os.path.join(os.path.dirname(__file__), file_path))
+        if os.path.exists(candidate):
+            with open(candidate, "r", encoding="utf-8") as handler:
+                return handler.read().strip()
+
+    return ""
+
+
 def insert_api_keys():
-    MODELS_DICT["openai"]["api_key"] = open("../api_openai.txt", "r").read().strip()
-    MODELS_DICT["mistral"]["api_key"] = open("../api_mistral.txt", "r").read().strip()
-    MODELS_DICT["grok"]["api_key"] = open("../api_grok.txt", "r").read().strip()
-    MODELS_DICT["deepinfra"]["api_key"] = open("../api_deepinfra.txt", "r").read().strip()
-    MODELS_DICT["qwen"]["api_key"] = open("../api_qwen.txt", "r").read().strip()
-    MODELS_DICT["nvidia"]["api_key"] = open("../api_nvidia.txt", "r").read().strip()
-    MODELS_DICT["google"]["api_key"] = open("../api_google.txt", "r").read().strip()
-    MODELS_DICT["claude"]["api_key"] = open("../api_anthropic.txt", "r").read().strip()
-    MODELS_DICT["perplexity"]["api_key"] = open("../api_perplexity.txt", "r").read().strip()
-    MODELS_DICT["groq"]["api_key"] = open("../api_groq.txt", "r").read().strip()
-    MODELS_DICT["openrouter"]["api_key"] = open("../api_openrouter.txt", "r").read().strip()
+    for provider in PROVIDER_API_KEY_FILES:
+        if provider in MODELS_DICT:
+            MODELS_DICT[provider]["api_key"] = _read_api_key(provider)
 
 
 def check_all_models():

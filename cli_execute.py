@@ -155,14 +155,18 @@ def load_runtime_config(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def read_api_key(config: Dict[str, Any]) -> str | None:
+    api_key_env = config.get("api_key_env")
+    if api_key_env and os.environ.get(api_key_env):
+        return os.environ[api_key_env]
+
     api_key_file = config.get("api_key_file")
     if api_key_file:
-        with open(api_key_file, "r", encoding="utf-8") as handler:
-            return handler.read().strip()
-
-    api_key_env = config.get("api_key_env")
-    if api_key_env and api_key_env in os.environ:
-        return os.environ[api_key_env]
+        candidate = Path(api_key_file)
+        if not candidate.is_absolute():
+            candidate = (REPO_ROOT / candidate).resolve()
+        if candidate.exists():
+            with open(candidate, "r", encoding="utf-8") as handler:
+                return handler.read().strip()
 
     fallback_path = PROVIDER_API_KEY_FILES.get(config["provider"])
     if fallback_path:
