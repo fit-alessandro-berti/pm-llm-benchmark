@@ -1,0 +1,236 @@
+**Anomalies & Undesirable Behaviors Detected in the Event Log**
+
+| CaseID | Anomaly / Unusual Pattern | Why It’s a Concern |
+|---------|---------------------------|--------------------|
+| **1002** | *Validate Stock* (event12) occurs **after** *Perform Credit Check* (event11). The assumed normal flow is **Credit Check  Validate Stock**, but the timestamps show the reverse order. | Suggests a possible reordering of activities, which could hide inventory shortages before credit approval or lead to compliance issues if stock must be confirmed first for certain policies. |
+| **1002** | *Perform Credit Check* (event11) happens **after** both *Confirm Shipment* (event9) and *Ship Goods* (event10). In the standard process, credit check should precede any shipmentrelated actions. | Indicates that goods were shipped and confirmed before financial risk was assessed – a highrisk operational deviation (potential fraud, loss exposure). |
+| **1003** | *Ship Goods* (event17) appears **before** *Validate Stock* (missing) and **before** *Confirm Shipment* (event19). The “Validate Stock” activity is entirely absent. | Missing a critical inventoryvalidation step can result in shipping items that are out of stock, leading to customer dissatisfaction or chargebacks. |
+| **1003** | *Confirm Shipment* (event19) carries `additional_info = 'late_confirmation=Y'`. This flag signals a delayed confirmation relative to the shipment event. | Late confirmations may indicate bottlenecks in communication between warehouse and logistics, affecting downstream fulfillment reporting and SLA compliance. |
+| **1004** | *Receive Payment* (event22) occurs **before** *Perform Credit Check*, *Validate Stock*, *Confirm Shipment*, and even before *Issue Invoice* (though invoice follows payment). The order of activities is highly outofsequence: Registration  Payment  Issue Invoice  Confirm Shipment  Ship Goods. | Receiving payment prior to any credit or inventory checks violates typical financial controls; it could be a system error, test data, or an intentional policy breach that exposes the company to unverified revenue. |
+| **All Cases** | *Event IDs* are not strictly sequential per `case_id` (e.g., 1002 jumps from 8  9  10  …). While this does not break functionality, nonsequential IDs can complicate audit trails if they stem from parallel processing or datamerge issues. | Nonmonotonic IDs may hide concurrency problems or duplicate event entries that need reconciliation. |
+
+---
+
+### Hypotheses for the Root Causes
+
+| Anomaly | Possible Explanations |
+|---------|-----------------------|
+| **Reversed CreditStock order (1002)** | • A workflow engine bug that swapped activity ordering.<br>• Manual override by a user who “fasttracked” shipment and later performed credit check as an afterthefact audit.<br>• Data ingestion error where events were logged out of timestamp order. |
+| **Credit Check after Shipment (1002, 1004)** | • Automated escalation: highvalue orders may trigger immediate fulfillment while credit assessment runs asynchronously in the background.<br>• Policy exception for “preauthorized” customers (e.g., VIP) – but no such flag exists in `additional_info`.<br>• System race condition where payment confirmation fired before downstream checks completed. |
+| **Missing Validate Stock (1003)** | • The stock validation step was skipped due to a preapproved inventory reservation (perhaps captured elsewhere, not reflected here).<br>• A datacapture failure: the event never reached the log table.<br>• Intentional shortcut for “dropship” orders where external supplier guarantees availability. |
+| **Late Confirmation flag (1003)** | • Manual entry delay – logistics manager could only confirm after receiving carrier acknowledgment late in the day.<br>• Integration lag between warehouse execution system and the eventlogging service. |
+| **Payment before any checks (1004)** | • Test/seed data where payment is simulated upfront to verify downstream processes.<br>• Business rule for “instantpay” orders (e.g., prepaid invoices) that bypasses credit check, but then still requires shipment confirmation – the log should reflect a special flag (`payment_type=prepaid`) which is missing. |
+| **Nonsequential Event IDs** | • Parallel processing of subactivities within the same case generating events out of order.<br>• Batch inserts from ETL jobs that preserve source ordering but not target monotonicity. |
+
+---
+
+### Suggested SQL Investigations
+
+Below are a set of queries you can run against the PostgreSQL schema to **validate, quantify, and drill into** each anomaly class. Feel free to adapt date ranges, thresholds, or add `JOIN`s as needed.
+
+#### 1. Detect OutofOrder Activity Sequences per Case
+```sql
+-- Define the canonical order (as a CTE for readability)
+WITH ordered_activities AS (
+    SELECT
+        case_id,
+        event_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS seq_pos
+    FROM order_event_log
+),
+
+-- Map each activity to its expected position in the “normal” flow
+expected_positions AS (
+    SELECT
+        oa.*,
+        CASE activity
+            WHEN 'Register Order'          THEN 1
+            WHEN 'Perform Credit Check'   THEN 2
+            WHEN 'Validate Stock'         THEN 3
+            WHEN 'Confirm Shipment'       THEN 4
+            WHEN 'Ship Goods'             THEN 5
+            WHEN 'Issue Invoice'          THEN 6
+            WHEN 'Receive Payment'        THEN 7
+            ELSE NULL                     -- catch unexpected activities
+        END AS expected_pos
+    FROM ordered_activities oa
+)
+
+-- Find mismatches where actual sequence (seq_pos) does NOT equal the canonical position
+SELECT *
+FROM expected_positions
+WHERE seq_pos <> expected_pos
+ORDER BY case_id, seq_pos;
+```
+*Result*: Rows where an activity appears out of its “normal” slot. Use this to pinpoint cases like 1002 and 1004.
+
+#### 2. List Cases Missing Critical Activities (e.g., Validate Stock)
+```sql
+SELECT o.case_id
+FROM orders o
+LEFT JOIN (
+    SELECT case_id, activity
+    FROM order_event_log
+) el ON o.case_id = el.case_id
+GROUP BY o.case_id
+HAVING COUNT(CASE WHEN el.activity = 'Validate Stock' THEN 1 END) = 0;
+```
+*Result*: Returns `case_id`s lacking the “Validate Stock” event (e.g., 1003).
+
+#### 3. Identify Cases Where Payment Precedes Credit Check, Stock Validation, and Shipment Confirmation
+```sql
+WITH payment_events AS (
+    SELECT case_id, MIN(timestamp) AS pay_ts
+    FROM order_event_log
+    WHERE activity = 'Receive Payment'
+    GROUP BY case_id
+),
+credit_events AS (
+    SELECT case_id, MAX(timestamp) AS credit_ts
+    FROM order_event_log
+    WHERE activity = 'Perform Credit Check'
+    GROUP BY case_id
+),
+stock_events AS (
+    SELECT case_id, MAX(timestamp) AS stock_ts
+    FROM order_event_log
+    WHERE activity = 'Validate Stock'
+    GROUP BY case_id
+),
+shipment_events AS (
+    SELECT case_id, MIN(timestamp) AS ship_conf_ts
+    FROM order_event_log
+    WHERE activity IN ('Confirm Shipment','Ship Goods')
+    GROUP BY case_id
+)
+SELECT p.case_id,
+       p.pay_ts,
+       c.credit_ts,
+       s.stock_ts,
+       sh.ship_conf_ts
+FROM payment_events p
+LEFT JOIN credit_events   c ON p.case_id = c.case_id
+LEFT JOIN stock_events    s ON p.case_id = s.case_id
+LEFT JOIN shipment_events sh ON p.case_id = sh.case_id
+WHERE (c.credit_ts IS NULL OR p.pay_ts < c.credit_ts)
+  AND (s.stock_ts IS NULL OR p.pay_ts < s.stock_ts)
+  AND (sh.ship_conf_ts IS NULL OR p.pay_ts < sh.ship_conf_ts);
+```
+*Result*: Confirms cases where payment is recorded before any of the three safeguard activities – you’ll see `case_id = 1004`.
+
+#### 4. Highlight Late Confirmation Flags
+```sql
+SELECT *
+FROM order_event_log
+WHERE activity = 'Confirm Shipment'
+  AND additional_info ILIKE '%late_confirmation%';
+```
+*Result*: Pulls rows like case1003’s late confirmation for deeper inspection (e.g., join with `resources` to see who logged it).
+
+#### 5. Correlate Anomalies with Order Value & Type
+```sql
+SELECT o.case_id,
+       o.order_value,
+       o.order_type,
+       ae.*   -- from the outoforder query above
+FROM (
+    -- reuse the CTE from #1 and filter mismatches
+    WITH ordered_activities AS ( ... ),   -- same as in #1
+         expected_positions AS ( ... )
+    SELECT case_id, activity, seq_pos, expected_pos
+    FROM expected_positions
+    WHERE seq_pos <> expected_pos
+) ae
+JOIN orders o ON ae.case_id = o.case_id;
+```
+*Result*: Lets you see whether highvalue or “priority” orders are more prone to ordering anomalies.
+
+#### 6. Who Performed the OutofOrder Activities? (Join with `resources`)
+```sql
+WITH out_of_order AS (
+    -- reuse CTE from #1 filtered for mismatches
+    WITH ordered_activities AS ( ... ),
+         expected_positions AS ( ... )
+    SELECT case_id, activity, timestamp, event_id
+    FROM expected_positions
+    WHERE seq_pos <> expected_pos
+)
+SELECT o.case_id,
+       o.activity,
+       o.timestamp,
+       el.resource,
+       r.role,
+       r.department
+FROM out_of_order o
+JOIN order_event_log el ON o.case_id = el.case_id AND o.event_id = el.event_id
+LEFT JOIN resources r ON el.resource = r.resource_id;
+```
+*Result*: Identifies which role/department executed the problematic steps, useful for training or policy review.
+
+#### 7. Distribution of Anomalies Over Time (Potential Systemic Issues)
+```sql
+SELECT DATE_TRUNC('day', timestamp) AS day,
+       COUNT(*) AS anomaly_cnt
+FROM (
+    -- combine all mismatch detections (outoforder + missing stock + early payment)
+    SELECT timestamp FROM (
+        -- outoforder (reuse #1 CTE)
+        WITH ordered_activities AS ( ... ),
+             expected_positions AS ( ... )
+        SELECT timestamp FROM expected_positions WHERE seq_pos <> expected_pos
+
+        UNION ALL
+
+        -- missing Validate Stock
+        SELECT el.timestamp
+        FROM order_event_log el
+        JOIN orders o ON el.case_id = o.case_id
+        WHERE el.activity <> 'Validate Stock'   -- dummy, we’ll filter later via NOT EXISTS
+          AND NOT EXISTS (
+              SELECT 1 FROM order_event_log sub
+              WHERE sub.case_id = el.case_id
+                AND sub.activity = 'Validate Stock'
+          )
+
+        UNION ALL
+
+        -- early payment cases (reuse #3 CTE)
+        SELECT p.pay_ts
+        FROM (
+            WITH payment_events AS (...), credit_events AS (...), stock_events AS (...),
+                 shipment_events AS (...)
+            SELECT p.case_id, p.pay_ts
+            FROM payment_events p
+            LEFT JOIN credit_events   c ON p.case_id = c.case_id
+            LEFT JOIN stock_events    s ON p.case_id = s.case_id
+            LEFT JOIN shipment_events sh ON p.case_id = sh.case_id
+            WHERE (c.credit_ts IS NULL OR p.pay_ts < c.credit_ts)
+              AND (s.stock_ts IS NULL OR p.pay_ts < s.stock_ts)
+              AND (sh.ship_conf_ts IS NULL OR p.pay_ts < sh.ship_conf_ts)
+        ) sub
+    ) all_anoms
+) a
+GROUP BY day
+ORDER BY day;
+```
+*Result*: A timeseries view that can reveal spikes (e.g., after a system patch or during peak load) suggesting systemic root causes.
+
+---
+
+### Next Steps for You
+
+1. **Run the queries** above in your PostgreSQL environment to materialize the anomaly lists.
+2. **Crossreference** the offending `case_id`s with business policies:
+   - Are there documented exceptions (e.g., “preauthorized VIP orders”) that could justify early payment or skipped stock validation?
+   - Do any internal alerts or compensating controls exist for outoforder activities?
+3. **Investigate the source systems**:
+   - Check ETL logs or application event queues for missing/late messages (especially for case1003’s absent “Validate Stock”).
+   - Review audit trails of who executed the outoforder events (using the `resources` join query) to see if a particular role needs additional training.
+4. **Implement preventive measures**:
+   - Add **foreignkey constraints** or **business rule checks** in the workflow engine that enforce activity ordering before persisting to `order_event_log`.
+   - Introduce **realtime validation alerts** (e.g., via PostgreSQL triggers) that fire when an event violates expected sequence.
+   - Enforce **mandatory flags** (`payment_type`, `exception_reason`) in `additional_info` for any deviation from the canonical flow.
+
+By systematically querying, correlating, and acting on these anomalies, you’ll reduce risk, improve orderprocessing reliability, and gain clearer visibility into operational exceptions.

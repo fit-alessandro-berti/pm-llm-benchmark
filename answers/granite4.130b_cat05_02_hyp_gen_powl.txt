@@ -1,0 +1,224 @@
+**1. Anomalies in the POWL Model**
+
+| # | Description of the anomaly | Where it appears in the model |
+|---|----------------------------|------------------------------|
+| A1 | **Loop(E  P) that repeats indefinitely** – The `OperatorPOWL(LOOP, [E,P])` allows *Evaluate* to be followed by *Approve*, and then the loop restarts with another *Evaluate*. In a real insurance workflow this would let a claim bounce between evaluation and approval many times, which is not businesslogical. | Inside the `loop` variable |
+| A2 | **XOR that can skip “Notify Customer”** – The XOR gate (`OperatorPOWL(XOR,[N,skip])`) gives two parallel outgoing transitions: one to *Notify* (N) and one to a silent transition (`skip`). If the model interpreter chooses the `skip`, the claim is closed without ever informing the customer. | Inside the `xor` variable |
+| A3 | **Partialorder edges that relax sequencing** – The strict partial order only forces `R  A  loop  xor`. It then adds an extra edge `A  C` (allowing *Close* directly after *Assign*) and does **not** enforce `xor  C`. Consequently, the model permits: <br>• Closing a claim before any evaluation/approval (`A  C`).<br>• Closing a claim without even traversing the XOR gate. | In `root.order.add_edge(A, C)` (and absence of `xor  C`) |
+| A4 | **Missing enforcement of “Evaluate” as prerequisite for “Approve”** – Inside the loop only an ordering between E and P is implied by their placement in the list `[E,P]`, but because it is a LOOP construct there is no guarantee that *E* must happen before *P* on each iteration. A malformed trace could therefore contain `P` without a preceding `E`. | Implicit in the definition of `OperatorPOWL(LOOP, [E,P])` |
+| A5 | **Potential for duplicate approvals** – Because the loop can restart after every approval (`E  P  (back to E)`), an illbehaved execution could emit *Approve* multiple times before exiting the loop. The model does not contain a guard that prevents `P` from firing twice in succession. | Same as A1, but focusing on repetition of `P`. |
+
+**2. Hypotheses for Why These Anomalies Exist**
+
+| # | Hypothesis | Rationale |
+|---|------------|-----------|
+| H1 | **Partial implementation of a new business rule** – Management may have decided that in certain “lowrisk” claims the evaluation step can be bypassed or repeated, and the XOR was added to allow skipping notification for automated settlements. The LOOP was introduced to support reevaluation on appeal, but the designer forgot to add exit conditions (e.g., a maximum number of loops). | Business policies often evolve; developers sometimes encode “ifthen” logic as generic control structures before finetuning them. |
+| H2 | **Miscommunication between IT and Process Owners** – The workflow designers (business analysts) described the desired behavior verbally (“you can reevaluate if needed, and you may not always notify”), while the modeler interpreted “reevaluate” as an unbounded loop and “may not notify” as a simple XOR. No explicit constraints were captured in the requirements document, leading to the overly permissive model. | Crossfunctional handoffs frequently omit edgecase details; without formal BPMN or PNL specifications, ambiguities become concrete implementation choices. |
+| H3 | **Technical limitation / bug in the POWL authoring tool** – The tool may allow users to drag a LOOP operator onto any sequence of activities and automatically inserts an implicit “repeat until exit” semantics that cannot be constrained (e.g., no maxiterations field). Similarly, XOR gates might default to “choose any outgoing transition” with equal probability unless weights are set. This would produce the observed anomalies even if the designer intended stricter behavior. | Many lowcode workflow platforms expose powerful constructs without safety nets; a novice user could inadvertently create nonterminating loops or missing guards. |
+| H4 | **Inadequate validation of the process model** – Before deployment, automated checks (e.g., soundness, liveness) were either skipped or configured too loosely. The model passed syntactic checks but failed semantic invariants that would have flagged an unguarded loop or a dangling XOR. Consequently, the anomalies persisted into production. | In organizations with tight release cycles, static analysis steps are sometimes omitted to meet deadlines. |
+| H5 | **Legacy code reuse** – The current POWL definition may be generated from an older BPMN model that already contained these “flexible” constructs (perhaps for a different product line). When the schema was migrated to PostgreSQL and the event log captured, no one revisited the process logic, so the anomalies remain. | Reusing artifacts across domains is common; however, contextspecific constraints are often lost in translation. |
+
+**3. Verifying the Hypotheses with Database Queries**
+
+Below are concrete SQL statements that can be run against the PostgreSQL schema (`claims`, `adjusters`, `claim_events`) to surface evidence matching each anomaly. The queries assume that every activity emitted by the workflow engine is recorded as a row in `claim_events` (with `activity` = “R”, “A”, “E”, “P”, “N”, “C”). Adjuster names can be joined via `adjusters.adjuster_id = claim_events.resource` if resources are stored as IDs; for simplicity we treat `resource` as the adjuster’s name.
+
+---
+
+### 3.1Claims Closed Without Proper Evaluation or Approval (A3)
+
+```sql
+-- Claims that have a "C" event but never saw an "E" OR never saw a "P"
+WITH claim_activities AS (
+    SELECT
+        claim_id,
+        MAX(CASE WHEN activity = 'R' THEN 1 ELSE 0 END)   AS has_R,
+        MAX(CASE WHEN activity = 'A' THEN 1 ELSE 0 END)   AS has_A,
+        MAX(CASE WHEN activity = 'E' THEN 1 ELSE 0 END)   AS has_E,
+        MAX(CASE WHEN activity = 'P' THEN 1 ELSE 0 END)   AS has_P,
+        MAX(CASE WHEN activity = 'N' THEN 1 ELSE 0 END)   AS has_N,
+        MAX(CASE WHEN activity = 'C' THEN 1 ELSE 0 END)   AS has_C
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT claim_id, submission_date, claim_amount
+FROM claim_activities
+WHERE has_C = 1
+  AND (has_E = 0 OR has_P = 0);
+```
+
+*Interpretation*: Any row returned indicates a claim that was closed (`C`) without ever undergoing evaluation (`E`) **or** approval (`P`). This directly validates anomalyA3.
+
+---
+
+### 3.2Claims Closed Directly After Assignment (A3 – Edge `A  C`)
+
+```sql
+-- Claims where the sequence is R -> A -> C with no intervening E or P
+WITH ordered_events AS (
+    SELECT
+        claim_id,
+        activity,
+        ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp) AS seq
+    FROM claim_events
+)
+SELECT DISTINCT ce.claim_id, c.submission_date, c.claim_amount
+FROM ordered_events ce
+JOIN claims c ON c.claim_id = ce.claim_id
+WHERE ce.activity = 'C'
+  AND EXISTS (
+        SELECT 1
+        FROM ordered_events a
+        WHERE a.claim_id = ce.claim_id
+          AND a.activity = 'A'
+          AND a.seq < ce.seq
+      )
+  AND NOT EXISTS (
+        SELECT 1
+        FROM ordered_events e
+        WHERE e.claim_id = ce.claim_id
+          AND e.activity IN ('E','P')
+          AND e.seq BETWEEN (SELECT MIN(seq) 
+                             FROM ordered_events x 
+                             WHERE x.claim_id = ce.claim_id AND x.activity = 'A')
+                       AND ce.seq
+      );
+```
+
+*Interpretation*: Returns claims where the **only** activities between assignment (`A`) and closure (`C`) are none of `{E,P}`. This demonstrates that the prematureclose path `A  C` is actually exercised.
+
+---
+
+### 3.3Claims with Multiple Approvals (A5)
+
+```sql
+SELECT claim_id,
+       COUNT(*) AS approval_cnt,
+       MIN(timestamp) AS first_approval,
+       MAX(timestamp) AS last_approval
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY claim_id
+HAVING COUNT(*) > 1;
+```
+
+*Interpretation*: Any claim with `approval_cnt > 1` shows that the loop allowed more than one *Approve* event, confirming the “duplicate approval” anomaly.
+
+---
+
+### 3.4Claims Where Notification Was Skipped (A2)
+
+```sql
+SELECT claim_id,
+       submission_date,
+       claim_amount,
+       MAX(CASE WHEN activity = 'N' THEN 1 ELSE 0 END) AS notified_flag
+FROM claim_events
+GROUP BY claim_id, submission_date, claim_amount
+HAVING MAX(CASE WHEN activity = 'N' THEN 1 ELSE 0 END) = 0;
+```
+
+*Interpretation*: Rows with `notified_flag = 0` are claims that reached the closing stage (`C`) without ever emitting a *Notify* event. This validates that the XOR’s silent branch is being taken in practice.
+
+---
+
+### 3.5Claims Exhibiting Repeated EvaluationApproval Cycles (A1)
+
+```sql
+WITH seq AS (
+    SELECT
+        claim_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp) AS rn
+    FROM claim_events
+)
+SELECT DISTINCT ce.claim_id, c.submission_date, c.claim_amount
+FROM seq ce
+JOIN claims c ON c.claim_id = ce.claim_id
+WHERE ce.activity = 'E'
+  AND EXISTS (
+        SELECT 1
+        FROM seq p
+        WHERE p.claim_id = ce.claim_id
+          AND p.activity = 'P'
+          AND p.rn = ce.rn + 1   -- immediate P after E
+      )
+  AND EXISTS (
+        SELECT 1
+        FROM seq e2
+        WHERE e2.claim_id = ce.claim_id
+          AND e2.activity = 'E'
+          AND e2.rn > ce.rn     -- another later E exists, implying loop continuation
+      );
+```
+
+*Interpretation*: This query looks for a pattern **E  P** that is immediately followed by yet another **E**, indicating at least two iterations of the `LOOP`. The more such rows you see, the stronger the evidence that the loop is nonterminating or excessively long.
+
+---
+
+### 3.6Claims Where Evaluation Precedes Approval (Guard Check)
+
+```sql
+SELECT claim_id,
+       COUNT(*) FILTER (WHERE activity = 'P' AND prev_activity <> 'E') AS p_without_preceding_e
+FROM (
+    SELECT
+        claim_id,
+        activity,
+        timestamp,
+        LAG(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS prev_activity
+    FROM claim_events
+) sub
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'P' AND prev_activity <> 'E') > 0;
+```
+
+*Interpretation*: If any `claim_id` appears in the result, it means an *Approve* event was recorded without a directly preceding *Evaluate* (`E`). This would be a direct violation of business logic and points to anomalyA4.
+
+---
+
+### 3.7CrossReference with Adjusters (Optional Insight)
+
+If `resource` stores the adjuster’s name, you can also see whether certain adjusters are more likely to trigger anomalies:
+
+```sql
+SELECT resource,
+       COUNT(*) AS total_claims,
+       SUM(CASE WHEN activity = 'C' AND has_E = 0 THEN 1 ELSE 0 END) AS closed_wo_eval,
+       SUM(CASE WHEN activity = 'C' AND has_N = 0 THEN 1 ELSE 0 END) AS closed_wo_notify
+FROM (
+    SELECT claim_id,
+           resource,
+           activity,
+           MAX(CASE WHEN activity='E' THEN 1 ELSE 0 END) AS has_E,
+           MAX(CASE WHEN activity='N' THEN 1 ELSE 0 END) AS has_N,
+           MAX(CASE WHEN activity='C' THEN 1 ELSE 0 END) AS is_closed
+    FROM claim_events
+    GROUP BY claim_id, resource, activity
+) x
+GROUP BY resource
+ORDER BY closed_wo_eval DESC;
+```
+
+*Interpretation*: This surfacelevel analysis may reveal that a particular adjuster (or a group of them) frequently closes claims without evaluation or notification, suggesting training gaps or misconfigured workflow rules for those users.
+
+---
+
+## Putting It All Together
+
+1. **Run the queries** above on your production PostgreSQL instance.  
+2. **Collect statistics**: count of rows per query, any obvious outliers (e.g., a single claim with dozens of `P` events).  
+3. **Correlate findings** with business impact: highvalue claims closed without evaluation may indicate financial risk; frequent skipped notifications could breach regulatory compliance (e.g., consumerrights laws).  
+4. **Validate hypotheses**:  
+
+   * If many rows appear in the “closed without eval/approval” query, hypothesisH3 (tool bug) or H2 (miscommunication) gains weight because the model explicitly permits those paths.  
+   * If a specific adjuster consistently shows up in the crossreference query, that points toward **human/operator error** rather than a pure modeling defect – supporting H1 (partial rule implementation).  
+   * Large numbers of duplicate approvals suggest an unguarded loop, reinforcing H3 or H4 (lack of validation).  
+
+5. **Remediation path**: Once the evidence is gathered, you can:  
+
+   * Add **guards** to the POWL model (`maxIterations` on the LOOP, a mandatory `E` before `P`, enforce XOR choice only when a business condition is met).  
+   * Implement **database constraints** (e.g., triggers that prevent inserting a “C” row unless both “E” and “P” exist for that claim).  
+   * Conduct a **process audit** with stakeholders to capture the intended rules, then rebuild the POWL model using those explicit invariants.  
+
+By systematically querying the event log you turn abstract modeling anomalies into concrete datadriven insights, enabling targeted fixes and preventing future recurrence of these workflow irregularities.

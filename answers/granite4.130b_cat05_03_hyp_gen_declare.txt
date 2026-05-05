@@ -1,0 +1,51 @@
+**1. Identified Anomalies**
+
+| Constraint | Intended Logic (Business Process) | Conflict / Undermining Effect |
+|------------|-----------------------------------|-------------------------------|
+| **`responded_existence.E`  `activities: ["A"]`** | Evaluation (**E**) should occur *after* an adjuster has been assigned (**A**). This rule enforces that a claim cannot be evaluated unless it first received an assignment. | The model does **not** require **R** (Receive) before **A**, so a claim could theoretically go straight from **R** to **E** if the system mistakenly skips the assignment step, yet the rule would still consider the evaluation “supported” as long as **A** exists *anywhere* in the trace. This creates ambiguity about whether **A** must precede **E** or merely cooccur. |
+| **`precedence.C  activities: ["R"]`** | Closing (**C**) should follow all prior steps, especially evaluation (**E**) and approval (**P**). The rule only mandates that a claim be received before it can close. | By allowing any trace that contains an **R** to satisfy the precedence for **C**, the model permits closing a claim without going through **A**, **E**, **P**, or even **N**. This directly contradicts the ideal workflow and allows “orphan” closures (e.g., R  C). |
+| **`noncoexistence.E  activities: ["C"]`** | The rule states that **E** (Evaluate) must *not* coexist with **C** (Close). In a proper process, evaluation should finish before closing. | While this aligns with the intended order, it becomes problematic when combined with the weak precedence for **C** above: because **C** can appear without any preceding steps, the noncoexistence rule could be violated in practice if an evaluator mistakenly records both **E** and **C** at nearly the same timestamp (or if logging errors create duplicate entries). The model does not enforce that **E** precedes **C**, only that they are not simultaneous, leaving a gap for racecondition or dataentry anomalies. |
+| **Missing core constraints** | Ideal process: R  A  E  P  N  C (each step must follow the previous one). | The DECLARE model lacks explicit precedence/constraints for **A  E**, **E  P**, **P  N**, and especially **N  C**. Consequently, any ordering that includes the required activities (e.g., R  A  C) would be deemed valid by the model, which is not acceptable from a businesslogic standpoint. |
+
+**Summary of Core Contradictions**
+
+- The model permits closing (**C**) without completing evaluation (**E**) or approval (**P**) because only receipt (**R**) is required.
+- Evaluation can appear without an assigned adjuster being logged beforehand (the responded_existence rule does not enforce ordering, only existence).
+- Noncoexistence of **E** and **C** does not guarantee that **E** precedes **C**, leaving room for simultaneous or outoforder logging errors.
+
+---
+
+**2. Hypotheses for Why These Anomalies Exist**
+
+| Potential Cause | Rationale |
+|-----------------|-----------|
+| **Misinterpretation of Requirements** | Stakeholders may have communicated “evaluation must be supported by an assigner” as a *support* condition rather than a strict ordering, leading to the `responded_existence` formulation. Similarly, “a claim can be closed once received” might have been oversimplified, omitting downstream approvals. |
+| **Incremental Policy Changes Without Full ReAudit** | New compliance rules (e.g., mandatory notification) were added after the initial model was authored. The team updated only a subset of constraints (adding `noncoexistence.E` to prevent evaluation at close) but forgot to revise precedence for closing, resulting in a gap. |
+| **Technical / DataQuality Issues** | Logging mechanisms might record events out of order due to asynchronous processing or clock drifts. To safeguard against false negatives, the model relaxed some ordering checks (e.g., allowing `C` if any `R` exists) and relied on noncoexistence as a posthoc guard. |
+| **Pressure to Expedite Claims** | Business pressure to reduce cycle time could have motivated relaxation of intermediate steps (skipping evaluation or approval for lowvalue claims). The model was adjusted to permit such shortcuts, but the adjustments were not uniformly propagated across all constraint families. |
+| **Incomplete Domain Knowledge Transfer** | The team that authored the DECLARE model may lack full visibility into downstream systems (e.g., automated underwriting engines) that perform “evaluation” or “approval” implicitly. Consequently, they omitted explicit precedence for those activities, assuming they are always present. |
+
+---
+
+**3. SQLBased Verification Strategies**
+
+Below are concrete PostgreSQL queries that can be run against the `claims`, `adjusters`, and `claim_events` tables to surface the anomalies described above.
+
+| Goal | Query |
+|------|-------|
+| **A. Claims Closed Without Any Evaluation (`E`)** | ```sql SELECT c.claim_id, ce.timestamp FROM claims c JOIN claim_events ce ON c.claim_id = ce.claim_id WHERE ce.activity = 'C' AND NOT EXISTS ( SELECT 1 FROM claim_events e WHERE e.claim_id = c.claim_id AND e.activity = 'E' ); ``` |
+| **B. Claims Closed Without Prior Approval (`P`)** | ```sql SELECT c.claim_id, MAX(ce.timestamp) AS close_ts FROM claims c JOIN claim_events ce ON c.claim_id = ce.claim_id WHERE ce.activity IN ('C','P') GROUP BY c.claim_id HAVING COUNT(CASE WHEN activity='P' THEN 1 END)=0; ``` |
+| **C. Claims Where Evaluation and Closing Occur at the Same Timestamp (Potential Coexistence Violation)** | ```sql SELECT claim_id, timestamp FROM claim_events WHERE activity IN ('E','C') GROUP BY claim_id, timestamp HAVING COUNT(DISTINCT activity)=2; ``` |
+| **D. Claims Evaluated Without Any Prior Assignment (`A`)** | ```sql SELECT c.claim_id, e.timestamp AS eval_ts, a.timestamp AS assign_ts FROM claims c JOIN claim_events e ON c.claim_id = e.claim_id AND e.activity='E' LEFT JOIN claim_events a ON c.claim_id = a.claim_id AND a.activity='A' WHERE a.timestamp IS NULL; ``` |
+| **E. Claims Closed Immediately After Receipt (Skipping All Intermediate Steps)** | ```sql SELECT c.claim_id, r.timestamp AS recv_ts, ce.timestamp AS close_ts FROM claims c JOIN claim_events r ON c.claim_id = r.claim_id AND r.activity='R' JOIN claim_events ce ON c.claim_id = ce.claim_id AND ce.activity='C' WHERE NOT EXISTS ( SELECT 1 FROM claim_events x WHERE x.claim_id = c.claim_id AND x.activity IN ('A','E','P','N') ); ``` |
+| **F. Claims With Evaluation but No Assigned Adjuster Recorded in `adjusters` Table** *(crosstable sanity check)* | ```sql SELECT DISTINCT e.claim_id FROM claim_events e JOIN adjusters adj ON adj.name = e.resource WHERE e.activity='E' AND NOT EXISTS ( SELECT 1 FROM adjusters a2 WHERE a2.adjuster_id = adj.adjuster_id ); ``` |
+| **G. Frequency of “R  C” Direct Transitions** *(to quantify how often the minimal precedence is exploited)* | ```sql SELECT COUNT(*) AS direct_rc_count FROM ( SELECT claim_id, MIN(timestamp) AS first_ts, MAX(timestamp) AS last_ts FROM claim_events WHERE activity IN ('R','C') GROUP BY claim_id HAVING COUNT(DISTINCT activity)=2 ) sub WHERE NOT EXISTS ( SELECT 1 FROM claim_events x WHERE x.claim_id = sub.claim_id AND x.activity IN ('A','E','P','N') ); ``` |
+| **H. Claims Where Evaluation Precedes Closing but Both Appear Within a Very Short Window (<5minutes)** *(detect possible logging race conditions)* | ```sql SELECT claim_id, e.timestamp AS eval_ts, c.timestamp AS close_ts FROM claims c JOIN claim_events e ON c.claim_id = e.claim_id AND e.activity='E' JOIN claim_events c ON c.claim_id = c.claim_id AND c.activity='C' WHERE ABS(EXTRACT(EPOCH FROM (c.timestamp - e.timestamp))) < 300; ``` |
+
+**Interpretation Guidance**
+
+- **Rows returned by A, B, D, E** directly indicate violations of the intended workflow (missing critical steps).
+- **Rows from C and H** highlight potential dataintegrity issues where `E` and `C` appear together or nearly simultaneously—situations that could be false positives due to logging concurrency.
+- **Result counts from G** give a quantitative sense of how often the model’s relaxed precedence (`R  C`) is actually exercised in production, helping prioritize remediation efforts.
+
+Running these queries periodically (e.g., as part of an ETL validation job) will surface realworld deviations and guide refinements to the DECLARE model or underlying process controls.

@@ -1,0 +1,112 @@
+**Anomalies Identified in the Event Log**
+
+| case_id | Observed Anomaly | Potential Reason / Cause |
+|---------|------------------|--------------------------|
+| 1002    | **“Confirm Shipment” occurs before “Perform Credit Check.”**<br>Timestamp:2024020108:25:00 (event9) vs. 09:10:00 (event11). | • The credit check might have been skipped or automatically passed due to a bug in the workflow engine.<br>• Manual override by an operator who assumed the customer’s credit score was sufficient without formal verification.<br>• A training lapse where staff were unaware of the required order of credit checks for certain customers. |
+| 1003    | **“Late Confirmation” flag set on “Confirm Shipment” (event19).**<br>`additional_info: "late_confirmation=Y"`. | • The shipment was delayed beyond the usual processing window, possibly due to stock shortage or transportation disruption.<br>• Inefficient routing that caused unexpected transit time increase.<br>• Miscommunication between logistics and finance teams about expected delivery dates. |
+| 1004    | **“Confirm Shipment” marked as “shipment_scheduled = N.”**<br>Event24 shows this flag set even though the shipment occurred at 09:50 (event25). | • A data entry error when entering shipping status in the order management system.<br>• Misaligned internal processes where “scheduled” refers only to preshipment planning, not actual dispatch.<br>• Possible oversight during postshipping verification. |
+| 1001    | **“Receive Payment” appears after a typical payment window (2024020515:00 vs. normal standard orders around day2).**<br>`additional_info: "amount=1250.00"`.<br>Given the order value, it is reasonable for the payment to be delayed if the customer was under special terms or awaiting final invoicing adjustments. | • The payment may have been processed on a different business day due to weekend processing in Finance Team02’s system.<br>• A manual exception where the finance team allowed extra time for larger orders. |
+| 1002    &   **1003** – *Duplicate/Redundant “Ship Goods” events?* (If any duplicate timestamps are present, e.g., a second ship event not reflected in order value changes.) | • Possible data duplication caused by an erroneous batchprocessing step that recorded the same shipment multiple times.<br>• Inconsistent inventory reconciliation where one system thinks goods were shipped twice. |
+
+---
+
+### Hypothesized Underlying Causes
+
+1. **Workflow Automation Bug** – The automation script responsible for advancing orders through stages may have a logic flaw: it checks only “credit_score” (not credit check result) and skips the shipping step if the score is high, leading to outoforder events like in case1002.
+
+2. **Human Override Culture** – Sales reps are empowered to bypass mandatory credit reviews for certain customers or regions. This can explain why case1002’s “Confirm Shipment” precedes its credit check and may also affect other orders with similar customer segments (e.g., known highrisk clients).
+
+3. **System Integration Timing Issues** – The integration between order management, finance, and logistics uses a batch job that runs once per day. Delays in the “shipping scheduled” flag being updated can lead to “late confirmation” flags appearing on event19 for case1003.
+
+4. **Misaligned Business Rules** – The business rule that defines when an order is considered “shipped” (i.e., after goods leave the warehouse) conflicts with internal accounting rules where payment receipt triggers invoicing regardless of shipping status, causing inconsistent timestamps in cases1001 and1004.
+
+5. **Training Gaps for Operators** – New staff may not be fully aware that credit checks must precede shipment confirmation, leading to manual overrides without proper documentation—observed as the anomaly in case1002.
+
+---
+
+### Suggested Investigative SQL Queries
+
+Below are example queries you can run against `order_event_log`, possibly joined with `orders` and/or `resources` tables to deepen the investigation. Replace placeholders (e.g., `X`) with actual IDs or values relevant to your data set.
+
+1. **Identify orders where “Confirm Shipment” occurs before “Perform Credit Check.”**
+   ```sql
+   SELECT case_id, event_id AS confirmation_event
+   FROM order_event_log
+   WHERE activity = 'Confirm Shipment'
+     AND timestamp > (
+         SELECT MIN(timestamp)
+         FROM order_event_log
+         WHERE activity = 'Perform Credit Check' AND case_id = case_id
+       );
+   ```
+
+2. **List orders with a “late_confirmation” flag set, and examine the duration between shipment occurrence and payment receipt.**
+   ```sql
+   SELECT case_id,
+          (SELECT timestamp FROM order_event_log
+           WHERE activity = 'Receive Payment'
+             AND event_id > (
+                 SELECT MAX(timestamp)
+                 FROM order_event_log
+                 WHERE activity = 'Confirm Shipment'
+                   AND case_id = case_id)) -
+          (SELECT timestamp FROM order_event_log
+           WHERE activity = 'Ship Goods'
+             AND event_id < (
+                 SELECT MIN(timestamp)
+                 FROM order_event_log
+                 WHERE activity = 'Confirm Shipment'
+                   AND case_id = case_id))
+          AS days_delay;
+   ```
+
+3. **Find orders where “Confirm Shipment” is marked as not scheduled, but the shipping resource appears in a later event (e.g., “Ship Goods”).**
+   ```sql
+   SELECT case_id, event_id AS confirmation_event
+   FROM order_event_log
+   WHERE activity = 'Confirm Shipment'
+     AND additional_info LIKE '%N%'      -- contains "late_confirmation=Y"
+     AND timestamp > (
+         SELECT MIN(timestamp)
+         FROM order_event_log
+         WHERE activity = 'Ship Goods' AND case_id = case_id);
+   ```
+
+4. **Check the financial relationship between payment amount and order value to spot potential overpayments or underbilling (e.g., large payments for lowvalue orders).**
+   ```sql
+   SELECT case_id, event_id AS receipt_event,
+          additional_info LIKE '%amount=%' AS is_amount_flagged,
+          CAST(REPLACE(additional_info, 'amount=', '') AS NUMERIC) AS payment_amount,
+          order_value FROM order_event_log
+     WHERE activity = 'Receive Payment'
+       AND CAST(REPLACE(additional_info, 'amount=', '') AS NUMERIC) >
+         0.8 * (SELECT order_value FROM orders WHERE case_id = event_id);
+   ```
+
+5. **Analyze the distribution of “late_confirmation” flag across all cases to see if it’s correlated with a particular `order_type` or customer segment.**
+   ```sql
+   SELECT order_type, COUNT(*) AS total_cases,
+          SUM(CASE WHEN additional_info LIKE '%N%' THEN 1 ELSE 0 END) AS late_confirmed
+   FROM order_event_log
+   GROUP BY order_type;
+   ```
+
+6. **Validate whether the same resource (e.g., `WarehouseClerk_3`) appears in multiple “Ship Goods” events for a single case without corresponding invoice updates—potential data duplication or reconciliation issue.**
+   ```sql
+   SELECT case_id, event_id AS ship_event,
+          COUNT(*) OVER (PARTITION BY case_id) AS duplicate_ships
+   FROM order_event_log
+   WHERE activity = 'Ship Goods'
+     AND resource IN (
+         SELECT resource
+         FROM order_event_log
+         WHERE activity = 'Ship Goods' AND case_id <> case_id
+           LIMIT 5);   -- adjust limit as needed for a quick check
+   ```
+
+**Next Steps**
+
+- Run the above queries on your live data to confirm if any of the suspected anomalies exist.
+- If duplicate or outoforder events are found, investigate whether there is an underlying bug in the workflow engine, missing validation checks, or manual override policies that need clarification and enforcement through alerts or audit trails.
+
+Feel free to adapt these SQL statements with additional filters (e.g., specific `customer_id` ranges) if you suspect regional or productspecific patterns.
