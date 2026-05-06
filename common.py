@@ -416,18 +416,52 @@ def is_visual_model(model_name):
     return any(marker in model_name for marker in visual_markers)
 
 
+_CLOSED_SOURCE_MODEL_FAMILIES = (
+    "gpt-3.5",
+    "gpt-4",
+    "gpt-5",
+    "chatgpt",
+    "claude",
+    "gemini",
+    "grok",
+    "o1-",
+    "o3-",
+    "o4-mini",
+)
+
+_CLOSED_SOURCE_COMMERCIAL_TIERS = (
+    "2.5-plus",
+    "2.5-turbo",
+    "2.5-max",
+    "qwen3-max",
+    "qwen3.6",
+)
+
+_CLOSED_SOURCE_MODEL_ALIASES = (
+    "sonus",
+    "sonar-",
+    "quasar",
+    "optimus",
+    "horizon",
+    "cypher",
+    "mistral-medium",
+    "magistral-medium",
+    "ministral-3b",
+    "sonoma",
+    "mimo",
+    "muse",
+)
+
+_CLOSED_SOURCE_MODEL_MARKERS = (
+    _CLOSED_SOURCE_MODEL_FAMILIES
+    + _CLOSED_SOURCE_COMMERCIAL_TIERS
+    + _CLOSED_SOURCE_MODEL_ALIASES
+)
+
+
 def is_open_source(m_name):
-    m_name = m_name.lower()
-    patterns = ["gpt-4", "gpt-3.5", "claude", "gemini", "o1-", "o3-", "ministral-3b", "grok", "sonus", "2.5-plus", "2.5-turbo", "2.5-max", "sonar-", "quasar", "optimus", "o3-2", "o4-mini-2", "gpt-5", "horizon", "cypher", "mistral-medium", "magistral-medium", "sonoma", "mimo", "qwen3.6", "muse"]
-
-    for p in patterns:
-        if p in m_name:
-            return False
-
-    if "qwen3-max" in m_name:
-        return False
-
-    return True
+    model_name = _model_name_for_matching(m_name)
+    return bool(model_name) and not any(marker in model_name for marker in _CLOSED_SOURCE_MODEL_MARKERS)
 
 
 _REASONING_DISABLED_MARKERS = (

@@ -5,7 +5,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | Model             | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | OPT                  | :nerd_face: VI       |
 | ----------------- | -------- | ------------------ | ------------------ | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- |
 | qwen3.54b         | **25.7** | :white_check_mark: | :white_check_mark: | :mage_woman: **4.6** | :mage_woman: **4.9** | :mage_woman: **2.1** | :mage_woman: **3.8** | :mage_woman: **3.2** | :mage_woman: **4.2** | :mage_woman: **2.9** | 0.0                  |
-| ministral-3b-2512 | **19.1** | :x:                | :x:                | 3.7                  | 2.3                  | **1.9**              | 2.9                  | 2.9                  | 3.2                  | 2.2                  | :mage_woman: **3.5** |
+| ministral-3b-2512 | **19.1** | :x:                | :x:                | 3.7                  | 2.3                  | **1.9**              | 2.9                  | 2.9                  | 3.2                  | 2.3                  | :mage_woman: **3.5** |
 
 ### qwen3.54b   => 25.7 points
 
