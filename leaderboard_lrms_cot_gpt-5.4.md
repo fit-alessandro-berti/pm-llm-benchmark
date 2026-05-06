@@ -13,21 +13,21 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | qwen3.6-max-preview              | **34.4** | :x:                | :white_check_mark: | **6.0**              | 6.8                  | 3.7                  | 4.3                  | 4.9                  | **5.0**              | :mage_woman: **3.6** | 0.0                  |
 | z-aiglm-5                        | **34.3** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.4                  | 5.2                  | 4.3                  | 4.5                  | 4.8                  | 3.2                  | 0.0                  |
 | moonshotaikimi-k2.5              | **34.0** | :white_check_mark: | :white_check_mark: | 5.8                  | 6.1                  | 4.6                  | 4.2                  | 4.9                  | 4.8                  | **3.5**              | 0.0                  |
-| deepseek-v4-flash                | **33.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.8                  | 4.6                  | 4.8                  | 4.7                  | 2.3                  | 0.0                  |
+| deepseek-v4-flash                | **33.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.7                  | 4.6                  | 4.8                  | 4.7                  | 2.3                  | 0.0                  |
 | qwen3.6-27b                      | **32.7** | :x:                | :white_check_mark: | 5.7                  | 6.5                  | 3.3                  | 3.9                  | **5.0**              | 4.7                  | :mage_woman: **3.6** | 3.4                  |
 | z-aiglm-5v-turbo                 | **32.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 5.8                  | 4.8                  | 3.9                  | 4.5                  | 4.4                  | **3.5**              | 4.0                  |
-| deepseek-v3.2-thinking           | **32.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.2                  | 4.1                  | 4.3                  | 4.3                  | 4.5                  | 3.3                  | 0.0                  |
-| qwen3.5-397b-a17b                | **32.5** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.3                  | 4.1                  | 3.8                  | 4.4                  | 4.6                  | **3.4**              | 0.0                  |
+| deepseek-v3.2-thinking           | **32.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.3                  | 4.1                  | 4.3                  | 4.3                  | 4.5                  | 3.3                  | 0.0                  |
+| qwen3.5-397b-a17b                | **32.5** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.4                  | 4.1                  | 3.8                  | 4.4                  | 4.6                  | **3.4**              | 0.0                  |
 | qwen3.5-27b                      | **32.2** | :white_check_mark: | :white_check_mark: | 5.8                  | 6.5                  | 3.5                  | 3.6                  | 4.7                  | **4.9**              | 3.1                  | 0.0                  |
 | qwen3.6-flash                    | **31.5** | :x:                | :white_check_mark: | 5.7                  | 6.0                  | 2.9                  | 4.3                  | 4.6                  | 4.5                  | **3.4**              | 3.9                  |
 | mistral-medium-3.5-thinkhigh     | **31.0** | :x:                | :white_check_mark: | 5.8                  | 5.7                  | 3.7                  | 4.3                  | 4.7                  | 3.9                  | 2.8                  | 3.4                  |
 | xiaomimimo-v2-pro                | **30.8** | :x:                | :white_check_mark: | 5.5                  | 5.7                  | 3.7                  | 3.8                  | 4.5                  | 4.3                  | 3.3                  | 0.0                  |
-| qwen3.5-122b-a10b                | **30.7** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.8                  | 4.1                  | 4.3                  | 4.8                  | **3.4**              | 0.0                  |
+| qwen3.5-122b-a10b                | **30.7** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.9                  | 4.1                  | 4.3                  | 4.8                  | **3.4**              | 0.0                  |
 | xiaomimimo-v2.5-pro              | **30.6** | :x:                | :white_check_mark: | 5.5                  | 5.8                  | 3.5                  | 3.4                  | 4.4                  | 4.7                  | 3.3                  | 0.0                  |
 | qwen3.6-35b-a3b                  | **30.2** | :x:                | :white_check_mark: | 5.6                  | 6.0                  | 2.9                  | 3.8                  | 4.1                  | 4.5                  | **3.4**              | 3.9                  |
-| minimaxminimax-m2.5              | **30.2** | :white_check_mark: | :white_check_mark: | 5.5                  | 5.9                  | 3.5                  | 3.4                  | 4.3                  | 4.7                  | 3.0                  | 0.0                  |
-| arcee-aitrinity-large-thinking   | **30.2** | :white_check_mark: | :white_check_mark: | 4.9                  | 6.6                  | 4.3                  | 3.9                  | 3.6                  | 4.0                  | 2.8                  | 0.0                  |
-| xiaomimimo-v2-omni               | **29.7** | :x:                | :white_check_mark: | 5.3                  | 5.2                  | 3.8                  | 3.6                  | 4.0                  | 4.4                  | 3.3                  | 0.0                  |
+| minimaxminimax-m2.5              | **30.2** | :white_check_mark: | :white_check_mark: | 5.5                  | 5.8                  | 3.5                  | 3.4                  | 4.3                  | 4.7                  | 3.0                  | 0.0                  |
+| arcee-aitrinity-large-thinking   | **30.1** | :white_check_mark: | :white_check_mark: | 4.9                  | 6.6                  | 4.3                  | 3.9                  | 3.6                  | 4.0                  | 2.8                  | 0.0                  |
+| xiaomimimo-v2-omni               | **29.7** | :x:                | :white_check_mark: | 5.3                  | 5.2                  | 3.8                  | 3.6                  | 4.0                  | 4.4                  | 3.3                  | **4.2**              |
 | nousresearchhermes-4-70b         | **29.5** | :white_check_mark: | :white_check_mark: | 4.9                  | 6.0                  | 3.4                  | 4.1                  | 3.6                  | 4.3                  | 3.2                  | 0.0                  |
 | minimaxminimax-m2.7              | **29.4** | :white_check_mark: | :white_check_mark: | 5.3                  | 5.4                  | 3.5                  | 3.5                  | 3.8                  | 4.4                  | **3.4**              | 0.0                  |
 | qwen3.5-35b-a3b                  | **29.3** | :white_check_mark: | :white_check_mark: | 5.7                  | 5.7                  | 2.1                  | 3.9                  | 4.2                  | 4.5                  | 3.2                  | 0.0                  |
@@ -35,10 +35,10 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | prime-intellectintellect-3       | **29.0** | :white_check_mark: | :white_check_mark: | 5.5                  | 5.1                  | 2.8                  | 3.8                  | 4.3                  | 4.5                  | 3.0                  | 0.0                  |
 | phi4-reasoningplus               | **28.9** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.7                  | 3.7                  | 4.3                  | 4.2                  | 2.8                  | 0.0                  |
 | gpt-oss-120b                     | **28.8** | :white_check_mark: | :white_check_mark: | 5.1                  | 5.2                  | 3.1                  | 3.5                  | 4.7                  | 3.9                  | **3.4**              | 0.0                  |
-| nemotron-super-49b-v1.5-thinking | **28.7** | :white_check_mark: | :white_check_mark: | 5.1                  | 5.4                  | 3.0                  | 4.1                  | 4.1                  | 4.6                  | 2.5                  | 0.0                  |
+| nemotron-super-49b-v1.5-thinking | **28.7** | :white_check_mark: | :white_check_mark: | 5.1                  | 5.4                  | 3.0                  | 4.1                  | 4.1                  | 4.6                  | 2.4                  | 0.0                  |
 | phi4-reasoning                   | **28.4** | :white_check_mark: | :white_check_mark: | 5.6                  | 5.3                  | 2.6                  | 3.9                  | 4.1                  | 4.2                  | 2.7                  | 0.0                  |
 | xiaomimimo-v2.5                  | **28.3** | :x:                | :white_check_mark: | 5.0                  | 5.5                  | 3.1                  | 3.1                  | 4.3                  | 4.5                  | 2.8                  | 0.0                  |
-| qwen3.59b                        | **26.3** | :white_check_mark: | :white_check_mark: | 4.9                  | 5.5                  | 2.1                  | 3.3                  | 3.6                  | 4.1                  | 2.9                  | 0.0                  |
+| qwen3.59b                        | **26.3** | :white_check_mark: | :white_check_mark: | 4.9                  | 5.5                  | 2.1                  | 3.3                  | 3.6                  | 4.1                  | 2.8                  | 0.0                  |
 | mistral-small-2603-thinkhigh     | **25.9** | :white_check_mark: | :white_check_mark: | 4.6                  | 4.6                  | 3.0                  | 3.7                  | 3.4                  | 3.9                  | 2.8                  | 3.7                  |
 | qwen3.54b                        | **25.7** | :white_check_mark: | :white_check_mark: | 4.6                  | 4.9                  | 2.1                  | 3.8                  | 3.2                  | 4.2                  | 2.9                  | 0.0                  |
 | nemotron-3-super-120b-a12b       | **22.1** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.5                  | 1.7                  | 3.2                  | 2.9                  | 3.1                  | 2.2                  | 0.0                  |
@@ -1313,7 +1313,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 6.0   |
 | cat08_05_task_schedul              | 6.2   |
 
-### arcee-aitrinity-large-thinking   => 30.2 points
+### arcee-aitrinity-large-thinking   => 30.1 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |
@@ -1419,6 +1419,12 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat06_05_bias_two_logs_2           | 7.1   |
 | cat06_06_bias_mitigation_declare   | 5.1   |
 | cat06_07_fair_unfair_powl          | 5.8   |
+| cat07_01_ocdfg                     | 7.2   |
+| cat07_02_bpmn_orders               | 6.9   |
+| cat07_03_bpmn_dispatch             | 7.2   |
+| cat07_04_causal_net                | 6.1   |
+| cat07_05_proclets                  | 6.9   |
+| cat07_06_perf_spectrum             | 7.5   |
 | cat08_01_queue_mining              | 7.4   |
 | cat08_02_instance_spanning         | 5.6   |
 | cat08_03_transport_opt             | 6.8   |
