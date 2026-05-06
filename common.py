@@ -357,15 +357,63 @@ def get_ordered_references_llms_with_scores(base_path="."):
     return ordered_llms_with_scores, referenced_llms_with_scores
 
 
+_NON_VISUAL_MODEL_MARKERS = (
+    "haiku",
+    "qwen3.6-max",
+)
+
+_VISUAL_CAPABILITY_MARKERS = (
+    "-vl",
+    "vision",
+    "multimodal",
+    "omni",
+    "pixtral",
+    "glm-5v",
+)
+
+_VISUAL_MODEL_FAMILIES = (
+    "gpt-4o",
+    "gpt-4-turbo",
+    "gpt-4.1",
+    "gpt-4.5",
+    "gpt-5",
+    "o3-",
+    "o4-mini",
+    "gemini",
+    "claude",
+    "gemma3",
+    "gemma-3",
+    "gemma4",
+    "gemma-4",
+    "llama-3.2-11b",
+    "llama-3.2-90b",
+    "llama-4",
+    "mistral-small",
+    "mistral-medium",
+    "mistral-large",
+    "ministral",
+    "grok-4",
+    "qwen3.6",
+)
+
+_VISUAL_MODEL_ALIASES = (
+    "quasar",
+    "optimus",
+    "horizon",
+    "sonoma",
+    "polaris",
+    "sherlock",
+    "healer",
+)
+
+
 def is_visual_model(model_name):
-    patterns = ["qwen2-vl", "qwen2.5-vl", "qwen-vl", "pixtral", "gpt-4o", "gpt-4-turbo", "gpt-4.5", "Llama-3.2-11B", "Llama-3.2-90B", "gemini-", "claude-", "grok-vision-beta", "multimodal-", "gemma3:4b", "gemma-3-4b", "gemma3:12b", "gemma-3-12b", "gemma3:12b", "gemma3:27b", "mistral-small-2503", "mistral-small-2506", "-omni-", "llama-4", "quasar", "optimus", "gpt-4.1", "o3-2", "o3-pro-2", "o4-mini-2", "mistral-medium", "grok-4", "horizon", "gpt-5", "sonoma", "polaris-alpha", "sherlock", "ministral-3b-2512", "ministral-8b-2512", "ministral-14b-2512", "mistral-large-2512", "healer-alpha", "mistral-small-2603", "glm-5v", "gemma-4", "qwen3.6", "grok-4.3"]
+    model_name = _model_name_for_matching(model_name)
+    if not model_name or any(marker in model_name for marker in _NON_VISUAL_MODEL_MARKERS):
+        return False
 
-    for p in patterns:
-        if p.lower() in model_name.lower():
-            if "haiku" not in model_name.lower() and "qwen3.6-max" not in model_name.lower():
-                return True
-
-    return False
+    visual_markers = _VISUAL_CAPABILITY_MARKERS + _VISUAL_MODEL_FAMILIES + _VISUAL_MODEL_ALIASES
+    return any(marker in model_name for marker in visual_markers)
 
 
 def is_open_source(m_name):
