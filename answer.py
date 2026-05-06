@@ -11,13 +11,31 @@ WAITING_TIME_RETRY = 15
 USE_MULTITHREADING = True
 MAX_WORKERS = 100
 TIME_BETWEEN_ANSWERS = 0
+MAX_VISUAL_FAILURES = 5
+VISUAL_FAILURE_ANSWER = "."
 
 
-def process_single_question(q, model_name, alias_model_name, use_rate_limit=False):
+def get_answer_path(q, alias_model_name):
+    return os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
+        ".png", ".txt")
+
+
+def is_retry_limited_visual_question(q, model_name):
+    return q.endswith(".png") and is_visual_model(model_name)
+
+
+def write_visual_failure_answer(answer_path):
+    callback_write(VISUAL_FAILURE_ANSWER, answer_path)
+
+
+def should_stop_visual_retries(q, model_name, failed_attempts):
+    return is_retry_limited_visual_question(q, model_name) and failed_attempts >= MAX_VISUAL_FAILURES
+
+
+def process_single_question(q, model_name, alias_model_name, use_rate_limit=False, failed_attempts=0):
     """Process a single question."""
     question_path = os.path.join("questions", q)
-    answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
-        ".png", ".txt")
+    answer_path = get_answer_path(q, alias_model_name)
     
     if not common.is_completed_output(answer_path):
         # Check if file is already being processed
@@ -48,6 +66,12 @@ def process_single_question(q, model_name, alias_model_name, use_rate_limit=Fals
             if common.is_completed_output(answer_path):
                 return True
 
+            failed_attempts += 1
+            if should_stop_visual_retries(q, model_name, failed_attempts):
+                print(f"Visual question {question_path} failed {failed_attempts} time(s); writing fallback answer")
+                write_visual_failure_answer(answer_path)
+                return True
+
             print(f"No completed answer was written for {question_path}; retrying")
             time.sleep(WAITING_TIME_RETRY)
             return None
@@ -59,10 +83,30 @@ def process_single_question(q, model_name, alias_model_name, use_rate_limit=Fals
             
             traceback.print_exc()
 
+            failed_attempts += 1
+            if should_stop_visual_retries(q, model_name, failed_attempts):
+                print(f"Visual question {question_path} failed {failed_attempts} time(s); writing fallback answer")
+                write_visual_failure_answer(answer_path)
+                return True
+
             print("sleeping %d seconds ..." % (WAITING_TIME_RETRY))
             time.sleep(WAITING_TIME_RETRY)
             return None  # Indicates retry needed
     return False
+
+
+def mark_failed_attempt(q, model_name, alias_model_name, failure_counts):
+    failed_attempts = failure_counts.get(q, 0) + 1
+    failure_counts[q] = failed_attempts
+
+    if should_stop_visual_retries(q, model_name, failed_attempts):
+        question_path = os.path.join("questions", q)
+        answer_path = get_answer_path(q, alias_model_name)
+        print(f"Visual question {question_path} failed {failed_attempts} time(s); writing fallback answer")
+        write_visual_failure_answer(answer_path)
+        return False
+
+    return True
 
 
 def answer_question(model_name, api_url=None, api_key=None, alias_model_name=None, use_multithreading=None):
@@ -87,19 +131,19 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
         use_multithreading = USE_MULTITHREADING
     
     questions = [x for x in os.listdir("questions") if x.endswith(".txt") or x.endswith(".png")]
+    failure_counts = {}
     
     if use_multithreading:
         # Multi-threaded processing
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = []
             for q in questions:
-                answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
-                    ".png", ".txt")
+                answer_path = get_answer_path(q, alias_model_name)
                 
                 if not common.is_completed_output(answer_path):
                     # Submit task to thread pool
                     future = executor.submit(process_single_question, q, model_name, alias_model_name, 
-                                           use_rate_limit=True)
+                                             use_rate_limit=True, failed_attempts=failure_counts.get(q, 0))
                     futures.append((q, future))
             
             # Wait for all tasks to complete
@@ -110,18 +154,19 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
                     if result:
                         print(f"Successfully processed {q}")
                     elif result is None:
-                        retry_questions.append(q)
+                        if mark_failed_attempt(q, model_name, alias_model_name, failure_counts):
+                            retry_questions.append(q)
                 except Exception as e:
                     print(f"Failed to process {q}: {e}")
                     traceback.print_exc()
-                    retry_questions.append(q)
+                    if mark_failed_attempt(q, model_name, alias_model_name, failure_counts):
+                        retry_questions.append(q)
 
             while retry_questions:
                 retry_questions = [
                     q for q in retry_questions
                     if not common.is_completed_output(
-                        os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
-                            ".png", ".txt")
+                        get_answer_path(q, alias_model_name)
                     )
                 ]
                 if not retry_questions:
@@ -133,7 +178,7 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as retry_executor:
                     retry_futures = [
                         (q, retry_executor.submit(process_single_question, q, model_name, alias_model_name,
-                                                  use_rate_limit=True))
+                                                  use_rate_limit=True, failed_attempts=failure_counts.get(q, 0)))
                         for q in retry_questions
                     ]
 
@@ -144,25 +189,29 @@ def answer_question(model_name, api_url=None, api_key=None, alias_model_name=Non
                             if result:
                                 print(f"Successfully processed {q}")
                             elif result is None:
-                                next_retry_questions.append(q)
+                                if mark_failed_attempt(q, model_name, alias_model_name, failure_counts):
+                                    next_retry_questions.append(q)
                         except Exception as e:
                             print(f"Failed to process {q}: {e}")
                             traceback.print_exc()
-                            next_retry_questions.append(q)
+                            if mark_failed_attempt(q, model_name, alias_model_name, failure_counts):
+                                next_retry_questions.append(q)
 
                     retry_questions = next_retry_questions
     else:
         # Single-threaded processing (original behavior)
         for q in questions:
-            answer_path = os.path.join("answers", common.clean_model_name(alias_model_name) + "_" + q).replace(
-                ".png", ".txt")
+            answer_path = get_answer_path(q, alias_model_name)
 
             if not common.is_completed_output(answer_path):
                 while not common.is_completed_output(answer_path):
-                    result = process_single_question(q, model_name, alias_model_name, use_rate_limit=False)
+                    result = process_single_question(q, model_name, alias_model_name, use_rate_limit=False,
+                                                     failed_attempts=failure_counts.get(q, 0))
                     if result is None:
                         # Retry needed
-                        continue
+                        if mark_failed_attempt(q, model_name, alias_model_name, failure_counts):
+                            continue
+                        break
                     else:
                         # Success or permanent failure
                         break
