@@ -1,0 +1,178 @@
+### Analysis of Order Event Logs: Identification of Anomalies, Hypotheses, and Investigative SQL Queries
+
+I'll analyze the provided event log data from the `order_event_log` table across the four cases (1001–1004), comparing it against the assumed normal process flow:  
+1. Register Order (Sales)  
+2. Perform Credit Check (Finance)  
+3. Validate Stock (Warehouse)  
+4. Confirm Shipment (Logistics)  
+5. Ship Goods (Logistics)  
+6. Issue Invoice (Finance)  
+7. Receive Payment (Finance)  
+
+This flow ensures sequential checks (e.g., credit and stock before shipping) and proper sequencing (e.g., invoice before payment). I'll identify key anomalies and undesirable behaviors, hypothesize potential causes, and propose targeted SQL queries to investigate further. These queries focus on the `order_event_log` table but incorporate joins to `orders` and `resources` where relevant for context (e.g., order value, resource roles). All queries are written for PostgreSQL.
+
+#### 1. Case 1001: Normal Flow (No Major Anomalies)
+- **Observed Flow:** Follows the normal sequence exactly, with timestamps progressing logically (e.g., registration at 08:15, payment at a later date).
+- **Anomalies:** None apparent. This serves as a baseline for "healthy" cases.
+- **Hypotheses:** N/A (this case aligns with expected behavior, possibly due to well-trained staff or automated system adherence).
+- **Investigative Queries:** To confirm this as a control case, we could query for similar complete, sequential cases.
+  ```sql
+  -- Query to find cases that follow the exact normal sequence (for comparison)
+  SELECT oel.case_id, COUNT(DISTINCT oel.activity) as activity_count,
+         MIN(oel.timestamp) as start_time, MAX(oel.timestamp) as end_time
+  FROM order_event_log oel
+  JOIN orders o ON o.case_id = oel.case_id
+  WHERE oel.activity IN ('Register Order', 'Perform Credit Check', 'Validate Stock', 
+                         'Confirm Shipment', 'Ship Goods', 'Issue Invoice', 'Receive Payment')
+    AND o.case_id IN (SELECT case_id FROM order_event_log GROUP BY case_id HAVING COUNT(*) = 7)  -- Exactly 7 events
+  GROUP BY oel.case_id
+  HAVING STRING_AGG(oel.activity ORDER BY oel.timestamp, oel.event_id) = 
+         'Register Order,Perform Credit Check,Validate Stock,Confirm Shipment,Ship Goods,Issue Invoice,Receive Payment';
+  ```
+  *Purpose:* Identifies cases like 1001 with perfect adherence, helping quantify normal vs. anomalous rates.
+
+#### 2. Case 1002: Out-of-Sequence Shipping and Delayed Credit Check
+- **Observed Flow:** Register Order  Confirm Shipment  Ship Goods  Perform Credit Check  Validate Stock  Issue Invoice  Receive Payment.
+- **Anomalies/Undesirable Behaviors:**
+  - Shipping activities (Confirm Shipment, Ship Goods) occur *before* critical pre-shipment checks (Credit Check, Validate Stock). This risks shipping to unverified customers or out-of-stock items.
+  - Credit Check happens *after* shipping, which could lead to financial losses if the customer is credit-risky (additional_info shows credit_score=650, which might be borderline).
+  - All activities completed, but sequence deviation suggests process bypass.
+- **Hypotheses:**
+  - **Policy Violation or Rushed Processing:** Logistics staff (e.g., LogisticsMgr_2, WarehouseClerk_1) may have bypassed checks due to "priority" order_type (from `orders` table), possibly under pressure to meet deadlines, leading to manual overrides.
+  - **System Error:** Workflow automation might have glitched, allowing Logistics events to trigger early (note "attempted_early=Y" in additional_info).
+  - **Training Issues:** Resources in Logistics department lack training on dependencies, or inter-departmental communication failed.
+- **Investigative Queries:**
+  ```sql
+  -- Query to detect cases where shipping events precede credit/stock checks
+  SELECT oel.case_id, o.order_type, o.order_value,
+         ARRAY_AGG(oel.activity ORDER BY oel.timestamp) as event_sequence,
+         r.department as shipping_dept
+  FROM order_event_log oel
+  JOIN orders o ON o.case_id = oel.case_id
+  JOIN resources r ON r.resource_id = oel.resource
+  WHERE oel.activity IN ('Confirm Shipment', 'Ship Goods', 'Perform Credit Check', 'Validate Stock')
+    AND EXISTS (
+      SELECT 1 FROM order_event_log oel2 
+      WHERE oel2.case_id = oel.case_id 
+        AND oel2.activity IN ('Confirm Shipment', 'Ship Goods')
+        AND oel2.timestamp < (
+          SELECT MIN(oel3.timestamp) FROM order_event_log oel3 
+          WHERE oel3.case_id = oel.case_id AND oel3.activity IN ('Perform Credit Check', 'Validate Stock')
+        )
+    )
+  GROUP BY oel.case_id, o.order_type, o.order_value, r.department
+  ORDER BY o.order_value DESC;
+  ```
+  *Purpose:* Flags high-value priority orders like 1002 for early shipping, joining with `orders` to correlate with order_type/value and `resources` to check departments involved.
+  
+  ```sql
+  -- Query to check credit scores in delayed checks (low scores post-shipping)
+  SELECT oel.case_id, oel.additional_info, oel.timestamp,
+         STRING_TO_ARRAY(oel.additional_info, '=')[2] as extracted_score
+  FROM order_event_log oel
+  JOIN orders o ON o.case_id = oel.case_id
+  WHERE oel.activity = 'Perform Credit Check'
+    AND oel.timestamp > (
+      SELECT MAX(oel2.timestamp) FROM order_event_log oel2 
+      WHERE oel2.case_id = oel.case_id AND oel2.activity = 'Ship Goods'
+    )
+    AND oel.additional_info LIKE '%credit_score=%'
+  ORDER BY CAST(STRING_TO_ARRAY(oel.additional_info, '=')[2] AS INTEGER) ASC;  -- Assumes score extraction; adjust parsing if needed
+  ```
+  *Purpose:* Investigates risky post-shipping credit checks, extracting scores from additional_info to hypothesize if low scores (e.g., 650) correlate with anomalies.
+
+#### 3. Case 1003: Missing Stock Validation and Post-Shipping Confirmation
+- **Observed Flow:** Register Order  Perform Credit Check  Ship Goods  Issue Invoice  Confirm Shipment  Receive Payment.
+- **Anomalies/Undesirable Behaviors:**
+  - No "Validate Stock" event at all, yet goods are shipped (risk of overselling stock).
+  - "Ship Goods" occurs *before* "Confirm Shipment," inverting the expected Logistics sequence.
+  - "Confirm Shipment" happens *after* shipping and invoicing (additional_info: "late_confirmation=Y"), which could delay tracking or cause compliance issues.
+  - Invoice and payment proceed without full Logistics confirmation.
+- **Hypotheses:**
+  - **System or Data Logging Error:** The Validate Stock event might have occurred but not logged (e.g., database insertion failure), or automation skipped it due to a bug in workflow triggers.
+  - **Policy Violation:** Warehouse/Logistics staff (e.g., WarehouseClerk_3, LogisticsMgr_2) rushed shipping for time-sensitive orders, ignoring checks—possibly incentivized by performance metrics favoring speed over accuracy.
+  - **Resource Overload/Training Gaps:** Finance department (handling invoice/payment early) might have assumed Logistics steps were complete, indicating poor cross-departmental handoffs.
+- **Investigative Queries:**
+  ```sql
+  -- Query to find cases missing 'Validate Stock' but with shipping/invoicing
+  SELECT oel.case_id, COUNT(DISTINCT oel.activity) as total_activities,
+         BOOL_AND(oel.activity != 'Validate Stock') as missing_stock_check,
+         o.order_type, o.order_value
+  FROM order_event_log oel
+  JOIN orders o ON o.case_id = oel.case_id
+  WHERE oel.case_id IN (
+    SELECT case_id FROM order_event_log 
+    WHERE activity IN ('Ship Goods', 'Issue Invoice') 
+    GROUP BY case_id
+  )
+  GROUP BY oel.case_id, o.order_type, o.order_value
+  HAVING COUNT(CASE WHEN oel.activity = 'Validate Stock' THEN 1 END) = 0
+     AND COUNT(CASE WHEN oel.activity IN ('Ship Goods', 'Confirm Shipment') THEN 1 END) > 0;
+  ```
+  *Purpose:* Identifies incomplete cases like 1003, linking to `orders` to see if standard orders (non-priority) are more prone to missing checks.
+  
+  ```sql
+  -- Query to detect inverted Logistics sequence (ship before confirm)
+  SELECT oel.case_id, oel.activity, oel.timestamp, r.role, r.department,
+         LAG(oel.activity) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) as prev_activity
+  FROM order_event_log oel
+  JOIN resources r ON r.resource_id = oel.resource
+  WHERE oel.activity IN ('Ship Goods', 'Confirm Shipment')
+    AND oel.activity = 'Ship Goods'
+    AND LAG(oel.activity) OVER (PARTITION BY oel.case_id ORDER BY oel.timestamp) != 'Confirm Shipment'
+  ORDER BY oel.case_id, oel.timestamp;
+  ```
+  *Purpose:* Uses window functions to spot sequence inversions, joining with `resources` to check if specific roles/departments (e.g., Logistics) are repeatedly involved in errors.
+
+#### 4. Case 1004: Premature Payment and Missing Pre-Shipment Checks
+- **Observed Flow:** Register Order  Receive Payment  Issue Invoice  Confirm Shipment  Ship Goods.
+- **Anomalies/Undesirable Behaviors:**
+  - "Receive Payment" *before* "Issue Invoice," which is illogical (customers can't pay without an invoice).
+  - No "Perform Credit Check" or "Validate Stock" at all, yet high-value shipment proceeds (order_value=3000.00 from `orders`).
+  - Shipping without full pre-checks risks non-payment or stock issues; ends without payment confirmation post-invoice.
+  - additional_info for Confirm Shipment shows "shipment_scheduled=N," suggesting potential shipment failure.
+- **Hypotheses:**
+  - **Fraud or Policy Abuse:** Early payment might indicate a workaround for credit checks (e.g., customer prepaying to bypass Finance), or internal fraud by Finance resources (e.g., FinanceTeam_02 handling payment unusually early).
+  - **System Integration Failure:** ERP/CRM systems might not enforce prerequisites, allowing Finance events to precede Logistics (e.g., invoice/payment triggered by registration alone).
+  - **Human Error/Training Issues:** Sales or Finance staff (e.g., SalesRep_01, FinanceTeam_02) processed payment prematurely due to miscommunication or lack of process awareness, especially for high-value orders.
+- **Investigative Queries:**
+  ```sql
+  -- Query to detect payment before invoicing, focusing on high-value orders
+  SELECT oel.case_id, o.order_value, o.customer_id,
+         MIN(CASE WHEN oel.activity = 'Receive Payment' THEN oel.timestamp END) as payment_time,
+         MIN(CASE WHEN oel.activity = 'Issue Invoice' THEN oel.timestamp END) as invoice_time
+  FROM order_event_log oel
+  JOIN orders o ON o.case_id = oel.case_id
+  WHERE oel.activity IN ('Receive Payment', 'Issue Invoice')
+  GROUP BY oel.case_id, o.order_value, o.customer_id
+  HAVING MIN(CASE WHEN oel.activity = 'Receive Payment' THEN oel.timestamp END) < 
+         MIN(CASE WHEN oel.activity = 'Issue Invoice' THEN oel.timestamp END)
+    OR COUNT(CASE WHEN oel.activity = 'Perform Credit Check' THEN 1 END) = 0
+  ORDER BY o.order_value DESC;
+  ```
+  *Purpose:* Highlights risky high-value cases like 1004 with reversed Finance events or missing credit checks, joining with `orders` for value/customer context.
+  
+  ```sql
+  -- Query to profile resources involved in early/missing-check events
+  SELECT r.resource_id, r.role, r.department, COUNT(DISTINCT oel.case_id) as anomalous_cases,
+         AVG(EXTRACT(EPOCH FROM oel.timestamp - 
+                     (SELECT MIN(oel2.timestamp) FROM order_event_log oel2 WHERE oel2.case_id = oel.case_id))) / 3600 as avg_hours_from_start
+  FROM order_event_log oel
+  JOIN resources r ON r.resource_id = oel.resource
+  WHERE oel.case_id IN (
+    SELECT case_id FROM order_event_log 
+    WHERE activity = 'Receive Payment' 
+      AND timestamp < (SELECT MIN(timestamp) FROM order_event_log oel2 WHERE oel2.case_id = order_event_log.case_id AND oel2.activity = 'Issue Invoice')
+  )
+  GROUP BY r.resource_id, r.role, r.department
+  HAVING COUNT(DISTINCT oel.case_id) > 0
+  ORDER BY anomalous_cases DESC;
+  ```
+  *Purpose:* Investigates if specific resources/roles (e.g., FinanceTeam_02) are overrepresented in anomalies, using time calculations to spot patterns in early interventions.
+
+#### Overall Insights and Recommendations
+- **Prevalent Themes:** Across anomalous cases (1002–1004), common issues include skipped pre-shipment checks (credit/stock), inverted sequences, and premature Finance events. Case 1001 shows the process can work correctly, suggesting issues are not systemic but targeted (e.g., to priority/high-value orders).
+- **Broader Hypotheses:** These could stem from workflow automation flaws (e.g., missing triggers), departmental silos (Logistics acting independently), or external pressures (e.g., Feb 2024 timestamps suggest a busy period). Fraud risk is high in 1004 due to early payment.
+- **Next Steps:** Run the proposed queries on the full dataset to quantify anomaly rates (e.g., % of cases missing checks). Consider auditing additional_info for patterns (e.g., "late_confirmation=Y") and correlating with `orders` for customer/order_type trends. If anomalies persist, recommend process redesign or staff retraining.
+
+This analysis is based solely on the provided data; executing the queries on the live database would provide deeper validation.
