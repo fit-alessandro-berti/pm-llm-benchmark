@@ -1,0 +1,291 @@
+Based on the provided database schema and example data, several anomalies and undesirable behaviors can be identified in the `order_event_log`. These deviations from the assumed normal process flow suggest potential issues ranging from system errors and misconfigurations to policy violations and human errors.
+
+Here are some observed anomalies, hypothesized causes, and corresponding SQL queries to investigate them further:
+
+### Identified Anomalies and Hypothesized Causes
+
+---
+
+#### Anomaly 1: Out-of-Sequence Core Process Steps
+
+**Observation:** In several cases, the sequence of critical activities like 'Perform Credit Check', 'Validate Stock', 'Confirm Shipment', and 'Ship Goods' deviates significantly from the assumed normal flow (e.g., shipping goods before credit check or stock validation, or confirming shipment after goods have been shipped or invoiced).
+
+*   **Case 1002:**
+    *   'Confirm Shipment' (`event_id` 9) occurs *before* 'Perform Credit Check' and 'Validate Stock'.
+    *   'Ship Goods' (`event_id` 10) occurs *before* 'Perform Credit Check' and 'Validate Stock'.
+    *   The `additional_info` for 'Confirm Shipment' is "attempted_early=Y".
+*   **Case 1003:**
+    *   'Ship Goods' (`event_id` 17) occurs *before* 'Validate Stock' and 'Confirm Shipment'.
+    *   'Confirm Shipment' (`event_id` 19) occurs *after* 'Ship Goods' and 'Issue Invoice'.
+    *   The `additional_info` for 'Confirm Shipment' is "late_confirmation=Y".
+
+**Hypothesized Causes:**
+1.  **System Glitch/Bug:** The workflow engine or event logging system might be incorrectly ordering events, especially under specific conditions (e.g., race conditions, high load).
+2.  **Manual Override/Policy Violation:** Users might be bypassing standard procedures to expedite certain orders or due to specific, unlogged exceptions. The `additional_info` flags ("attempted_early=Y", "late_confirmation=Y") suggest that these deviations might be intentional workarounds or known issues.
+3.  **Data Entry Errors:** While less likely for a system-generated log, incorrect manual timestamps or event creation could occur.
+
+**SQL Queries for Investigation:**
+
+1.  **Identify cases with out-of-sequence core activities:**
+    This query looks for instances where 'Ship Goods' or 'Confirm Shipment' occur before critical preceding steps like 'Perform Credit Check' or 'Validate Stock'.
+    ```sql
+    WITH RankedCoreActivities AS (
+        SELECT
+            case_id,
+            activity,
+            timestamp,
+            -- Assign a rank to key activities based on the assumed normal flow
+            CASE
+                WHEN activity = 'Register Order' THEN 1
+                WHEN activity = 'Perform Credit Check' THEN 2
+                WHEN activity = 'Validate Stock' THEN 3
+                WHEN activity = 'Confirm Shipment' THEN 4
+                WHEN activity = 'Ship Goods' THEN 5
+                ELSE 99 -- For other activities not in this specific sequence check
+            END as activity_rank
+        FROM order_event_log
+        WHERE activity IN ('Register Order', 'Perform Credit Check', 'Validate Stock', 'Confirm Shipment', 'Ship Goods')
+    ),
+    SequenceAnalysis AS (
+        SELECT
+            case_id,
+            activity,
+            timestamp,
+            activity_rank,
+            -- Get the rank of the previous event for this case
+            LAG(activity_rank, 1, 0) OVER (PARTITION BY case_id ORDER BY timestamp) as prev_activity_rank,
+            LAG(activity, 1, 'START') OVER (PARTITION BY case_id ORDER BY timestamp) as prev_activity_name
+        FROM RankedCoreActivities
+    )
+    SELECT
+        sa.case_id,
+        sa.activity AS current_activity,
+        sa.timestamp AS current_timestamp,
+        sa.prev_activity_name,
+        sa.prev_activity_rank,
+        sa.activity_rank
+    FROM SequenceAnalysis sa
+    WHERE
+        -- Anomaly: Ship Goods (rank 5) occurring before Validate Stock (rank 3) or Confirm Shipment (rank 4)
+        (sa.activity = 'Ship Goods' AND sa.prev_activity_rank < 3)
+        OR
+        -- Anomaly: Confirm Shipment (rank 4) occurring before Validate Stock (rank 3)
+        (sa.activity = 'Confirm Shipment' AND sa.prev_activity_rank < 3)
+        OR
+        -- Anomaly: Confirm Shipment (rank 4) occurring AFTER Ship Goods (rank 5) or Issue Invoice (rank 6)
+        -- (Note: Issue Invoice not in this CTE, but implied by logic if we extend ranks)
+        (sa.activity = 'Confirm Shipment' AND sa.prev_activity_rank > 4);
+    ```
+
+2.  **Investigate specific `additional_info` flags related to process deviations:**
+    This query directly targets cases where specific flags indicating potential issues are present in the `additional_info` column.
+    ```sql
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        resource,
+        additional_info
+    FROM order_event_log
+    WHERE additional_info LIKE '%late_confirmation%'
+       OR additional_info LIKE '%attempted_early%'
+       OR additional_info LIKE '%shipment_scheduled=N%'; -- Also include flags from other anomalies
+    ```
+
+---
+
+#### Anomaly 2: Premature Payment/Invoicing with Potential Non-Shipment
+
+**Observation:** In Case 1004, 'Receive Payment' and 'Issue Invoice' occur very early in the process, immediately after 'Register Order' and *before* 'Perform Credit Check', 'Validate Stock', 'Confirm Shipment', and 'Ship Goods'. Furthermore, 'Confirm Shipment' is marked with `additional_info` "shipment_scheduled=N", implying the order might not be intended for shipment after all, despite receiving payment.
+
+*   **Case 1004:**
+    *   'Receive Payment' (`event_id` 22) occurs before any checks or shipment steps.
+    *   'Issue Invoice' (`event_id` 23) occurs before any checks or shipment steps.
+    *   'Confirm Shipment' (`event_id` 24) has `additional_info` "shipment_scheduled=N".
+
+**Hypothesized Causes:**
+1.  **Different Order Type/Process:** This might represent a special type of order (e.g., pre-paid, digital goods, or a service) that doesn't follow the standard physical goods flow, and the system isn't adequately differentiating or handling it.
+2.  **System Error:** A misconfiguration or bug could lead to payment and invoicing being triggered prematurely or events being misordered.
+3.  **Policy Violation/Fraud Risk:** Payment might have been accepted without proper due diligence, or there's a risk of non-fulfillment after payment.
+4.  **Order Cancellation/Modification:** The order might have been flagged as non-shippable after payment was processed, but this status change wasn't logged clearly.
+
+**SQL Queries for Investigation:**
+
+1.  **Identify orders with early payment/invoice events and non-scheduled shipment flags:**
+    This query flags cases where payment or invoice occurs before essential business checks, and specifically looks for the "shipment_scheduled=N" flag.
+    ```sql
+    WITH RankedActivities AS (
+        SELECT
+            case_id,
+            activity,
+            timestamp,
+            additional_info,
+            -- Assign a rank to activities, placing payment/invoice early to detect deviation
+            CASE
+                WHEN activity = 'Register Order' THEN 1
+                WHEN activity = 'Receive Payment' THEN 2 -- Early payment rank
+                WHEN activity = 'Issue Invoice' THEN 3 -- Early invoice rank
+                WHEN activity = 'Perform Credit Check' THEN 4
+                WHEN activity = 'Validate Stock' THEN 5
+                WHEN activity = 'Confirm Shipment' THEN 6
+                WHEN activity = 'Ship Goods' THEN 7
+                ELSE 99
+            END as activity_rank
+        FROM order_event_log
+        WHERE activity IN ('Register Order', 'Receive Payment', 'Issue Invoice', 'Perform Credit Check', 'Validate Stock', 'Confirm Shipment', 'Ship Goods')
+    ),
+    SequenceAnalysis AS (
+        SELECT
+            case_id,
+            activity,
+            timestamp,
+            additional_info,
+            activity_rank,
+            -- Get the rank of the previous event for this case
+            LAG(activity_rank, 1, 0) OVER (PARTITION BY case_id ORDER BY timestamp) as prev_activity_rank
+        FROM RankedActivities
+    )
+    SELECT
+        sa.case_id,
+        sa.activity AS current_activity,
+        sa.timestamp AS current_timestamp,
+        sa.additional_info,
+        sa.prev_activity_rank
+    FROM SequenceAnalysis sa
+    WHERE
+        -- Anomaly: Payment received before critical checks (Credit Check rank 4, Validate Stock rank 5)
+        (sa.activity = 'Receive Payment' AND sa.prev_activity_rank < 4)
+        OR
+        -- Anomaly: Invoice issued before critical checks (Credit Check rank 4, Validate Stock rank 5)
+        (sa.activity = 'Issue Invoice' AND sa.prev_activity_rank < 4)
+        OR
+        -- Anomaly: Confirm Shipment marked as not scheduled
+        (sa.activity = 'Confirm Shipment' AND sa.additional_info LIKE '%shipment_scheduled=N%');
+    ```
+
+2.  **Analyze order types associated with early payments:**
+    This query joins with the `orders` table to see if specific `order_type` values are associated with these early payment anomalies.
+    ```sql
+    WITH RankedActivities AS (
+        SELECT
+            case_id,
+            activity,
+            timestamp,
+            CASE
+                WHEN activity = 'Register Order' THEN 1
+                WHEN activity = 'Receive Payment' THEN 2
+                WHEN activity = 'Issue Invoice' THEN 3
+                WHEN activity = 'Perform Credit Check' THEN 4
+                ELSE 99
+            END as activity_rank
+        FROM order_event_log
+        WHERE activity IN ('Register Order', 'Receive Payment', 'Issue Invoice', 'Perform Credit Check')
+    ),
+    SequenceAnalysis AS (
+        SELECT
+            case_id,
+            activity,
+            timestamp,
+            activity_rank,
+            LAG(activity_rank, 1, 0) OVER (PARTITION BY case_id ORDER BY timestamp) as prev_activity_rank
+        FROM RankedActivities
+    )
+    SELECT
+        o.case_id,
+        o.order_type,
+        sa.activity AS current_activity,
+        sa.timestamp AS current_timestamp,
+        sa.prev_activity_rank
+    FROM SequenceAnalysis sa
+    JOIN orders o ON sa.case_id = o.case_id
+    WHERE
+        -- Anomaly: Payment received before Perform Credit Check
+        (sa.activity = 'Receive Payment' AND sa.prev_activity_rank < 4)
+        OR
+        -- Anomaly: Invoice issued before Perform Credit Check
+        (sa.activity = 'Issue Invoice' AND sa.prev_activity_rank < 4);
+    ```
+
+---
+
+#### Anomaly 3: Resource Departmental Mismatch
+
+**Observation:** (This anomaly is not clearly visible in the provided sample data but is a common operational risk). A resource might perform an activity that falls outside their designated department or role. For example, a 'SalesRep' performing a 'Perform Credit Check' or a 'WarehouseClerk' performing a 'Receive Payment' task.
+
+**Hypothesized Causes:**
+1.  **Inadequate Training/Skills:** Resources may not have received sufficient training for their assigned tasks.
+2.  **Resource Shortage/Overload:** In times of high demand or staff absence, resources might be temporarily assigned tasks outside their usual scope.
+3.  **System Misconfiguration:** The system may not correctly enforce role-based access control or departmental assignments for certain activities.
+4.  **Policy Violation:** There might be explicit or implicit policies allowing cross-departmental task execution under certain circumstances, which need verification.
+
+**SQL Query for Investigation:**
+
+1.  **Identify activities performed by resources whose department does not match the expected department for that activity:**
+    This query joins `order_event_log` with `resources` and compares the resource's department against a predefined mapping of activities to departments.
+    ```sql
+    SELECT
+        oel.case_id,
+        oel.activity,
+        oel.timestamp,
+        oel.resource,
+        r.department AS resource_department,
+        r.role AS resource_role,
+        -- Define the expected department for each activity based on the assumed process flow
+        CASE
+            WHEN oel.activity IN ('Register Order') THEN 'Sales'
+            WHEN oel.activity IN ('Perform Credit Check', 'Issue Invoice', 'Receive Payment') THEN 'Finance'
+            WHEN oel.activity IN ('Validate Stock', 'Confirm Shipment', 'Ship Goods') THEN 'Logistics'
+            ELSE 'Unknown' -- Activities not part of the core mapped flow
+        END AS expected_department
+    FROM order_event_log oel
+    JOIN resources r ON oel.resource = r.resource_id
+    WHERE
+        -- Flag rows where the resource's department does NOT match the expected department
+        CASE
+            WHEN oel.activity IN ('Register Order') THEN r.department <> 'Sales'
+            WHEN oel.activity IN ('Perform Credit Check', 'Issue Invoice', 'Receive Payment') THEN r.department <> 'Finance'
+            WHEN oel.activity IN ('Validate Stock', 'Confirm Shipment', 'Ship Goods') THEN r.department <> 'Logistics'
+            ELSE FALSE -- Don't flag if the activity is not mapped or resource department is unknown
+        END;
+    ```
+
+---
+
+#### Anomaly 4: Unusually Long Durations Between Steps
+
+**Observation:** (Not prominent in the provided samples but a critical general anomaly). Some cases might exhibit very long time gaps between consecutive activities. This could indicate significant delays, bottlenecks, or that a case has been put on hold or forgotten.
+
+**Hypothesized Causes:**
+1.  **Process Bottlenecks:** Specific steps or departments are overloaded, causing queues.
+2.  **External Dependencies:** Waiting for information or action from external parties (e.g., customer, supplier).
+3.  **Resource Availability Issues:** Lack of available personnel or systems.
+4.  **System Downtime:** Planned or unplanned outages affecting process steps.
+5.  **"Stuck" Cases:** Cases that are inadvertently left incomplete due to errors or lack of follow-up.
+
+**SQL Query for Investigation:**
+
+1.  **Calculate and flag durations between consecutive events that exceed a defined threshold:**
+    This query identifies significant time gaps between any two consecutive events within the same `case_id`.
+    ```sql
+    WITH EventGaps AS (
+        SELECT
+            case_id,
+            activity,
+            timestamp,
+            -- Get the timestamp of the next event for the same case
+            LEAD(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) as next_timestamp,
+            -- Calculate the duration from the current event to the next
+            (LEAD(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) - timestamp) as duration
+        FROM order_event_log
+    )
+    SELECT
+        case_id,
+        activity AS previous_activity,
+        timestamp AS previous_timestamp,
+        next_timestamp,
+        duration
+    FROM EventGaps
+    WHERE duration > INTERVAL '1 day' -- Define your threshold for "unusually long" (e.g., 1 day, 3 days)
+      AND next_timestamp IS NOT NULL -- Ensure there was a subsequent event to measure against
+    ORDER BY duration DESC;
+    ```

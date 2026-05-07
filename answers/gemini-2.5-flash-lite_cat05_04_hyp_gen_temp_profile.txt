@@ -1,0 +1,201 @@
+### Identified Anomalies
+
+*   **Receive to Approve (R to P):** An average duration of approximately 25 hours with a very low standard deviation. This suggests a highly consistent, possibly rigid timing for approvals, which might not reflect a natural process flow.
+*   **Approve to Notify (P to N):** An average delay of 7 days with a high standard deviation of 2 days. This indicates significant variability and potentially long backlogs in notifying customers after their claims are approved.
+*   **Assign to Close (A to C):** An average closure time of 2 hours after assignment, without consistently observing intermediate steps like 'Evaluate' or 'Approve'. This could imply claims are being closed prematurely or that essential process steps are being bypassed.
+*   **Evaluate to Notify (E to N):** An average time of only 5 minutes between evaluation and notification, with a standard deviation of 1 minute. This rapid, consistent transition might be too quick for manual intervention or decision-making, suggesting automated processes that could potentially skip critical checks.
+
+---
+### Hypotheses for Anomalies
+
+*   **R to P (Receive to Approve):**
+    *   **Rigid Automation:** Automated systems might enforce fixed approval cycles or batch processing at set times, irrespective of claim specifics.
+    *   **Batch Processing:** Approvals could be handled in batches by a dedicated team at specific, regular intervals, leading to consistent timing.
+    *   **Artificial Data/Rules:** The timing might be a result of synthetic data generation or predefined business rules that do not reflect real-world variability.
+
+*   **P to N (Approve to Notify):**
+    *   **Notification Backlog:** A manual or resource-constrained notification system might lead to delays in informing customers.
+    *   **Process Segregation:** Different teams handling 'Approve' and 'Notify' could introduce handover delays or varying priorities.
+    *   **System Queuing:** Notifications might be queued for batch sending, or system errors could cause delays in dispatch.
+
+*   **A to C (Assign to Close):**
+    *   **Premature Closure:** Claims might be closed erroneously or without full processing due to data entry errors, system bugs, or specific claim types that bypass standard steps.
+    *   **Test/Voided Claims:** System tests or claims that are voided shortly after creation might be quickly closed without full evaluation.
+    *   **Simplified Processes:** Certain claim types might have extremely streamlined paths that allow for rapid closure post-assignment, though the temporal model suggests this might be more widespread than expected.
+
+*   **E to N (Evaluate to Notify):**
+    *   **Automated Notifications:** Immediate notification triggers after an 'Evaluate' event (perhaps a system flag) suggest an automated, rapid communication path.
+    *   **Skipped Steps:** The quick transition may indicate that the 'Evaluate' activity doesn't involve a thorough review, or that subsequent manual steps are being bypassed.
+    *   **System Integration:** A tight integration between evaluation completion and a notification service could enforce this rapid sequence.
+
+---
+### Verification Queries
+
+These SQL queries are designed to investigate the identified temporal anomalies within the `claim_events` and related tables.
+
+**1. Investigating Receive to Approve (R to P) Timing Consistency:**
+This query identifies claims where the duration between receiving a claim ('R') and approving it ('P') is significantly different from the expected average, helping to assess the variability (or lack thereof) implied by the low standard deviation.
+
+```sql
+WITH ClaimRP AS (
+    SELECT
+        claim_id,
+        MAX(CASE WHEN activity = 'R' THEN timestamp END) as receive_ts,
+        MAX(CASE WHEN activity = 'P' THEN timestamp END) as approve_ts
+    FROM claim_events
+    WHERE activity IN ('R', 'P')
+    GROUP BY claim_id
+    HAVING COUNT(DISTINCT activity) = 2 -- Ensure both R and P exist for the claim
+),
+TimeDiffsRP AS (
+    SELECT
+        claim_id,
+        EXTRACT(EPOCH FROM (approve_ts - receive_ts)) as time_diff_seconds
+    FROM ClaimRP
+    WHERE approve_ts > receive_ts -- Ensure chronological order
+)
+SELECT
+    td.claim_id,
+    td.time_diff_seconds,
+    c.claim_type,
+    a.name AS assigned_adjuster_name -- Linked via 'A' activity, assuming resource for 'A' is adjuster_id
+FROM TimeDiffsRP td
+JOIN claims c ON td.claim_id = c.claim_id
+LEFT JOIN claim_events ce_a ON td.claim_id = ce_a.claim_id AND ce_a.activity = 'A'
+LEFT JOIN adjusters a ON ce_a.resource::INTEGER = a.adjuster_id
+WHERE
+    -- Flagging claims that are significantly faster or slower than the ~25-hour average.
+    -- This helps to see if the low STDEV assumption holds, or if there are outliers.
+    td.time_diff_seconds < (3600 * 24) -- e.g., Claims processed in less than 1 day
+    OR td.time_diff_seconds > (3600 * 30) -- e.g., Claims processed in more than 30 hours
+ORDER BY td.time_diff_seconds;
+```
+
+**2. Verifying Approve to Notify (P to N) Delays:**
+This query identifies claims with unusually long or short durations between 'Approve' and 'Notify', highlighting potential notification bottlenecks or inefficiencies.
+
+```sql
+WITH ClaimPN AS (
+    SELECT
+        claim_id,
+        MAX(CASE WHEN activity = 'P' THEN timestamp END) as approve_ts,
+        MAX(CASE WHEN activity = 'N' THEN timestamp END) as notify_ts
+    FROM claim_events
+    WHERE activity IN ('P', 'N')
+    GROUP BY claim_id
+    HAVING COUNT(DISTINCT activity) = 2
+),
+TimeDiffsPN AS (
+    SELECT
+        claim_id,
+        EXTRACT(EPOCH FROM (notify_ts - approve_ts)) as time_diff_seconds
+    FROM ClaimPN
+    WHERE notify_ts > approve_ts
+)
+SELECT
+    td.claim_id,
+    td.time_diff_seconds,
+    c.claim_type,
+    a.name AS assigned_adjuster_name -- Linked via 'A' activity
+FROM TimeDiffsPN td
+JOIN claims c ON td.claim_id = c.claim_id
+LEFT JOIN claim_events ce_a ON td.claim_id = ce_a.claim_id AND ce_a.activity = 'A'
+LEFT JOIN adjusters a ON ce_a.resource::INTEGER = a.adjuster_id
+WHERE
+    -- Identify claims with very long delays (e.g., > 1.5x average of 7 days)
+    td.time_diff_seconds > (604800 * 1.5)
+    -- Or claims with surprisingly short delays (e.g., < 0.5x average) to investigate variability
+    OR td.time_diff_seconds < (604800 * 0.5)
+ORDER BY td.time_diff_seconds DESC; -- Show longest delays first
+```
+
+**3. Detecting Premature Claims Closure (A to C) and Missing Steps:**
+This query finds claims closed quickly after assignment ('A' to 'C') and checks if intermediate 'Evaluate' ('E') or 'Approve' ('P') steps were missed, suggesting potential process bypasses.
+
+```sql
+WITH ClaimAC AS (
+    SELECT
+        claim_id,
+        MAX(CASE WHEN activity = 'A' THEN timestamp END) as assign_ts,
+        MAX(CASE WHEN activity = 'C' THEN timestamp END) as close_ts,
+        MAX(CASE WHEN activity = 'E' THEN timestamp END) as evaluate_ts,
+        MAX(CASE WHEN activity = 'P' THEN timestamp END) as approve_ts
+    FROM claim_events
+    WHERE activity IN ('A', 'C', 'E', 'P')
+    GROUP BY claim_id
+    HAVING COUNT(DISTINCT CASE WHEN activity IN ('A', 'C') THEN activity END) = 2 -- Ensure A and C exist
+),
+TimeDiffsAC AS (
+    SELECT
+        claim_id,
+        EXTRACT(EPOCH FROM (close_ts - assign_ts)) as time_diff_seconds,
+        evaluate_ts,
+        approve_ts
+    FROM ClaimAC
+    WHERE close_ts > assign_ts
+)
+SELECT
+    td.claim_id,
+    td.time_diff_seconds,
+    c.claim_type,
+    a.name AS assigned_adjuster_name, -- Linked via 'A' activity
+    CASE
+        WHEN td.evaluate_ts IS NOT NULL AND td.evaluate_ts > assign_ts AND td.evaluate_ts < close_ts THEN TRUE
+        ELSE FALSE
+    END AS had_intermediate_evaluation,
+    CASE
+        WHEN td.approve_ts IS NOT NULL AND td.approve_ts > assign_ts AND td.approve_ts < close_ts THEN TRUE
+        ELSE FALSE
+    END AS had_intermediate_approval
+FROM TimeDiffsAC td
+JOIN claims c ON td.claim_id = c.claim_id
+LEFT JOIN claim_events ce_a ON td.claim_id = ce_a.claim_id AND ce_a.activity = 'A'
+LEFT JOIN adjusters a ON ce_a.resource::INTEGER = a.adjuster_id
+WHERE
+    -- Filter for claims closed within a short timeframe after assignment (e.g., less than 2 hours average)
+    td.time_diff_seconds < 7200
+    -- And explicitly check that intermediate steps 'E' or 'P' did not occur between A and C
+    AND (
+        (td.evaluate_ts IS NULL OR td.evaluate_ts <= assign_ts OR td.evaluate_ts >= close_ts)
+        AND (td.approve_ts IS NULL OR td.approve_ts <= assign_ts OR td.approve_ts >= close_ts)
+    )
+ORDER BY td.time_diff_seconds;
+```
+
+**4. Analyzing Evaluate to Notify (E to N) Rapid Transitions:**
+This query identifies claims with extremely short durations between 'Evaluate' and 'Notify', which might indicate an overly automated or incomplete evaluation-notification cycle.
+
+```sql
+WITH ClaimEN AS (
+    SELECT
+        claim_id,
+        MAX(CASE WHEN activity = 'E' THEN timestamp END) as evaluate_ts,
+        MAX(CASE WHEN activity = 'N' THEN timestamp END) as notify_ts
+    FROM claim_events
+    WHERE activity IN ('E', 'N')
+    GROUP BY claim_id
+    HAVING COUNT(DISTINCT activity) = 2
+),
+TimeDiffsEN AS (
+    SELECT
+        claim_id,
+        EXTRACT(EPOCH FROM (notify_ts - evaluate_ts)) as time_diff_seconds
+    FROM ClaimEN
+    WHERE notify_ts > evaluate_ts
+)
+SELECT
+    td.claim_id,
+    td.time_diff_seconds,
+    c.claim_type,
+    a.name AS assigned_adjuster_name -- Linked via 'A' activity
+FROM TimeDiffsEN td
+JOIN claims c ON td.claim_id = c.claim_id
+LEFT JOIN claim_events ce_a ON td.claim_id = ce_a.claim_id AND ce_a.activity = 'A'
+LEFT JOIN adjusters a ON ce_a.resource::INTEGER = a.adjuster_id
+WHERE
+    -- Flagging claims with very short E to N times (e.g., less than 1.5x the average of 5 minutes)
+    td.time_diff_seconds < (300 * 1.5)
+    -- Or claims with extremely short times (e.g., less than 2 minutes) to see if they are too rapid
+    OR td.time_diff_seconds < 120
+ORDER BY td.time_diff_seconds;
+```
