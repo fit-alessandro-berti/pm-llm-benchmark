@@ -1,0 +1,184 @@
+Based on the provided PostgreSQL database schema and the python-defined POWL process model, we can identify several structural anomalies that deviate from the **Intended (Ideal) Process Flow**:
+$$R \rightarrow A \rightarrow E \rightarrow P \rightarrow N \rightarrow C$$
+
+Below is a detailed breakdown of these anomalies, business/technical hypotheses explaining why they might exist, and PostgreSQL queries designed to verify these hypotheses.
+
+---
+
+### 1. Analysis and Identification of Model Anomalies
+
+By examining the Python script defining the POWL model, we find three major structural anomalies:
+
+#### Anomaly A: Premature and Concurrent Closing (`A -> C` edge)
+*   **POWL Code Analysis:** 
+    ```python
+    root = StrictPartialOrder(nodes=[R, A, loop, xor, C])
+    root.order.add_edge(R, A)
+    root.order.add_edge(A, loop)
+    root.order.add_edge(loop, xor)
+    root.order.add_edge(A, C) # No edge from loop -> C or xor -> C
+    ```
+*   **The Issue:** Because there are no transitive execution constraints leading from `loop` (E, P) or `xor` (N, skip) to `C` (Close Claim), the only constraint on `C` is that it must occur after `A` (Assign Adjuster). Consequently, **`C` can execute concurrently with or immediately after `A`**, bypassing evaluation (`E`), approval (`P`), and customer notification (`N`) entirely.
+
+#### Anomaly B: Bypassing the Approval Step (The Loop Structure)
+*   **POWL Code Analysis:** 
+    ```python
+    loop = OperatorPOWL(operator=Operator.LOOP, children=[E, P])
+    ```
+*   **The Issue:** In PM4Py POWL semantics, `Operator.LOOP` treats the first child (`E`) as the "do" (primary) transition and the second child (`P`) as the "redo" transition. The execution pattern allows exiting the loop immediately after the first execution of `E`. This means a process path of just `E` is completely valid, **allowing a claim to bypass the Approval (`P`) step entirely**.
+
+#### Anomaly C: Omission of Customer Notification (`XOR` with `skip`)
+*   **POWL Code Analysis:** 
+    ```python
+    xor = OperatorPOWL(operator=Operator.XOR, children=[N, skip])
+    ```
+*   **The Issue:** The `skip` (SilentTransition) allows the path to completely bypass the `N` (Notify Customer) activity, making customer notification entirely optional.
+
+---
+
+### 2. Hypotheses: Why Do These Anomalies Exist?
+
+#### Hypothesis 1: Fast-Tracking / Low-Value Claim Channels
+*   **Context:** For low-risk or low-value claims (e.g., auto-glass replacement), insurance companies often employ "fast-track" automated procedures.
+*   **Why the anomalies exist:** 
+    *   **Skipped Approval / Premature Close:** If a claim amount is under a certain threshold, the system auto-approves and closes it without manual adjuster evaluation or formal approval steps. The modeler might have combined both standard and fast-track paths into a single loose partial order rather than keeping them distinct.
+
+#### Hypothesis 2: Technical/System Integration Failures
+*   **Context:** State transition errors in the underlying CRM/Claim management software.
+*   **Why the anomalies exist:**
+    *   **Premature Close:** The user interface might lack a hard validation constraint, permitting claim adjusters to manually click "Close Claim" immediately after assignment, even if evaluations are pending.
+    *   **Missing Notifications:** The webhook or integration broker responsible for sending customer SMS/emails (`N`) frequently fails or times out, forcing the system to proceed to "Close" (`C`) without waiting for notification confirmation.
+
+#### Hypothesis 3: Process Over-Iterating (Evaluation Loops)
+*   **Context:** High-value or complex claims (e.g., major "home_insurance" water damage) often require multiple rounds of adjuster visits and revisions.
+*   **Why the anomalies exist:**
+    *   The `LOOP(E, P)` was introduced to model situations where an evaluation is rejected, requiring re-evaluation (`E`) and re-approval (`P`). However, the implementation incorrectly made the *first* approval optional.
+
+---
+
+### 3. Verification Queries (PostgreSQL)
+
+To test these hypotheses against actual execution logs, run the following SQL queries on your PostgreSQL database.
+
+#### Query 1: Verify Premature & Out-of-Sequence Closures (Anomaly A)
+This query identifies cases where a claim was closed (`C`) *before* evaluation (`E`) or approval (`P`) occurred, or closed without them ever happening.
+
+```sql
+WITH claim_milestones AS (
+    SELECT 
+        claim_id,
+        MIN(CASE WHEN activity = 'A' THEN timestamp END) AS t_assign,
+        MIN(CASE WHEN activity = 'E' THEN timestamp END) AS t_evaluate,
+        MIN(CASE WHEN activity = 'P' THEN timestamp END) AS t_approve,
+        MIN(CASE WHEN activity = 'C' THEN timestamp END) AS t_close
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT 
+    cm.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    cm.t_assign,
+    cm.t_evaluate,
+    cm.t_approve,
+    cm.t_close,
+    CASE 
+        WHEN cm.t_close IS NOT NULL AND cm.t_evaluate IS NULL THEN 'Closed without Evaluation'
+        WHEN cm.t_close IS NOT NULL AND cm.t_approve IS NULL THEN 'Closed without Approval'
+        WHEN cm.t_close < cm.t_evaluate THEN 'Closed before Evaluation occurred'
+        WHEN cm.t_close < cm.t_approve THEN 'Closed before Approval occurred'
+        ELSE 'Valid Sequence'
+    END AS anomaly_type
+FROM claim_milestones cm
+JOIN claims c ON cm.claim_id = c.claim_id
+WHERE cm.t_close IS NOT NULL 
+  AND (
+      cm.t_evaluate IS NULL 
+      OR cm.t_approve IS NULL 
+      OR cm.t_close < cm.t_evaluate 
+      OR cm.t_close < cm.t_approve
+  )
+ORDER BY c.claim_amount DESC;
+```
+
+#### Query 2: Verify Bypassed Approvals (Anomaly B)
+This query targets closed claims that skipped the approval step (`P`) to see if skipping correlates with low claim values (testing Hypothesis 1).
+
+```sql
+SELECT 
+    c.claim_type,
+    CASE 
+        WHEN c.claim_amount < 500 THEN 'Low Value (<$500)'
+        WHEN c.claim_amount BETWEEN 500 AND 5000 THEN 'Medium Value ($500-$5000)'
+        ELSE 'High Value (>$5000)'
+    END AS claim_value_tier,
+    COUNT(DISTINCT c.claim_id) AS total_closed_claims,
+    COUNT(DISTINCT CASE WHEN ce.activity = 'P' THEN c.claim_id END) AS claims_with_approval,
+    COUNT(DISTINCT c.claim_id) - COUNT(DISTINCT CASE WHEN ce.activity = 'P' THEN c.claim_id END) AS claims_missing_approval,
+    ROUND(
+        100.0 * (COUNT(DISTINCT c.claim_id) - COUNT(DISTINCT CASE WHEN ce.activity = 'P' THEN c.claim_id END)) 
+        / COUNT(DISTINCT c.claim_id), 2
+    ) AS skip_approval_rate_pct
+FROM claims c
+JOIN claim_events ce ON c.claim_id = ce.claim_id
+WHERE EXISTS (
+    -- Ensure the claim is actually closed
+    SELECT 1 FROM claim_events ce2 
+    WHERE ce2.claim_id = c.claim_id AND ce2.activity = 'C'
+)
+GROUP BY c.claim_type, claim_value_tier
+ORDER BY c.claim_type, claim_value_tier;
+```
+
+#### Query 3: Identify Loops & Repetitive Appraisals (Anomaly B - Loop check)
+This query checks if there are claims cycling repeatedly through multiple evaluations and approvals.
+
+```sql
+SELECT 
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    COUNT(CASE WHEN ce.activity = 'E' THEN 1 END) AS evaluation_count,
+    COUNT(CASE WHEN ce.activity = 'P' THEN 1 END) AS approval_count
+FROM claims c
+JOIN claim_events ce ON c.claim_id = ce.claim_id
+GROUP BY c.claim_id, c.claim_type, c.claim_amount
+HAVING COUNT(CASE WHEN ce.activity = 'E' THEN 1 END) > 1 
+    OR COUNT(CASE WHEN ce.activity = 'P' THEN 1 END) > 1
+ORDER BY evaluation_count DESC;
+```
+
+#### Query 4: Verify Missing Customer Notifications (Anomaly C)
+This query calculates the rate of missing customer notifications, grouped by the responsible resource/adjuster to see if specific adjusters or system components are failing to trigger notifications (testing Hypothesis 2).
+
+```sql
+WITH claim_notification_status AS (
+    SELECT 
+        claim_id,
+        MAX(CASE WHEN activity = 'N' THEN 1 ELSE 0 END) AS notified,
+        MAX(CASE WHEN activity = 'C' THEN 1 ELSE 0 END) AS closed
+    FROM claim_events
+    GROUP BY claim_id
+),
+last_assigned_adjuster AS (
+    -- Find the last adjuster/resource assigned before closure
+    SELECT DISTINCT ON (claim_id) 
+        claim_id, 
+        resource AS assigned_resource
+    FROM claim_events
+    WHERE activity = 'A'
+    ORDER BY claim_id, timestamp DESC
+)
+SELECT 
+    la.assigned_resource AS adjuster_name,
+    COUNT(cns.claim_id) AS total_closed_claims,
+    SUM(cns.notified) AS total_notified,
+    (COUNT(cns.claim_id) - SUM(cns.notified)) AS total_skipped,
+    ROUND(100.0 * (COUNT(cns.claim_id) - SUM(cns.notified)) / COUNT(cns.claim_id), 2) AS skip_notification_pct
+FROM claim_notification_status cns
+JOIN last_assigned_adjuster la ON cns.claim_id = la.claim_id
+WHERE cns.closed = 1
+GROUP BY la.assigned_resource
+HAVING COUNT(cns.claim_id) >= 5 -- Filter out low volume resource assignments
+ORDER BY skip_notification_pct DESC;
+```

@@ -1,0 +1,201 @@
+Based on the provided PostgreSQL schema, reference tables, and sample process log data, here is a comprehensive process mining diagnostic report. It identifies process deviations, analyzes potential business risks, hypothesizes root causes, and provides targeted PostgreSQL queries to systematically investigate these anomalies at scale.
+
+---
+
+# Process Mining Diagnostic & Investigation Playbook
+
+## 1. Case-by-Case Diagnostic Analysis
+
+By mapping the sample case data against the **Assumed Normal Process Flow**:
+$$\text{Register} \rightarrow \text{Credit Check} \rightarrow \text{Validate Stock} \rightarrow \text{Confirm Shipment} \rightarrow \text{Ship Goods} \rightarrow \text{Issue Invoice} \rightarrow \text{Receive Payment}$$
+
+We can pinpoint significant process conformance issues:
+
+### **Case 1001 (Standard Order - Value: 1,250.00)**
+*   **Path:** Register $\rightarrow$ Credit Check $\rightarrow$ Validate Stock $\rightarrow$ Confirm Shipment $\rightarrow$ Ship Goods $\rightarrow$ Issue Invoice $\rightarrow$ Receive Payment.
+*   **Conformance:** **Perfect Conformance.** It serves as our control baseline.
+
+### **Case 1002 (Priority Order - Value: 2,000.00)**
+*   **Path:** Register $\rightarrow$ **Confirm Shipment** $\rightarrow$ **Ship Goods** $\rightarrow$ *Credit Check* $\rightarrow$ *Validate Stock* $\rightarrow$ Issue Invoice $\rightarrow$ Receive Payment.
+*   **Anomalies Identified:**
+    *   **Severe Out-of-Sequence Execution:** Goods were confirmed and physically shipped **before** a credit check was run or inventory was validated.
+    *   **Risk:** Highly critical. If the credit check had failed (score $\le$ threshold) or stock was unavailable, the company would have already dispatched the items, creating credit exposure and potential inventory stockouts.
+
+### **Case 1003 (Standard Order - Value: 1,500.00)**
+*   **Path:** Register $\rightarrow$ Credit Check $\rightarrow$ **Ship Goods** $\rightarrow$ Issue Invoice $\rightarrow$ **Confirm Shipment** $\rightarrow$ Receive Payment.
+*   **Anomalies Identified:**
+    *   **Skipped Step:** The critical step `Validate Stock` was completely bypassed.
+    *   **Retroactive/Late Confirmation:** `Confirm Shipment` occurred **after** the goods were already shipped (`Ship Goods`).
+    *   **Risk:** Skipping stock validation leads to unexpected delivery delays if items are out of stock. Late confirmation indicates that system logging is decoupled from physical operations, degrading data integrity.
+
+### **Case 1004 (Standard Order - Value: 3,000.00)**
+*   **Path:** Register $\rightarrow$ **Receive Payment** $\rightarrow$ Issue Invoice $\rightarrow$ Confirm Shipment $\rightarrow$ Ship Goods.
+*   **Anomalies Identified:**
+    *   **Pre-Payment Flow & Skipped Steps:** Credit check and stock validation were bypassed. Payment was collected 5 minutes after registration, and the invoice was generated *after* payment was received.
+    *   **Risk:** While receiving payment early eliminates credit risk (justifying bypassing the `Credit Check`), shipping goods without `Validate Stock` remains a major operational risk.
+
+---
+
+## 2. Hypotheses & Business Context Analysis
+
+To understand *why* these process exceptions occur, we must formulate hypotheses linking process deviations to operational realities:
+
+### **Hypothesis A: "Priority Bypass" System Workarounds**
+*   **Theory:** Priority orders (like Case 1002) bypass standard validation loops because logistics personnel prioritize speed over governance. 
+*   **Indicator:** Priority orders will have a high frequency of "Ship Goods" preceding "Perform Credit Check" or "Validate Stock."
+
+### **Hypothesis B: Post-Hoc / Retroactive System Logging**
+*   **Theory:** Logistical personnel perform physical work (packing/shipping) first, then batch-log steps like "Confirm Shipment" retrospectively in the system.
+*   **Indicator:** Negative or near-zero duration between shipment validation and actual shipping, or "Confirm Shipment" timestamps occurring *after* "Ship Goods."
+
+### **Hypothesis C: Digital Pre-Payment Loop**
+*   **Theory:** Online channels or specific order profiles allow instant customer pre-payment. In these cases, the standard Credit Check is redundant, but the system lacks a structured pathway to bypass it cleanly without breaking conformance dashboards.
+*   **Indicator:** Orders with `Receive Payment` occurring immediately after `Register Order` bypass `Perform Credit Check` but still proceed to shipment.
+
+### **Hypothesis D: Segregation of Duties (SoD) Violations**
+*   **Theory:** Internal controls are compromised because individual resources are executing sequential tasks that should be decoupled to prevent fraud or manual errors (e.g., registering an order and validating its credit check).
+
+---
+
+## 3. SQL Investigation Playbook (PostgreSQL)
+
+To test these hypotheses across the entire database, execute the following diagnostic SQL queries.
+
+### **Query 1: Process Path Conformance (The "Process Map" Generator)**
+This query reconstructs the end-to-end path for every case, allowing you to instantly isolate and count non-conforming process patterns.
+
+```sql
+SELECT 
+    actual_path,
+    COUNT(*) as frequency,
+    ROUND(AVG(o.order_value), 2) as avg_order_value
+FROM (
+    SELECT 
+        case_id,
+        STRING_AGG(activity, ' -> ' ORDER BY timestamp, event_id) as actual_path
+    FROM order_event_log
+    GROUP BY case_id
+) path_analysis
+JOIN orders o ON path_analysis.case_id = o.case_id
+GROUP BY actual_path
+ORDER BY frequency DESC;
+```
+
+---
+
+### **Query 2: Out-of-Sequence Shipments (Testing Hypothesis A)**
+This query identifies cases where physical shipping occurred before the required financial gatekeeper activities (Credit Check, Stock Validation) were executed.
+
+```sql
+WITH activity_timestamps AS (
+    SELECT 
+        case_id,
+        MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) as credit_check_time,
+        MIN(CASE WHEN activity = 'Validate Stock' THEN timestamp END) as stock_val_time,
+        MIN(CASE WHEN activity = 'Ship Goods' THEN timestamp END) as ship_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT 
+    at.case_id,
+    o.order_type,
+    o.order_value,
+    at.credit_check_time,
+    at.stock_val_time,
+    at.ship_time,
+    CASE 
+        WHEN at.ship_time < at.credit_check_time THEN 'Shipped before Credit Check'
+        WHEN at.ship_time < at.stock_val_time THEN 'Shipped before Stock Validation'
+        WHEN at.credit_check_time IS NULL THEN 'Bypassed Credit Check completely'
+        ELSE 'Other Deviation'
+    END as violation_type
+FROM activity_timestamps at
+JOIN orders o ON at.case_id = o.case_id
+WHERE at.ship_time < at.credit_check_time 
+   OR at.ship_time < at.stock_val_time
+   OR at.credit_check_time IS NULL;
+```
+
+---
+
+### **Query 3: Retroactive/Post-Hoc Confirmation Auditing (Testing Hypothesis B)**
+This query finds cases where "Confirm Shipment" was logged *after* the goods were physically dispatched, calculating the delay interval.
+
+```sql
+WITH ship_sequence AS (
+    SELECT 
+        case_id,
+        MAX(CASE WHEN activity = 'Ship Goods' THEN timestamp END) as ship_time,
+        MAX(CASE WHEN activity = 'Confirm Shipment' THEN timestamp END) as confirmation_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT 
+    s.case_id,
+    o.order_type,
+    s.ship_time,
+    s.confirmation_time,
+    (s.confirmation_time - s.ship_time) as retroactive_delay
+FROM ship_sequence s
+JOIN orders o ON s.case_id = o.case_id
+WHERE s.confirmation_time > s.ship_time
+ORDER BY retroactive_delay DESC;
+```
+
+---
+
+### **Query 4: Bypassed Process Steps Analysis (Testing Hypothesis C)**
+This query identifies which critical steps are skipped most often, grouped by `order_type` and registration channel (extracted from `additional_info`).
+
+```sql
+WITH case_activity_matrix AS (
+    SELECT 
+        case_id,
+        COUNT(CASE WHEN activity = 'Perform Credit Check' THEN 1 END) as has_credit_check,
+        COUNT(CASE WHEN activity = 'Validate Stock' THEN 1 END) as has_stock_validation,
+        COUNT(CASE WHEN activity = 'Receive Payment' THEN 1 END) as has_payment
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT 
+    o.order_type,
+    COUNT(o.case_id) as total_orders,
+    SUM(CASE WHEN cam.has_credit_check = 0 THEN 1 ELSE 0 END) as missing_credit_check,
+    SUM(CASE WHEN cam.has_stock_validation = 0 THEN 1 ELSE 0 END) as missing_stock_val,
+    ROUND(SUM(CASE WHEN cam.has_credit_check = 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(o.case_id), 2) as credit_bypass_rate
+FROM orders o
+JOIN case_activity_matrix cam ON o.case_id = cam.case_id
+GROUP BY o.order_type;
+```
+
+---
+
+### **Query 5: Segregation of Duties (SoD) Violations (Testing Hypothesis D)**
+This query flags internal control weaknesses where the same employee or team registered the order and approved its credit check, or generated the invoice and logged the payment.
+
+```sql
+SELECT 
+    e1.case_id,
+    e1.activity as activity_1,
+    e1.resource as resource_1,
+    r1.role as role_1,
+    e2.activity as activity_2,
+    e2.resource as resource_2,
+    r2.role as role_2
+FROM order_event_log e1
+JOIN order_event_log e2 ON e1.case_id = e2.case_id
+LEFT JOIN resources r1 ON e1.resource = r1.resource_id
+LEFT JOIN resources r2 ON e2.resource = r2.resource_id
+WHERE e1.case_id = e2.case_id
+  -- Pair 1: Order Maker vs Credit Checker
+  AND ((e1.activity = 'Register Order' AND e2.activity = 'Perform Credit Check' AND e1.resource = e2.resource)
+   OR  -- Pair 2: Billing Officer vs Cashier (Invoice Issuer vs Payment Receiver)
+       (e1.activity = 'Issue Invoice' AND e2.activity = 'Receive Payment' AND e1.resource = e2.resource));
+```
+
+---
+
+## 4. Key Recommendations based on Preliminary Analysis
+1. **Enforce System Hard Gates:** Configure the ERP / Order Management system to programmatically lock the "Confirm Shipment" and "Ship Goods" options until "Perform Credit Check" and "Validate Stock" are completed in the system.
+2. **Review Priority Routing Rules:** Establish a legal/operational policy that explicitly defines whether "Priority" orders are allowed to bypass credit checks, or if they should instead undergo automated instant credit scoring.
+3. **Align Logging Interfaces:** Eliminate the manual logging lag for logistics by introducing real-time handheld scanners for warehouse staff. This ensures "Confirm Shipment" is recorded automatically upon scanning, preventing retroactive logging entries.

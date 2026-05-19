@@ -1,0 +1,143 @@
+### Analysis of Temporal Profile Anomalies
+
+An analysis of the temporal profile model reveals several deviations from logical business workflows and natural human behavior. Below are the identified anomalies, hypotheses regarding their root causes, and SQL queries designed to verify these issues in the database.
+
+---
+
+### 1. Identified Anomalies
+
+#### Anomaly A: Extremely Low Variance between Receive (R) and Approve (P)
+* **Observation:** The transition from `R` to `P` takes an average of ~25 hours ($90,000$ seconds) with a standard deviation of only 1 hour ($3,600$ seconds). 
+* **Why it is anomalous:** Given that multiple variable steps (Assigning, Evaluating) must happen between Receive and Approve, a standard deviation of only $4\%$ of the mean is highly unnatural. In real-world manual environments, human decision-making and varying workloads introduce significantly larger variance.
+
+#### Anomaly B: Premature/Rapid Close (C) after Assignment (A)
+* **Observation:** The average time from `A` to `C` is only 2 hours ($7,200$ seconds), with a standard deviation of 1 hour ($3,600$ seconds).
+* **Why it is anomalous:** This indicates that claims are being closed almost immediately after an adjuster is assigned. This timeframe is too short to allow for a rigorous Evaluation (`E`) and Approval (`P`) process, suggesting that these claims are either bypassing critical checkpoints or being auto-rejected/withdrawn.
+
+#### Anomaly C: Ultra-Fast Notification (N) after Evaluation (E)
+* **Observation:** The average time from `E` to `N` is 5 minutes ($300$ seconds), with a standard deviation of only 1 minute ($60$ seconds).
+* **Why it is anomalous:** According to the standard process flow, an approval (`P`) step is expected to occur after evaluation and before notification. A 5-minute window suggests that either the approval step is being skipped entirely, or there is an automated mechanism triggering immediate notifications without manual review.
+
+#### Anomaly D: Excessive Delay between Approval (P) and Notification (N)
+* **Observation:** The average time from `P` to `N` is 7 days ($604,800$ seconds), with a high standard deviation of 2 days ($172,800$ seconds).
+* **Why it is anomalous:** Once a claim is approved, notifying the customer is usually a low-effort step. A 7-day lag introduces major friction in customer experience and suggests a severe operational bottleneck or system integration failure between the core claims system and the notification dispatch system.
+
+---
+
+### 2. Hypotheses on Root Causes
+
+* **Hypothesis 1 (Batch-Processing & Automation / Anomaly A & C):** 
+  The tight 25-hour variance from `R` to `P` suggests that approvals are not processed continuously by adjusters. Instead, an automated batch script or nightly system process may run once a day to auto-approve claims meeting specific criteria (e.g., low-value auto claims). Similarly, the 5-minute window between `E` and `N` points to an automated notification engine trigger that immediately messages the client once an evaluation is logged, potentially bypassing manual sign-offs.
+  
+* **Hypothesis 2 (Premature Closures / Anomaly B):** 
+  The rapid closure (2 hours) post-assignment might stem from:
+  * Adjusters immediately rejecting duplicate, incomplete, or fraudulent claims upon receipt.
+  * Adjusters "gaming" metrics by bulk-claiming assignments and instantly closing them (e.g., system-level cancellation or redirecting to another department).
+  * System-level errors auto-closing claims if they do not meet basic eligibility requirements.
+
+* **Hypothesis 3 (Communication Bottleneck or System Lag / Anomaly D):** 
+  The 7-day delay between approval and notification could be driven by manual letter generation policies (e.g., printing physical letters in batches once a week), resource shortages in the customer service/outbound communications department, or a broken system queue where approved claims sit waiting for manual confirmation before the communication is sent.
+
+---
+
+### 3. Verification Approaches via SQL Queries
+
+These queries assume that the `resource` column in `claim_events` maps to the `name` column in the `adjusters` table.
+
+#### Query 1: Verify the R-to-P Automation and Batch-Processing Hypothesis
+This query checks if approvals (`P`) are clustered around specific hours of the day, which would indicate a scheduled system batch job rather than human activity.
+
+```sql
+WITH rp_intervals AS (
+    SELECT 
+        r.claim_id,
+        r.timestamp AS received_at,
+        p.timestamp AS approved_at,
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS duration_seconds,
+        EXTRACT(HOUR FROM p.timestamp) AS approval_hour_of_day
+    FROM claim_events r
+    JOIN claim_events p ON r.claim_id = p.claim_id
+    WHERE r.activity = 'R' AND p.activity = 'P'
+)
+SELECT 
+    approval_hour_of_day,
+    COUNT(*) AS approvals_count,
+    ROUND(AVG(duration_seconds) / 3600.0, 2) AS avg_duration_hours,
+    ROUND(STDDEV(duration_seconds) / 3600.0, 2) AS stddev_duration_hours
+FROM rp_intervals
+GROUP BY approval_hour_of_day
+ORDER BY approvals_count DESC;
+```
+
+#### Query 2: Investigate Rapid Closures (A to C) and Process Bypassing
+This query isolates claims closed within 2 hours of assignment and checks if they bypassed the Evaluation (`E`) and Approval (`P`) steps. It also breaks down these occurrences by adjuster, region, and claim type to see if the behavior is isolated.
+
+```sql
+WITH assign_to_close AS (
+    SELECT 
+        a.claim_id,
+        a.resource AS assigned_resource,
+        a.timestamp AS assigned_at,
+        c.timestamp AS closed_at,
+        EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) AS duration_seconds
+    FROM claim_events a
+    JOIN claim_events c ON a.claim_id = c.claim_id
+    WHERE a.activity = 'A' AND c.activity = 'C' 
+      AND c.timestamp > a.timestamp
+)
+SELECT 
+    cl.claim_type,
+    adj.region,
+    ac.assigned_resource AS adjuster_name,
+    COUNT(*) AS total_rapid_closures,
+    -- Check if E or P steps were completely missing for these claims
+    COUNT(CASE WHEN NOT EXISTS (
+        SELECT 1 FROM claim_events e 
+        WHERE e.claim_id = ac.claim_id AND e.activity = 'E'
+    ) THEN 1 END) AS missing_evaluation_count,
+    COUNT(CASE WHEN NOT EXISTS (
+        SELECT 1 FROM claim_events p 
+        WHERE p.claim_id = ac.claim_id AND p.activity = 'P'
+    ) THEN 1 END) AS missing_approval_count
+FROM assign_to_close ac
+JOIN claims cl ON ac.claim_id = cl.claim_id
+LEFT JOIN adjusters adj ON ac.assigned_resource = adj.name
+WHERE ac.duration_seconds <= 7200 -- 2 hours
+GROUP BY cl.claim_type, adj.region, ac.assigned_resource
+ORDER BY total_rapid_closures DESC;
+```
+
+#### Query 3: Diagnose the 7-Day Delay between Approval (P) and Notification (N)
+This query calculates the delay between approval and notification, correlating it with claim amount tiers, claim types, and regions to pinpoint where the backlog is concentrated.
+
+```sql
+WITH approval_notification AS (
+    SELECT 
+        p.claim_id,
+        p.timestamp AS approved_at,
+        n.timestamp AS notified_at,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS delay_seconds
+    FROM claim_events p
+    JOIN claim_events n ON p.claim_id = n.claim_id
+    WHERE p.activity = 'P' AND n.activity = 'N' 
+      AND n.timestamp >= p.timestamp
+)
+SELECT 
+    cl.claim_type,
+    adj.region,
+    CASE 
+        WHEN cl.claim_amount < 1000 THEN 'Low (<$1k)'
+        WHEN cl.claim_amount BETWEEN 1000 AND 10000 THEN 'Medium ($1k-$10k)'
+        ELSE 'High (>$10k)'
+    END AS claim_value_tier,
+    COUNT(*) AS volume,
+    ROUND(AVG(an.delay_seconds) / 86400.0, 2) AS avg_delay_days,
+    ROUND(STDDEV(an.delay_seconds) / 86400.0, 2) AS stddev_delay_days
+FROM approval_notification an
+JOIN claims cl ON an.claim_id = cl.claim_id
+-- Retrieve adjuster information assigned to this claim
+LEFT JOIN claim_events a ON cl.claim_id = a.claim_id AND a.activity = 'A'
+LEFT JOIN adjusters adj ON a.resource = adj.name
+GROUP BY cl.claim_type, adj.region, claim_value_tier
+ORDER BY avg_delay_days DESC;
+```
