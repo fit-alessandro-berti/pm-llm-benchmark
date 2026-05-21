@@ -36,6 +36,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | claude-opus-4-6                   | **33.3** | :x:                | :x:                | 5.7                  | 6.1                  | 4.1                  | 4.2                  | 5.1                  | 4.6                  | **3.6**              | **4.6**              |
 | claude-opus-4-5-thinking-20251101 | **33.2** | :x:                | :white_check_mark: | 5.5                  | 6.4                  | 4.7                  | 3.8                  | 4.7                  | 4.6                  | 3.4                  | **4.5**              |
 | claude-sonnet-4-6-thinking        | **32.9** | :x:                | :white_check_mark: | 5.7                  | 6.0                  | 4.4                  | 4.2                  | 4.8                  | 4.2                  | **3.5**              | 4.0                  |
+| grok-build-0.1                    | **32.8** | :x:                | :x:                | 5.5                  | 5.7                  | 4.7                  | 3.9                  | 4.9                  | **4.9**              | 3.3                  | 0.0                  |
 | o3-pro-2025-06-10                 | **32.8** | :x:                | :white_check_mark: | 5.7                  | 6.4                  | 4.0                  | 4.2                  | 4.4                  | 4.7                  | 3.3                  | **4.7**              |
 | qwen3.6-27b                       | **32.7** | :x:                | :white_check_mark: | 5.7                  | 6.5                  | 3.3                  | 3.9                  | 5.0                  | 4.7                  | **3.6**              | 3.4                  |
 | gpt-5.4-mini-2026-03-17-NONE      | **32.7** | :x:                | :x:                | 5.4                  | 6.6                  | 3.9                  | 4.5                  | 4.3                  | 4.5                  | **3.5**              | **4.7**              |
@@ -2070,6 +2071,62 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             | 7.2   |
 | cat08_04_resource_assign           | 7.2   |
 | cat08_05_task_schedul              | 6.6   |
+
+### grok-build-0.1   => 32.8 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 8.6   |
+| cat01_02_activity_context          | 6.4   |
+| cat01_03_high_level_events         | 7.5   |
+| cat01_04_sensor_recordings         | 6.8   |
+| cat01_05_merge_two_logs            | 5.0   |
+| cat01_06_system_logs               | 6.2   |
+| cat01_07_interv_to_pseudo_bpmn     | 6.4   |
+| cat01_08_tables_to_log             | 7.7   |
+| cat02_01_conformance_textual       | 7.2   |
+| cat02_02_conf_desiderata           | 5.0   |
+| cat02_03_anomaly_event_log         | 7.4   |
+| cat02_04_powl_anomaly_detection    | 6.0   |
+| cat02_05_two_powls_anomalies       | 5.0   |
+| cat02_06_root_cause_1              | 7.4   |
+| cat02_07_root_cause_2              | 6.3   |
+| cat02_08_underfitting_process_tree | 7.8   |
+| cat02_09_fix_process_tree          | 4.8   |
+| cat03_01_process_tree_generation   | 4.5   |
+| cat03_02_powl_generation           | 7.5   |
+| cat03_03_log_skeleton_generation   | 2.0   |
+| cat03_04_declare_generation        | 5.5   |
+| cat03_05_temp_profile_generation   | 7.0   |
+| cat03_06_petri_net_generation      | 7.0   |
+| cat03_07_process_tree_discovery    | 6.5   |
+| cat03_08_powl_discovery            | 7.2   |
+| cat04_01_pseudo_bpmn_description   | 7.4   |
+| cat04_02_pseudo_bpmn_open_question | 7.5   |
+| cat04_03_declare_open_question     | 5.2   |
+| cat04_04_declare_description       | 2.5   |
+| cat04_05_sql_filt_num_events       | 4.5   |
+| cat04_06_sql_filt_three_df         | 7.2   |
+| cat04_07_sql_filt_top_k_vars       | 4.5   |
+| cat05_01_hyp_generation_log        | 5.7   |
+| cat05_02_hyp_gen_powl              | 7.2   |
+| cat05_03_hyp_gen_declare           | 6.0   |
+| cat05_04_hyp_gen_temp_profile      | 5.8   |
+| cat05_05_question_gen_nlp          | 7.9   |
+| cat05_06_question_pseudo_bpmn      | 8.4   |
+| cat05_07_question_interview        | 7.7   |
+| cat06_01_bias_text                 | 7.6   |
+| cat06_02_bias_event_log            | 7.3   |
+| cat06_03_bias_powl                 | 7.8   |
+| cat06_04_bias_two_logs             | 6.4   |
+| cat06_05_bias_two_logs_2           | 7.5   |
+| cat06_06_bias_mitigation_declare   | 5.8   |
+| cat06_07_fair_unfair_powl          | 6.5   |
+| cat08_01_queue_mining              | 7.0   |
+| cat08_02_instance_spanning         | 5.7   |
+| cat08_03_transport_opt             | 7.2   |
+| cat08_04_resource_assign           | 6.3   |
+| cat08_05_task_schedul              | 7.0   |
 
 ### o3-pro-2025-06-10   => 32.8 points
 

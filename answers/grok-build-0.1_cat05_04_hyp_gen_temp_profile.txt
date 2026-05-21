@@ -1,0 +1,153 @@
+**Anomalies in the Temporal Profile Model**
+
+The temporal profile reveals several irregularities in the expected timing between activities in the claims process:
+
+- **R to P (Receive to Approve)**: Average interval of ~25 hours (90,000 seconds) with an extremely low standard deviation of only 1 hour (3,600 seconds). This tight clustering around a specific duration is atypical for a process that should include variable evaluation steps.
+
+- **P to N (Approve to Notify)**: Average delay of 7 days (604,800 seconds) with a high standard deviation of 2 days (172,800 seconds). The combination of long average wait time and wide variance suggests inconsistent handling after approval.
+
+- **A to C (Assign to Close)**: Average of 2 hours (7,200 seconds) to closure after assignment, with a 1-hour standard deviation. This appears too rapid given the intervening steps (Evaluate, Approve) that should normally occur.
+
+- **E to N (Evaluate to Notify)**: Average of only 5 minutes (300 seconds) with a 1-minute standard deviation. This transition is unusually fast and consistent, raising questions about whether required intermediate approvals or reviews are being bypassed.
+
+These patterns deviate from what would be expected in a stable, multi-step insurance claims workflow.
+
+**Hypotheses for the Anomalies**
+
+Several plausible explanations could account for these timing irregularities:
+
+- The rigid R-to-P timing (low standard deviation) may result from an automated rule or batch process that forces approvals at a fixed interval after receipt, rather than after actual evaluation. This could indicate either a system constraint or potential data manipulation to meet internal targets.
+
+- The extended and variable P-to-N delays likely stem from resource bottlenecks, such as backlogs in the customer notification team, manual review queues, or dependencies on external systems (e.g., payment processing or compliance checks) that are not consistently available.
+
+- Quick A-to-C closures without sufficient intermediate activity could reflect shortcuts by adjusters under time pressure, incomplete case handling, or in some cases, potentially improper closure of claims to reduce workload.
+
+- The rapid E-to-N transition might occur because notification is triggered automatically by the evaluation step in the system, bypassing the separate Approve activity for certain claim types or low-risk cases. Alternatively, it could indicate that evaluation and notification are being performed by the same automated process or individual without proper segregation.
+
+These issues may also correlate with specific claim types (e.g., simpler auto claims vs. complex home claims), adjuster workloads, or regional differences in resource availability.
+
+**Verification Approaches Using SQL Queries**
+
+Here are targeted queries on the `claim_events` and related tables to investigate the anomalies. These focus on identifying outlier claims, checking for skipped steps, and correlating with claim attributes and resources.
+
+**1. Identify claims with unusual R-to-P timing (outside ~3 range)**
+
+```sql
+WITH r_times AS (
+    SELECT claim_id, MIN(timestamp) AS r_time
+    FROM claim_events
+    WHERE activity = 'R'
+    GROUP BY claim_id
+),
+p_times AS (
+    SELECT claim_id, MIN(timestamp) AS p_time
+    FROM claim_events
+    WHERE activity = 'P'
+    GROUP BY claim_id
+)
+SELECT 
+    rt.claim_id,
+    c.claim_type,
+    c.customer_id,
+    EXTRACT(EPOCH FROM (pt.p_time - rt.r_time)) / 3600.0 AS hours_r_to_p,
+    (SELECT resource FROM claim_events WHERE claim_id = rt.claim_id AND activity = 'A' ORDER BY timestamp LIMIT 1) AS assign_resource
+FROM r_times rt
+JOIN p_times pt ON rt.claim_id = pt.claim_id
+JOIN claims c ON rt.claim_id = c.claim_id
+WHERE EXTRACT(EPOCH FROM (pt.p_time - rt.r_time)) NOT BETWEEN 90000 - (3*3600) AND 90000 + (3*3600)
+ORDER BY hours_r_to_p;
+```
+
+**2. Detect quick A-to-C closures that skip Evaluate or Approve**
+
+```sql
+WITH a_times AS (
+    SELECT claim_id, MIN(timestamp) AS a_time
+    FROM claim_events
+    WHERE activity = 'A'
+    GROUP BY claim_id
+),
+c_times AS (
+    SELECT claim_id, MIN(timestamp) AS c_time
+    FROM claim_events
+    WHERE activity = 'C'
+    GROUP BY claim_id
+)
+SELECT 
+    at.claim_id,
+    c.claim_type,
+    EXTRACT(EPOCH FROM (ct.c_time - at.a_time)) / 3600.0 AS hours_a_to_c,
+    (SELECT COUNT(*) FROM claim_events WHERE claim_id = at.claim_id AND activity = 'E') AS evaluate_count,
+    (SELECT COUNT(*) FROM claim_events WHERE claim_id = at.claim_id AND activity = 'P') AS approve_count,
+    (SELECT resource FROM claim_events WHERE claim_id = at.claim_id AND activity = 'A' ORDER BY timestamp LIMIT 1) AS assign_resource
+FROM a_times at
+JOIN c_times ct ON at.claim_id = ct.claim_id
+JOIN claims c ON at.claim_id = c.claim_id
+WHERE EXTRACT(EPOCH FROM (ct.c_time - at.a_time)) < 7200 + 3600
+  AND (SELECT COUNT(*) FROM claim_events WHERE claim_id = at.claim_id AND activity = 'E') = 0
+ORDER BY hours_a_to_c;
+```
+
+**3. Find claims with excessive P-to-N delays, correlated with resources**
+
+```sql
+WITH p_times AS (
+    SELECT claim_id, MIN(timestamp) AS p_time
+    FROM claim_events
+    WHERE activity = 'P'
+    GROUP BY claim_id
+),
+n_times AS (
+    SELECT claim_id, MIN(timestamp) AS n_time
+    FROM claim_events
+    WHERE activity = 'N'
+    GROUP BY claim_id
+)
+SELECT 
+    pt.claim_id,
+    c.claim_type,
+    c.customer_id,
+    EXTRACT(EPOCH FROM (nt.n_time - pt.p_time)) / 86400.0 AS days_p_to_n,
+    (SELECT resource FROM claim_events WHERE claim_id = pt.claim_id AND activity = 'P' ORDER BY timestamp LIMIT 1) AS approve_resource,
+    adj.region,
+    adj.specialization
+FROM p_times pt
+JOIN n_times nt ON pt.claim_id = nt.claim_id
+JOIN claims c ON pt.claim_id = c.claim_id
+LEFT JOIN claim_events assign_e ON assign_e.claim_id = pt.claim_id AND assign_e.activity = 'A'
+LEFT JOIN adjusters adj ON assign_e.resource = adj.name
+WHERE EXTRACT(EPOCH FROM (nt.n_time - pt.p_time)) > 604800 + (2*172800)
+ORDER BY days_p_to_n DESC;
+```
+
+**4. Examine rapid E-to-N transitions and aggregate by resource/claim type**
+
+```sql
+WITH e_times AS (
+    SELECT claim_id, MIN(timestamp) AS e_time
+    FROM claim_events
+    WHERE activity = 'E'
+    GROUP BY claim_id
+),
+n_times AS (
+    SELECT claim_id, MIN(timestamp) AS n_time
+    FROM claim_events
+    WHERE activity = 'N'
+    GROUP BY claim_id
+)
+SELECT 
+    et.claim_id,
+    c.claim_type,
+    EXTRACT(EPOCH FROM (nt.n_time - et.e_time)) / 60.0 AS minutes_e_to_n,
+    (SELECT resource FROM claim_events WHERE claim_id = et.claim_id AND activity = 'E' ORDER BY timestamp LIMIT 1) AS evaluate_resource,
+    adj.region
+FROM e_times et
+JOIN n_times nt ON et.claim_id = nt.claim_id
+JOIN claims c ON et.claim_id = c.claim_id
+LEFT JOIN claim_events eval_e ON eval_e.claim_id = et.claim_id AND eval_e.activity = 'E'
+LEFT JOIN adjusters adj ON eval_e.resource = adj.name
+WHERE EXTRACT(EPOCH FROM (nt.n_time - et.e_time)) BETWEEN 300 - (3*60) AND 300 + (3*60)
+ORDER BY minutes_e_to_n;
+```
+
+These queries can be extended with `GROUP BY` on `claim_type`, `resource`, or `adj.region` to surface patterns (e.g., which adjusters or regions show higher rates of anomalies). Running them against the actual data will help validate whether the temporal profile reflects real process issues or data quality problems.
