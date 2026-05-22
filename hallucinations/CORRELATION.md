@@ -47,8 +47,8 @@
 ------------------------------------------------------------
 
 **Days Since 2024-01-01:**
-- Correlation: -0.568 ***
-- Linear fit: y = -0.079x + 127.7
+- Correlation: -0.563 ***
+- Linear fit: y = -0.080x + 127.9
 - P-value: 0.0000
 - N samples: 138
 
@@ -92,17 +92,17 @@
 - P-value: 0.0118
 - N samples: 138
 
-**Days Since 2024-01-01:**
-- Correlation: 0.140 
-- Linear fit: y = 0.020x + 36.5
-- P-value: 0.1004
-- N samples: 138
-
 **Model Size (B):**
 - Correlation: -0.084 
 - Linear fit: y = -0.002x + 51.0
 - P-value: 0.3407
 - N samples: 132
+
+**Days Since 2024-01-01:**
+- Correlation: 0.055 
+- Linear fit: y = 0.008x + 44.8
+- P-value: 0.5202
+- N samples: 138
 
 **Is Open Source:**
 - Correlation: 0.014 
@@ -132,17 +132,17 @@
 - P-value: 0.0161
 - N samples: 138
 
+**Days Since 2024-01-01:**
+- Correlation: -0.090 
+- Linear fit: y = -0.010x + 111.4
+- P-value: 0.2937
+- N samples: 138
+
 **Model Size (B):**
 - Correlation: 0.049 
 - Linear fit: y = 0.001x + 103.5
 - P-value: 0.5759
 - N samples: 132
-
-**Days Since 2024-01-01:**
-- Correlation: -0.027 
-- Linear fit: y = -0.003x + 106.6
-- P-value: 0.7489
-- N samples: 138
 
 ------------------------------------------------------------
 ### Correlations with: category4_technical_errors
@@ -167,9 +167,9 @@
 - N samples: 132
 
 **Days Since 2024-01-01:**
-- Correlation: -0.019 
-- Linear fit: y = -0.001x + 32.2
-- P-value: 0.8270
+- Correlation: -0.041 
+- Linear fit: y = -0.003x + 33.3
+- P-value: 0.6305
 - N samples: 138
 
 **Is Open Source:**
@@ -199,9 +199,9 @@
 - N samples: 138
 
 **Days Since 2024-01-01:**
-- Correlation: -0.200 *
-- Linear fit: y = -0.065x + 312.5
-- P-value: 0.0186
+- Correlation: -0.265 **
+- Linear fit: y = -0.089x + 328.0
+- P-value: 0.0017
 - N samples: 138
 
 **Is Open Source:**
@@ -221,8 +221,8 @@
 ------------------------------------------------------------
 
 **Days Since 2024-01-01:**
-- Correlation: -0.568 ***
-- Linear fit: y = -0.079x + 127.7
+- Correlation: -0.563 ***
+- Linear fit: y = -0.080x + 127.9
 - P-value: 0.0000
 - N samples: 138
 
@@ -266,17 +266,17 @@
 - P-value: 0.0118
 - N samples: 138
 
-**Days Since 2024-01-01:**
-- Correlation: 0.140 
-- Linear fit: y = 0.020x + 36.5
-- P-value: 0.1004
-- N samples: 138
-
 **Model Size (B):**
 - Correlation: -0.084 
 - Linear fit: y = -0.002x + 51.0
 - P-value: 0.3407
 - N samples: 132
+
+**Days Since 2024-01-01:**
+- Correlation: 0.055 
+- Linear fit: y = 0.008x + 44.8
+- P-value: 0.5202
+- N samples: 138
 
 **Is Open Source:**
 - Correlation: 0.014 
@@ -306,17 +306,17 @@
 - P-value: 0.0161
 - N samples: 138
 
+**Days Since 2024-01-01:**
+- Correlation: -0.090 
+- Linear fit: y = -0.010x + 111.4
+- P-value: 0.2937
+- N samples: 138
+
 **Model Size (B):**
 - Correlation: 0.049 
 - Linear fit: y = 0.001x + 103.5
 - P-value: 0.5759
 - N samples: 132
-
-**Days Since 2024-01-01:**
-- Correlation: -0.027 
-- Linear fit: y = -0.003x + 106.6
-- P-value: 0.7489
-- N samples: 138
 
 ------------------------------------------------------------
 ### Correlations with: category4_technical_errors
@@ -341,9 +341,9 @@
 - N samples: 132
 
 **Days Since 2024-01-01:**
-- Correlation: -0.019 
-- Linear fit: y = -0.001x + 32.2
-- P-value: 0.8270
+- Correlation: -0.041 
+- Linear fit: y = -0.003x + 33.3
+- P-value: 0.6305
 - N samples: 138
 
 **Is Open Source:**
@@ -375,9 +375,9 @@
 - N samples: 138
 
 **Days Since 2024-01-01:**
-- Correlation: -0.110 
-- Linear fit: y = -0.003x + 13.1
-- P-value: 0.1981
+- Correlation: -0.133 
+- Linear fit: y = -0.003x + 13.6
+- P-value: 0.1186
 - N samples: 138
 
 **Model Size (B):**
@@ -391,8 +391,8 @@
 ------------------------------------------------------------
 
 **Days Since 2024-01-01:**
-- Correlation: -0.618 ***
-- Linear fit: y = -0.074x + 108.2
+- Correlation: -0.597 ***
+- Linear fit: y = -0.074x + 107.0
 - P-value: 0.0000
 - N samples: 138
 
@@ -442,17 +442,17 @@
 - P-value: 0.0219
 - N samples: 138
 
+**Days Since 2024-01-01:**
+- Correlation: -0.169 *
+- Linear fit: y = -0.003x + 7.3
+- P-value: 0.0479
+- N samples: 138
+
 **Model Size (B):**
 - Correlation: -0.159 
 - Linear fit: y = -0.000x + 5.4
 - P-value: 0.0680
 - N samples: 132
-
-**Days Since 2024-01-01:**
-- Correlation: -0.104 
-- Linear fit: y = -0.002x + 6.4
-- P-value: 0.2259
-- N samples: 138
 
 ------------------------------------------------------------
 ### Correlations with: 2a_concept_fabrication
@@ -465,9 +465,9 @@
 - N samples: 138
 
 **Days Since 2024-01-01:**
-- Correlation: 0.195 *
-- Linear fit: y = 0.014x + 12.2
-- P-value: 0.0218
+- Correlation: 0.122 
+- Linear fit: y = 0.009x + 15.7
+- P-value: 0.1550
 - N samples: 138
 
 **Is Reasoning Model:**
@@ -511,9 +511,9 @@
 - N samples: 132
 
 **Days Since 2024-01-01:**
-- Correlation: 0.068 
-- Linear fit: y = 0.005x + 24.0
-- P-value: 0.4310
+- Correlation: -0.017 
+- Linear fit: y = -0.001x + 28.6
+- P-value: 0.8463
 - N samples: 138
 
 **Is Open Source:**
@@ -533,9 +533,9 @@
 - N samples: 138
 
 **Days Since 2024-01-01:**
-- Correlation: 0.128 
-- Linear fit: y = 0.001x + 0.3
-- P-value: 0.1348
+- Correlation: 0.089 
+- Linear fit: y = 0.001x + 0.4
+- P-value: 0.2977
 - N samples: 138
 
 **Model Size (B):**
@@ -585,9 +585,9 @@
 - N samples: 132
 
 **Days Since 2024-01-01:**
-- Correlation: -0.047 
-- Linear fit: y = -0.004x + 98.0
-- P-value: 0.5865
+- Correlation: -0.097 
+- Linear fit: y = -0.009x + 101.3
+- P-value: 0.2596
 - N samples: 138
 
 ------------------------------------------------------------
@@ -619,9 +619,9 @@
 - N samples: 138
 
 **Days Since 2024-01-01:**
-- Correlation: 0.051 
-- Linear fit: y = 0.001x + 8.5
-- P-value: 0.5527
+- Correlation: -0.033 
+- Linear fit: y = -0.001x + 10.1
+- P-value: 0.7044
 - N samples: 138
 
 ------------------------------------------------------------
@@ -647,9 +647,9 @@
 - N samples: 138
 
 **Days Since 2024-01-01:**
-- Correlation: 0.005 
+- Correlation: 0.019 
 - Linear fit: y = 0.000x + 0.1
-- P-value: 0.9552
+- P-value: 0.8280
 - N samples: 138
 
 **Is Reasoning Model:**
@@ -681,9 +681,9 @@
 - N samples: 138
 
 **Days Since 2024-01-01:**
-- Correlation: 0.108 
-- Linear fit: y = 0.003x + 5.0
-- P-value: 0.2081
+- Correlation: 0.115 
+- Linear fit: y = 0.003x + 4.8
+- P-value: 0.1801
 - N samples: 138
 
 **Is Reasoning Model:**
@@ -721,9 +721,9 @@
 - N samples: 138
 
 **Days Since 2024-01-01:**
-- Correlation: -0.033 
-- Linear fit: y = -0.001x + 18.0
-- P-value: 0.7005
+- Correlation: -0.062 
+- Linear fit: y = -0.002x + 18.7
+- P-value: 0.4734
 - N samples: 138
 
 ------------------------------------------------------------
@@ -736,16 +736,16 @@
 - P-value: 0.0000
 - N samples: 138
 
+**Days Since 2024-01-01:**
+- Correlation: -0.135 
+- Linear fit: y = -0.004x + 9.8
+- P-value: 0.1142
+- N samples: 138
+
 **Is Reasoning Model:**
 - Correlation: -0.119 
 - Linear fit: y = -1.322x + 7.8
 - P-value: 0.1653
-- N samples: 138
-
-**Days Since 2024-01-01:**
-- Correlation: -0.111 
-- Linear fit: y = -0.003x + 9.3
-- P-value: 0.1964
 - N samples: 138
 
 **Benchmark Score:**
@@ -775,17 +775,17 @@
 **total_hallucinations vs Benchmark Score:**
   r = -0.622, y = -7.832x + 498.0
 
-**1b_context_omission vs Days Since 2024-01-01:**
-  r = -0.618, y = -0.074x + 108.2
-
 **1a_instruction_override vs Benchmark Score:**
   r = -0.607, y = -0.578x + 28.3
 
 **4b_model_semantics_breach vs Benchmark Score:**
   r = -0.599, y = -0.768x + 39.9
 
+**1b_context_omission vs Days Since 2024-01-01:**
+  r = -0.597, y = -0.074x + 107.0
+
 **category1_input_misalignment vs Days Since 2024-01-01:**
-  r = -0.568, y = -0.079x + 127.7
+  r = -0.563, y = -0.080x + 127.9
 
 **category1_input_misalignment vs Benchmark Score:**
   r = -0.532, y = -2.860x + 157.1
