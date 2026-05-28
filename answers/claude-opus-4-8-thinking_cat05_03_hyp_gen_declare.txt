@@ -1,0 +1,139 @@
+# Analysis of the DECLARE Model
+
+## 1. Identified Anomalies
+
+### A. Fatal contradiction: "Close" is mandatory, but "Evaluate" cannot coexist with "Close"
+- `existence: C` forces **every** trace to contain a *Close* activity.
+- `noncoexistence: E  C` forbids *Evaluate* and *Close* from ever appearing in the same trace.
+- **Consequence:** Since `C` is unavoidable, `E` becomes **logically impossible**. The model effectively prohibits ever evaluating a claim, even though evaluation is a core step in the intended flow (R  A  **E**  P  N  C). Any real trace that follows the business process would simultaneously satisfy `existence(C)` and violate `noncoexistence(E,C)` — an unsatisfiable situation.
+
+### B. A dead/unsatisfiable rule
+- `responded_existence: E  A` (if *Evaluate* occurs then *Assign* must occur) is rendered meaningless. Because `E` can never appear (see A), this rule will be vacuously satisfied forever and provides no real control.
+
+### C. Missing mandatory steps — essential activities can be skipped
+- The model only mandates the existence of `C` (and the start `R` via `init`).
+- There is **no** `existence` constraint for `A` (Assign), `E` (Evaluate), `P` (Approve), or `N` (Notify).
+- **Consequence:** A claim can legally be *received* and *closed* with no assignment, no evaluation, no approval, and no customer notification — directly undermining the intended control flow.
+
+### D. Weak ordering enforcement
+- The only ordering rule is `precedence: C after R` (Close requires a prior Receive).
+- There are **no** `response` / `chain` / `succession` constraints binding AEPNC in sequence. The model does not guarantee that approval precedes closing, that notification follows approval, etc. The intended six-step order is essentially unprotected.
+
+---
+
+## 2. Hypotheses for the Anomalies
+
+1. **Misinterpretation of business intent.** The `noncoexistence(E, C)` rule may have been intended to express something else (e.g., "a *rejected* evaluation cannot lead to a *paid* close," or two mutually exclusive *outcome* states) and was wrongly applied to the core *Evaluate*/*Close* activities.
+
+2. **Inconsistent incremental edits.** Constraints were likely added at different times. A later requirement ("every claim must be closed") was bolted on as `existence(C)` without revisiting the older `noncoexistence(E, C)` rule, producing a contradiction no one re-validated.
+
+3. **Automated mining artifacts / incomplete data.** If the model was discovered from an event log with sparse or skewed data (e.g., a sample where evaluated cases were not yet closed), a mining tool could spuriously infer that `E` and `C` never co-occur, generating a false `noncoexistence` constraint.
+
+4. **Process shortcuts under operational pressure.** The absence of mandatory `A/E/P/N` constraints may reflect a real-world practice of fast-tracking claims, where steps are skipped to clear backlogs; the model simply codified that loose reality instead of the ideal policy.
+
+5. **Copy/template error.** The `responded_existence`, `precedence`, and `noncoexistence` blocks may have been copied from a template and the `activities` lists swapped or left mismatched.
+
+---
+
+## 3. Verification Strategies (SQL)
+
+The following queries test whether the modeled rules (and their contradictions) actually appear in the recorded behavior.
+
+### Q1 — Claims that were closed without any evaluation (skipping an essential step)
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE EXISTS (
+        SELECT 1 FROM claim_events e
+        WHERE e.claim_id = c.claim_id AND e.activity = 'C')
+  AND NOT EXISTS (
+        SELECT 1 FROM claim_events e
+        WHERE e.claim_id = c.claim_id AND e.activity = 'E');
+```
+A large result confirms that the missing `existence(E)` constraint allows closing without evaluation.
+
+### Q2 — Traces where Evaluate and Close coexist (would violate `noncoexistence(E,C)`)
+```sql
+SELECT e.claim_id
+FROM claim_events e
+WHERE e.activity IN ('E','C')
+GROUP BY e.claim_id
+HAVING COUNT(DISTINCT e.activity) = 2;
+```
+If this returns rows, the real process routinely violates the modeled non-coexistence rule, demonstrating that the rule contradicts actual (and intended) behavior.
+
+### Q3 — Evaluations that occurred without an Assign (tests `responded_existence E  A`)
+```sql
+SELECT c.claim_id
+FROM claims c
+WHERE EXISTS (
+        SELECT 1 FROM claim_events e
+        WHERE e.claim_id = c.claim_id AND e.activity = 'E')
+  AND NOT EXISTS (
+        SELECT 1 FROM claim_events e
+        WHERE e.claim_id = c.claim_id AND e.activity = 'A');
+```
+
+### Q4 — Claims not starting with Receive (tests `init: R`)
+```sql
+SELECT first_event.claim_id, first_event.activity
+FROM (
+    SELECT DISTINCT ON (claim_id) claim_id, activity, timestamp
+    FROM claim_events
+    ORDER BY claim_id, timestamp ASC
+) AS first_event
+WHERE first_event.activity <> 'R';
+```
+
+### Q5 — Closes that have no preceding Receive (tests `precedence: C after R`)
+```sql
+SELECT cl.claim_id
+FROM claim_events cl
+WHERE cl.activity = 'C'
+  AND NOT EXISTS (
+        SELECT 1 FROM claim_events r
+        WHERE r.claim_id = cl.claim_id
+          AND r.activity = 'R'
+          AND r.timestamp < cl.timestamp);
+```
+
+### Q6 — Claims missing approval or notification before closing (tests the unenforced order/steps)
+```sql
+SELECT c.claim_id,
+       MAX(CASE WHEN e.activity = 'P' THEN 1 ELSE 0 END) AS has_approve,
+       MAX(CASE WHEN e.activity = 'N' THEN 1 ELSE 0 END) AS has_notify,
+       MAX(CASE WHEN e.activity = 'C' THEN 1 ELSE 0 END) AS has_close
+FROM claims c
+JOIN claim_events e ON e.claim_id = c.claim_id
+GROUP BY c.claim_id
+HAVING MAX(CASE WHEN e.activity = 'C' THEN 1 ELSE 0 END) = 1
+   AND (MAX(CASE WHEN e.activity = 'P' THEN 1 ELSE 0 END) = 0
+        OR MAX(CASE WHEN e.activity = 'N' THEN 1 ELSE 0 END) = 0);
+```
+
+### Q7 — Sequence/order check: Approve happening after Close (out-of-order execution)
+```sql
+SELECT p.claim_id
+FROM claim_events p
+JOIN claim_events c
+  ON p.claim_id = c.claim_id
+WHERE p.activity = 'P'
+  AND c.activity = 'C'
+  AND p.timestamp > c.timestamp;
+```
+
+### Q8 — Cross-check that evaluators are actually assigned adjusters (data-quality / specialization check)
+```sql
+SELECT e.claim_id, e.resource, a.adjuster_id
+FROM claim_events e
+LEFT JOIN adjusters a ON e.resource = a.name
+WHERE e.activity = 'E'
+  AND a.adjuster_id IS NULL;   -- evaluations performed by a non-adjuster resource
+```
+
+---
+
+**Interpretation guide:**
+- Non-empty results from **Q2** prove the `noncoexistence(E,C)` rule is incompatible with reality and, combined with the mandatory `existence(C)`, would block all valid evaluated claims.
+- Non-empty results from **Q1, Q3, Q6, Q7** confirm the model is too permissive (missing existence/ordering constraints), letting essential steps be skipped or reordered.
+- **Q8** helps distinguish a genuine process problem from a data-recording/resource-mapping issue that could have misled an automated constraint miner.

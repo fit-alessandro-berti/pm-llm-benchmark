@@ -1,0 +1,106 @@
+# DuckDB SQL Query
+
+```sql
+WITH ordered_events AS (
+    -- Assign a sequential row number to each event within a case, ordered by time
+    SELECT
+        case_id,
+        activity,
+        timestamp,
+        ROW_NUMBER() OVER (
+            PARTITION BY case_id
+            ORDER BY timestamp
+        ) AS rn
+    FROM event_log
+),
+
+sequence_check AS (
+    -- Look at each event together with the next two events in the same case
+    SELECT
+        e1.case_id,
+        e1.activity        AS act1,
+        e2.activity        AS act2,
+        e3.activity        AS act3,
+        e2.timestamp       AS create_order_ts,
+        e3.timestamp       AS confirm_order_ts
+    FROM ordered_events e1
+    JOIN ordered_events e2
+        ON e1.case_id = e2.case_id
+       AND e2.rn = e1.rn + 1          -- e2 immediately follows e1
+    JOIN ordered_events e3
+        ON e1.case_id = e3.case_id
+       AND e3.rn = e1.rn + 2          -- e3 immediately follows e2
+),
+
+bad_cases AS (
+    -- Cases that contain the exact direct-succession sequence
+    -- AND where Create Order -> Confirm Order took more than 5 days
+    SELECT DISTINCT case_id
+    FROM sequence_check
+    WHERE act1 = 'Approve Purchase Requisition'
+      AND act2 = 'Create Order'
+      AND act3 = 'Confirm Order'
+      AND confirm_order_ts > create_order_ts + INTERVAL 5 DAY
+)
+
+-- Return all events EXCEPT those belonging to the "bad" cases
+SELECT
+    case_id,
+    activity,
+    timestamp
+FROM event_log
+WHERE case_id NOT IN (SELECT case_id FROM bad_cases)
+ORDER BY case_id, timestamp;
+```
+
+## Explanation
+
+**1. `ordered_events`**  
+Each event is numbered sequentially within its case using `ROW_NUMBER()` ordered by `timestamp`. This lets us reason about *direct succession* — consecutive row numbers mean no other event from the same case occurs in between.
+
+**2. `sequence_check`**  
+We self-join the numbered events so that three consecutive events (`rn`, `rn+1`, `rn+2`) are aligned in a single row. This captures every triple of directly-successive events along with the timestamps we need.
+
+**3. `bad_cases`**  
+We filter the triples to those matching the exact pattern:
+- `'Approve Purchase Requisition'`  `'Create Order'`  `'Confirm Order'`
+
+and where the gap between **Create Order** and **Confirm Order** exceeds 5 days (`confirm_order_ts > create_order_ts + INTERVAL 5 DAY`). `DISTINCT` collapses to unique offending `case_id`s.
+
+**4. Final SELECT**  
+We return **all events** from `event_log` whose `case_id` is **not** in `bad_cases`, ordered by case and time.
+
+## Notes / Variations
+
+- **Strict 5-day boundary:** If "more than 5 days" should include exactly 5 days, change `>` to `>=`.
+- **Duplicate timestamps:** If two events in a case can share the exact same timestamp, add a tie-breaker to the `ROW_NUMBER()` ordering (e.g., a primary key column) to make succession deterministic:
+  ```sql
+  ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp, event_id)
+  ```
+- **Performance:** For very large logs, the `LAG`-based alternative below avoids two self-joins:
+
+```sql
+WITH seq AS (
+    SELECT
+        case_id, activity, timestamp,
+        LAG(activity, 1) OVER w AS prev1_act,
+        LAG(activity, 2) OVER w AS prev2_act,
+        LAG(timestamp, 1) OVER w AS prev1_ts
+    FROM event_log
+    WINDOW w AS (PARTITION BY case_id ORDER BY timestamp)
+),
+bad_cases AS (
+    SELECT DISTINCT case_id
+    FROM seq
+    WHERE activity   = 'Confirm Order'
+      AND prev1_act  = 'Create Order'
+      AND prev2_act  = 'Approve Purchase Requisition'
+      AND timestamp > prev1_ts + INTERVAL 5 DAY
+)
+SELECT case_id, activity, timestamp
+FROM event_log
+WHERE case_id NOT IN (SELECT case_id FROM bad_cases)
+ORDER BY case_id, timestamp;
+```
+
+Both approaches yield identical results; the `LAG` version is typically more efficient.

@@ -1,0 +1,100 @@
+# Procure-to-Pay Process Tree Fix
+
+## 1. Issues with the Current Model
+
+The core problem is the **PARALLEL (AND) operator** wrapping five activities that have strict causal dependencies. The `Operator.PARALLEL` allows these activities to be interleaved in **any** order, which permits domain-violating behaviors such as:
+
+- **Paying the invoice before receiving it** (`Pay_Invoice` before `Receive_Invoice`) — you can't pay something you haven't received.
+- **Matching the invoice before it arrives** (`Match_Invoice_to_PO` before `Receive_Invoice`) — nothing exists to match.
+- **Matching/paying before the PO is created** (`Match_Invoice_to_PO` before `Create_Purchase_Order`).
+- **Receiving goods or invoices before the Purchase Order exists.**
+
+In short, the AND block destroys all temporal ordering constraints that the business process requires.
+
+### Required dependencies
+- `Create_Purchase_Order` must come **before** anything else in the block.
+- `Match_Invoice_to_PO` requires that **both** `Receive_Goods` and `Receive_Invoice` have occurred.
+- `Pay_Invoice` requires `Match_Invoice_to_PO`.
+
+### A legitimate point for concurrency
+The only genuinely concurrent step is **`Receive_Goods`** and **`Receive_Invoice`** — these two events are independent and can happen in either order (or simultaneously). This is the *one* place a PARALLEL block is justified.
+
+---
+
+## 2. Corrected Process Tree Model
+
+```python
+from pm4py.objects.process_tree.obj import Operator, ProcessTree
+
+# Define activities
+create_req      = ProcessTree(label="Create_Purchase_Requisition")
+approve_req     = ProcessTree(label="Approve_Purchase_Requisition")
+create_po       = ProcessTree(label="Create_Purchase_Order")
+receive_goods   = ProcessTree(label="Receive_Goods")
+receive_invoice = ProcessTree(label="Receive_Invoice")
+match_invoice   = ProcessTree(label="Match_Invoice_to_PO")
+pay_invoice     = ProcessTree(label="Pay_Invoice")
+close_case      = ProcessTree(label="Close_Case")
+
+# Receiving goods and receiving the invoice are genuinely independent:
+# they may occur in either order, so they are kept in a PARALLEL block.
+receive_block = ProcessTree(operator=Operator.PARALLEL, children=[
+    receive_goods,
+    receive_invoice
+])
+
+# Everything else is strictly sequential according to P2P logic.
+root = ProcessTree(operator=Operator.SEQUENCE, children=[
+    create_req,        # 1. Create Purchase Requisition
+    approve_req,       # 2. Approve Purchase Requisition
+    create_po,         # 3. Create Purchase Order
+    receive_block,     # 4 & 5. Receive Goods AND Receive Invoice (any order)
+    match_invoice,     # 6. Match Invoice to PO
+    pay_invoice,       # 7. Pay Invoice
+    close_case         # 8. Close Case
+])
+
+# Wire up parent references (good practice for pm4py)
+for child in receive_block.children:
+    child.parent = receive_block
+for child in root.children:
+    child.parent = root
+```
+
+### Resulting structure
+```
+SEQUENCE
+ Create_Purchase_Requisition
+ Approve_Purchase_Requisition
+ Create_Purchase_Order
+ PARALLEL
+    Receive_Goods
+    Receive_Invoice
+ Match_Invoice_to_PO
+ Pay_Invoice
+ Close_Case
+```
+
+---
+
+## 3. How the Updated Model Enforces Domain Logic
+
+| Mechanism | Effect |
+|-----------|--------|
+| **Top-level SEQUENCE** | Forces a strict order: requisition  approval  PO  receiving  match  pay  close. No step can "jump ahead." |
+| **`Create_PO` placed before the receive block** | Guarantees a Purchase Order exists before goods/invoice are received and matched. |
+| **PARALLEL only around `Receive_Goods` / `Receive_Invoice`** | Allows the *only* legitimate concurrency (goods and invoice arrive independently) while still requiring **both** to complete before matching. |
+| **`Match_Invoice_to_PO` after the receive block** | The sequence ensures matching cannot start until both receiving activities finish — preventing matching against missing documents. |
+| **`Pay_Invoice` after matching** | Payment can never occur before a successful match, eliminating "pay before receive/match" violations. |
+| **`Close_Case` last** | The case can only be closed once every prior step is complete. |
+
+### Behaviors now prevented (that were previously allowed)
+-  Paying before receiving or matching the invoice
+-  Matching before goods/invoice arrive
+-  Receiving goods/invoice before the PO is created
+-  Closing the case prematurely
+
+### Behavior still correctly allowed
+-  `Receive_Goods` then `Receive_Invoice`, **or** `Receive_Invoice` then `Receive_Goods` (real-world flexibility).
+
+By replacing the over-permissive AND block with a SEQUENCE — and confining parallelism to the single pair of truly independent events — the model becomes **precise** (no longer underfitting) while remaining **fit** to all valid real-world P2P traces.

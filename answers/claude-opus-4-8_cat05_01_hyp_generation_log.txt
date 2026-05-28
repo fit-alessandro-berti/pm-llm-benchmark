@@ -1,0 +1,208 @@
+# Process Mining Analysis: Order Event Log Anomalies
+
+## 1. Identified Anomalies and Undesirable Behaviors
+
+Comparing each case against the assumed normal flow (Register  Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Issue Invoice  Receive Payment):
+
+### Case 1001 —  Conformant
+This is the only case that follows the prescribed sequence perfectly. It serves as our "happy path" reference.
+
+### Case 1002 —  Multiple violations
+| Issue | Detail |
+|-------|--------|
+| **Out-of-order shipment** | `Confirm Shipment` (08:25) and `Ship Goods` (08:40) occur **before** `Perform Credit Check` (09:10) and `Validate Stock` (09:15) |
+| **Goods shipped pre-credit-check** | Financial risk — order fulfilled before creditworthiness confirmed |
+| **Low credit score** | `credit_score=650` — yet the order proceeded; possibly below policy threshold |
+| **Suspicious metadata** | `attempted_early=Y` flag suggests a known/recurring early-confirmation behavior |
+
+### Case 1003 —  Skipped + reordered steps
+| Issue | Detail |
+|-------|--------|
+| **Skipped Validate Stock** | No stock validation activity at all — goods shipped without stock confirmation |
+| **Confirm Shipment after Ship Goods** | `Ship Goods` (09:10) precedes `Confirm Shipment` (09:45) — confirmation is retroactive (`late_confirmation=Y`) |
+| **Invoice before shipment confirmation** | `Issue Invoice` (09:30) before `Confirm Shipment` |
+
+### Case 1004 —  Severe violations
+| Issue | Detail |
+|-------|--------|
+| **No Credit Check** | Credit check entirely skipped on a **high-value order (3000.00)** |
+| **No Validate Stock** | Stock never validated |
+| **Payment before Invoice** | `Receive Payment` (09:05) occurs **before** `Issue Invoice` (09:20) |
+| **Payment before fulfillment** | Payment received before shipment was even confirmed |
+| **Incomplete case** | Process ends at `Ship Goods` — no `Receive Payment` consistent with the invoice (payment came earlier, out of place) |
+| **Contradictory metadata** | `shipment_scheduled=N` yet `Ship Goods` still occurred |
+
+### Cross-cutting observations
+- **Resource/role consistency**: Need to verify activities are performed by appropriate departments (e.g., is `Ship Goods` always done by Logistics?).
+- **3 of 4 cases are non-conformant** — suggests systemic rather than isolated issues.
+
+---
+
+## 2. Hypotheses for Root Causes
+
+| # | Hypothesis | Supporting Evidence |
+|---|-----------|---------------------|
+| H1 | **No system-enforced sequence control** — the workflow engine allows activities to be logged in any order | Cases 1002, 1003, 1004 all show reordering |
+| H2 | **Credit check bypass for "fast" orders** — under time pressure, sales/logistics ship before finance clears | 1002 `attempted_early=Y`; 1004 skips entirely |
+| H3 | **Priority orders skip controls** — process shortcuts applied to `priority` order types | 1002 is `priority` and shows early shipment |
+| H4 | **High-value orders not getting extra scrutiny** (inverse of expected) | 1004 (3000.00) skipped credit check |
+| H5 | **Manual/retroactive data entry** — staff backfill events after the fact, producing out-of-order timestamps | 1003 `late_confirmation=Y` |
+| H6 | **Payment-before-invoice indicates prepayment handling not modeled** or data error | 1004 |
+| H7 | **Specific resources/roles repeatedly involved** in violations (training or compliance issue) | Need to aggregate by resource |
+| H8 | **Stock validation routinely skipped** | Missing in 1003, 1004 |
+
+---
+
+## 3. Proposed Investigative SQL Queries
+
+### A. Reconstruct the actual activity sequence per case
+```sql
+SELECT
+    case_id,
+    STRING_AGG(activity, ' -> ' ORDER BY timestamp) AS actual_path,
+    COUNT(*) AS num_events,
+    MIN(timestamp) AS case_start,
+    MAX(timestamp) AS case_end
+FROM order_event_log
+GROUP BY case_id
+ORDER BY case_id;
+```
+*Purpose: Variant analysis — discover all distinct process paths and their frequency.*
+
+### B. Detect "Ship Goods" occurring before "Perform Credit Check" (H1, H2)
+```sql
+SELECT s.case_id,
+       cc.timestamp AS credit_check_time,
+       s.timestamp  AS ship_time
+FROM order_event_log s
+LEFT JOIN order_event_log cc
+       ON s.case_id = cc.case_id
+      AND cc.activity = 'Perform Credit Check'
+WHERE s.activity = 'Ship Goods'
+  AND (cc.timestamp IS NULL OR s.timestamp < cc.timestamp);
+```
+*Purpose: Flag orders shipped without (or before) a credit check.*
+
+### C. Find cases missing mandatory activities (H8, H4)
+```sql
+WITH required(activity) AS (
+    VALUES ('Register Order'),('Perform Credit Check'),('Validate Stock'),
+           ('Confirm Shipment'),('Ship Goods'),('Issue Invoice'),('Receive Payment')
+),
+case_list AS (SELECT DISTINCT case_id FROM order_event_log)
+SELECT c.case_id, r.activity AS missing_activity
+FROM case_list c
+CROSS JOIN required r
+LEFT JOIN order_event_log e
+       ON e.case_id = c.case_id AND e.activity = r.activity
+WHERE e.event_id IS NULL
+ORDER BY c.case_id;
+```
+*Purpose: Identify every skipped mandatory step per case.*
+
+### D. Payment received before invoice issued (H6)
+```sql
+SELECT p.case_id,
+       i.timestamp AS invoice_time,
+       p.timestamp AS payment_time
+FROM order_event_log p
+LEFT JOIN order_event_log i
+       ON p.case_id = i.case_id AND i.activity = 'Issue Invoice'
+WHERE p.activity = 'Receive Payment'
+  AND (i.timestamp IS NULL OR p.timestamp < i.timestamp);
+```
+
+### E. Correlate violations with order type / value (H3, H4)
+```sql
+WITH paths AS (
+    SELECT case_id,
+           STRING_AGG(activity, ' -> ' ORDER BY timestamp) AS actual_path
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT o.order_type,
+       COUNT(*) AS total_orders,
+       AVG(o.order_value) AS avg_value,
+       SUM(CASE WHEN p.actual_path NOT LIKE
+            'Register Order -> Perform Credit Check -> Validate Stock -> Confirm Shipment -> Ship Goods -> Issue Invoice -> Receive Payment'
+            THEN 1 ELSE 0 END) AS nonconformant_orders
+FROM orders o
+JOIN paths p ON o.case_id = p.case_id
+GROUP BY o.order_type;
+```
+*Purpose: Test whether priority or high-value orders are more likely to deviate.*
+
+### F. Activities performed by the "wrong" department (role validation, H7)
+```sql
+SELECT e.case_id, e.activity, e.resource, r.role, r.department
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE
+    (e.activity IN ('Perform Credit Check','Issue Invoice','Receive Payment') AND r.department <> 'Finance')
+ OR (e.activity = 'Register Order' AND r.department <> 'Sales')
+ OR (e.activity IN ('Validate Stock','Ship Goods') AND r.department <> 'Logistics')
+ORDER BY e.case_id;
+```
+
+### G. Rank resources by involvement in non-conformant cases (H7)
+```sql
+WITH nonconformant AS (
+    SELECT case_id
+    FROM order_event_log
+    GROUP BY case_id
+    HAVING STRING_AGG(activity, ' -> ' ORDER BY timestamp) <>
+      'Register Order -> Perform Credit Check -> Validate Stock -> Confirm Shipment -> Ship Goods -> Issue Invoice -> Receive Payment'
+)
+SELECT e.resource, r.role, r.department,
+       COUNT(DISTINCT e.case_id) AS nonconformant_case_count
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE e.case_id IN (SELECT case_id FROM nonconformant)
+GROUP BY e.resource, r.role, r.department
+ORDER BY nonconformant_case_count DESC;
+```
+
+### H. Detect out-of-order events generally (any later step preceding an earlier one)
+```sql
+WITH ordered AS (
+    SELECT case_id, activity, timestamp,
+           CASE activity
+             WHEN 'Register Order'       THEN 1
+             WHEN 'Perform Credit Check' THEN 2
+             WHEN 'Validate Stock'       THEN 3
+             WHEN 'Confirm Shipment'     THEN 4
+             WHEN 'Ship Goods'           THEN 5
+             WHEN 'Issue Invoice'        THEN 6
+             WHEN 'Receive Payment'      THEN 7
+           END AS expected_rank,
+           ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS actual_rank
+    FROM order_event_log
+)
+SELECT case_id, activity, expected_rank, actual_rank
+FROM ordered
+WHERE expected_rank IS DISTINCT FROM actual_rank
+ORDER BY case_id, actual_rank;
+```
+*Purpose: Pinpoint exactly which steps are out of position in each case.*
+
+### I. Suspiciously short gaps between steps (rushed/automated entry, H5)
+```sql
+SELECT case_id, activity,
+       timestamp,
+       timestamp - LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp) AS gap
+FROM order_event_log
+ORDER BY case_id, timestamp;
+```
+*Purpose: Very small gaps (e.g., 5 min between Register Order and Receive Payment in 1004) may indicate batch/backfill data entry rather than genuine processing.*
+
+---
+
+## 4. Summary of Recommended Next Steps
+
+1. **Run Query A & H first** to formally catalog every process variant and deviation point.
+2. **Use C** to quantify control-skip frequency (credit check, stock validation appear most at risk).
+3. **Cross-reference with E, F, G** to determine whether deviations cluster around specific order types, departments, or individuals.
+4. **Investigate metadata flags** (`attempted_early=Y`, `late_confirmation=Y`, `shipment_scheduled=N`) as they appear to be system-captured indicators of known workarounds.
+5. **Escalate Case 1004** as the highest-risk: a high-value order with no credit check, no stock validation, and payment recorded before invoicing — this combination warrants immediate manual audit and potential fraud/control review.
+
+> **Note:** With only 4 cases, these findings are illustrative. The same queries should be run over the full historical dataset to establish statistically meaningful violation rates before attributing root causes.

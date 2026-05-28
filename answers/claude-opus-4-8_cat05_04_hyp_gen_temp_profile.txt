@@ -1,0 +1,211 @@
+# Temporal Profile Analysis: Insurance Claim Handling Process
+
+## 1. Identified Anomalies
+
+After examining the temporal profile model, I have identified four primary anomalies worth investigating:
+
+### Anomaly A — Rigid Approval Timing (R  P)
+- **Average:** 90,000 s (~25 hours), **STDEV:** 3,600 s (1 hour)
+- **Issue:** An extremely **low standard deviation** relative to a long mean. A coefficient of variation of only ~0.04 implies approvals occur at an almost fixed interval after receipt — atypical for a process that should vary with claim complexity.
+
+### Anomaly B — Volatile Approval-to-Notification Delay (P  N)
+- **Average:** 604,800 s (7 days), **STDEV:** 172,800 s (2 days)
+- **Issue:** A very **long mean combined with a high STDEV**. Some customers wait far longer than a week to be notified after approval, while others are notified quickly. High dispersion signals an unstable, possibly queue-driven step.
+
+### Anomaly C — Fast Closure After Assignment (A  C)
+- **Average:** 7,200 s (2 hours), **STDEV:** 3,600 s (1 hour)
+- **Issue:** Closure occurs only two hours after assignment. Given that Evaluate (E), Approve (P), and Notify (N) should normally precede closure, this short interval suggests **intermediate steps are being skipped** for a subset of claims.
+
+### Anomaly D — Near-Instant Evaluation-to-Notification (E  N)
+- **Average:** 300 s (5 minutes), **STDEV:** 60 s (1 minute)
+- **Issue:** Five minutes is insufficient time for an approval step to occur between evaluation and notification. The tight STDEV reinforces that this is a **systematic transition**, potentially bypassing the Approve (P) activity.
+
+---
+
+## 2. Hypotheses
+
+| # | Anomaly | Candidate Explanation |
+|---|---------|----------------------|
+| H1 | R  P low STDEV | An **automated batch/scheduled job** approves claims at a fixed cadence (e.g., a nightly run ~25h after receipt) rather than on a per-claim basis. |
+| H2 | R  P low STDEV | **Auto-approval rules** for claims under a threshold amount remove human variability. |
+| H3 | P  N high mean/STDEV | A **notification backlog or batch dispatch** queue causes uneven delays; resource constraints (limited staff or messaging system throttling) create congestion. |
+| H4 | P  N variance | Notification timing depends on **claim type or region** (e.g., postal mail vs. email), producing bimodal delays. |
+| H5 | A  C fast closure | **Premature/abandoned closures** — claims rejected, withdrawn, or duplicates closed directly after assignment without evaluation. |
+| H6 | E  N fast transition | The **Approve (P) step is being skipped** or logged out of order; evaluation directly triggers notification via an automated handoff. |
+| H7 | Multiple | **Manual timestamp entry or system clock issues** producing artificial intervals for specific resources/adjusters. |
+
+---
+
+## 3. Verification Approaches (SQL)
+
+The following queries assume self-joins on `claim_events` to reconstruct per-claim intervals.
+
+### Query 1 — Compute per-claim activity intervals (foundation view)
+```sql
+WITH event_pairs AS (
+    SELECT
+        a.claim_id,
+        a.activity      AS act_from,
+        b.activity      AS act_to,
+        a.timestamp     AS ts_from,
+        b.timestamp     AS ts_to,
+        EXTRACT(EPOCH FROM (b.timestamp - a.timestamp)) AS seconds_between,
+        a.resource      AS res_from,
+        b.resource      AS res_to
+    FROM claim_events a
+    JOIN claim_events b
+      ON a.claim_id = b.claim_id
+     AND b.timestamp >= a.timestamp
+)
+SELECT * FROM event_pairs;
+```
+
+### Query 2 — Anomaly A: detect rigid RP timing (low variation)
+```sql
+WITH rp AS (
+    SELECT r.claim_id,
+           EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS secs
+    FROM claim_events r
+    JOIN claim_events p
+      ON r.claim_id = p.claim_id
+     AND r.activity = 'R' AND p.activity = 'P'
+)
+SELECT
+    COUNT(*)                AS n_claims,
+    AVG(secs)               AS avg_secs,
+    STDDEV_POP(secs)        AS stdev_secs,
+    STDDEV_POP(secs)/NULLIF(AVG(secs),0) AS coeff_variation,
+    MIN(secs), MAX(secs)
+FROM rp;
+-- Inspect whether intervals cluster near a fixed scheduled time (e.g., daily batch boundary)
+```
+```sql
+-- Test the batch-job hypothesis (H1): bucket by approval hour-of-day
+SELECT EXTRACT(HOUR FROM p.timestamp) AS approve_hour, COUNT(*)
+FROM claim_events p
+WHERE p.activity = 'P'
+GROUP BY 1
+ORDER BY 2 DESC;
+```
+```sql
+-- Test auto-approval-by-amount (H2): correlate R->P speed with claim_amount
+SELECT
+    CASE WHEN c.claim_amount < 1000 THEN 'low'
+         WHEN c.claim_amount < 10000 THEN 'mid'
+         ELSE 'high' END AS amount_band,
+    AVG(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp))) AS avg_secs,
+    COUNT(*) AS n
+FROM claims c
+JOIN claim_events r ON r.claim_id = c.claim_id AND r.activity = 'R'
+JOIN claim_events p ON p.claim_id = c.claim_id AND p.activity = 'P'
+GROUP BY 1;
+```
+
+### Query 3 — Anomaly B: PN outliers and segment correlation
+```sql
+WITH pn AS (
+    SELECT p.claim_id,
+           EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS secs
+    FROM claim_events p
+    JOIN claim_events n
+      ON p.claim_id = n.claim_id
+     AND p.activity = 'P' AND n.activity = 'N'
+)
+SELECT pn.claim_id, pn.secs, c.claim_type, a.region, a.adjuster_id
+FROM pn
+JOIN claims c ON c.claim_id = pn.claim_id
+LEFT JOIN claim_events ae ON ae.claim_id = pn.claim_id AND ae.activity = 'A'
+LEFT JOIN adjusters a ON a.name = ae.resource   -- adjust join key as appropriate
+WHERE pn.secs > (604800 + 2 * 172800)           -- beyond mean + 2*STDEV
+ORDER BY pn.secs DESC;
+```
+```sql
+-- Aggregate P->N delay by claim_type and region (H3/H4)
+SELECT c.claim_type, a.region,
+       AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) AS avg_pn_secs,
+       COUNT(*) AS n
+FROM claim_events p
+JOIN claim_events n ON n.claim_id = p.claim_id AND n.activity = 'N'
+JOIN claims c       ON c.claim_id = p.claim_id
+LEFT JOIN claim_events ae ON ae.claim_id = p.claim_id AND ae.activity = 'A'
+LEFT JOIN adjusters a     ON a.name = ae.resource
+WHERE p.activity = 'P'
+GROUP BY c.claim_type, a.region
+ORDER BY avg_pn_secs DESC;
+```
+
+### Query 4 — Anomaly C: claims closed quickly after assignment, skipping steps
+```sql
+WITH ac AS (
+    SELECT a.claim_id,
+           EXTRACT(EPOCH FROM (cl.timestamp - a.timestamp)) AS secs,
+           a.timestamp AS assign_ts,
+           cl.timestamp AS close_ts
+    FROM claim_events a
+    JOIN claim_events cl
+      ON a.claim_id = cl.claim_id
+     AND a.activity = 'A' AND cl.activity = 'C'
+)
+SELECT ac.claim_id, ac.secs,
+       -- flag whether E and P occurred between Assign and Close
+       EXISTS (SELECT 1 FROM claim_events e
+               WHERE e.claim_id = ac.claim_id AND e.activity = 'E'
+                 AND e.timestamp BETWEEN ac.assign_ts AND ac.close_ts) AS had_evaluate,
+       EXISTS (SELECT 1 FROM claim_events p
+               WHERE p.claim_id = ac.claim_id AND p.activity = 'P'
+                 AND p.timestamp BETWEEN ac.assign_ts AND ac.close_ts) AS had_approve,
+       c.claim_type, c.claim_amount
+FROM ac
+JOIN claims c ON c.claim_id = ac.claim_id
+WHERE ac.secs < 7200            -- closed within 2 hours
+ORDER BY ac.secs ASC;
+-- Claims where had_evaluate/had_approve = FALSE confirm premature closure (H5)
+```
+
+### Query 5 — Anomaly D: missing Approve step between Evaluate and Notify
+```sql
+SELECT e.claim_id,
+       EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS en_secs,
+       EXISTS (SELECT 1 FROM claim_events p
+               WHERE p.claim_id = e.claim_id AND p.activity = 'P'
+                 AND p.timestamp BETWEEN e.timestamp AND n.timestamp) AS had_approve
+FROM claim_events e
+JOIN claim_events n
+  ON e.claim_id = n.claim_id
+ AND e.activity = 'E' AND n.activity = 'N'
+WHERE EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) < 300
+ORDER BY en_secs ASC;
+-- Rows with had_approve = FALSE confirm the Approve step is skipped (H6)
+```
+
+### Query 6 — Resource / timestamp integrity check (H7)
+```sql
+-- Resources associated with abnormally consistent or zero/negative intervals
+SELECT a.resource,
+       COUNT(*)                                   AS n_pairs,
+       AVG(EXTRACT(EPOCH FROM (b.timestamp - a.timestamp))) AS avg_secs,
+       STDDEV_POP(EXTRACT(EPOCH FROM (b.timestamp - a.timestamp))) AS stdev_secs,
+       SUM(CASE WHEN b.timestamp < a.timestamp THEN 1 ELSE 0 END) AS negative_intervals
+FROM claim_events a
+JOIN claim_events b
+  ON a.claim_id = b.claim_id
+ AND b.event_id <> a.event_id
+GROUP BY a.resource
+HAVING SUM(CASE WHEN b.timestamp < a.timestamp THEN 1 ELSE 0 END) > 0
+    OR STDDEV_POP(EXTRACT(EPOCH FROM (b.timestamp - a.timestamp))) = 0
+ORDER BY negative_intervals DESC;
+```
+
+---
+
+## Summary of Investigative Logic
+
+| Anomaly | Key Query | What confirms the hypothesis |
+|---------|-----------|------------------------------|
+| RP rigid timing | Q2 | Low coefficient of variation + clustering at a fixed approval hour or amount band |
+| PN long/volatile | Q3 | Outliers concentrated in specific claim types/regions/adjusters |
+| AC premature close | Q4 | `had_evaluate`/`had_approve` = FALSE for fast-closed claims |
+| EN too fast | Q5 | `had_approve` = FALSE between E and N |
+| Data integrity | Q6 | Negative intervals or zero-variance resources |
+
+Each query should be run with `ZETA`-based thresholds (mean ± ZETA·STDEV) substituted for the hard-coded bounds, allowing systematic flagging of executions that fall outside expected temporal envelopes.

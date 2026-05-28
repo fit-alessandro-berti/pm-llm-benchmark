@@ -1,0 +1,156 @@
+# Analysis of Anomalous DECLARE Model for Insurance Claim Process
+
+## 1. Identification of Anomalies
+
+### Anomaly A: Critical Contradiction — `noncoexistence(E, C)`
+The most severe issue is the **noncoexistence constraint between E (Evaluate) and C (Close)**. This rule states that evaluation and closing **cannot both appear** in the same trace.
+
+This directly contradicts the intended process flow, which requires every claim to be evaluated (E) *and* eventually closed (C). The two constraints conflict as follows:
+
+- **`existence(C)`** mandates that **C must occur** in every trace.
+- The ideal flow requires **E to occur** before approval/closure.
+- But **`noncoexistence(E, C)`** forbids E and C from coexisting.
+
+**Logical consequence:** Since C is mandatory, E can *never* appear. This means **no claim may ever be evaluated** — directly undermining the core business logic. Evaluation, a mandatory quality-control step, becomes impossible.
+
+### Anomaly B: Weak / Underspecified Ordering Constraints
+- Only **`precedence(C, R)`** is defined (C must be preceded by R). There is **no precedence enforcing** that:
+  - E precedes P (Approve),
+  - P precedes N (Notify),
+  - A precedes E.
+- This allows undesired paths such as **R  C** (receive then immediately close) with no assignment, evaluation, approval, or notification at all.
+
+### Anomaly C: `responded_existence(E  A)` Direction Issue
+The constraint `responded_existence` says: *if E occurs, then A must occur* (in any order). However:
+- It does not enforce **ordering** (A could occur *after* E, which is illogical — you must assign before evaluating).
+- Combined with Anomaly A (E can never occur), this constraint becomes **vacuously satisfied** and effectively dead — it never triggers.
+
+### Anomaly D: Missing Mandatory-Step Coverage
+- `init(R)` and `existence(C)` are enforced, but there is **no `existence` constraint** for A, E, P, or N. The model only guarantees start (R) and end (C), allowing the entire middle of the process to be skipped.
+
+---
+
+## 2. Hypotheses for the Anomalies
+
+| # | Hypothesis | Rationale |
+|---|------------|-----------|
+| 1 | **Inverted/mislabeled constraint type** | `noncoexistence(E, C)` was likely meant to be a `coexistence` or `succession(E, C)` constraint. A copy-paste or template error inverted the semantics. |
+| 2 | **Misinterpretation of business requirements** | The modeler may have confused "evaluation and closure should not happen *simultaneously*" (a timing concern) with "should not *coexist*" (an existence concern). |
+| 3 | **Incremental policy drift** | A "fast-track auto-close" policy for small/low-risk claims may have been introduced for some claim types, and a blanket noncoexistence rule was mistakenly applied to all claims. |
+| 4 | **Automated mining on incomplete data** | If the constraints were discovered via process mining on a log where evaluated claims were not yet closed (open cases), the miner could spuriously infer that E and C never coexist. |
+| 5 | **Throughput pressure** | Constraints that allow R  C skipping (missing precedence rules) may reflect operational pressure to close claims quickly, bypassing evaluation. |
+| 6 | **Incomplete modeling effort** | The absence of `existence`/`succession` rules for A, E, P, N suggests the model was a partial draft never completed. |
+
+---
+
+## 3. Verification Approaches (SQL)
+
+### Q1 — Claims closed without any evaluation (tests Anomalies A & B)
+```sql
+SELECT c.claim_id, c.claim_type, c.submission_date
+FROM claims c
+JOIN claim_events ce_close
+     ON ce_close.claim_id = c.claim_id AND ce_close.activity = 'C'
+LEFT JOIN claim_events ce_eval
+     ON ce_eval.claim_id = c.claim_id AND ce_eval.activity = 'E'
+WHERE ce_eval.event_id IS NULL;
+```
+A non-empty result confirms claims are being closed with no evaluation — consistent with the model effectively forbidding E.
+
+---
+
+### Q2 — Traces where E and C coexist (tests whether the noncoexistence rule reflects reality)
+```sql
+SELECT c.claim_id,
+       MIN(CASE WHEN ce.activity = 'E' THEN ce.timestamp END) AS eval_time,
+       MIN(CASE WHEN ce.activity = 'C' THEN ce.timestamp END) AS close_time
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id
+WHERE ce.activity IN ('E', 'C')
+GROUP BY c.claim_id
+HAVING COUNT(DISTINCT ce.activity) = 2;
+```
+If many claims contain **both** E and C, the `noncoexistence(E, C)` constraint is violated in practice — strong evidence the rule is wrong.
+
+---
+
+### Q3 — Evaluation without a prior assignment / ordering check (tests Anomaly C)
+```sql
+WITH activity_times AS (
+    SELECT claim_id,
+           MIN(CASE WHEN activity = 'A' THEN timestamp END) AS assign_time,
+           MIN(CASE WHEN activity = 'E' THEN timestamp END) AS eval_time
+    FROM claim_events
+    WHERE activity IN ('A', 'E')
+    GROUP BY claim_id
+)
+SELECT claim_id, assign_time, eval_time
+FROM activity_times
+WHERE eval_time IS NOT NULL
+  AND (assign_time IS NULL OR assign_time > eval_time);
+```
+Rows here show evaluations that occurred **without** or **before** an assignment — violating logical ordering.
+
+---
+
+### Q4 — Full conformance check: claims missing mandatory intermediate steps (tests Anomaly D)
+```sql
+SELECT c.claim_id,
+       BOOL_OR(ce.activity = 'R') AS has_receive,
+       BOOL_OR(ce.activity = 'A') AS has_assign,
+       BOOL_OR(ce.activity = 'E') AS has_evaluate,
+       BOOL_OR(ce.activity = 'P') AS has_approve,
+       BOOL_OR(ce.activity = 'N') AS has_notify,
+       BOOL_OR(ce.activity = 'C') AS has_close
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id
+GROUP BY c.claim_id
+HAVING NOT (BOOL_OR(ce.activity = 'A')
+        AND BOOL_OR(ce.activity = 'E')
+        AND BOOL_OR(ce.activity = 'P')
+        AND BOOL_OR(ce.activity = 'N'));
+```
+Lists claims that skipped one or more required steps.
+
+---
+
+### Q5 — Verify evaluations are performed by appropriately specialized adjusters
+```sql
+SELECT ce.claim_id, ce.resource, a.specialization, c.claim_type
+FROM claim_events ce
+JOIN claims c ON c.claim_id = ce.claim_id
+LEFT JOIN adjusters a ON a.adjuster_id::text = ce.resource
+WHERE ce.activity = 'E'
+  AND (
+        a.adjuster_id IS NULL                                   -- evaluated by non-adjuster/system
+     OR (c.claim_type LIKE 'home%' AND a.specialization <> 'home')
+     OR (c.claim_type LIKE 'auto%' AND a.specialization <> 'auto')
+  );
+```
+Reveals whether evaluations correspond to assigned, properly specialized adjusters.
+
+---
+
+### Q6 — Process-mining style direct-follows check for the R  C shortcut
+```sql
+WITH ordered AS (
+    SELECT claim_id, activity, timestamp,
+           LEAD(activity) OVER (PARTITION BY claim_id ORDER BY timestamp) AS next_activity
+    FROM claim_events
+)
+SELECT claim_id, COUNT(*) AS r_directly_to_c
+FROM ordered
+WHERE activity = 'R' AND next_activity = 'C'
+GROUP BY claim_id;
+```
+Detects traces where Receive is immediately followed by Close.
+
+---
+
+## Summary of Recommended Corrections
+1. **Replace** `noncoexistence(E, C)` with `succession(E, C)` (or at minimum `coexistence`), so evaluation must occur and precede closure.
+2. **Add precedence/succession** rules: `A  E`, `E  P`, `P  N`, `N  C`.
+3. **Add `existence`** constraints for A, E, P, and N.
+4. **Strengthen** `responded_existence(EA)` into an ordered `precedence(E, A)` so assignment precedes evaluation.
+
+These corrections, validated against the SQL findings above, restore alignment with the intended process flow.
