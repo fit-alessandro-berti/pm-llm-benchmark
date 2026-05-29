@@ -4,16 +4,16 @@ Aggregated hallucination counts across all LLMs, organized by PM-LLM benchmark c
 
 | Hallucination Type | CAT01 | CAT02 | CAT03 | CAT04 | CAT05 | CAT06 | CAT07 | CAT08 | Total |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1a. Instruction Override | 369 | 150 | 400 | 196 | 269 | 135 | 6 | 58 | 1583 |
-| 1b. Context Omission | 1085 | 1049 | 684 | 880 | 1186 | 994 | 397 | 1593 | 7868 |
-| 1c. Prompt Contradiction | 186 | 90 | 166 | 94 | 47 | 57 | 23 | 33 | 696 |
-| 2a. Concept Fabrication | 457 | 220 | 290 | 735 | 219 | 288 | 265 | 557 | 3031 |
-| 2b. Spurious Numeric | 446 | 559 | 489 | 318 | 313 | 267 | 134 | 1334 | 3860 |
+| 1a. Instruction Override | 370 | 151 | 404 | 197 | 270 | 136 | 6 | 60 | 1594 |
+| 1b. Context Omission | 1089 | 1052 | 688 | 881 | 1186 | 1004 | 397 | 1602 | 7899 |
+| 1c. Prompt Contradiction | 186 | 90 | 166 | 94 | 48 | 57 | 23 | 33 | 697 |
+| 2a. Concept Fabrication | 461 | 232 | 291 | 740 | 226 | 293 | 265 | 562 | 3070 |
+| 2b. Spurious Numeric | 447 | 562 | 490 | 318 | 316 | 269 | 134 | 1352 | 3888 |
 | 2c. False Citation | 7 | 15 | 4 | 15 | 1 | 56 | 3 | 20 | 121 |
-| 3a. Unsupported Leap | 1860 | 2053 | 1579 | 1688 | 1569 | 2026 | 795 | 1758 | 13328 |
-| 3b. Self Contradiction | 330 | 169 | 329 | 185 | 68 | 153 | 18 | 73 | 1325 |
+| 3a. Unsupported Leap | 1872 | 2068 | 1584 | 1695 | 1579 | 2044 | 795 | 1770 | 13407 |
+| 3b. Self Contradiction | 332 | 170 | 331 | 185 | 68 | 153 | 18 | 73 | 1330 |
 | 3c. Circular Reasoning | 2 | 2 | 1 | 2 | 0 | 0 | 0 | 5 | 12 |
-| 4a. Syntax Error | 141 | 46 | 233 | 98 | 250 | 100 | 11 | 155 | 1034 |
-| 4b. Model Semantics Breach | 257 | 134 | 842 | 469 | 266 | 273 | 115 | 52 | 2408 |
+| 4a. Syntax Error | 141 | 46 | 234 | 98 | 254 | 101 | 11 | 155 | 1040 |
+| 4b. Model Semantics Breach | 258 | 134 | 844 | 470 | 269 | 274 | 115 | 52 | 2416 |
 | 4c. Visual Description Mismatch | 155 | 49 | 77 | 95 | 46 | 14 | 518 | 27 | 981 |
-| **Total** | **5295** | **4536** | **5094** | **4775** | **4234** | **4363** | **2285** | **5665** | **36247** |
+| **Total** | **5320** | **4571** | **5114** | **4790** | **4263** | **4401** | **2285** | **5711** | **36455** |
