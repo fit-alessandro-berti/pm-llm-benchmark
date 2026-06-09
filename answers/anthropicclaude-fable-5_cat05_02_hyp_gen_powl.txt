@@ -1,0 +1,197 @@
+# 1. Anomalies in the POWL Model
+
+## Anomaly 1: Loop between Evaluate (E) and Approve (P)
+The construct `OperatorPOWL(operator=Operator.LOOP, children=[E, P])` means:
+- Execute **E** (Evaluate Claim)
+- Then either **exit** the loop, or execute **P** (Approve Claim) and return to **E**
+
+This has two problematic consequences:
+- **A claim can be evaluated without ever being approved** (exit the loop after the first E).
+- **A claim can be approved multiple times**, with re-evaluations after each approval (E  P  E  P  E …). Approval is supposed to be a terminal decision; repeating it suggests rework, decision reversals, or duplicated authorization.
+
+In the ideal flow, the sequence is exactly one **E** followed by exactly one **P**.
+
+## Anomaly 2: XOR allowing Notification (N) to be skipped
+`OperatorPOWL(operator=Operator.XOR, children=[N, skip])` makes "Notify Customer" **optional**. In the intended process, customer notification is mandatory after approval. Skipping it can violate regulatory/contractual obligations (customers must be informed of claim outcomes).
+
+## Anomaly 3: Partial ordering enabling premature claim closure
+The order relation contains:
+- `R  A`, `A  loop`, `loop  xor`, and **`A  C`**
+- Crucially, there is **no edge `xor  C`** (and no `loop  C`).
+
+Because POWL partial orders permit concurrency for unordered nodes, **C (Close Claim) is only constrained to occur after A**. It is *not* ordered with respect to the E/P loop or the notification XOR. Therefore the model admits traces such as:
+- **R  A  C  E  P  N** (closed before evaluation)
+- **R  A  E  C  P** (closed before approval)
+- **R  A  E  P  C  N** (closed before notifying the customer)
+
+This violates the invariant that closure must be the final activity, occurring only after evaluation, approval, and notification.
+
+---
+
+# 2. Hypotheses for Why These Anomalies Exist
+
+**H1 – Partially implemented business rule change (loop EP):**
+A new policy may have introduced "re-evaluation after approval" for fraud screening or audit sampling, but it was implemented as an unconstrained loop rather than a bounded, conditional rework path. Alternatively, supervisors can reverse approvals, and the modeler captured this as a generic loop.
+
+**H2 – Miscommunication between departments (optional notification):**
+The claims department may assume the customer-facing team sends notifications via a separate CRM system, so the workflow team marked N as skippable. Or notification was deemed unnecessary for certain claim types (e.g., zero-payout or internally withdrawn claims), and the condition was modeled as a free XOR choice instead of a guarded one.
+
+**H3 – Technical/modeling error (premature closure):**
+The edge `A  C` may be a leftover from an earlier model version, or the modeler added it as a "shortcut" for administrative closures (e.g., duplicate claims, customer withdrawals) without restricting when it applies. The missing `xor  C` edge could simply be an oversight during model editing.
+
+**H4 – Inadequate tool constraints / lack of model verification:**
+The modeling tool does not validate the model against the intended flow (no conformance check at design time), so an under-specified partial order silently permits concurrency and premature closure that no one detected.
+
+**H5 – Workarounds by operational staff:**
+Adjusters may close claims early to meet SLA/KPI targets ("closed within X days") and reopen evaluation afterwards; the model may have been "fitted" to this real but non-compliant behavior.
+
+---
+
+# 3. Verifying the Hypotheses with Database Queries
+
+All queries operate on `claim_events`, joined with `claims`/`adjusters` where helpful.
+
+### Q1 – Claims closed without prior evaluation or approval (verifies Anomaly 3 / H3, H5)
+
+```sql
+SELECT c.claim_id,
+       c.claim_type,
+       c.claim_amount,
+       ce_close.timestamp AS close_time
+FROM claims c
+JOIN claim_events ce_close
+     ON ce_close.claim_id = c.claim_id
+    AND ce_close.activity = 'Close Claim'
+WHERE NOT EXISTS (
+        SELECT 1 FROM claim_events e
+        WHERE e.claim_id = c.claim_id
+          AND e.activity = 'Evaluate Claim'
+          AND e.timestamp < ce_close.timestamp)
+   OR NOT EXISTS (
+        SELECT 1 FROM claim_events e
+        WHERE e.claim_id = c.claim_id
+          AND e.activity = 'Approve Claim'
+          AND e.timestamp < ce_close.timestamp);
+```
+A non-empty result confirms premature closures occur in reality. Check `additional_info` and `claim_type` on these rows — if they are mostly "duplicate"/"withdrawn" claims, H3 (intentional shortcut for administrative closures) is supported; if spread across normal claims, H4/H5 is more likely.
+
+### Q2 – Claims approved multiple times (verifies Anomaly 1 / H1)
+
+```sql
+SELECT claim_id,
+       COUNT(*) AS approval_count,
+       MIN(timestamp) AS first_approval,
+       MAX(timestamp) AS last_approval
+FROM claim_events
+WHERE activity = 'Approve Claim'
+GROUP BY claim_id
+HAVING COUNT(*) > 1
+ORDER BY approval_count DESC;
+```
+Then inspect whether re-approvals follow re-evaluations and who performed them:
+
+```sql
+SELECT ce.claim_id, ce.activity, ce.timestamp, ce.resource, ce.additional_info
+FROM claim_events ce
+WHERE ce.claim_id IN (
+    SELECT claim_id FROM claim_events
+    WHERE activity = 'Approve Claim'
+    GROUP BY claim_id HAVING COUNT(*) > 1)
+ORDER BY ce.claim_id, ce.timestamp;
+```
+If re-approvals are done by distinct senior resources or flagged in `additional_info` (e.g., "fraud re-check"), H1 (new business rule) is supported.
+
+### Q3 – Frequency of skipped customer notifications (verifies Anomaly 2 / H2)
+
+```sql
+SELECT c.claim_type,
+       COUNT(*) AS closed_claims,
+       COUNT(*) FILTER (WHERE n.claim_id IS NULL) AS closed_without_notification,
+       ROUND(100.0 * COUNT(*) FILTER (WHERE n.claim_id IS NULL) / COUNT(*), 1)
+           AS skip_rate_pct
+FROM claims c
+JOIN claim_events cl
+     ON cl.claim_id = c.claim_id AND cl.activity = 'Close Claim'
+LEFT JOIN (SELECT DISTINCT claim_id
+           FROM claim_events
+           WHERE activity = 'Notify Customer') n
+       ON n.claim_id = c.claim_id
+GROUP BY c.claim_type
+ORDER BY skip_rate_pct DESC;
+```
+If skipping is concentrated in specific claim types or low/zero amounts, H2 (intentional conditional rule, badly modeled) is supported; uniform skipping across all types points to a systemic defect (H4).
+
+### Q4 – Evaluation without any approval (loop exited after E)
+
+```sql
+SELECT e.claim_id
+FROM claim_events e
+WHERE e.activity = 'Evaluate Claim'
+GROUP BY e.claim_id
+HAVING NOT EXISTS (
+    SELECT 1 FROM claim_events p
+    WHERE p.claim_id = e.claim_id
+      AND p.activity = 'Approve Claim');
+```
+Note: some of these may be legitimate **rejections** — if no "Reject Claim" activity exists in the log, this also reveals a missing activity in both the model and the intended flow.
+
+### Q5 – Closure preceding the *last* approval (rework after closing  H5 workaround detection)
+
+```sql
+WITH close_t AS (
+    SELECT claim_id, MIN(timestamp) AS first_close
+    FROM claim_events WHERE activity = 'Close Claim' GROUP BY claim_id),
+appr_t AS (
+    SELECT claim_id, MAX(timestamp) AS last_approval
+    FROM claim_events WHERE activity = 'Approve Claim' GROUP BY claim_id)
+SELECT c.claim_id, c.first_close, a.last_approval
+FROM close_t c
+JOIN appr_t a USING (claim_id)
+WHERE c.first_close < a.last_approval;
+```
+Activity *after* closure strongly suggests SLA-driven early closure (H5).
+
+### Q6 – Resource/region analysis (distinguishes systemic vs. local causes)
+
+```sql
+SELECT a.region, a.specialization, ce.resource,
+       COUNT(*) AS premature_closures
+FROM claim_events ce
+JOIN adjusters a ON a.name = ce.resource
+WHERE ce.activity = 'Close Claim'
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events p
+      WHERE p.claim_id = ce.claim_id
+        AND p.activity = 'Approve Claim'
+        AND p.timestamp < ce.timestamp)
+GROUP BY a.region, a.specialization, ce.resource
+ORDER BY premature_closures DESC;
+```
+If anomalies cluster around a few adjusters or one region, that supports human workaround/miscommunication (H2/H5); if `resource` is a system account ("workflow_engine"), that supports a technical defect (H3/H4).
+
+### Q7 – Temporal trend (was a rule change rolled out?)
+
+```sql
+SELECT date_trunc('month', c.submission_date) AS month,
+       COUNT(*) FILTER (WHERE mult.claim_id IS NOT NULL) AS multi_approved,
+       COUNT(*) AS total_claims
+FROM claims c
+LEFT JOIN (SELECT claim_id FROM claim_events
+           WHERE activity = 'Approve Claim'
+           GROUP BY claim_id HAVING COUNT(*) > 1) mult
+       ON mult.claim_id = c.claim_id
+GROUP BY 1 ORDER BY 1;
+```
+A sharp onset of multi-approvals from a specific month strongly supports H1 (partially implemented rule change at that date).
+
+---
+
+# Summary
+
+| Anomaly | Most likely hypotheses | Key verification query |
+|---|---|---|
+| EP loop (repeated approvals, possible no approval) | H1 rule change, H5 rework | Q2, Q4, Q7 |
+| Optional notification (XOR with skip) | H2 miscommunication / unguarded condition | Q3 |
+| Premature closure (`A  C`, missing `xor  C`) | H3 technical/modeling error, H4 tool gap, H5 workaround | Q1, Q5, Q6 |
+
+If the queries show the anomalous paths actually occur, the remediation is to (a) replace the loop with a single EP sequence (or a guarded, bounded rework loop with explicit rejection handling), (b) make N mandatory or condition the skip explicitly on claim type/outcome, and (c) remove the `A  C` edge and add `xor  C` so closure is always the final step.

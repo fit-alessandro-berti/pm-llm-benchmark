@@ -1,0 +1,178 @@
+# Temporal Profile Analysis: Insurance Claim Handling Process
+
+## 1. Identified Anomalies
+
+### Anomaly A — `(R, P)`: Receive  Approve, AVG  25h, STDEV = 1h
+The standard deviation is suspiciously low relative to the mean (coefficient of variation  4%). Real-world approval processes involve human judgment and vary considerably. A nearly constant ~25-hour interval suggests approvals follow a rigid mechanical schedule rather than actual case evaluation.
+
+### Anomaly B — `(P, N)`: Approve  Notify, AVG = 7 days, STDEV = 2 days
+Notifying a customer should be a fast, often automated step after approval. A 7-day average delay with high variance points to a backlog, batch processing, or notifications that depend on irregular resource availability.
+
+### Anomaly C — `(A, C)`: Assign  Close, AVG = 2h, STDEV = 1h
+A claim being closed only 2 hours after adjuster assignment leaves almost no time for evaluation, approval, and notification. This implies that some claims skip intermediate steps entirely and are closed prematurely.
+
+### Anomaly D — `(E, N)`: Evaluate  Notify, AVG = 5 min, STDEV = 1 min
+Notification only 5 minutes after evaluation means the approval step (`P`) is either skipped or compressed into a meaningless rubber-stamp action — inconsistent with the `(R, P)` and `(P, N)` profiles, which imply approval and notification should be far apart.
+
+### Cross-pair inconsistencies
+- `(R, E)` averages 1 day, and `(R, P)` averages ~25 hours, yet `(P, N)` averages 7 days while `(E, N)` averages 5 minutes. These cannot all hold for the same cases — strong evidence of **two distinct populations of claims**: one following the full process slowly, another skipping/fast-tracking steps.
+
+---
+
+## 2. Hypotheses
+
+| Anomaly | Hypothesis |
+|---|---|
+| Rigid ~25h RP interval | A nightly batch job or scheduled script auto-approves claims ~once per day regardless of evaluation outcome; or approvals are fraudulently backfilled with computed timestamps. |
+| 7-day PN delay | Notifications are sent in weekly batches; understaffed notification team; or a queue/backlog with inconsistent prioritization (explaining high STDEV). |
+| 2h AC closure | Certain claim types (e.g., low-value or duplicate claims) are immediately rejected/closed by adjusters without evaluation; or specific adjusters/resources improperly close claims to reduce workload. |
+| 5-min EN gap | An automated notification trigger fires directly on evaluation completion, bypassing the approval gate — a control weakness allowing customers to be notified of unapproved outcomes. |
+| Two populations | A "fast-track" or automated channel exists for some claim types or regions, mixed into the same event log as the standard manual process. |
+
+---
+
+## 3. Verification Queries (PostgreSQL)
+
+### 3.1 Find claims where Receive  Approve deviates from the profile (ZETA-style check)
+
+```sql
+WITH pair_times AS (
+    SELECT
+        r.claim_id,
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS rp_seconds
+    FROM claim_events r
+    JOIN claim_events p
+      ON p.claim_id = r.claim_id
+     AND p.activity = 'P'
+     AND p.timestamp > r.timestamp
+    WHERE r.activity = 'R'
+)
+SELECT
+    claim_id,
+    rp_seconds,
+    (rp_seconds - 90000) / 3600.0 AS z_score
+FROM pair_times
+WHERE ABS((rp_seconds - 90000) / 3600.0) > 3   -- ZETA = 3
+ORDER BY ABS((rp_seconds - 90000) / 3600.0) DESC;
+```
+
+### 3.2 Verify the "rigid schedule" hypothesis: do approvals cluster at a fixed time of day?
+
+```sql
+SELECT
+    EXTRACT(HOUR FROM timestamp) AS approval_hour,
+    COUNT(*) AS num_approvals,
+    COUNT(DISTINCT resource) AS distinct_resources
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY approval_hour
+ORDER BY num_approvals DESC;
+```
+A single dominant hour (and possibly a single `resource` value like `system` or `batch_job`) confirms automated scheduled approvals.
+
+### 3.3 Detect prematurely closed claims (Assign  Close without Evaluate/Approve in between)
+
+```sql
+SELECT
+    a.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    a_evt.resource AS assigning_resource,
+    EXTRACT(EPOCH FROM (close_evt.timestamp - a_evt.timestamp)) / 3600.0 AS hours_to_close
+FROM claim_events a_evt
+JOIN claim_events close_evt
+  ON close_evt.claim_id = a_evt.claim_id
+ AND close_evt.activity = 'C'
+JOIN claims c ON c.claim_id = a_evt.claim_id
+JOIN claim_events a ON a.claim_id = a_evt.claim_id AND a.activity = 'A'
+WHERE a_evt.activity = 'A'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events mid
+      WHERE mid.claim_id = a_evt.claim_id
+        AND mid.activity IN ('E', 'P', 'N')
+        AND mid.timestamp BETWEEN a_evt.timestamp AND close_evt.timestamp
+  )
+ORDER BY hours_to_close;
+```
+
+### 3.4 Check whether Notify ever precedes Approve (approval gate bypassed)
+
+```sql
+SELECT
+    n.claim_id,
+    n.timestamp AS notify_time,
+    p.timestamp AS approve_time,
+    n.resource AS notify_resource
+FROM claim_events n
+LEFT JOIN claim_events p
+  ON p.claim_id = n.claim_id AND p.activity = 'P'
+WHERE n.activity = 'N'
+  AND (p.timestamp IS NULL OR n.timestamp < p.timestamp);
+```
+Rows returned here directly confirm Hypothesis D (notification fires before/without approval).
+
+### 3.5 Correlate Approve  Notify delays with resources, claim types, and regions
+
+```sql
+SELECT
+    c.claim_type,
+    adj.region,
+    n.resource AS notifying_resource,
+    COUNT(*) AS num_claims,
+    AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400.0) AS avg_days_p_to_n,
+    STDDEV(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400.0) AS stdev_days_p_to_n
+FROM claim_events p
+JOIN claim_events n
+  ON n.claim_id = p.claim_id
+ AND n.activity = 'N'
+ AND n.timestamp > p.timestamp
+JOIN claims c ON c.claim_id = p.claim_id
+LEFT JOIN claim_events a_evt
+  ON a_evt.claim_id = p.claim_id AND a_evt.activity = 'A'
+LEFT JOIN adjusters adj
+  ON adj.name = a_evt.resource
+WHERE p.activity = 'P'
+GROUP BY c.claim_type, adj.region, n.resource
+HAVING AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400.0) > 3
+ORDER BY avg_days_p_to_n DESC;
+```
+If long delays concentrate in specific regions or resources, the backlog hypothesis is supported; uniform delays across all segments suggest a systemic batching policy.
+
+### 3.6 Test for two distinct process populations (fast-track vs. standard)
+
+```sql
+WITH durations AS (
+    SELECT
+        e.claim_id,
+        c.claim_type,
+        EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS en_seconds
+    FROM claim_events e
+    JOIN claim_events n
+      ON n.claim_id = e.claim_id
+     AND n.activity = 'N'
+     AND n.timestamp > e.timestamp
+    JOIN claims c ON c.claim_id = e.claim_id
+    WHERE e.activity = 'E'
+)
+SELECT
+    claim_type,
+    CASE WHEN en_seconds < 600 THEN 'fast (<10 min)' ELSE 'slow' END AS bucket,
+    COUNT(*) AS num_claims,
+    AVG(en_seconds) AS avg_seconds
+FROM durations
+GROUP BY claim_type, bucket
+ORDER BY claim_type, bucket;
+```
+A bimodal split by `claim_type` (e.g., nearly all `auto_insurance` in the fast bucket) confirms a hidden fast-track channel and explains the contradictory pair averages in the profile.
+
+---
+
+## Summary of Verification Strategy
+
+1. **Quantify deviations** per claim using z-scores against the profile (Query 3.1).
+2. **Test mechanistic hypotheses** with time-of-day clustering and ordering violations (Queries 3.2, 3.4).
+3. **Detect control failures** such as skipped steps and premature closures (Query 3.3).
+4. **Segment analysis** by adjuster, resource, claim type, and region to localize root causes (Queries 3.5, 3.6).
+
+The combined results will distinguish between automation artifacts, genuine bottlenecks, control bypasses, and mixed process populations as the source of the temporal anomalies.

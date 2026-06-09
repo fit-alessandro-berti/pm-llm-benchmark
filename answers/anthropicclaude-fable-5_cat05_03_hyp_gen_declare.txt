@@ -1,0 +1,179 @@
+# Analysis of the DECLARE Model for the Insurance Claim Process
+
+## 1. Identified Anomalies
+
+### Anomaly 1: Hard contradiction — Evaluation is logically impossible
+- `existence(C)` with support/confidence 1.0 requires **every** claim trace to contain a Close (`C`) event.
+- `noncoexistence(E, C)` states that Evaluate (`E`) and Close (`C`) must **never occur in the same trace**.
+- Combined effect: since `C` must appear in every trace, **`E` can never legally occur in any trace**. The Evaluate step — a core, mandatory step of the intended process — is rendered impossible by the model. Any conforming trace skips evaluation entirely.
+
+### Anomaly 2: The `responded_existence(E  A)` constraint is vacuous (dead constraint)
+- This rule says "if `E` occurs, then `A` must occur somewhere in the trace."
+- But Anomaly 1 makes `E` unreachable in any conforming trace, so this constraint can never be activated. It is dead logic — its presence falsely suggests the model governs the Evaluate/Assign relationship, when in fact it governs nothing.
+
+### Anomaly 3: Massive under-specification — undesired paths are allowed
+- There are **no constraints at all on `A` (Assign), `P` (Approve), or `N` (Notify)** beyond the vacuous responded_existence. A trace such as `R  C` (receive, then immediately close) is fully conformant.
+- A claim can be **approved without ever being evaluated** (`P` has no precedence constraint requiring `E`).
+- A claim can be **closed without the customer being notified** (`N` is optional and unordered).
+- There is no ordering between `A`, `E`, `P`, `N` — e.g., `R  P  A  C` would conform.
+- The `responded_existence(E  A)` only requires co-occurrence, not order: even if `E` could occur, an adjuster could be assigned *after* the evaluation. A `precedence(A  E)` or `response(A  E)` constraint would be the correct choice.
+
+### Anomaly 4: Only `precedence(R  C)` anchors the order
+- The only ordering rule is that `C` must be preceded by `R`. Combined with `init(R)` this is nearly redundant — if every trace starts with `R`, any later `C` is trivially preceded by `R`. The constraint adds little while creating a false impression of control-flow coverage.
+
+**Net effect:** the model not only fails to enforce the ideal flow RAEPNC, it actively *forbids* a key step (Evaluate) and *permits* trivially short, non-compliant claim handling (e.g., immediate closure after receipt).
+
+---
+
+## 2. Hypotheses for Why These Anomalies Exist
+
+1. **Misinterpreted requirement on the noncoexistence constraint.** A business rule like "a claim must not be re-evaluated after closing" (i.e., `not_succession(C, E)` or `not_response(C, E)`) may have been wrongly encoded as a symmetric `noncoexistence(E, C)`, which is far stronger than intended.
+
+2. **Inconsistent incremental policy changes.** The `existence(C)` rule ("all claims must eventually be closed") may have been added later (e.g., from an SLA initiative to clear backlogs) without checking compatibility with the pre-existing noncoexistence constraint — creating the contradiction.
+
+3. **Automated discovery on biased or incomplete logs.** If the model was mined from an event log dominated by auto-approved/fast-tracked claims (where `E` never appeared together with `C` because evaluations were logged in a different system or under a different activity label), the miner could legitimately derive `noncoexistence(E, C)` at full support.
+
+4. **Operational pressure to accelerate claim handling.** Constraints that would force evaluation, approval, and notification before closure may have been deliberately relaxed or removed to allow fast-track closures, leaving a skeleton model that permits skipping essential steps.
+
+5. **Technical/data-quality issues.** Activity labels may be inconsistently recorded (e.g., evaluations logged with `additional_info` instead of `activity = 'E'`), causing the discovery algorithm to see `E` as rare/absent and to produce vacuous or contradictory rules.
+
+---
+
+## 3. SQL Verification Strategies
+
+### 3.1 Claims closed without any evaluation (does the dangerous path actually occur?)
+```sql
+SELECT c.claim_id, c.claim_type, c.claim_amount, c.submission_date
+FROM claims c
+WHERE EXISTS (
+    SELECT 1 FROM claim_events e
+    WHERE e.claim_id = c.claim_id AND e.activity = 'C'
+)
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events e
+    WHERE e.claim_id = c.claim_id AND e.activity = 'E'
+);
+```
+
+### 3.2 Traces where E and C coexist (real-world violations of the noncoexistence rule  evidence the constraint is wrong)
+```sql
+SELECT c.claim_id,
+       MIN(CASE WHEN e.activity = 'E' THEN e.timestamp END) AS first_evaluation,
+       MIN(CASE WHEN e.activity = 'C' THEN e.timestamp END) AS close_time
+FROM claims c
+JOIN claim_events e ON e.claim_id = c.claim_id
+GROUP BY c.claim_id
+HAVING COUNT(*) FILTER (WHERE e.activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE e.activity = 'C') > 0;
+```
+A high count here proves the mined `noncoexistence(E, C)` does not reflect reality.
+
+### 3.3 Quantify how common each pattern is (model plausibility check)
+```sql
+SELECT
+    COUNT(*) FILTER (WHERE has_e AND has_c)      AS evaluated_and_closed,
+    COUNT(*) FILTER (WHERE NOT has_e AND has_c)  AS closed_without_evaluation,
+    COUNT(*) FILTER (WHERE has_e AND NOT has_c)  AS evaluated_not_closed,
+    COUNT(*) FILTER (WHERE NOT has_c)            AS never_closed
+FROM (
+    SELECT claim_id,
+           BOOL_OR(activity = 'E') AS has_e,
+           BOOL_OR(activity = 'C') AS has_c
+    FROM claim_events
+    GROUP BY claim_id
+) t;
+```
+This also tests `existence(C)`: a nonzero `never_closed` count contradicts its 1.0 support.
+
+### 3.4 Evaluations without a prior adjuster assignment (checks whether responded_existence should really be a precedence constraint)
+```sql
+SELECT ev.claim_id, ev.timestamp AS evaluation_time, ev.resource
+FROM claim_events ev
+WHERE ev.activity = 'E'
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events a
+    WHERE a.claim_id = ev.claim_id
+      AND a.activity = 'A'
+      AND a.timestamp <= ev.timestamp
+);
+```
+
+### 3.5 Were evaluations performed by properly specialized adjusters?
+```sql
+SELECT ev.claim_id, ev.resource, adj.specialization, c.claim_type
+FROM claim_events ev
+JOIN claims c   ON c.claim_id = ev.claim_id
+LEFT JOIN adjusters adj ON adj.name = ev.resource
+WHERE ev.activity = 'E'
+  AND (adj.adjuster_id IS NULL
+       OR c.claim_type NOT LIKE adj.specialization || '%');
+```
+A `NULL` adjuster match suggests evaluations were performed by a system/unknown resource — supporting the data-quality hypothesis.
+
+### 3.6 Approvals without prior evaluation (undesired path permitted by the model)
+```sql
+SELECT p.claim_id, p.timestamp AS approval_time
+FROM claim_events p
+WHERE p.activity = 'P'
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events e
+    WHERE e.claim_id = p.claim_id
+      AND e.activity = 'E'
+      AND e.timestamp < p.timestamp
+);
+```
+
+### 3.7 Closures without customer notification
+```sql
+SELECT cl.claim_id, cl.timestamp AS close_time
+FROM claim_events cl
+WHERE cl.activity = 'C'
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events n
+    WHERE n.claim_id = cl.claim_id
+      AND n.activity = 'N'
+      AND n.timestamp < cl.timestamp
+);
+```
+
+### 3.8 Check whether evaluations might be "hidden" in the data (data-quality hypothesis)
+```sql
+SELECT activity, COUNT(*) AS occurrences,
+       COUNT(*) FILTER (WHERE additional_info ILIKE '%eval%') AS info_mentions_evaluation
+FROM claim_events
+GROUP BY activity
+ORDER BY occurrences DESC;
+```
+If non-`E` events frequently mention evaluation in `additional_info`, the noncoexistence constraint may stem from mislabeled activities rather than real process behavior.
+
+### 3.9 Are fast-track closures correlated with claim value (operational-pressure hypothesis)?
+```sql
+SELECT (NOT has_e) AS skipped_evaluation,
+       COUNT(*) AS n_claims,
+       AVG(claim_amount) AS avg_amount,
+       AVG(close_ts - receive_ts) AS avg_throughput
+FROM (
+    SELECT c.claim_id, c.claim_amount,
+           BOOL_OR(e.activity = 'E') AS has_e,
+           MIN(e.timestamp) FILTER (WHERE e.activity = 'R') AS receive_ts,
+           MIN(e.timestamp) FILTER (WHERE e.activity = 'C') AS close_ts
+    FROM claims c
+    JOIN claim_events e ON e.claim_id = c.claim_id
+    GROUP BY c.claim_id, c.claim_amount
+) t
+WHERE close_ts IS NOT NULL
+GROUP BY (NOT has_e);
+```
+If skipped evaluations cluster around low-value claims with short throughput times, this supports the hypothesis of a deliberate (but inconsistently modeled) fast-track policy.
+
+---
+
+## Summary of Recommended Fixes
+
+| Constraint | Problem | Suggested correction |
+|---|---|---|
+| `noncoexistence(E, C)` | Contradicts mandatory closure; forbids evaluation | Replace with `not_succession(C, E)` (no evaluation *after* closing) or `precedence(E  C)` |
+| `responded_existence(E  A)` | Vacuous and order-agnostic | Replace with `precedence(A  E)` |
+| Missing constraints | `A`, `P`, `N` unregulated; `R  C` path is conformant | Add `response(R  A)`, `precedence(E  P)`, `precedence(P  N)`, `precedence(N  C)`, and `existence` constraints for the mandatory steps |
+
+The SQL checks above will reveal whether real execution data supports the corrected model and which hypothesis best explains how the contradictory constraints entered the model in the first place.
