@@ -75,6 +75,11 @@ JUDGE_LLMS: Sequence[Tuple[Any, ...]] = [
         {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"], "additional_payload": {"reasoning": {"enabled": True}}}
     ),
     (
+        "anthropic/claude-fable-5",
+        {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"],
+         "additional_payload": {"reasoning": {"enabled": True}}}
+    ),
+    (
         "google/gemini-3.1-pro-preview",
         {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"]}
     ),
