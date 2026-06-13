@@ -1,0 +1,1285 @@
+<think>
+We need answer prompt. Need analyze event log and provide anomalies, hypotheses, SQL queries. The user describes schema and data and says target model should identify anomalies, hypothesize, propose SQL queries. We are the target LLM? The instruction says "Prompt for Target LLM" but the user asks? They gave a description and prompt. We need produce the desired output: identify anomalies, hypothesize, SQL queries. Need probably mention assumptions. Need be careful with data. Let's inspect cases.
+
+Normal flow: Register Order -> Perform Credit Check -> Validate Stock -> Confirm Shipment -> Ship Goods -> Issue Invoice -> Receive Payment.
+
+Case 1001: Follows exact normal flow, times sequential, good.
+
+Case 1002: Register Order at 08:20, then Confirm Shipment at 08:25 (before Credit Check and Validate Stock) additional_info attempted_early=Y. Then Ship Goods at 08:40. Then Perform Credit Check 09:10, Validate Stock 09:15, Invoice, Payment. So shipment activities happen before credit check and stock validation, policy violation. Could be priority order expedited? It is priority type (order_type=priority). Still should have credit check? additional_info attempted_early=Y hints intentional early confirmation. Risk: shipping before credit approval/stock check.
+
+Case 1003: Register, Credit Check, then Ship Goods at 09:10 before Validate Stock and Confirm Shipment. Confirm Shipment late at 09:45 after shipping, additional_info late_confirmation=Y. No Validate Stock at all? Wait events: 15 Register, 16 Credit, 17 Ship Goods, 18 Issue Invoice, 19 Confirm Shipment, 20 Receive Payment. Missing Validate Stock entirely. Ship before confirmation and stock validation. Potential stock or approval bypass.
+
+Case 1004: Register, Receive Payment at 09:05 (immediately), Issue Invoice at 09:20, Confirm Shipment shipment_scheduled=N, Ship Goods. Missing Perform Credit Check, Validate Stock. Payment before invoice and before shipment. Shipment scheduled=N but still shipped. Could be data entry error or prepayment? additional_info amount=3000.00. No credit check. High risk.
+
+Also resource anomalies? Activities performed by wrong departments according to resources? Let's check:
+
+Normal activity departments assumed? Register Sales, Credit Finance, Stock Warehouse, Confirm Shipment Logistics, Ship Goods Logistics, Issue Invoice Finance, Receive Payment Finance. Let's inspect resources/roles:
+1001 all match. 1002 Confirm Shipment LogisticsMgr_2 (Logistics ok). Ship Goods WarehouseClerk_1 (Logistics ok). Credit CreditOfficer_2. Validate Stock WarehouseClerk_2. Issue Invoice FinanceTeam_03 Billing Officer Finance ok. Receive Payment FinanceTeam_02 Cashier ok. 
+1003 Ship Goods WarehouseClerk_3 ok. Confirm Shipment LogisticsMgr_2 ok. Issue Invoice FinanceTeam_01 Accountant ok. Receive Payment FinanceTeam_02 ok. 
+1004 Receive Payment FinanceTeam_02 ok. Issue Invoice FinanceTeam_01 ok. Confirm Shipment LogisticsMgr_1 ok. Ship Goods WarehouseClerk_4 ok. So no wrong department. But 1004 missing Register? It has Register.
+
+Anomalies:
+- Out-of-sequence activities.
+- Missing activities (Validate Stock missing in 1003,1004; Perform Credit Check missing in 1004; Receive Payment before Issue Invoice/confirm in 1004).
+- Payment received before invoice and before shipment in 1004.
+- Ship Goods before Confirm Shipment (1002,1003? 1003 ship then confirm; 1002 confirm before ship but before credit; 1004 confirm after invoice?).
+- "Confirm Shipment" with shipment_scheduled=N in 1004 yet Ship Goods occurred.
+
+Need hypothesize why:
+- Priority orders may bypass checks, pressure to expedite. 1002 is priority and has attempted_early=Y, so maybe policy allowing early confirmation for priority, but shipping before credit check/stock validation still risky.
+- System auto-routing errors; timestamps close could indicate automation or manual batch entry out of order.
+- Training issues: warehouse/logistics staff confirm/ship before finance completes credit.
+- Policy violation/fraud: payment recorded early for high-value order (1004 value=3000) without credit check; perhaps sales capture payment at registration, or customer prepaid; but missing credit check could be oversight.
+- Stock validation omitted due to system not integrated or clerk skipped step.
+- Data quality issues: events logged with incorrect timestamps or missing records.
+
+Need propose SQL queries to investigate hypotheses. The prompt says "without any hints or guidance provided here" meaning model proposes relevant queries. We should include queries on order_event_log, orders, resources. Need use PostgreSQL syntax. Could include CTEs. We can propose multiple queries for each hypothesis: sequence compliance, missing steps, timing, resource involvement, order type/value correlation, department role mismatches, additional_info flags.
+
+Need craft answer in a structured way: anomalies table, hypotheses, SQL queries. Need ensure SQL valid.
+
+Let's think about possible SQL queries:
+
+1. Identify cases with out-of-order activities relative to normal sequence. Assign expected order positions. Use row_number over timestamp and compare.
+
+We can create a normal sequence mapping:
+'Register Order' 1, 'Perform Credit Check' 2, 'Validate Stock' 3, 'Confirm Shipment' 4, 'Ship Goods' 5, 'Issue Invoice' 6, 'Receive Payment' 7.
+
+Query:
+with normal as ( ... ), 
+events as (
+ select case_id, event_id, activity, timestamp, normal_seq,
+ row_number() over (partition by case_id order by timestamp) as actual_seq
+ from order_event_log o join normal n using (activity)
+)
+select * from events where normal_seq != actual_seq order by case_id, timestamp;
+
+But note if missing steps, actual_seq will shift, not necessarily out of order; maybe better compute previous activity and check if any activity occurs before a prerequisite. Could use lag and lead.
+
+2. Find cases missing required activities:
+select case_id from order_event_log group by case_id having bool_or(activity='Perform Credit Check')=false etc.
+
+3. Find cases where 'Ship Goods' occurs before 'Confirm Shipment' or before 'Perform Credit Check'/'Validate Stock'.
+
+4. Find cases where 'Receive Payment' occurs before 'Issue Invoice' or before shipment. Maybe before Register? 1004 after register.
+
+5. Correlate anomalies with order_type, order_value, customer_id:
+join orders. Count anomalies by order_type. Average order_value for anomalous vs normal.
+
+6. Examine resources involved in anomalies: join resources, count cases with anomalies by resource/role/department.
+
+7. Investigate timing: difference between consecutive events, same-minute events may indicate batch/automation. Find cases with suspiciously fast full process (e.g., payment same minute as register). 1004 register 09:00 payment 09:05 (5 min) full process within 50 min. Query: duration from first to last event.
+
+8. Investigate additional_info flags like attempted_early=Y, late_confirmation=Y, shipment_scheduled=N, credit_score etc.
+
+For hypothesis testing queries, maybe include:
+
+- Q1: Cases where shipment-related activities happen before credit/stock checks:
+select distinct e1.case_id
+from order_event_log e1
+join order_event_log e2 on e1.case_id=e2.case_id
+where e1.activity in ('Confirm Shipment','Ship Goods')
+and e2.activity in ('Perform Credit Check','Validate Stock')
+and e1.timestamp < e2.timestamp;
+
+- Q2: Missing activities per case:
+with required(activity) as (values ...), cases as (select distinct case_id from order_event_log) select c.case_id, r.activity from cases c cross join required r left join order_event_log o on o.case_id=c.case_id and o.activity=r.activity where o.activity is null;
+
+- Q3: Payment before invoice or shipment:
+select e1.case_id, e1.timestamp as payment_time, e2.timestamp as invoice_time, e3.timestamp as ship_time
+from order_event_log e1
+left join order_event_log e2 on e1.case_id=e2.case_id and e2.activity='Issue Invoice'
+left join order_event_log e3 on e1.case_id=e3.case_id and e3.activity='Ship Goods'
+where e1.activity='Receive Payment'
+and (e1.timestamp < e2.timestamp or e1.timestamp < e3.timestamp or e2 is null or e3 is null);
+
+But because left join, conditions in WHERE on e2.timestamp can discard nulls incorrectly. Need handle.
+
+- Q4: Role/department compliance:
+Check if activity performed by resource from expected department. We need mapping activity -> expected department. e.g. Register Order->Sales, Perform Credit Check->Finance, Validate Stock->Logistics, Confirm Shipment->Logistics, Ship Goods->Logistics, Issue Invoice->Finance, Receive Payment->Finance. Query:
+with activity_dept(activity, dept) as (values ...), select o.case_id, o.activity, o.resource, r.department, ad.dept expected from order_event_log o join resources r on r.resource_id=o.resource join activity_dept ad on ad.activity=o.activity where r.department != ad.dept;
+
+This will catch wrong roles, though none in sample.
+
+- Q5: Correlation with order type/value:
+with anomalous_cases as (...) select o.order_type, count(*) anomalous_count, avg(o.order_value) avg_value from orders o join anomalous_cases a on a.case_id=o.case_id group by o.order_type;
+
+Need define anomalous_cases. Could union of cases with missing required steps or out-of-order.
+
+- Q6: Additional_info flags:
+select case_id, activity, additional_info from order_event_log where additional_info like '%attempted_early%' or additional_info like '%late_confirmation%' or additional_info like '%shipment_scheduled=N%' etc.
+
+- Q7: Process cycle time and extreme fast paths:
+select case_id, min(timestamp) start, max(timestamp) end, max(timestamp)-min(timestamp) duration from order_event_log group by case_id order by duration;
+
+- Q8: Event count per case vs expected (7). Cases with fewer events indicate missing steps:
+select case_id, count(*) event_count from order_event_log group by case_id having count(*) < 7;
+
+Sample 1003 has 6, 1004 has 5.
+
+- Q9: Activities by resource with multiple anomalies to detect training/system issue:
+with anomaly_events as (...), select resource, count(distinct case_id) from anomaly_events group by resource order by count desc.
+
+Could include query for cases where credit_score below threshold and still shipped before check? additional_info has credit_score=650 for 1002. Need parse. Could be query extracting credit_score from additional_info. Hypothesis: low credit score orders may be expedited incorrectly. Query: extract credit score and join with shipment time vs credit check time.
+
+Need think about feasibility of parsing additional_info. It's key=value list separated by semicolons? In sample fields like credit_score=810. Could use substring. For robust, maybe use regex. In PostgreSQL: substring(additional_info from 'credit_score=([0-9]+)').
+
+Query: for cases where credit check occurs, find cases where shipment happened before credit check and credit score.
+with credit as (select case_id, timestamp, substring(additional_info from 'credit_score=([0-9]+)')::int score from order_event_log where activity='Perform Credit Check'),
+ship as (select case_id, min(timestamp) first_ship from order_event_log where activity in ('Ship Goods','Confirm Shipment') group by case_id)
+select s.case_id, s.first_ship, c.timestamp credit_time, c.score
+from ship s join credit c on s.case_id=c.case_id
+where s.first_ship < c.timestamp;
+
+Sample returns 1002 (first_ship confirm 08:25 < credit 09:10, score 650), 1003 (ship 09:10 < credit 09:00? Actually ship 09:10 > credit 09:00, but before validation; this query only credit check). Good.
+
+Need maybe query missing Validate Stock for cases shipped.
+
+We should be mindful not to overexplain too much but provide clear. The final answer should satisfy "Identify anomalies and undesirable behaviors, hypothesize, propose relevant SQL queries." Since user gave prompt for target LLM, likely expects a demonstration. We'll act as model and produce result. Could mention assumptions: normal process strict sequential, all steps mandatory.
+
+Let's think if any subtle anomalies in resource assignments? Ship Goods by WarehouseClerk, department Logistics, okay. Confirm Shipment by LogisticsMgr. Validate Stock by WarehouseClerk. Issue Invoice by FinanceTeam_03 (Billing Officer), okay. Receive Payment by FinanceTeam_02 (Cashier), okay. Register by SalesRep, okay. So no cross-department anomaly.
+
+Could there be duplicate activities within a case? No.
+
+Potential anomaly: 1002 attempted early Confirm Shipment, then later Validate Stock after Ship Goods. Note Ship Goods timestamp 08:40 before Credit Check 09:10 and Validate Stock 09:15. So shipped before both credit and stock validation. Also Issue Invoice before stock validation and before credit? Issue Invoice 09:30 after credit and stock. But shipment occurred before both.
+
+1003 shipped before Confirm Shipment and Validate Stock. Confirm Shipment after Issue Invoice and Ship Goods, marked late_confirmation. So the process has inverted shipment/confirmation/invoice.
+
+1004 Receive Payment before Issue Invoice, Ship Goods, Confirm Shipment, and missing Credit Check, Validate Stock. Confirm Shipment with shipment_scheduled=N but Ship Goods still happens (maybe ad hoc shipment despite schedule no). This is highly anomalous.
+
+Could also note 1004 has no credit check for a 3000 value standard order; 1002 priority has low credit score (650) but expedited. 1003 credit score 720. 1001 810. So possible correlation.
+
+Need propose SQL queries as investigation. Ensure SQL includes joins with orders/resources where relevant. Use schema names.
+
+Could also include a consolidated query that flags cases with anomaly categories. That might be very useful. Let's build:
+
+with normal_sequence(activity, seq) as (
+ values ('Register Order',1), ('Perform Credit Check',2), ('Validate Stock',3), ('Confirm Shipment',4), ('Ship Goods',5), ('Issue Invoice',6), ('Receive Payment',7)
+),
+required_activities as (select activity from normal_sequence),
+case_events as (
+ select oel.*, ns.seq
+ from order_event_log oel
+ left join normal_sequence ns using(activity)
+),
+out_of_order as (
+ select distinct ce1.case_id
+ from case_events ce1
+ join case_events ce2 on ce1.case_id=ce2.case_id
+ where ce1.seq is not null and ce2.seq is not null
+ and ce1.timestamp < ce2.timestamp and ce1.seq > ce2.seq
+),
+missing_steps as (
+ select rc.case_id, rc.activity
+ from (select distinct case_id from order_event_log) c
+ cross join required_activities rc
+ left join order_event_log o on o.case_id=c.case_id and o.activity=rc.activity
+ where o.activity is null
+),
+anomalous_cases as (
+ select case_id, 'out_of_order' as anomaly_type from out_of_order
+ union
+ select case_id, 'missing_'||activity from missing_steps
+ union
+ -- ship before confirm
+ select distinct e1.case_id, 'ship_before_confirm'
+ from order_event_log e1
+ join order_event_log e2 on e1.case_id=e2.case_id
+ where e1.activity='Ship Goods' and e2.activity='Confirm Shipment' and e1.timestamp < e2.timestamp
+ union
+ -- payment before invoice
+ select distinct e1.case_id, 'payment_before_invoice'
+ from order_event_log e1
+ join order_event_log e2 on e1.case_id=e2.case_id
+ where e1.activity='Receive Payment' and e2.activity='Issue Invoice' and e1.timestamp < e2.timestamp
+)
+select a.case_id, a.anomaly_type, ord.order_type, ord.order_value
+from anomalous_cases a
+join orders ord using (case_id)
+order by a.case_id, a.anomaly_type;
+
+Could include. But simpler separate queries maybe enough.
+
+The answer should be in a coherent markdown structure. Let's structure:
+
+1. Executive summary of anomalies per case.
+2. Hypotheses (for each pattern).
+3. Investigation queries grouped by hypothesis/pattern, with description.
+
+Need not too long but thorough. Desired oververbosity 5. We'll produce moderate detail.
+
+Let's draft content carefully.
+
+**Anomalies**:
+- Case 1001: compliant; no anomalies.
+- Case 1002: Confirm Shipment and Ship Goods occur before Perform Credit Check and Validate Stock. additional_info attempted_early=Y. Order is priority, credit score 650 (lowest). Undesirable: shipped and confirmed before financial/stock clearance.
+- Case 1003: Validate Stock missing. Ship Goods before Confirm Shipment; Issue Invoice before Confirm Shipment; Confirm Shipment marked late_confirmation=Y. Potential bypass of stock check and post-hoc confirmation.
+- Case 1004: Missing Perform Credit Check and Validate Stock. Receive Payment occurs before Issue Invoice, Confirm Shipment, Ship Goods; full closure in <1h. Confirm Shipment has shipment_scheduled=N but Ship Goods still executed. High-risk prepayment/no-check order, value 3000.
+
+Could mention undesirable behaviors: shipment before approval, invoice before confirmation, payment before invoice (could be duplicate payment/invoice mismatch), missing mandatory controls (credit, stock), contradictory additional_info (shipment_scheduled=N but shipped).
+
+**Hypotheses**:
+A. Expedited handling/priority policy bypass: priority orders (1002) may allow early confirmation but controls not enforced; low credit score still shipped.
+B. System/workflow routing errors: events logged out of order; Confirm Shipment auto-triggered before prerequisites (attempted_early flag suggests attempted not allowed).
+C. Manual override/poor training: staff skip Validate Stock or confirm shipments late after goods already shipped; lack of four-eyes control.
+D. Prepayment/customer-initiated fast track (1004): payment captured at registration; but missing credit/stock checks could indicate special arrangement or error.
+E. Data quality/integration gaps: missing events due to not recorded; stock system not integrated; timestamp errors cause apparent inversion; shipment_scheduled=N flag ignored due to system bug.
+F. Fraud/policy violation: high-value order 1004 bypasses credit check and payment precedes invoice; Confirm Shipment refused but shipped anyway could indicate unauthorized shipment.
+
+**SQL queries**:
+
+We can list queries. Let's design each:
+
+1. List all cases and whether each required activity is present.
+2. Find missing mandatory activities.
+3. Find cases with out-of-order events according to normal sequence.
+4. Find shipment before credit check or stock validation.
+5. Find ship before confirm shipment.
+6. Find payment before invoice or before shipment.
+7. Correlate anomalies with order type and value.
+8. Analyze resources involved in anomalous events.
+9. Extract credit_score and compare with shipment timing.
+10. Find cases with contradictory additional_info (shipment_scheduled=N and Ship Goods).
+11. Compute case duration and event counts to spot fast paths.
+12. Check cross-department activity compliance.
+
+Need ensure queries valid in PostgreSQL.
+
+Let's write them. Use CTEs.
+
+**Query 1: Missing activities per case**
+
+WITH required(activity) AS (
+  VALUES ('Register Order'),('Perform Credit Check'),('Validate Stock'),('Confirm Shipment'),('Ship Goods'),('Issue Invoice'),('Receive Payment')
+)
+SELECT DISTINCT c.case_id, r.activity AS missing_activity
+FROM (SELECT DISTINCT case_id FROM order_event_log) c
+CROSS JOIN required r
+LEFT JOIN order_event_log o
+  ON o.case_id = c.case_id AND o.activity = r.activity
+WHERE o.activity IS NULL
+ORDER BY c.case_id, r.activity;
+
+**Query 2: Out-of-order events using normal sequence**
+
+WITH normal(activity, seq) AS (
+  VALUES ('Register Order',1),('Perform Credit Check',2),('Validate Stock',3),('Confirm Shipment',4),('Ship Goods',5),('Issue Invoice',6),('Receive Payment',7)
+)
+SELECT e1.case_id,
+       e1.activity AS earlier_activity,
+       e2.activity AS later_activity,
+       e1.timestamp AS earlier_time,
+       e2.timestamp AS later_time
+FROM order_event_log e1
+JOIN order_event_log e2
+  ON e1.case_id = e2.case_id
+JOIN normal n1 ON n1.activity = e1.activity
+JOIN normal n2 ON n2.activity = e2.activity
+WHERE e1.timestamp < e2.timestamp
+  AND n1.seq > n2.seq
+ORDER BY e1.case_id, e1.timestamp;
+
+This returns pairs where an activity that should come later occurred earlier. For 1002: Confirm Shipment before Perform Credit Check etc. For 1003: Ship Goods before Confirm Shipment etc. For 1004: Receive Payment before Issue Invoice etc.
+
+**Query 3: Shipment before credit or stock clearance**
+
+SELECT DISTINCT s.case_id
+FROM order_event_log s
+JOIN order_event_log ctrl
+  ON s.case_id = ctrl.case_id
+WHERE s.activity IN ('Confirm Shipment','Ship Goods')
+  AND ctrl.activity IN ('Perform Credit Check','Validate Stock')
+  AND s.timestamp < ctrl.timestamp
+ORDER BY s.case_id;
+
+**Query 4: Payment before invoice / shipment**
+
+SELECT p.case_id,
+       p.timestamp AS payment_time,
+       i.timestamp AS invoice_time,
+       sh.timestamp AS ship_time
+FROM order_event_log p
+LEFT JOIN order_event_log i
+  ON p.case_id = i.case_id AND i.activity = 'Issue Invoice'
+LEFT JOIN order_event_log sh
+  ON p.case_id = sh.case_id AND sh.activity = 'Ship Goods'
+WHERE p.activity = 'Receive Payment'
+  AND (
+    p.timestamp < i.timestamp
+    OR p.timestamp < sh.timestamp
+    OR i.case_id IS NULL
+    OR sh.case_id IS NULL
+  )
+ORDER BY p.case_id;
+
+Need ensure left join condition includes p.case_id and i.activity. Since i.case_id will never be null if joined on p.case_id, use i.event_id IS NULL or i.activity IS NULL. Better:
+
+LEFT JOIN order_event_log i ON i.case_id = p.case_id AND i.activity='Issue Invoice'
+WHERE i.event_id IS NULL OR p.timestamp < i.timestamp OR ...
+
+Yes.
+
+**Query 5: Contradictory shipment scheduling**
+
+SELECT cs.case_id
+FROM order_event_log cs
+JOIN order_event_log sg
+  ON cs.case_id = sg.case_id
+WHERE cs.activity = 'Confirm Shipment'
+  AND cs.additional_info LIKE '%shipment_scheduled=N%'
+  AND sg.activity = 'Ship Goods'
+ORDER BY cs.case_id;
+
+**Query 6: Anomaly correlation with orders**
+
+WITH anomaly_cases AS (
+  SELECT DISTINCT case_id FROM order_event_log
+  WHERE case_id IN (
+    SELECT DISTINCT e1.case_id
+    FROM order_event_log e1
+    JOIN order_event_log e2 ON e1.case_id=e2.case_id
+    WHERE (
+      (e1.activity IN ('Confirm Shipment','Ship Goods') AND e2.activity IN ('Perform Credit Check','Validate Stock') AND e1.timestamp < e2.timestamp)
+      OR (e1.activity='Ship Goods' AND e2.activity='Confirm Shipment' AND e1.timestamp < e2.timestamp)
+      OR (e1.activity='Receive Payment' AND e2.activity='Issue Invoice' AND e1.timestamp < e2.timestamp)
+    )
+    UNION
+    SELECT c.case_id
+    FROM (SELECT DISTINCT case_id FROM order_event_log) c
+    LEFT JOIN order_event_log o ON o.case_id=c.case_id AND o.activity='Validate Stock'
+    WHERE o.case_id IS NULL
+    UNION
+    SELECT c.case_id
+    FROM (SELECT DISTINCT case_id FROM order_event_log) c
+    LEFT JOIN order_event_log o ON o.case_id=c.case_id AND o.activity='Perform Credit Check'
+    WHERE o.case_id IS NULL
+  )
+)
+SELECT o.order_type,
+       COUNT(*) AS anomalous_case_count,
+       AVG(o.order_value) AS avg_order_value,
+       MIN(o.order_value) AS min_value,
+       MAX(o.order_value) AS max_value
+FROM orders o
+JOIN anomaly_cases a ON a.case_id = o.case_id
+GROUP BY o.order_type;
+
+Could be refined but good.
+
+**Query 7: Resource involvement in anomalous events**
+
+WITH ship_before_ctrl AS (
+  SELECT DISTINCT s.case_id
+  FROM order_event_log s
+  JOIN order_event_log c ON s.case_id=c.case_id
+  WHERE s.activity IN ('Confirm Shipment','Ship Goods')
+    AND c.activity IN ('Perform Credit Check','Validate Stock')
+    AND s.timestamp < c.timestamp
+)
+SELECT oel.resource, r.role, r.department,
+       COUNT(DISTINCT oel.case_id) AS anomalous_case_count
+FROM order_event_log oel
+JOIN resources r ON r.resource_id = oel.resource
+JOIN ship_before_ctrl a ON a.case_id = oel.case_id
+WHERE oel.activity IN ('Confirm Shipment','Ship Goods')
+GROUP BY oel.resource, r.role, r.department
+ORDER BY anomalous_case_count DESC;
+
+**Query 8: Credit score vs shipment timing**
+
+WITH credit AS (
+  SELECT case_id,
+         timestamp AS credit_time,
+         (substring(additional_info FROM 'credit_score=([0-9]+)'))::int AS credit_score
+  FROM order_event_log
+  WHERE activity = 'Perform Credit Check'
+),
+first_ship AS (
+  SELECT case_id, MIN(timestamp) AS first_shipment_time
+  FROM order_event_log
+  WHERE activity IN ('Confirm Shipment','Ship Goods')
+  GROUP BY case_id
+)
+SELECT c.case_id,
+       c.credit_score,
+       c.credit_time,
+       s.first_shipment_time,
+       s.first_shipment_time < c.credit_time AS shipped_before_credit
+FROM credit c
+JOIN first_ship s ON c.case_id = s.case_id
+ORDER BY c.case_id;
+
+**Query 9: Process duration and event counts (fast-track detection)**
+
+SELECT case_id,
+       COUNT(*) AS event_count,
+       MIN(timestamp) AS process_start,
+       MAX(timestamp) AS process_end,
+       MAX(timestamp) - MIN(timestamp) AS duration
+FROM order_event_log
+GROUP BY case_id
+HAVING COUNT(*) < 7
+   OR MAX(timestamp) - MIN(timestamp) < INTERVAL '1 hour'
+ORDER BY duration;
+
+**Query 10: Cross-department compliance check**
+
+WITH expected(activity, department) AS (
+  VALUES ('Register Order','Sales'),
+         ('Perform Credit Check','Finance'),
+         ('Validate Stock','Logistics'),
+         ('Confirm Shipment','Logistics'),
+         ('Ship Goods','Logistics'),
+         ('Issue Invoice','Finance'),
+         ('Receive Payment','Finance')
+)
+SELECT oel.case_id, oel.event_id, oel.activity,
+       oel.resource, r.role, r.department AS actual_dept,
+       e.department AS expected_dept
+FROM order_event_log oel
+JOIN resources r ON r.resource_id = oel.resource
+JOIN expected e ON e.activity = oel.activity
+WHERE r.department <> e.department
+ORDER BY oel.case_id, oel.event_id;
+
+**Query 11: Cases with additional_info flags indicating overrides**
+
+SELECT case_id, event_id, activity, resource, additional_info
+FROM order_event_log
+WHERE additional_info ILIKE '%attempted_early%'
+   OR additional_info ILIKE '%late_confirmation%'
+   OR additional_info ILIKE '%shipment_scheduled=N%'
+ORDER BY case_id, event_id;
+
+**Query 12: Validate Stock missing for shipped cases**
+
+SELECT s.case_id
+FROM order_event_log s
+LEFT JOIN order_event_log v
+  ON s.case_id = v.case_id AND v.activity = 'Validate Stock'
+WHERE s.activity = 'Ship Goods'
+  AND v.case_id IS NULL
+ORDER BY s.case_id;
+
+This captures 1003 and 1004.
+
+Now, need decide final structure. We can present anomalies and hypotheses first, then queries. Might include a summary table.
+
+Potential issue: The prompt is a meta prompt about what target model should do. The user may want us to act as the target LLM and produce the requested analysis. So final answer should be that analysis, not instructions. Could add note: "Below is the requested anomaly detection, root-cause hypotheses, and SQL investigation queries." Good.
+
+Need ensure no direct mention of hidden guidance. We can phrase: "Here is a self-contained analysis."
+
+Let's craft final answer in markdown. Use headings.
+
+Need perhaps mention that all SQL is PostgreSQL-compatible and can be run as-is. Include caveat about parsing additional_info with regex assumes key=value format.
+
+Double-check data specifics for queries:
+
+Query 2 (out-of-order): For 1002: e1 Confirm Shipment (seq4) and e2 Perform Credit Check (seq2) with e1.timestamp < e2.timestamp and n1.seq > n2.seq -> yes. Also e1 Ship Goods (5) before Validate Stock (3), Credit Check (2). e1 Confirm Shipment before Validate Stock. Many rows. Good.
+
+Query 3: 1002 and 1003? 1003 has Ship Goods 09:10 before Validate Stock (missing) so not; since no Validate Stock, query won't return for Validate Stock, but Ship Goods before Credit Check? Credit Check 09:00, Ship Goods 09:10, so no. Ship Goods before Credit? no. Confirm Shipment after credit. So query returns only 1002 for control. But 1003 missing stock validation; query 12 catches. Good.
+
+Query 4: Payment before invoice: 1004 payment 09:05 invoice 09:20 -> yes. Payment before ship: 1004 payment 09:05 ship 09:50 -> yes. Also missing invoice? none. It may also return cases where invoice missing (i.event_id IS NULL). Good.
+
+Query 5: 1004 Confirm Shipment additional_info shipment_scheduled=N and Ship Goods -> yes.
+
+Query 8: Credit score vs first shipment. 1001 first Confirm Shipment 09:15 after credit 08:30 false. 1002 first Confirm Shipment 08:25 before credit 09:10 true. 1003 first Ship Goods 09:10 after credit 09:00 false. So returns 1002. Good.
+
+Query 9: Count <7 returns 1003 (6), 1004 (5). Duration <1 hour returns all except 1001? Let's compute: 1001 start 08:15 end 2024-02-05 15:00 = days. 1002 start 08:20 end next day 10:00 > 1h. 1003 start 08:45 end next day 11:00 >1h. 1004 start 09:00 end 09:50 = 50 min <1h. So returns 1003,1004 due count, and 1004 due duration. Good.
+
+Could add query for cases where Receive Payment occurs before any Sales/Finance control activities for high-value orders. But enough.
+
+Need final answer not too lengthy. Use bullet points.
+
+Let's also consider if there are any other anomalies like 1002 Issue Invoice before Validate Stock? Issue Invoice 09:30 after Validate Stock 09:15, no. But Confirm/Ship before Validate Stock. Good.
+
+1003 Issue Invoice 09:30 before Confirm Shipment 09:45. That is unusual because invoice issued before shipment confirmed. Could flag. Query 2 catches? Issue Invoice seq6, Confirm Shipment seq4, e1=Issue Invoice (09:30) < e2=Confirm Shipment (09:45) and n1.seq > n2.seq -> yes. Good.
+
+1004 Issue Invoice 09:20 before Confirm Shipment 09:25 and Ship 09:50; Query 2 catches invoice before confirm (seq6 vs 4). Payment before invoice catches. Good.
+
+1004 also missing Register? It has. Good.
+
+Potential nuance: "Confirm Shipment" with shipment_scheduled=N but Ship Goods still executed is undesirable; maybe it indicates the shipment was rejected/scheduled no but still shipped. We'll include.
+
+Need provide hypotheses for each pattern. We can list patterns and corresponding queries.
+
+Maybe categorize by anomaly:
+
+A. Out-of-sequence shipping / missing controls.
+B. Missing activities.
+C. Inverted payment/invoice/shipment.
+D. Contradictory flags.
+E. Fast-track / high-value exceptions.
+
+Then for each, hypotheses and queries.
+
+But also present case-by-case summary table. Let's design:
+
+| Case | Observation | Risk |
+| 1001 | Normal | Low |
+| 1002 | Confirm/Ship before credit & stock; priority; low credit score | Control bypass, bad debt, stockout |
+| 1003 | No stock validation; ship before confirmation; late confirmation; invoice before confirmation | Inventory errors, billing disputes |
+| 1004 | No credit/stock checks; payment before invoice & shipment; shipment_scheduled=N but shipped; closed in 50 min; high value | Fraud, revenue recognition errors, unauthorized shipment |
+
+Then hypotheses and queries.
+
+Need maybe include a consolidated "anomaly detection query" at top that returns all anomalous cases. That would be helpful.
+
+Let's create a master query combining many flags.
+
+WITH normal(activity, seq) AS (...),
+required AS (...),
+flags AS (
+  SELECT oel.case_id,
+         bool_or(oel.activity='Ship Goods' AND EXISTS (SELECT 1 FROM order_event_log x WHERE x.case_id=oel.case_id AND x.activity='Confirm Shipment' AND x.timestamp > oel.timestamp)) AS ship_before_confirm,
+         bool_or(oel.activity IN ('Confirm Shipment','Ship Goods') AND EXISTS (SELECT 1 FROM order_event_log x WHERE x.case_id=oel.case_id AND x.activity IN ('Perform Credit Check','Validate Stock') AND x.timestamp > oel.timestamp)) AS ship_before_control,
+         bool_or(oel.activity='Receive Payment' AND EXISTS (SELECT 1 FROM order_event_log x WHERE x.case_id=oel.case_id AND x.activity='Issue Invoice' AND x.timestamp > oel.timestamp)) AS payment_before_invoice,
+         ...
+  FROM order_event_log oel
+  GROUP BY oel.case_id
+)
+... Could be complex. Better not include too complex. We can include simple modular queries.
+
+Maybe include a query to tag each case with anomaly flags:
+
+WITH case_flags AS (
+  SELECT case_id,
+    NOT EXISTS (SELECT 1 FROM order_event_log x WHERE x.case_id=o.case_id AND x.activity='Perform Credit Check') AS missing_credit_check,
+    NOT EXISTS (SELECT 1 FROM order_event_log x WHERE x.case_id=o.case_id AND x.activity='Validate Stock') AS missing_stock_validation,
+    EXISTS (SELECT 1 FROM order_event_log x1 JOIN order_event_log x2 ON x1.case_id=x2.case_id WHERE x1.case_id=o.case_id AND x1.activity='Ship Goods' AND x2.activity='Confirm Shipment' AND x1.timestamp < x2.timestamp) AS ship_before_confirm,
+    EXISTS (SELECT 1 FROM order_event_log x1 JOIN order_event_log x2 ON x1.case_id=x2.case_id WHERE x1.case_id=o.case_id AND x1.activity IN ('Confirm Shipment','Ship Goods') AND x2.activity IN ('Perform Credit Check','Validate Stock') AND x1.timestamp < x2.timestamp) AS ship_before_approval,
+    EXISTS (SELECT 1 FROM order_event_log x1 JOIN order_event_log x2 ON x1.case_id=x2.case_id WHERE x1.case_id=o.case_id AND x1.activity='Receive Payment' AND x2.activity='Issue Invoice' AND x1.timestamp < x2.timestamp) AS payment_before_invoice
+  FROM (SELECT DISTINCT case_id FROM order_event_log) o
+)
+SELECT * FROM case_flags
+WHERE missing_credit_check OR missing_stock_validation OR ship_before_confirm OR ship_before_approval OR payment_before_invoice;
+
+This is a nice diagnostic. Let's include it. It will show flags per case. In sample: 1002: ship_before_approval true; 1003: missing_stock_validation true, ship_before_confirm true; 1004: missing_credit_check true, missing_stock_validation true, payment_before_invoice true. Good.
+
+Add also check "shipment_scheduled=N but shipped".
+
+Could add as separate query.
+
+Need decide how many queries. Maybe 8-10. The prompt: "Propose relevant SQL queries ... to investigate these hypotheses further." We can provide a suite.
+
+Let's make final answer. Ensure all SQL blocks use correct PostgreSQL. Avoid syntax errors.
+
+Let's verify each query with PostgreSQL mental.
+
+Query A (master flags):
+
+WITH case_flags AS (
+  SELECT o.case_id,
+    NOT EXISTS (
+      SELECT 1 FROM order_event_log x
+      WHERE x.case_id = o.case_id AND x.activity = 'Perform Credit Check'
+    ) AS missing_credit_check,
+    NOT EXISTS (
+      SELECT 1 FROM order_event_log x
+      WHERE x.case_id = o.case_id AND x.activity = 'Validate Stock'
+    ) AS missing_stock_validation,
+    EXISTS (
+      SELECT 1
+      FROM order_event_log x1
+      JOIN order_event_log x2 ON x1.case_id = x2.case_id
+      WHERE x1.case_id = o.case_id
+        AND x1.activity = 'Ship Goods'
+        AND x2.activity = 'Confirm Shipment'
+        AND x1.timestamp < x2.timestamp
+    ) AS ship_before_confirm,
+    EXISTS (
+      SELECT 1
+      FROM order_event_log x1
+      JOIN order_event_log x2 ON x1.case_id = x2.case_id
+      WHERE x1.case_id = o.case_id
+        AND x1.activity IN ('Confirm Shipment','Ship Goods')
+        AND x2.activity IN ('Perform Credit Check','Validate Stock')
+        AND x1.timestamp < x2.timestamp
+    ) AS ship_before_approval,
+    EXISTS (
+      SELECT 1
+      FROM order_event_log x1
+      JOIN order_event_log x2 ON x1.case_id = x2.case_id
+      WHERE x1.case_id = o.case_id
+        AND x1.activity = 'Receive Payment'
+        AND x2.activity = 'Issue Invoice'
+        AND x1.timestamp < x2.timestamp
+    ) AS payment_before_invoice
+  FROM (SELECT DISTINCT case_id FROM order_event_log) o
+)
+SELECT *
+FROM case_flags
+WHERE missing_credit_check
+   OR missing_stock_validation
+   OR ship_before_confirm
+   OR ship_before_approval
+   OR payment_before_invoice
+ORDER BY case_id;
+
+Valid.
+
+Query B (missing activities):
+
+WITH required(activity) AS (
+  VALUES ('Register Order'),('Perform Credit Check'),('Validate Stock'),('Confirm Shipment'),('Ship Goods'),('Issue Invoice'),('Receive Payment')
+)
+SELECT c.case_id, r.activity AS missing_activity
+FROM (SELECT DISTINCT case_id FROM order_event_log) c
+CROSS JOIN required r
+LEFT JOIN order_event_log o
+  ON o.case_id = c.case_id AND o.activity = r.activity
+WHERE o.activity IS NULL
+ORDER BY c.case_id, r.activity;
+
+Valid. Note using o.activity IS NULL works because left join.
+
+Query C (out-of-order pairs):
+
+WITH normal(activity, seq) AS (
+  VALUES ('Register Order',1),('Perform Credit Check',2),('Validate Stock',3),('Confirm Shipment',4),('Ship Goods',5),('Issue Invoice',6),('Receive Payment',7)
+)
+SELECT e1.case_id,
+       e1.activity AS earlier_event,
+       e2.activity AS later_event,
+       e1.timestamp AS earlier_time,
+       e2.timestamp AS later_time,
+       n1.seq AS expected_earlier_seq,
+       n2.seq AS expected_later_seq
+FROM order_event_log e1
+JOIN order_event_log e2 ON e1.case_id = e2.case_id
+JOIN normal n1 ON n1.activity = e1.activity
+JOIN normal n2 ON n2.activity = e2.activity
+WHERE e1.timestamp < e2.timestamp
+  AND n1.seq > n2.seq
+ORDER BY e1.case_id, e1.timestamp;
+
+Valid.
+
+Query D (shipment before controls):
+
+SELECT DISTINCT s.case_id
+FROM order_event_log s
+JOIN order_event_log ctrl ON s.case_id = ctrl.case_id
+WHERE s.activity IN ('Confirm Shipment','Ship Goods')
+  AND ctrl.activity IN ('Perform Credit Check','Validate Stock')
+  AND s.timestamp < ctrl.timestamp
+ORDER BY s.case_id;
+
+Valid.
+
+Query E (payment before invoice/shipment):
+
+SELECT p.case_id,
+       p.timestamp AS payment_time,
+       i.timestamp AS invoice_time,
+       sh.timestamp AS ship_time
+FROM order_event_log p
+LEFT JOIN order_event_log i
+  ON i.case_id = p.case_id AND i.activity = 'Issue Invoice'
+LEFT JOIN order_event_log sh
+  ON sh.case_id = p.case_id AND sh.activity = 'Ship Goods'
+WHERE p.activity = 'Receive Payment'
+  AND (
+    i.event_id IS NULL
+    OR p.timestamp < i.timestamp
+    OR sh.event_id IS NULL
+    OR p.timestamp < sh.timestamp
+  )
+ORDER BY p.case_id;
+
+Valid. Note p.timestamp < i.timestamp with i null is unknown, but OR with i.event_id IS NULL true, so row selected. In Postgres, NULL comparison yields unknown, but OR with true yields true. Fine.
+
+Query F (contradictory shipment scheduled no):
+
+SELECT cs.case_id,
+       cs.timestamp AS confirm_time,
+       sg.timestamp AS ship_time
+FROM order_event_log cs
+JOIN order_event_log sg ON cs.case_id = sg.case_id
+WHERE cs.activity = 'Confirm Shipment'
+  AND cs.additional_info ILIKE '%shipment_scheduled=N%'
+  AND sg.activity = 'Ship Goods'
+ORDER BY cs.case_id;
+
+Valid. ILIKE fine.
+
+Query G (anomaly correlation with orders):
+
+WITH anomalous_cases AS (
+  SELECT DISTINCT case_id
+  FROM order_event_log
+  WHERE case_id IN (
+    SELECT DISTINCT e1.case_id
+    FROM order_event_log e1
+    JOIN order_event_log e2 ON e1.case_id = e2.case_id
+    WHERE (
+      (e1.activity IN ('Confirm Shipment','Ship Goods')
+       AND e2.activity IN ('Perform Credit Check','Validate Stock')
+       AND e1.timestamp < e2.timestamp)
+      OR (e1.activity = 'Ship Goods'
+          AND e2.activity = 'Confirm Shipment'
+          AND e1.timestamp < e2.timestamp)
+      OR (e1.activity = 'Receive Payment'
+          AND e2.activity = 'Issue Invoice'
+          AND e1.timestamp < e2.timestamp)
+    )
+    UNION
+    SELECT c.case_id
+    FROM (SELECT DISTINCT case_id FROM order_event_log) c
+    LEFT JOIN order_event_log o ON o.case_id = c.case_id AND o.activity = 'Perform Credit Check'
+    WHERE o.case_id IS NULL
+    UNION
+    SELECT c.case_id
+    FROM (SELECT DISTINCT case_id FROM order_event_log) c
+    LEFT JOIN order_event_log o ON o.case_id = c.case_id AND o.activity = 'Validate Stock'
+    WHERE o.case_id IS NULL
+  )
+)
+SELECT o.order_type,
+       COUNT(*) AS anomalous_cases,
+       AVG(o.order_value) AS avg_value,
+       SUM(o.order_value) AS total_value
+FROM orders o
+JOIN anomalous_cases a ON a.case_id = o.case_id
+GROUP BY o.order_type
+ORDER BY anomalous_cases DESC;
+
+Valid. Note the inner WHERE case_id IN with UNION inside, okay.
+
+Query H (credit score vs first shipment):
+
+WITH credit AS (
+  SELECT case_id,
+         timestamp AS credit_time,
+         (substring(additional_info FROM 'credit_score=([0-9]+)'))::int AS credit_score
+  FROM order_event_log
+  WHERE activity = 'Perform Credit Check'
+),
+first_ship AS (
+  SELECT case_id, MIN(timestamp) AS first_shipment_time
+  FROM order_event_log
+  WHERE activity IN ('Confirm Shipment','Ship Goods')
+  GROUP BY case_id
+)
+SELECT c.case_id,
+       c.credit_score,
+       c.credit_time,
+       s.first_shipment_time,
+       s.first_shipment_time < c.credit_time AS shipped_before_credit_check
+FROM credit c
+JOIN first_ship s ON c.case_id = s.case_id
+ORDER BY c.case_id;
+
+Valid. Could also filter shipped_before_credit_check=true.
+
+Query I (process duration and event counts):
+
+SELECT case_id,
+       COUNT(*) AS event_count,
+       MIN(timestamp) AS first_event,
+       MAX(timestamp) AS last_event,
+       MAX(timestamp) - MIN(timestamp) AS duration
+FROM order_event_log
+GROUP BY case_id
+HAVING COUNT(*) < 7
+   OR MAX(timestamp) - MIN(timestamp) < INTERVAL '1 hour'
+ORDER BY duration;
+
+Valid.
+
+Query J (department compliance):
+
+WITH expected(activity, department) AS (
+  VALUES ('Register Order','Sales'),
+         ('Perform Credit Check','Finance'),
+         ('Validate Stock','Logistics'),
+         ('Confirm Shipment','Logistics'),
+         ('Ship Goods','Logistics'),
+         ('Issue Invoice','Finance'),
+         ('Receive Payment','Finance')
+)
+SELECT oel.case_id,
+       oel.event_id,
+       oel.activity,
+       oel.resource,
+       r.role,
+       r.department AS actual_department,
+       e.department AS expected_department
+FROM order_event_log oel
+JOIN resources r ON r.resource_id = oel.resource
+JOIN expected e ON e.activity = oel.activity
+WHERE r.department <> e.department
+ORDER BY oel.case_id, oel.event_id;
+
+Valid.
+
+Query K (additional_info flags):
+
+SELECT case_id, event_id, activity, resource, additional_info
+FROM order_event_log
+WHERE additional_info ILIKE '%attempted_early%'
+   OR additional_info ILIKE '%late_confirmation%'
+   OR additional_info ILIKE '%shipment_scheduled=N%'
+ORDER BY case_id, event_id;
+
+Valid.
+
+Maybe Query L: resources involved in anomalies count. Let's include.
+
+WITH ship_before_ctrl AS (
+  SELECT DISTINCT s.case_id
+  FROM order_event_log s
+  JOIN order_event_log c ON s.case_id = c.case_id
+  WHERE s.activity IN ('Confirm Shipment','Ship Goods')
+    AND c.activity IN ('Perform Credit Check','Validate Stock')
+    AND s.timestamp < c.timestamp
+)
+SELECT oel.resource,
+       r.role,
+       r.department,
+       COUNT(DISTINCT oel.case_id) AS cases_with_ship_before_approval
+FROM order_event_log oel
+JOIN resources r ON r.resource_id = oel.resource
+JOIN ship_before_ctrl a ON a.case_id = oel.case_id
+WHERE oel.activity IN ('Confirm Shipment','Ship Goods')
+GROUP BY oel.resource, r.role, r.department
+ORDER BY cases_with_ship_before_approval DESC;
+
+Valid.
+
+Need decide ordering. We can introduce "Anomaly flag query" first, then targeted queries. Good.
+
+Potential issue: Query G uses union inside IN; PostgreSQL allows. But the inner `SELECT DISTINCT case_id FROM order_event_log WHERE case_id IN (...)` is redundant; just `SELECT case_id FROM (... UNION ...)`. We can simplify. We already did. It's okay.
+
+Maybe query for "Validate Stock missing among shipped cases" simple:
+
+SELECT DISTINCT s.case_id
+FROM order_event_log s
+LEFT JOIN order_event_log v
+  ON s.case_id = v.case_id AND v.activity = 'Validate Stock'
+WHERE s.activity = 'Ship Goods'
+  AND v.case_id IS NULL;
+
+Valid.
+
+Need include order values maybe per case. Could add in anomalies table: order_value, order_type.
+
+Let's produce final answer now. Ensure concise but comprehensive. Use headings.
+
+Potential request: "The target model should be encouraged to..." It may be that the user wants a final answer of what model should output. We'll phrase "Below is the requested analysis."
+
+No need to say "As an AI". We'll just deliver.
+
+Let's write final.
+</think>
+Below is a self-contained process-mining analysis of the four sample cases, plus a set of PostgreSQL queries you can run to investigate the same patterns at scale.
+
+---
+
+## 1. Anomaly findings by case
+
+| Case | Order type | Value | Observation | Risk |
+|------|------------|-------|-------------|------|
+| **1001** | standard | 1,250 | Follows the assumed normal flow end-to-end. | Low |
+| **1002** | priority | 2,000 | `Confirm Shipment` (08:25) and `Ship Goods` (08:40) occur **before** `Perform Credit Check` (09:10) and `Validate Stock` (09:15). `additional_info` says `attempted_early=Y`. Credit score is only 650. | Control bypass, bad-debt risk, possible stockout |
+| **1003** | standard | 1,500 | `Validate Stock` is **missing**. `Ship Goods` (09:10) occurs before `Confirm Shipment` (09:45), which is marked `late_confirmation=Y`. `Issue Invoice` (09:30) is also issued before confirmation. | Inventory/booking error, billing dispute, post-hoc authorization |
+| **1004** | standard | 3,000 | `Perform Credit Check` and `Validate Stock` are **missing**. `Receive Payment` (09:05) happens before `Issue Invoice`, `Confirm Shipment`, and `Ship Goods`. The whole case closes in ~50 minutes. `Confirm Shipment` has `shipment_scheduled=N` yet goods are still shipped. | Fraud/high-value bypass, revenue-recognition error, unauthorized shipment |
+
+Undesirable behaviors observed:
+
+1. **Shipping before approval** – shipment activities occur before credit/stock checks.
+2. **Missing mandatory controls** – credit check and/or stock validation absent.
+3. **Payment before invoice/shipment** – payment recorded before goods are shipped or billed.
+4. **Inverted confirmation** – goods shipped before `Confirm Shipment`.
+5. **Contradictory data** – `shipment_scheduled=N` but `Ship Goods` still executed.
+6. **Fast-track / high-value exceptions** – case 1004 is high-value and closes in under an hour with no financial/stock controls.
+
+---
+
+## 2. Hypotheses
+
+| # | Hypothesis | Why it fits |
+|---|------------|-------------|
+| H1 | **Expedited handling for priority orders** | Case 1002 is `priority` and explicitly flagged `attempted_early=Y`; staff may confirm/ship before controls complete to meet SLA. |
+| H2 | **Missing or skipped stock-validation step** | Case 1003 has no `Validate Stock`; case 1004 has neither credit nor stock check. Could be system integration gap or manual override. |
+| H3 | **Prepayment / customer fast-track (data-entry or policy)** | Case 1004 received payment minutes after registration, before invoice/shipment; possibly a prepaid order, but controls were still skipped. |
+| H4 | **Training / authorization weaknesses** | Logistics staff confirm/ship before finance/warehouse controls finish; late confirmation in 1003 suggests post-hoc paper-shuffling. |
+| H5 | **System routing or timestamp errors** | Very tight timestamps (minutes apart) could indicate batch logging, automation misfires, or incorrect event ordering. |
+| H6 | **Fraud or policy violation on high-value orders** | Case 1004 is the highest-value standard order and bypasses both credit check and stock validation while paying early. |
+| H7 | **Contradictory shipment scheduling logic** | `shipment_scheduled=N` in 1004 should block shipping; its presence alongside `Ship Goods` suggests a bug or override. |
+
+---
+
+## 3. PostgreSQL investigation queries
+
+### 3.1 Master anomaly-flag query
+One query to tag every case with the main red flags.
+
+```sql
+WITH case_flags AS (
+  SELECT o.case_id,
+    NOT EXISTS (
+      SELECT 1 FROM order_event_log x
+      WHERE x.case_id = o.case_id AND x.activity = 'Perform Credit Check'
+    ) AS missing_credit_check,
+    NOT EXISTS (
+      SELECT 1 FROM order_event_log x
+      WHERE x.case_id = o.case_id AND x.activity = 'Validate Stock'
+    ) AS missing_stock_validation,
+    EXISTS (
+      SELECT 1
+      FROM order_event_log x1
+      JOIN order_event_log x2 ON x1.case_id = x2.case_id
+      WHERE x1.case_id = o.case_id
+        AND x1.activity = 'Ship Goods'
+        AND x2.activity = 'Confirm Shipment'
+        AND x1.timestamp < x2.timestamp
+    ) AS ship_before_confirm,
+    EXISTS (
+      SELECT 1
+      FROM order_event_log x1
+      JOIN order_event_log x2 ON x1.case_id = x2.case_id
+      WHERE x1.case_id = o.case_id
+        AND x1.activity IN ('Confirm Shipment','Ship Goods')
+        AND x2.activity IN ('Perform Credit Check','Validate Stock')
+        AND x1.timestamp < x2.timestamp
+    ) AS ship_before_approval,
+    EXISTS (
+      SELECT 1
+      FROM order_event_log x1
+      JOIN order_event_log x2 ON x1.case_id = x2.case_id
+      WHERE x1.case_id = o.case_id
+        AND x1.activity = 'Receive Payment'
+        AND x2.activity = 'Issue Invoice'
+        AND x1.timestamp < x2.timestamp
+    ) AS payment_before_invoice
+  FROM (SELECT DISTINCT case_id FROM order_event_log) o
+)
+SELECT *
+FROM case_flags
+WHERE missing_credit_check
+   OR missing_stock_validation
+   OR ship_before_confirm
+   OR ship_before_approval
+   OR payment_before_invoice
+ORDER BY case_id;
+```
+
+Expected result for the sample data:
+
+| case_id | missing_credit_check | missing_stock_validation | ship_before_confirm | ship_before_approval | payment_before_invoice |
+|---------|----------------------|--------------------------|---------------------|----------------------|------------------------|
+| 1002 | false | false | false | **true** | false |
+| 1003 | false | **true** | **true** | false | false |
+| 1004 | **true** | **true** | false | false | **true** |
+
+---
+
+### 3.2 Missing mandatory activities per case
+
+```sql
+WITH required(activity) AS (
+  VALUES
+    ('Register Order'),
+    ('Perform Credit Check'),
+    ('Validate Stock'),
+    ('Confirm Shipment'),
+    ('Ship Goods'),
+    ('Issue Invoice'),
+    ('Receive Payment')
+)
+SELECT c.case_id, r.activity AS missing_activity
+FROM (SELECT DISTINCT case_id FROM order_event_log) c
+CROSS JOIN required r
+LEFT JOIN order_event_log o
+  ON o.case_id = c.case_id
+ AND o.activity = r.activity
+WHERE o.activity IS NULL
+ORDER BY c.case_id, r.activity;
+```
+
+---
+
+### 3.3 Pairs of activities that are out of order vs. the normal flow
+
+```sql
+WITH normal(activity, seq) AS (
+  VALUES
+    ('Register Order', 1),
+    ('Perform Credit Check', 2),
+    ('Validate Stock', 3),
+    ('Confirm Shipment', 4),
+    ('Ship Goods', 5),
+    ('Issue Invoice', 6),
+    ('Receive Payment', 7)
+)
+SELECT
+  e1.case_id,
+  e1.activity AS earlier_event,
+  e2.activity AS later_event,
+  e1.timestamp AS earlier_time,
+  e2.timestamp AS later_time
+FROM order_event_log e1
+JOIN order_event_log e2
+  ON e1.case_id = e2.case_id
+JOIN normal n1 ON n1.activity = e1.activity
+JOIN normal n2 ON n2.activity = e2.activity
+WHERE e1.timestamp < e2.timestamp
+  AND n1.seq > n2.seq
+ORDER BY e1.case_id, e1.timestamp;
+```
+
+---
+
+### 3.4 Shipment before credit check or stock validation
+
+```sql
+SELECT DISTINCT s.case_id
+FROM order_event_log s
+JOIN order_event_log ctrl
+  ON s.case_id = ctrl.case_id
+WHERE s.activity IN ('Confirm Shipment','Ship Goods')
+  AND ctrl.activity IN ('Perform Credit Check','Validate Stock')
+  AND s.timestamp < ctrl.timestamp
+ORDER BY s.case_id;
+```
+
+---
+
+### 3.5 Payment received before invoice or before shipment
+
+```sql
+SELECT
+  p.case_id,
+  p.timestamp AS payment_time,
+  i.timestamp AS invoice_time,
+  sh.timestamp AS ship_time
+FROM order_event_log p
+LEFT JOIN order_event_log i
+  ON i.case_id = p.case_id AND i.activity = 'Issue Invoice'
+LEFT JOIN order_event_log sh
+  ON sh.case_id = p.case_id AND sh.activity = 'Ship Goods'
+WHERE p.activity = 'Receive Payment'
+  AND (
+    i.event_id IS NULL
+    OR p.timestamp < i.timestamp
+    OR sh.event_id IS NULL
+    OR p.timestamp < sh.timestamp
+  )
+ORDER BY p.case_id;
+```
+
+---
+
+### 3.6 Cases where `Ship Goods` has no `Validate Stock`
+
+```sql
+SELECT DISTINCT s.case_id
+FROM order_event_log s
+LEFT JOIN order_event_log v
+  ON s.case_id = v.case_id AND v.activity = 'Validate Stock'
+WHERE s.activity = 'Ship Goods'
+  AND v.case_id IS NULL
+ORDER BY s.case_id;
+```
+
+---
+
+### 3.7 Contradictory `shipment_scheduled=N` followed by `Ship Goods`
+
+```sql
+SELECT
+  cs.case_id,
+  cs.timestamp AS confirm_time,
+  sg.timestamp AS ship_time
+FROM order_event_log cs
+JOIN order_event_log sg
+  ON cs.case_id = sg.case_id
+WHERE cs.activity = 'Confirm Shipment'
+  AND cs.additional_info ILIKE '%shipment_scheduled=N%'
+  AND sg.activity = 'Ship Goods'
+ORDER BY cs.case_id;
+```
+
+---
+
+### 3.8 Correlation between anomalies and order type / value
+
+```sql
+WITH anomalous_cases AS (
+  SELECT DISTINCT case_id
+  FROM order_event_log
+  WHERE case_id IN (
+    SELECT DISTINCT e1.case_id
+    FROM order_event_log e1
+    JOIN order_event_log e2 ON e1.case_id = e2.case_id
+    WHERE (
+      (e1.activity IN ('Confirm Shipment','Ship Goods')
+       AND e2.activity IN ('Perform Credit Check','Validate Stock')
+       AND e1.timestamp < e2.timestamp)
+      OR
+      (e1.activity = 'Ship Goods'
+       AND e2.activity = 'Confirm Shipment'
+       AND e1.timestamp < e2.timestamp)
+      OR
+      (e1.activity = 'Receive Payment'
+       AND e2.activity = 'Issue Invoice'
+       AND e1.timestamp < e2.timestamp)
+    )
+    UNION
+    SELECT c.case_id
+    FROM (SELECT DISTINCT case_id FROM order_event_log) c
+    LEFT JOIN order_event_log o
+      ON o.case_id = c.case_id AND o.activity = 'Perform Credit Check'
+    WHERE o.case_id IS NULL
+    UNION
+    SELECT c.case_id
+    FROM (SELECT DISTINCT case_id FROM order_event_log) c
+    LEFT JOIN order_event_log o
+      ON o.case_id = c.case_id AND o.activity = 'Validate Stock'
+    WHERE o.case_id IS NULL
+  )
+)
+SELECT
+  o.order_type,
+  COUNT(*) AS anomalous_case_count,
+  AVG(o.order_value) AS avg_value,
+  SUM(o.order_value) AS total_value
+FROM orders o
+JOIN anomalous_cases a ON a.case_id = o.case_id
+GROUP BY o.order_type
+ORDER BY anomalous_case_count DESC;
+```
+
+---
+
+### 3.9 Credit score vs. first shipment/confirmation time
+
+```sql
+WITH credit AS (
+  SELECT
+    case_id,
+    timestamp AS credit_time,
+    (substring(additional_info FROM 'credit_score=([0-9]+)'))::int AS credit_score
+  FROM order_event_log
+  WHERE activity = 'Perform Credit Check'
+),
+first_ship AS (
+  SELECT
+    case_id,
+    MIN(timestamp) AS first_shipment_time
+  FROM order_event_log
+  WHERE activity IN ('Confirm Shipment','Ship Goods')
+  GROUP BY case_id
+)
+SELECT
+  c.case_id,
+  c.credit_score,
+  c.credit_time,
+  s.first_shipment_time,
+  s.first_shipment_time < c.credit_time AS shipped_before_credit_check
+FROM credit c
+JOIN first_ship s ON c.case_id = s.case_id
+ORDER BY c.case_id;
+```
+
+---
+
+### 3.10 Resources involved in “ship before approval” cases
+
+```sql
+WITH ship_before_ctrl AS (
+  SELECT DISTINCT s.case_id
+  FROM order_event_log s
+  JOIN order_event_log c ON s.case_id = c.case_id
+  WHERE s.activity IN ('Confirm Shipment','Ship Goods')
+    AND c.activity IN ('Perform Credit Check','Validate Stock')
+    AND s.timestamp < c.timestamp
+)
+SELECT
+  oel.resource,
+  r.role,
+  r.department,
+  COUNT(DISTINCT oel.case_id) AS cases_with_ship_before_approval
+FROM order_event_log oel
+JOIN resources r ON r.resource_id = oel.resource
+JOIN ship_before_ctrl a ON a.case_id = oel.case_id
+WHERE oel.activity IN ('Confirm Shipment','Ship Goods')
+GROUP BY oel.resource, r.role, r.department
+ORDER BY cases_with_ship_before_approval DESC;
+```
+
+---
+
+### 3.11 Very fast process paths (possible automation / timestamp errors)
+
+```sql
+SELECT
+  case_id,
+  COUNT(*) AS event_count,
+  MIN(timestamp) AS first_event,
+  MAX(timestamp) AS last_event,
+  MAX(timestamp) - MIN(timestamp) AS duration
+FROM order_event_log
+GROUP BY case_id
+HAVING COUNT(*) < 7
+    OR MAX(timestamp) - MIN(timestamp) < INTERVAL '1 hour'
+ORDER BY duration;
+```
+
+---
+
+### 3.12 Check for activity/department mismatches
+
+```sql
+WITH expected(activity, department) AS (
+  VALUES
+    ('Register Order',      'Sales'),
+    ('Perform Credit Check','Finance'),
+    ('Validate Stock',      'Logistics'),
+    ('Confirm Shipment',    'Logistics'),
+    ('Ship Goods',          'Logistics'),
+    ('Issue Invoice',       'Finance'),
+    ('Receive Payment',     'Finance')
+)
+SELECT
+  oel.case_id,
+  oel.event_id,
+  oel.activity,
+  oel.resource,
+  r.role,
+  r.department AS actual_department,
+  e.department AS expected_department
+FROM order_event_log oel
+JOIN resources r ON r.resource_id = oel.resource
+JOIN expected e  ON e.activity = oel.activity
+WHERE r.department <> e.department
+ORDER BY oel.case_id, oel.event_id;
+```
+
+---
+
+### 3.13 Inspect explicit override flags in `additional_info`
+
+```sql
+SELECT
+  case_id,
+  event_id,
+  activity,
+  resource,
+  additional_info
+FROM order_event_log
+WHERE additional_info ILIKE '%attempted_early%'
+   OR additional_info ILIKE '%late_confirmation%'
+   OR additional_info ILIKE '%shipment_scheduled=N%'
+ORDER BY case_id, event_id;
+```
+
+---
+
+## 4. Suggested next steps
+
+1. Run the **master anomaly-flag query** (3.1) across the full log to quantify scope.
+2. Join results with `orders` and `resources` to see whether anomalies concentrate in certain **order types, value bands, customers, departments, or individual resources**.
+3. Investigate cases flagged `shipment_scheduled=N` yet shipped (3.7) and payment-before-invoice cases (3.5) as potential **compliance or fraud** priorities.
+4. Compare credit scores of cases shipped before credit check (3.9) with eventual payment outcomes if payment-status data is available.
+5. Interview process owners about `attempted_early` and `late_confirmation` flags; they likely encode known but uncontrolled workarounds.

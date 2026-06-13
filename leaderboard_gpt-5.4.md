@@ -17,6 +17,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | deepseek-v4-pro                   | **36.4** | :white_check_mark: | :white_check_mark: | **6.0**              | **7.0**              | 5.3                  | **5.1**              | 5.0                  | 4.5                  | **3.6**              | 0.0                  |
 | gpt-5.2-2025-12-11-HIGH           | **36.3** | :x:                | :white_check_mark: | **6.0**              | 6.5                  | 5.2                  | 4.7                  | **5.3**              | 4.8                  | **3.7**              | 4.0                  |
 | anthropicclaude-fable-5           | **35.6** | :x:                | :x:                | 5.7                  | **6.9**              | 4.7                  | 4.6                  | 5.1                  | 4.7                  | :mage_woman: **3.8** | **4.6**              |
+| moonshotaikimi-k2.7-code          | **35.6** | :white_check_mark: | :white_check_mark: | **6.2**              | 6.3                  | 4.7                  | 4.7                  | **5.4**              | 4.6                  | **3.7**              | 0.0                  |
 | claude-opus-4-8-thinking          | **35.3** | :x:                | :white_check_mark: | 5.7                  | 6.8                  | 4.8                  | 4.9                  | 5.0                  | 4.5                  | **3.5**              | 4.1                  |
 | qwen3.7-max                       | **35.1** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.4                  | 4.8                  | 5.1                  | **5.0**              | **3.5**              | 0.0                  |
 | gpt-5.4-2026-03-05-NONE           | **34.9** | :x:                | :x:                | 5.9                  | 6.8                  | 4.0                  | 4.6                  | :mage_woman: **5.5** | 4.6                  | **3.7**              | **4.6**              |
@@ -937,6 +938,62 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             | 7.5   |
 | cat08_04_resource_assign           | 7.7   |
 | cat08_05_task_schedul              | 7.4   |
+
+### moonshotaikimi-k2.7-code   => 35.6 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 9.3   |
+| cat01_02_activity_context          | 8.0   |
+| cat01_03_high_level_events         | 7.7   |
+| cat01_04_sensor_recordings         | 7.6   |
+| cat01_05_merge_two_logs            | 7.4   |
+| cat01_06_system_logs               | 7.3   |
+| cat01_07_interv_to_pseudo_bpmn     | 7.7   |
+| cat01_08_tables_to_log             | 6.6   |
+| cat02_01_conformance_textual       | 7.6   |
+| cat02_02_conf_desiderata           | 7.8   |
+| cat02_03_anomaly_event_log         | 7.6   |
+| cat02_04_powl_anomaly_detection    | 8.2   |
+| cat02_05_two_powls_anomalies       | 7.7   |
+| cat02_06_root_cause_1              | 7.2   |
+| cat02_07_root_cause_2              | 6.8   |
+| cat02_08_underfitting_process_tree | 9.3   |
+| cat02_09_fix_process_tree          | 1.0   |
+| cat03_01_process_tree_generation   | 7.7   |
+| cat03_02_powl_generation           | 9.1   |
+| cat03_03_log_skeleton_generation   | 3.3   |
+| cat03_04_declare_generation        | 3.9   |
+| cat03_05_temp_profile_generation   | 7.7   |
+| cat03_06_petri_net_generation      | 5.6   |
+| cat03_07_process_tree_discovery    | 2.2   |
+| cat03_08_powl_discovery            | 7.7   |
+| cat04_01_pseudo_bpmn_description   | 7.4   |
+| cat04_02_pseudo_bpmn_open_question | 7.7   |
+| cat04_03_declare_open_question     | 7.5   |
+| cat04_04_declare_description       | 1.1   |
+| cat04_05_sql_filt_num_events       | 7.2   |
+| cat04_06_sql_filt_three_df         | 8.2   |
+| cat04_07_sql_filt_top_k_vars       | 7.4   |
+| cat05_01_hyp_generation_log        | 8.0   |
+| cat05_02_hyp_gen_powl              | 7.1   |
+| cat05_03_hyp_gen_declare           | 7.1   |
+| cat05_04_hyp_gen_temp_profile      | 6.7   |
+| cat05_05_question_gen_nlp          | 8.0   |
+| cat05_06_question_pseudo_bpmn      | 9.3   |
+| cat05_07_question_interview        | 7.6   |
+| cat06_01_bias_text                 | 7.6   |
+| cat06_02_bias_event_log            | 7.7   |
+| cat06_03_bias_powl                 | 8.4   |
+| cat06_04_bias_two_logs             | 1.0   |
+| cat06_05_bias_two_logs_2           | 7.8   |
+| cat06_06_bias_mitigation_declare   | 5.9   |
+| cat06_07_fair_unfair_powl          | 7.6   |
+| cat08_01_queue_mining              | 7.6   |
+| cat08_02_instance_spanning         | 7.4   |
+| cat08_03_transport_opt             | 7.4   |
+| cat08_04_resource_assign           | 7.6   |
+| cat08_05_task_schedul              | 7.3   |
 
 ### claude-opus-4-8-thinking   => 35.3 points
 

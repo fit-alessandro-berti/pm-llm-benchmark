@@ -2,6 +2,7 @@
 
 | Model | Total | 1a_instruction_override | 1b_context_omission | 1c_prompt_contradiction | 2a_concept_fabrication | 2b_spurious_numeric | 2c_false_citation | 3a_unsupported_leap | 3b_self_contradiction | 3c_circular_reasoning | 4a_syntax_error | 4b_model_semantics_breach | 4c_visual_descr_mismatch |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| moonshotaikimi-k2.7-code | 114 | 8 | 26 | 0 | 3 | 12 | 0 | 49 | 3 | 0 | 5 | 5 | 3 |
 | deepseekdeepseek-v3.2-speciale-thinking | 133 | 7 | 41 | 0 | 7 | 6 | 0 | 62 | 2 | 0 | 3 | 4 | 0 |
 | deepseekdeepseek-v4-pro | 141 | 6 | 29 | 1 | 7 | 18 | 0 | 61 | 3 | 0 | 6 | 9 | 1 |
 | moonshotaikimi-k2.6 | 143 | 0 | 26 | 3 | 14 | 14 | 0 | 67 | 3 | 0 | 1 | 8 | 5 |
