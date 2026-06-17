@@ -4,16 +4,16 @@ Aggregated hallucination counts across all LLMs, organized by PM-LLM benchmark c
 
 | Hallucination Type | CAT01 | CAT02 | CAT03 | CAT04 | CAT05 | CAT06 | CAT07 | CAT08 | Total |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1a. Instruction Override | 379 | 156 | 415 | 205 | 278 | 139 | 6 | 62 | 1640 |
-| 1b. Context Omission | 1112 | 1076 | 700 | 894 | 1202 | 1020 | 398 | 1631 | 8033 |
-| 1c. Prompt Contradiction | 191 | 91 | 166 | 95 | 48 | 58 | 23 | 33 | 705 |
-| 2a. Concept Fabrication | 476 | 242 | 303 | 762 | 236 | 312 | 265 | 583 | 3179 |
-| 2b. Spurious Numeric | 463 | 572 | 504 | 329 | 324 | 281 | 135 | 1381 | 3989 |
-| 2c. False Citation | 7 | 15 | 4 | 15 | 1 | 58 | 3 | 20 | 123 |
-| 3a. Unsupported Leap | 1940 | 2134 | 1632 | 1747 | 1624 | 2117 | 802 | 1820 | 13816 |
-| 3b. Self Contradiction | 337 | 173 | 341 | 190 | 70 | 159 | 18 | 73 | 1361 |
+| 1a. Instruction Override | 381 | 157 | 418 | 206 | 278 | 139 | 6 | 62 | 1647 |
+| 1b. Context Omission | 1123 | 1082 | 704 | 899 | 1210 | 1022 | 398 | 1649 | 8087 |
+| 1c. Prompt Contradiction | 191 | 91 | 166 | 96 | 48 | 58 | 23 | 33 | 706 |
+| 2a. Concept Fabrication | 477 | 243 | 304 | 764 | 236 | 312 | 265 | 583 | 3184 |
+| 2b. Spurious Numeric | 463 | 572 | 505 | 330 | 326 | 284 | 135 | 1385 | 4000 |
+| 2c. False Citation | 7 | 15 | 4 | 15 | 1 | 59 | 3 | 20 | 124 |
+| 3a. Unsupported Leap | 1947 | 2148 | 1641 | 1753 | 1632 | 2134 | 802 | 1829 | 13886 |
+| 3b. Self Contradiction | 339 | 173 | 343 | 190 | 70 | 159 | 18 | 73 | 1365 |
 | 3c. Circular Reasoning | 2 | 2 | 1 | 2 | 0 | 0 | 0 | 5 | 12 |
 | 4a. Syntax Error | 146 | 48 | 237 | 100 | 258 | 104 | 11 | 162 | 1066 |
-| 4b. Model Semantics Breach | 262 | 135 | 869 | 477 | 273 | 280 | 116 | 54 | 2466 |
+| 4b. Model Semantics Breach | 263 | 135 | 874 | 479 | 273 | 281 | 116 | 54 | 2475 |
 | 4c. Visual Description Mismatch | 163 | 49 | 78 | 101 | 46 | 17 | 520 | 29 | 1003 |
-| **Total** | **5478** | **4693** | **5250** | **4917** | **4360** | **4545** | **2297** | **5853** | **37393** |
+| **Total** | **5502** | **4715** | **5275** | **4935** | **4378** | **4569** | **2297** | **5884** | **37555** |
