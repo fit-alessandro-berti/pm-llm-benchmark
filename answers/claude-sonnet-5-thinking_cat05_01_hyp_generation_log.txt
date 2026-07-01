@@ -1,0 +1,155 @@
+# Process Mining Analysis: Order-to-Cash Event Log
+
+## 1. Anomalies Identified by Manual Inspection
+
+| Case | Anomaly | Description |
+|------|---------|--------------|
+| **1002** | Activities out of sequence | `Confirm Shipment` and `Ship Goods` occur **before** `Perform Credit Check` and `Validate Stock` |
+| **1003** | Missing activity + reordering | `Validate Stock` is **missing entirely**; `Ship Goods` occurs **before** `Confirm Shipment`; `Issue Invoice` precedes `Confirm Shipment` |
+| **1004** | Severe control bypass | `Receive Payment` occurs **before** `Issue Invoice`; `Credit Check` and `Validate Stock` are both **missing**; `Confirm Shipment` info says `shipment_scheduled=N` yet `Ship Goods` still happens 25 min later |
+| **All cases** | Very short case duration for 1002–1004 (~15–70 min) vs. 1001 (~4 days incl. payment) | Suggests rushed/automated processing or manual backdating |
+
+---
+
+## 2. Hypotheses for Root Causes
+
+1. **Priority-order fast-tracking**: Case 1002 is `order_type = priority` — staff may skip Credit Check/Stock Validation to meet SLA targets.
+2. **Manual/system reordering of timestamps**: Logistics staff might record `Confirm Shipment` retroactively after goods are already shipped (documentation catch-up rather than true process violation).
+3. **Missing stock validation = data entry omission or true process skip**: Could indicate an interface where Warehouse can bypass entering this event, or the check was done verbally/offline.
+4. **Payment-before-invoice = system integration bug or fraud**: Could be an automated payment gateway (e.g., subscription auto-charge) posting before the invoice-generation batch job runs — or a resource manually inserting backdated events to close a case.
+5. **Contradictory flag `shipment_scheduled=N` followed by shipment anyway**: Possible override by a resource, or a logging error where the flag doesn't reflect actual system decision.
+6. **Segregation-of-duty risk**: Same resource performing incompatible steps (e.g., issuing invoice AND receiving payment) could indicate fraud risk if not caught by controls.
+
+---
+
+## 3. SQL Queries to Investigate
+
+### a) Find missing mandatory activities per case
+```sql
+WITH expected_activities AS (
+    SELECT unnest(ARRAY[
+        'Register Order','Perform Credit Check','Validate Stock',
+        'Confirm Shipment','Ship Goods','Issue Invoice','Receive Payment'
+    ]) AS activity
+),
+matrix AS (
+    SELECT o.case_id, ea.activity,
+           MAX(CASE WHEN e.activity = ea.activity THEN 1 ELSE 0 END) AS present
+    FROM orders o
+    CROSS JOIN expected_activities ea
+    LEFT JOIN order_event_log e
+           ON e.case_id = o.case_id AND e.activity = ea.activity
+    GROUP BY o.case_id, ea.activity
+)
+SELECT case_id, activity AS missing_activity
+FROM matrix
+WHERE present = 0
+ORDER BY case_id, activity;
+```
+
+### b) Detect "Ship Goods" occurring before "Confirm Shipment"
+```sql
+SELECT s.case_id, s.timestamp AS ship_time, c.timestamp AS confirm_time
+FROM order_event_log s
+JOIN order_event_log c
+  ON s.case_id = c.case_id AND c.activity = 'Confirm Shipment'
+WHERE s.activity = 'Ship Goods'
+  AND s.timestamp < c.timestamp;
+```
+
+### c) Detect "Receive Payment" occurring before "Issue Invoice"
+```sql
+SELECT p.case_id, p.timestamp AS payment_time, i.timestamp AS invoice_time
+FROM order_event_log p
+JOIN order_event_log i
+  ON p.case_id = i.case_id AND i.activity = 'Issue Invoice'
+WHERE p.activity = 'Receive Payment'
+  AND p.timestamp < i.timestamp;
+```
+
+### d) Cases skipping Credit Check, cross-referenced with order value (risk exposure)
+```sql
+SELECT o.case_id, o.order_type, o.order_value
+FROM orders o
+WHERE o.case_id NOT IN (
+    SELECT case_id FROM order_event_log WHERE activity = 'Perform Credit Check'
+)
+ORDER BY o.order_value DESC;
+```
+
+### e) Contradiction check: shipment flagged "N" but shipped anyway
+```sql
+SELECT cs.case_id, cs.additional_info AS confirm_flag, sg.timestamp AS ship_time
+FROM order_event_log cs
+JOIN order_event_log sg
+  ON cs.case_id = sg.case_id AND sg.activity = 'Ship Goods'
+WHERE cs.activity = 'Confirm Shipment'
+  AND cs.additional_info ILIKE '%shipment_scheduled=N%';
+```
+
+### f) Case duration & throughput-time outliers
+```sql
+SELECT case_id,
+       MIN(timestamp) AS start_time,
+       MAX(timestamp) AS end_time,
+       EXTRACT(EPOCH FROM (MAX(timestamp) - MIN(timestamp)))/60 AS duration_minutes
+FROM order_event_log
+GROUP BY case_id
+ORDER BY duration_minutes;
+```
+
+### g) Process variant discovery (frequency of each activity sequence)
+```sql
+WITH variants AS (
+    SELECT case_id,
+           STRING_AGG(activity, ' -> ' ORDER BY timestamp) AS process_variant
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT process_variant, COUNT(*) AS case_count
+FROM variants
+GROUP BY process_variant
+ORDER BY case_count DESC;
+```
+
+### h) Segregation-of-duties check (same resource on conflicting steps)
+```sql
+SELECT case_id, resource,
+       array_agg(DISTINCT activity) AS activities_performed
+FROM order_event_log
+WHERE activity IN ('Perform Credit Check','Issue Invoice','Receive Payment')
+GROUP BY case_id, resource
+HAVING COUNT(DISTINCT activity) > 1;
+```
+
+### i) Role/Activity mismatch (wrong department/role executing a step)
+```sql
+SELECT e.case_id, e.activity, e.resource, r.role, r.department
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE (e.activity = 'Perform Credit Check' AND r.role <> 'Credit Analyst')
+   OR (e.activity = 'Validate Stock'      AND r.role <> 'Warehouse Staff')
+   OR (e.activity = 'Confirm Shipment'    AND r.role <> 'Logistics Manager')
+   OR (e.activity IN ('Issue Invoice','Receive Payment') AND r.department <> 'Finance');
+```
+
+### j) Time-gap analysis between Validate Stock and Ship Goods (detect rushed/skip-ahead shipments)
+```sql
+SELECT v.case_id,
+       v.timestamp AS validate_time,
+       s.timestamp AS ship_time,
+       EXTRACT(EPOCH FROM (s.timestamp - v.timestamp))/60 AS minutes_between
+FROM order_event_log v
+JOIN order_event_log s
+  ON v.case_id = s.case_id AND s.activity = 'Ship Goods'
+WHERE v.activity = 'Validate Stock'
+ORDER BY minutes_between;
+```
+
+---
+
+## Suggested Next Steps
+- Run **(g)** first to quantify how many cases deviate from the "happy path" — this tells you if these are isolated incidents or systemic.
+- Cross-reference **(d)** and **(f)** with `order_type = 'priority'` to test the "fast-tracking" hypothesis.
+- Escalate any hits from **(h)** for manual fraud/compliance review, since segregation-of-duties violations in Finance are high risk.
+- Investigate resource shift logs / system timestamps around case 1004 to determine if the payment-before-invoice anomaly is a data entry error, clock skew, or a genuine control bypass.

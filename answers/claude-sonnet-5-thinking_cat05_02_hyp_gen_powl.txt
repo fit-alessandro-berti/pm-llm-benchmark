@@ -1,0 +1,171 @@
+# Analysis of POWL Model Anomalies
+
+## 1. Identified Anomalies
+
+### Anomaly A: Loop between Evaluate and Approve `*(E, P)`
+The loop structure allows the sequence E, or E-P-E, or E-P-E-P-E... indefinitely. This means:
+- A claim could be evaluated and approved multiple times before exiting the loop.
+- There's no guarantee the loop *ends* on an approval (P) — it could end right after an E, meaning **the loop can exit without ever approving the claim**.
+
+### Anomaly B: XOR that May Skip Notification `XOR(N, skip)`
+The customer may **never be notified** at all, since `skip` is a valid silent alternative to `N`. This bypasses a step that is typically considered mandatory for transparency/compliance.
+
+### Anomaly C: Weak Partial Order — Premature/Concurrent Closing
+The critical anomaly is the edge set:
+```
+R -> A
+A -> loop
+loop -> xor
+A -> C   # <-- problematic
+```
+Because there is **no edge from `xor -> C`**, and instead **`A -> C`** is added directly, the model allows `C` (Close Claim) to occur:
+- Concurrently with the loop and xor (since only a common predecessor `A` is enforced, not a predecessor relationship with `loop`/`xor`).
+- Potentially *before* evaluation, approval, or notification ever happen, as long as `A` has occurred.
+
+This is the most severe anomaly because it structurally permits **closing a claim without evaluation, approval, or notification**, which is a serious control violation in an insurance context.
+
+---
+
+## 2. Hypotheses for Root Causes
+
+| Hypothesis | Reasoning |
+|---|---|
+| **H1: Incomplete refactor after a business rule change** | Perhaps closing a claim used to be allowed for a "fast-track" claim type (e.g., auto-rejections) that could close right after assignment. The modeler added `A -> C` for that use case but failed to remove/qualify it for the general path, or failed to make it an XOR-choice between "fast path" and "full path." |
+| **H2: Miscommunication between claims processing team and compliance/audit team** | Compliance may require strict RAEPNC ordering, but the operations team modeled the "actual observed behavior" from noisy logs (see H3) without realizing this violates a policy constraint that should have been hard-coded. |
+| **H3: Process discovery from noisy/incomplete event logs** | If this POWL model was mined automatically from real event data using a process discovery algorithm, the anomalies may reflect **actual undesirable behavior in the data** — i.e., adjusters or system integrations really are closing claims early, looping evaluations repeatedly, or forgetting to send notifications. The model is accurately capturing bad practice, not necessarily containing a "modeling bug." |
+| **H4: System/integration defect** | A workflow engine bug (e.g., race condition, retry logic incorrectly re-triggering "Evaluate", or a batch "auto-close" job with weak preconditions) could cause `C` events to fire based only on "claim assigned" status rather than waiting for downstream approval. |
+| **H5: Inadequate tool constraints during manual modeling** | Whoever built this POWL model manually to represent "the current mess" may have used a partial order because they weren't sure of the true ordering constraints observed in reality, defaulting to weaker constraints than intended. |
+
+---
+
+## 3. Verification Queries Against the Event Log
+
+### Query 1: Claims Closed Without Prior Evaluation or Approval (Anomaly C)
+```sql
+-- Claims where 'C' (Close Claim) happens without a prior 'E' or 'P' event
+SELECT c.claim_id, c.customer_id, c.claim_type,
+       ce_close.timestamp AS close_time
+FROM claims c
+JOIN claim_events ce_close 
+     ON ce_close.claim_id = c.claim_id AND ce_close.activity = 'C'
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM claim_events ce_eval
+    WHERE ce_eval.claim_id = c.claim_id
+      AND ce_eval.activity IN ('E','P')
+      AND ce_eval.timestamp < ce_close.timestamp
+)
+ORDER BY c.claim_id;
+```
+
+### Query 2: Claims Closed Before Assignment Completed, or Concurrently
+```sql
+-- Detect cases where Close (C) timestamp is earlier than or equal to
+-- the Evaluate (E) or Approve (P) timestamp -- i.e., out-of-order execution
+SELECT ce1.claim_id, ce1.activity AS closed_activity, ce1.timestamp AS close_ts,
+       ce2.activity AS later_activity, ce2.timestamp AS later_ts
+FROM claim_events ce1
+JOIN claim_events ce2 
+     ON ce1.claim_id = ce2.claim_id
+WHERE ce1.activity = 'C'
+  AND ce2.activity IN ('E','P','N')
+  AND ce2.timestamp > ce1.timestamp   -- activity happens AFTER closing!
+ORDER BY ce1.claim_id, ce2.timestamp;
+```
+
+### Query 3: Claims Approved Multiple Times (Loop Anomaly)
+```sql
+-- Count how many times 'P' (Approve Claim) occurs per claim
+SELECT claim_id, COUNT(*) AS approval_count
+FROM claim_events
+WHERE activity = 'P'
+GROUP BY claim_id
+HAVING COUNT(*) > 1
+ORDER BY approval_count DESC;
+```
+
+### Query 4: Claims With Multiple Evaluate/Approve Cycles (Full Loop Detection)
+```sql
+-- Extract full E/P sequence per claim to detect repeated loop iterations
+SELECT claim_id,
+       STRING_AGG(activity, '->' ORDER BY timestamp) AS ep_sequence
+FROM claim_events
+WHERE activity IN ('E','P')
+GROUP BY claim_id
+HAVING COUNT(*) > 2   -- more than a single E-P pair suggests looping
+ORDER BY claim_id;
+```
+
+### Query 5: Claims Where the Loop Exits Without Approval (Loop exits after E, never reaches P)
+```sql
+-- Claims that have an 'E' event as the LAST evaluate/approve-related event,
+-- with no subsequent 'P' before the next major activity (N or C)
+WITH ranked_events AS (
+    SELECT claim_id, activity, timestamp,
+           ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp DESC) AS rn
+    FROM claim_events
+    WHERE activity IN ('E','P')
+)
+SELECT claim_id
+FROM ranked_events
+WHERE rn = 1 AND activity = 'E';  -- last E/P event was an Evaluate, not an Approve
+```
+
+### Query 6: Frequency of Skipped Notification (Anomaly B)
+```sql
+-- Claims that have a 'C' event but no 'N' event at all
+SELECT c.claim_id, c.customer_id
+FROM claims c
+JOIN claim_events ce_close 
+     ON ce_close.claim_id = c.claim_id AND ce_close.activity = 'C'
+WHERE NOT EXISTS (
+    SELECT 1 FROM claim_events ce_notify
+    WHERE ce_notify.claim_id = c.claim_id AND ce_notify.activity = 'N'
+);
+```
+
+### Query 7: Overall Skip Rate for Notification (Statistical Check)
+```sql
+SELECT 
+    COUNT(DISTINCT c.claim_id) AS total_closed_claims,
+    COUNT(DISTINCT CASE WHEN n.claim_id IS NOT NULL THEN c.claim_id END) AS notified_claims,
+    ROUND(
+        100.0 * COUNT(DISTINCT CASE WHEN n.claim_id IS NULL THEN c.claim_id END) 
+        / COUNT(DISTINCT c.claim_id), 2
+    ) AS pct_notification_skipped
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id AND ce.activity = 'C'
+LEFT JOIN claim_events n ON n.claim_id = c.claim_id AND n.activity = 'N'
+GROUP BY (); -- overall aggregate, could also GROUP BY claim_type
+```
+
+### Query 8: Cross-Reference With Adjusters (Check Resource/Anomaly Correlation)
+```sql
+-- Check if premature closures correlate with specific adjusters, regions, or specializations
+SELECT a.adjuster_id, a.name, a.region, a.specialization,
+       COUNT(*) AS premature_close_count
+FROM claim_events ce_close
+JOIN claim_events ce_assign 
+     ON ce_assign.claim_id = ce_close.claim_id AND ce_assign.activity = 'A'
+JOIN adjusters a ON a.name = ce_assign.resource
+WHERE ce_close.activity = 'C'
+  AND NOT EXISTS (
+        SELECT 1 FROM claim_events ce_eval
+        WHERE ce_eval.claim_id = ce_close.claim_id
+          AND ce_eval.activity IN ('E','P')
+          AND ce_eval.timestamp < ce_close.timestamp
+  )
+GROUP BY a.adjuster_id, a.name, a.region, a.specialization
+ORDER BY premature_close_count DESC;
+```
+
+---
+
+## Summary of Diagnostic Strategy
+
+1. **Run Queries 1–2** first to quantify how often claims are *actually* closed prematurely in the real event log — this validates whether Anomaly C (the `A -> C` edge) reflects real, frequent behavior or a rare/theoretical possibility.
+2. **Run Queries 3–5** to check whether the E/P loop is heavily used in practice (many re-evaluations) — this could indicate disputed claims, appeals processes, or a data-entry/system retry bug (supports H3/H4).
+3. **Run Queries 6–7** to measure the real-world notification skip rate — if it's non-trivial, this validates Anomaly B as a genuine compliance gap rather than a modeling artifact.
+4. **Run Query 8** to see if anomalies cluster around specific adjusters/regions — this helps distinguish between a **systemic process/tooling issue** (H3/H4, spread evenly) versus a **local/human process violation** (H2, clustered in specific teams/regions).
+
+Based on the results, one can then decide whether to **tighten the POWL model** (add `xor -> C` ordering, remove `A -> C`, bound the loop, or make `N` mandatory) or whether the model is correctly reflecting a **known and tolerated fast-track exception** that should be explicitly separated out as its own sub-process rather than blended into the main flow.

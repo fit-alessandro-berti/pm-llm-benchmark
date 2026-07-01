@@ -1,0 +1,185 @@
+# Temporal Profile Anomaly Analysis: Insurance Claims Process
+
+## 1. Identified Anomalies
+
+| Activity Pair | Avg Time | STDEV | Anomaly Type | Concern |
+|---|---|---|---|---|
+| R  P | 90,000s (~25h) | 3,600s (1h) | **Suspiciously rigid timing** | STDEV is only 4% of the mean — far too tight for a multi-step business process spanning assignment and evaluation |
+| P  N | 604,800s (7d) | 172,800s (2d) | **Excessive delay + high variance** | Approved claims sit for a week on average before notification, with huge spread (could be same-day or 9+ days) |
+| A  C | 7,200s (2h) | 3,600s (1h) | **Suspiciously fast closure** | Claims closing 2h after assignment implies Evaluate/Approve/Notify are being skipped or rubber-stamped |
+| E  N | 300s (5min) | 60s (1min) | **Unrealistically fast + rigid** | 5 minutes is too short for a human-reviewed approval-then-notify cycle; looks automated or bypassed |
+| R  E | 86,400s (1d) | 28,800s (8h) | Moderate variance | Less alarming, but worth baseline comparison against RP |
+
+---
+
+## 2. Hypotheses
+
+**H1 — RP rigidity (fixed ~25h with tiny STDEV):**
+A batch job or scheduled nightly process may be auto-approving claims at a fixed cadence (e.g., "approve overnight batch at 2 AM"), bypassing genuine adjuster evaluation. Low variance suggests a cron-like trigger rather than human-paced decision-making.
+
+**H2 — PN long delay with high variance:**
+Notification may depend on an external system (mailing, call center queue, third-party letter vendor) with inconsistent throughput. Alternatively, a backlog exists during high-volume periods, and clearing it produces high variance (some fast, some very slow).
+
+**H3 — AC fast-track closures:**
+Possible fraud-shortcut, low-value/auto-reject claims, or data entry pattern where certain adjusters or claim types get closed without full evaluation — could indicate policy violations, understaffing shortcuts, or a "denied without review" pathway.
+
+**H4 — EN rapid transition:**
+Evaluate and Notify may be logged by the same automated system call (single API transaction creating both events near-simultaneously), meaning "Approve" (P) is sometimes skipped entirely in the actual event log, even though it's assumed present in the model.
+
+**H5 — Resource/region skew:**
+Certain adjusters, specializations, or regions may systematically produce these anomalies (e.g., one region's system has a different SLA or automation level), rather than the anomaly being process-wide.
+
+---
+
+## 3. SQL Verification Queries
+
+### 3.1 Claims where RP falls outside expected variance (ZETA-based filter)
+
+```sql
+WITH activity_pairs AS (
+    SELECT
+        r.claim_id,
+        r.timestamp AS r_time,
+        p.timestamp AS p_time,
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS actual_seconds
+    FROM claim_events r
+    JOIN claim_events p
+      ON r.claim_id = p.claim_id
+     AND r.activity = 'R'
+     AND p.activity = 'P'
+)
+SELECT
+    claim_id,
+    actual_seconds,
+    ABS(actual_seconds - 90000) / NULLIF(3600, 0) AS zeta_score
+FROM activity_pairs
+WHERE ABS(actual_seconds - 90000) / NULLIF(3600, 0) > 2  -- ZETA threshold = 2
+ORDER BY zeta_score DESC;
+```
+
+### 3.2 Claims closed too quickly after assignment (AC fast-track detection)
+
+```sql
+SELECT
+    a.claim_id,
+    a.timestamp AS assign_time,
+    c.timestamp AS close_time,
+    EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) AS elapsed_seconds,
+    a.resource AS assigning_resource
+FROM claim_events a
+JOIN claim_events c
+  ON a.claim_id = c.claim_id
+ AND a.activity = 'A'
+ AND c.activity = 'C'
+WHERE EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) < 3600  -- less than 1 hour, suspiciously fast
+  AND NOT EXISTS (
+      SELECT 1 FROM claim_events e
+      WHERE e.claim_id = a.claim_id
+        AND e.activity IN ('E', 'P', 'N')
+  )
+ORDER BY elapsed_seconds ASC;
+```
+
+### 3.3 Correlate PN delays with adjuster / region / claim type
+
+```sql
+SELECT
+    ad.region,
+    ad.specialization,
+    cl.claim_type,
+    COUNT(*) AS num_claims,
+    AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) AS avg_delay_seconds,
+    STDDEV(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) AS stdev_delay_seconds
+FROM claim_events p
+JOIN claim_events n
+  ON p.claim_id = n.claim_id
+ AND p.activity = 'P'
+ AND n.activity = 'N'
+JOIN claims cl ON cl.claim_id = p.claim_id
+JOIN claim_events a ON a.claim_id = p.claim_id AND a.activity = 'A'
+JOIN adjusters ad ON ad.name = a.resource
+GROUP BY ad.region, ad.specialization, cl.claim_type
+HAVING AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) > 604800  -- above global avg (7 days)
+ORDER BY avg_delay_seconds DESC;
+```
+
+### 3.4 Detect EN transitions where P (Approve) is missing entirely
+
+```sql
+SELECT
+    e.claim_id,
+    e.timestamp AS evaluate_time,
+    n.timestamp AS notify_time,
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS elapsed_seconds
+FROM claim_events e
+JOIN claim_events n
+  ON e.claim_id = n.claim_id
+ AND e.activity = 'E'
+ AND n.activity = 'N'
+WHERE NOT EXISTS (
+    SELECT 1 FROM claim_events p
+    WHERE p.claim_id = e.claim_id
+      AND p.activity = 'P'
+      AND p.timestamp BETWEEN e.timestamp AND n.timestamp
+)
+ORDER BY elapsed_seconds ASC;
+```
+
+### 3.5 Identify resources/adjusters most frequently associated with any temporal anomaly
+
+```sql
+WITH anomaly_claims AS (
+    -- union of claim_ids flagged by any of the above checks
+    SELECT claim_id FROM (
+        -- RP outliers
+        SELECT r.claim_id
+        FROM claim_events r
+        JOIN claim_events p ON r.claim_id = p.claim_id AND r.activity='R' AND p.activity='P'
+        WHERE ABS(EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) - 90000) / 3600 > 2
+
+        UNION
+
+        -- AC fast closures
+        SELECT a.claim_id
+        FROM claim_events a
+        JOIN claim_events c ON a.claim_id = c.claim_id AND a.activity='A' AND c.activity='C'
+        WHERE EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) < 3600
+    ) AS flagged
+)
+SELECT
+    ce.resource,
+    COUNT(DISTINCT ac.claim_id) AS anomaly_count
+FROM anomaly_claims ac
+JOIN claim_events ce ON ce.claim_id = ac.claim_id
+GROUP BY ce.resource
+ORDER BY anomaly_count DESC;
+```
+
+### 3.6 Distribution check for PN: bimodal delay pattern (fast vs. slow batches)
+
+```sql
+SELECT
+    WIDTH_BUCKET(
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)),
+        0, 1209600, 20  -- 0 to 14 days, 20 buckets
+    ) AS delay_bucket,
+    COUNT(*) AS claim_count,
+    MIN(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) AS min_seconds,
+    MAX(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) AS max_seconds
+FROM claim_events p
+JOIN claim_events n
+  ON p.claim_id = n.claim_id
+ AND p.activity = 'P'
+ AND n.activity = 'N'
+GROUP BY delay_bucket
+ORDER BY delay_bucket;
+```
+
+---
+
+## Summary of Investigative Priorities
+
+1. **Run 3.1** first to confirm whether RP truly clusters around a fixed offset (supports automated-batch hypothesis).
+2. **Run 3.6** to check if PN delay is genuinely bimodal (supports backlog/queue hypothesis vs. random noise).
+3. **Run 3.2 and 3.4** together to quantify how many claims may be skipping required steps entirely — this is the most process-integrity-critical finding.
+4. **Run 3.3 and 3.5** to determine if anomalies are isolated to specific adjusters/regions (localized fix) or systemic (process redesign needed).

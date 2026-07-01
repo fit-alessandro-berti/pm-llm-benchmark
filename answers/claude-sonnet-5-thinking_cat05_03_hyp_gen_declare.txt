@@ -1,0 +1,145 @@
+# Analysis of the DECLARE Model for Insurance Claim Processing
+
+## 1. Identified Anomalies
+
+### **Critical Contradiction: `noncoexistence(E, C)` vs. Business Logic**
+The model states that **E (Evaluate)** and **C (Close)** must never coexist in the same trace. This is a fundamental problem because:
+- The `existence` constraint requires **C** to appear in every trace (support=1.0)
+- Common sense insurance workflows require evaluation before closing
+- Yet `noncoexistence` explicitly forbids E and C from appearing together
+
+This means **every single claim trace is either violating the model or being forced to close WITHOUT ever being evaluated** — directly contradicting the intended process flow where E must precede P, N, and C.
+
+### **Weak Ordering Constraint: `responded_existence(E, [A])`**
+This constraint only guarantees that if **A (Assign)** occurs, **E** occurs *somewhere* in the trace (in either direction, before or after). It does **not** enforce that E happens *after* A. Combined with the noncoexistence issue above, this creates a scenario where:
+- A claim could be assigned, then closed, and *then* "evaluated" (nonsensically, after case closure)
+- Or evaluation could happen with no ordering relationship to assignment at all
+
+### **Missing Precedence Constraints**
+The model lacks explicit precedence relationships for:
+- **A  E** (Assignment must precede Evaluation)
+- **E  P** (Evaluation must precede Approval)
+- **P  N** (Approval must precede Notification)
+- **N  C** (Notification must precede Closure)
+
+Only `precedence(C, [R])` exists, meaning the model only guarantees R happens before C — it says nothing about whether A, E, P, or N occur at all, or in what order, before closure.
+
+### **No Existence Constraint on Intermediate Activities**
+Only **R** (init) and **C** (existence) are mandated to occur. There is no existence constraint forcing **A**, **E**, **P**, or **N** to occur in every trace, meaning claims could theoretically be closed immediately after receipt with no assignment, evaluation, approval, or notification at all.
+
+---
+
+## 2. Hypotheses for Root Causes
+
+1. **Automated Constraint Mining Artifacts**: If this DECLARE model was mined from event logs using process discovery tools, the `noncoexistence(E,C)` constraint may have been learned from historical data where a legacy system logged "E" and "C" as mutually exclusive states (e.g., a status field that was overwritten), rather than reflecting true business rules.
+
+2. **Fast-Track Policy Leakage**: The organization may have introduced a "fast-track" claim category (e.g., small claims under a certain threshold) that bypasses evaluation. If this subset of fast-tracked claims was included in the same log used to mine constraints, the algorithm may have generalized an exception into a rule.
+
+3. **Data Quality Issues in Event Logging**: The "E" activity might not be logged consistently by all adjusters/regions (e.g., manual paperwork not entered into the system), causing the mining algorithm to interpret missing E events as genuine non-coexistence rather than incomplete data.
+
+4. **Conflicting Requirements from Different Stakeholders**: Business analysts might have specified `precedence(C, R)` and `existence(C)` based on compliance requirements ("all claims must be formally closed"), while a separate team specified `noncoexistence(E, C)` based on a misunderstood requirement like "don't re-evaluate a claim after closing" — intended as a *repetition* constraint, but incorrectly modeled as absolute non-coexistence.
+
+5. **Copy-Paste or Template Errors**: The constraint template library may have been reused from another domain (e.g., IT service tickets) where "Evaluate" and "Close" genuinely are alternative terminal states, without adapting it to the insurance claim semantics.
+
+---
+
+## 3. Proposed SQL Verification Queries
+
+### **Query 1: Claims closed without any evaluation event**
+```sql
+SELECT c.claim_id, c.claim_type, c.submission_date
+FROM claims c
+WHERE EXISTS (
+    SELECT 1 FROM claim_events ce
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'C'
+)
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events ce
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'E'
+);
+```
+
+### **Query 2: Traces where both E and C occur together (violating noncoexistence)**
+```sql
+SELECT ce1.claim_id, 
+       ce1.timestamp AS evaluate_time, 
+       ce2.timestamp AS close_time
+FROM claim_events ce1
+JOIN claim_events ce2 
+    ON ce1.claim_id = ce2.claim_id
+WHERE ce1.activity = 'E' 
+  AND ce2.activity = 'C';
+```
+
+### **Query 3: Check ordering violations — Evaluate occurring after Close**
+```sql
+SELECT ce_e.claim_id, ce_e.timestamp AS eval_ts, ce_c.timestamp AS close_ts
+FROM claim_events ce_e
+JOIN claim_events ce_c 
+    ON ce_e.claim_id = ce_c.claim_id
+WHERE ce_e.activity = 'E' 
+  AND ce_c.activity = 'C'
+  AND ce_e.timestamp > ce_c.timestamp;
+```
+
+### **Query 4: Claims with Assign (A) but no corresponding Evaluate (E), violating implied responded_existence**
+```sql
+SELECT c.claim_id
+FROM claims c
+JOIN claim_events ce_a 
+    ON ce_a.claim_id = c.claim_id AND ce_a.activity = 'A'
+WHERE NOT EXISTS (
+    SELECT 1 FROM claim_events ce_e
+    WHERE ce_e.claim_id = c.claim_id AND ce_e.activity = 'E'
+);
+```
+
+### **Query 5: Claims closed without ever being assigned to an adjuster**
+```sql
+SELECT c.claim_id
+FROM claims c
+JOIN claim_events ce_c 
+    ON ce_c.claim_id = c.claim_id AND ce_c.activity = 'C'
+WHERE NOT EXISTS (
+    SELECT 1 FROM claim_events ce_a
+    WHERE ce_a.claim_id = c.claim_id AND ce_a.activity = 'A'
+);
+```
+
+### **Query 6: Full trace reconstruction to manually audit process order per claim**
+```sql
+SELECT claim_id,
+       string_agg(activity, ' -> ' ORDER BY timestamp) AS activity_sequence
+FROM claim_events
+GROUP BY claim_id
+HAVING string_agg(activity, ' -> ' ORDER BY timestamp) NOT LIKE 'R%A%E%P%N%C'
+ORDER BY claim_id;
+```
+
+### **Query 7: Verify Evaluate events are always performed by a valid adjuster resource**
+```sql
+SELECT ce.claim_id, ce.resource, ce.timestamp
+FROM claim_events ce
+WHERE ce.activity = 'E'
+AND NOT EXISTS (
+    SELECT 1 FROM adjusters a
+    WHERE a.name = ce.resource OR a.adjuster_id::VARCHAR = ce.resource
+);
+```
+
+### **Query 8: Quantify how many claims skip evaluation entirely (support/confidence check)**
+```sql
+SELECT 
+    COUNT(DISTINCT c.claim_id) AS total_claims,
+    COUNT(DISTINCT CASE WHEN ce.activity = 'E' THEN c.claim_id END) AS claims_with_eval,
+    ROUND(
+        COUNT(DISTINCT CASE WHEN ce.activity = 'E' THEN c.claim_id END)::NUMERIC 
+        / COUNT(DISTINCT c.claim_id), 4
+    ) AS eval_coverage_ratio
+FROM claims c
+LEFT JOIN claim_events ce ON ce.claim_id = c.claim_id;
+```
+
+---
+
+These queries would help quantify the scale of the anomaly (how many claims are affected), determine whether it's a data logging issue vs. a genuine process violation, and provide evidence to reconcile the DECLARE model with actual intended business rules.
