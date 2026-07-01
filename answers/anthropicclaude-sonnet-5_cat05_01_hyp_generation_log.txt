@@ -1,0 +1,156 @@
+# Process Mining Analysis: Order-to-Cash Event Log
+
+## Observed Anomalies
+
+Looking at the four cases, I can identify several concerning deviations from the normal process flow:
+
+### 1. **Case 1002 & 1003: "Ship Goods" Before "Validate Stock" / "Confirm Shipment"**
+- Case 1002: Ships goods (08:40) *before* validating stock (09:15) — physically risky, could ship unavailable inventory
+- Case 1003: Ships goods (09:10) *before* confirming shipment (09:45) — logistics sign-off happening retroactively
+
+### 2. **Case 1004: "Receive Payment" Before Invoice, Shipment, or even Stock Validation**
+- Payment received at 09:05, only 5 minutes after order registration (09:00)
+- Invoice issued *after* payment (09:20)
+- No "Perform Credit Check" or "Validate Stock" activities at all — **missing mandatory steps**
+- Shipment confirmed with `shipment_scheduled=N` but goods shipped anyway (09:50)
+
+### 3. **Missing Activities**
+- Case 1002 & 1003 have all 7 activities, but Case 1004 is missing **Credit Check** and **Validate Stock** entirely — a compliance gap, especially concerning since payment/shipping happened anyway.
+
+### 4. **Suspicious Flag Values in `additional_info`**
+- Case 1003: `late_confirmation=Y` on Confirm Shipment — explicit tagging suggests a known workaround
+- Case 1002: `attempted_early=Y` on Confirm Shipment — logistics acting before credit/stock checks
+- Case 1004: `shipment_scheduled=N` — shipment was NOT approved, yet goods were shipped regardless
+
+### 5. **Extremely Fast Turnarounds**
+- Case 1004 completes Register  Payment  Invoice  Confirm  Ship all within ~50 minutes — far faster than Cases 1001-1003, raising fraud/error suspicion, especially paired with missing credit checks.
+
+---
+
+## Hypotheses for Root Causes
+
+| Hypothesis | Reasoning |
+|---|---|
+| **System/UI allows out-of-order event logging** | Resources may have access to trigger "next step" activities regardless of prerequisite completion |
+| **Workarounds for VIP/trusted customers** | Sales reps or logistics may bypass credit checks for known customers, risking bad debt |
+| **Manual data entry lag vs. actual event time** | Timestamps might reflect system entry, not actual occurrence — Ship Goods "before" Validate Stock could be a logging artifact |
+| **Rushed orders under specific incentives** | Case 1004's rapid, out-of-sequence flow suggests possible gaming of SLA metrics or expedited handling that skips controls |
+| **Role-based bypass** | Certain roles (LogisticsMgr) may have permissions to confirm shipment without waiting for Finance/Warehouse sign-off |
+| **Training/process gaps at specific resource level** | Repeated actors (e.g., LogisticsMgr_2) appear in multiple "irregular" sequences — could indicate individual noncompliance |
+
+---
+
+## Proposed SQL Investigations
+
+### A. Detect Cases Missing Mandatory Activities
+
+```sql
+WITH expected_activities AS (
+  SELECT unnest(ARRAY[
+    'Register Order', 'Perform Credit Check', 'Validate Stock',
+    'Confirm Shipment', 'Ship Goods', 'Issue Invoice', 'Receive Payment'
+  ]) AS activity
+),
+case_activities AS (
+  SELECT DISTINCT case_id, activity FROM order_event_log
+)
+SELECT ea.activity, o.case_id
+FROM (SELECT DISTINCT case_id FROM order_event_log) o
+CROSS JOIN expected_activities ea
+LEFT JOIN case_activities ca
+  ON o.case_id = ca.case_id AND ea.activity = ca.activity
+WHERE ca.activity IS NULL
+ORDER BY o.case_id, ea.activity;
+```
+
+### B. Detect Out-of-Sequence Activities (e.g., Shipment Before Stock Validation)
+
+```sql
+SELECT 
+  ship.case_id,
+  ship.timestamp AS ship_time,
+  stock.timestamp AS stock_validation_time,
+  (ship.timestamp < stock.timestamp) AS shipped_before_validated
+FROM order_event_log ship
+JOIN order_event_log stock
+  ON ship.case_id = stock.case_id
+WHERE ship.activity = 'Ship Goods'
+  AND stock.activity = 'Validate Stock'
+  AND ship.timestamp < stock.timestamp;
+```
+
+### C. General "Activity Precedence Violation" Check (Payment Before Invoice)
+
+```sql
+SELECT 
+  pay.case_id,
+  pay.timestamp AS payment_time,
+  inv.timestamp AS invoice_time
+FROM order_event_log pay
+JOIN order_event_log inv
+  ON pay.case_id = inv.case_id
+WHERE pay.activity = 'Receive Payment'
+  AND inv.activity = 'Issue Invoice'
+  AND pay.timestamp < inv.timestamp;
+```
+
+### D. Flag Cases with Explicit "Anomaly Tags" in additional_info
+
+```sql
+SELECT case_id, event_id, activity, additional_info
+FROM order_event_log
+WHERE additional_info ILIKE '%late_confirmation=Y%'
+   OR additional_info ILIKE '%attempted_early=Y%'
+   OR additional_info ILIKE '%shipment_scheduled=N%';
+```
+
+### E. Compute Case Duration & Flag Abnormally Fast Cases
+
+```sql
+SELECT 
+  case_id,
+  MIN(timestamp) AS case_start,
+  MAX(timestamp) AS case_end,
+  MAX(timestamp) - MIN(timestamp) AS total_duration
+FROM order_event_log
+GROUP BY case_id
+ORDER BY total_duration ASC;
+```
+
+### F. Resource-Level Analysis: Who's Involved in Anomalous Sequences?
+
+```sql
+SELECT 
+  oel.resource,
+  r.role,
+  r.department,
+  COUNT(*) AS anomaly_count
+FROM order_event_log oel
+JOIN resources r ON oel.resource = r.resource_id
+WHERE oel.additional_info ILIKE '%early%'
+   OR oel.additional_info ILIKE '%late%'
+   OR oel.additional_info ILIKE '%_N%'
+GROUP BY oel.resource, r.role, r.department
+ORDER BY anomaly_count DESC;
+```
+
+### G. Cross-Reference High-Value Orders with Skipped Credit Checks
+
+```sql
+SELECT o.case_id, o.order_value, o.order_type
+FROM orders o
+WHERE o.case_id NOT IN (
+  SELECT case_id FROM order_event_log WHERE activity = 'Perform Credit Check'
+)
+ORDER BY o.order_value DESC;
+```
+
+---
+
+## Next Steps for Deeper Analysis
+1. **Sequence Mining**: Use SQL window functions (`LAG`/`LEAD`) partitioned by `case_id`, ordered by `timestamp`, to programmatically detect *any* deviation from the expected 7-step order — not just the ones spotted manually.
+2. **Resource Network Analysis**: Check if specific resource pairs (e.g., LogisticsMgr_2 + WarehouseClerk_3) consistently co-occur in anomalous cases.
+3. **Financial Risk Exposure**: Quantify total `order_value` at risk from orders shipped/paid without credit checks or stock validation.
+4. **Time-of-Day / Workload Correlation**: Determine if anomalies cluster around specific shifts or high-volume periods, suggesting rushed processing.
+
+Would you like me to build the **window-function-based full sequence-violation detector** next, which would generalize points B and C into a single reusable query for *any* activity-order violation?

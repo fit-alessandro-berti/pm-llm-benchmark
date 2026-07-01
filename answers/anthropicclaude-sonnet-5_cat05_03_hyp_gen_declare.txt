@@ -1,0 +1,138 @@
+# Analysis of DECLARE Model Anomalies for Insurance Claim Process
+
+## 1. Identified Anomalies
+
+### **Critical Contradiction: `noncoexistence(E, C)` vs. `existence(C)` + implied process logic**
+
+The most severe anomaly is the direct logical conflict between:
+- `noncoexistence: E  C` — states that **Evaluate** and **Close** must NEVER occur together in the same trace
+- The intended process flow, which requires E to occur *before* C in every single claim (since C is mandatory via `existence(C)`)
+
+Since `existence(C)` forces every trace to contain C, and the noncoexistence constraint forbids E and C from coexisting, this **mathematically forces every claim trace to skip evaluation entirely**. This directly contradicts the core business purpose of the claims process — no claim could ever be legitimately evaluated before closing.
+
+### **Weak/Insufficient Constraint: `responded_existence(E, [A])`**
+
+This constraint only says "if A occurs, E should occur somewhere in the trace" (order-agnostic, bidirectional-ish weak binding). It does NOT enforce:
+- That E occurs *after* A
+- That E must occur at all if A doesn't occur
+- Any temporal ordering
+
+This is far weaker than what the ideal process demands (a strict `chain_precedence` or `succession` relationship between A and E).
+
+### **Missing Constraints Entirely**
+
+The model has no constraints covering:
+- The relationship between **A (Assign)** and **R (Receive)** — nothing prevents assignment without receipt
+- **P (Approve)** — no precedence, existence, or ordering constraint at all; P could be entirely absent or occur in any position
+- **N (Notify)** — completely unconstrained; notification could happen before evaluation or even before receiving the claim
+- Any **succession** constraints binding the full RAEPNC chain
+
+### **Precedence Without Chain Enforcement**
+
+`precedence(C, [R])` only ensures R happens *at some point* before C — it doesn't prevent other activities from being skipped or reordered between R and C. Combined with the noncoexistence anomaly, this means a trace like `R  A  C` (skipping E, P, N) would satisfy all listed constraints.
+
+---
+
+## 2. Hypotheses for Root Causes
+
+1. **Confused polarity in constraint authoring** — The modeler may have intended `noncoexistence` to express something like "E and C shouldn't happen *simultaneously* in time" but mistakenly applied it as a trace-level mutual exclusion, effectively banning E and C from ever appearing together anywhere in the same case.
+
+2. **Copy-paste/template error** — This could stem from reusing a DECLARE template from a different domain (e.g., a process where evaluation and closure genuinely are alternative terminal paths, like "approved" vs. "rejected" claims) without adapting the semantics to this specific home/auto insurance workflow.
+
+3. **Incremental rule addition without regression checking** — Rules may have been added over time (e.g., someone added `noncoexistence` to prevent re-evaluation *after* closing for reopened claims) without checking how it interacts with existing `existence` and `precedence` rules.
+
+4. **Automated discovery from noisy/incomplete event logs** — If this model was mined from real event data (e.g., via process mining tools) rather than manually authored, it may reflect actual anomalous behavior in the system — i.e., claims *are* being closed without evaluation in the underlying data, and the tool faithfully learned this bad pattern as a "rule."
+
+5. **Fast-tracking business pressure** — There may be a legitimate business exception (e.g., auto-approved low-value claims) where evaluation is skipped, but this exception was generalized into a hard constraint applying to ALL claims instead of being scoped to specific claim types or amount thresholds.
+
+6. **Missing constraint author oversight for P and N** — The absence of constraints on Approve and Notify suggests these activities may have been overlooked during model construction, possibly because they were considered "obviously always happening" and not worth encoding — a dangerous assumption.
+
+---
+
+## 3. Proposed SQL Verification Queries
+
+### **Query A: Find claims closed without any evaluation event**
+```sql
+SELECT c.claim_id, c.customer_id, c.claim_type, c.submission_date
+FROM claims c
+WHERE EXISTS (
+    SELECT 1 FROM claim_events ce
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'C'
+)
+AND NOT EXISTS (
+    SELECT 1 FROM claim_events ce
+    WHERE ce.claim_id = c.claim_id AND ce.activity = 'E'
+);
+```
+
+### **Query B: Find claims where E and C DO coexist (violating the stated noncoexistence rule) — to check if real data contradicts the model itself**
+```sql
+SELECT c.claim_id,
+       COUNT(*) FILTER (WHERE ce.activity = 'E') AS eval_count,
+       COUNT(*) FILTER (WHERE ce.activity = 'C') AS close_count
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id
+GROUP BY c.claim_id
+HAVING COUNT(*) FILTER (WHERE ce.activity = 'E') > 0
+   AND COUNT(*) FILTER (WHERE ce.activity = 'C') > 0;
+```
+
+### **Query C: Check if every Assign (A) event has a corresponding Evaluate (E) event AFTER it (not just "somewhere in trace")**
+```sql
+SELECT a.claim_id, a.timestamp AS assign_time, e.timestamp AS eval_time
+FROM claim_events a
+LEFT JOIN claim_events e
+       ON e.claim_id = a.claim_id
+      AND e.activity = 'E'
+      AND e.timestamp > a.timestamp
+WHERE a.activity = 'A'
+  AND e.event_id IS NULL;
+```
+
+### **Query D: Identify claims missing Approve (P) or Notify (N) entirely**
+```sql
+SELECT c.claim_id,
+       BOOL_OR(ce.activity = 'P') AS has_approve,
+       BOOL_OR(ce.activity = 'N') AS has_notify,
+       BOOL_OR(ce.activity = 'C') AS has_close
+FROM claims c
+LEFT JOIN claim_events ce ON ce.claim_id = c.claim_id
+GROUP BY c.claim_id
+HAVING BOOL_OR(ce.activity = 'C') = TRUE
+   AND (BOOL_OR(ce.activity = 'P') = FALSE OR BOOL_OR(ce.activity = 'N') = FALSE);
+```
+
+### **Query E: Detect out-of-order execution — activities occurring before R (Receive)**
+```sql
+SELECT ce1.claim_id, ce1.activity, ce1.timestamp,
+       r.timestamp AS receive_time
+FROM claim_events ce1
+JOIN claim_events r ON r.claim_id = ce1.claim_id AND r.activity = 'R'
+WHERE ce1.activity != 'R'
+  AND ce1.timestamp < r.timestamp;
+```
+
+### **Query F: Full trace reconstruction to manually audit sequence anomalies per claim**
+```sql
+SELECT claim_id,
+       STRING_AGG(activity, ' -> ' ORDER BY timestamp) AS activity_sequence
+FROM claim_events
+GROUP BY claim_id
+ORDER BY claim_id;
+```
+
+### **Query G: Cross-check adjuster specialization alignment with evaluation resource**
+```sql
+SELECT ce.claim_id, ce.resource, ad.specialization, c.claim_type
+FROM claim_events ce
+JOIN claims c ON c.claim_id = ce.claim_id
+LEFT JOIN adjusters ad ON ad.name = ce.resource
+WHERE ce.activity = 'E'
+  AND (ad.specialization IS NULL
+       OR (c.claim_type LIKE '%home%' AND ad.specialization != 'home')
+       OR (c.claim_type LIKE '%auto%' AND ad.specialization != 'auto'));
+```
+
+---
+
+These queries collectively test whether the anomalous constraints reflect real process violations (e.g., claims closing without evaluation) versus whether the DECLARE model itself is simply mis-specified relative to actual — and presumably correct — process execution.
