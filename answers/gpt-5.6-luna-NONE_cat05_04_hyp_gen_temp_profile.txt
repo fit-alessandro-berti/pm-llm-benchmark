@@ -1,0 +1,285 @@
+## 1. Anomalies in the temporal profile
+
+- **R  P:** Mean of approximately 25 hours with a standard deviation of only 1 hour. Such low variation may indicate a rigid batch schedule, synthetic timestamps, or an approval process occurring at a fixed daily time.
+- **P  N:** Mean of 7 days with a standard deviation of 2 days. This is a substantial delay and indicates high variability, potentially caused by notification backlogs, manual handling, or missing/interpreted event timestamps.
+- **A  C:** Mean of 2 hours despite the intended intermediate steps. This may indicate claims being closed without evaluation or approval, or the model may be measuring non-consecutive event pairs in a misleading way.
+- **E  N:** Mean of only 5 minutes with a 1-minute standard deviation. This may be valid for automated notifications, but it could also indicate that notification is generated automatically, evaluation timestamps are recorded late, or required approval is being bypassed.
+- **N  C:** Mean of 30 minutes with low variation. This may reflect an automated closure process or a scheduled batch operation.
+- **Inconsistent process ordering:** The profile includes intervals such as `A  C`, `E  N`, and `P  N`, but does not establish whether all claims follow the intended `R  A  E  P  N  C` sequence.
+
+## 2. Possible hypotheses
+
+1. **Batch-based approvals:** Approvals may be processed at a fixed time each day, producing the unusually stable `R  P` interval.
+2. **Notification backlog:** Approved claims may wait in a queue before notifications are sent, explaining the long and variable `P  N` duration.
+3. **Missing or delayed event logging:** Events may be entered manually or written asynchronously, making recorded times differ from actual operational times.
+4. **Skipped process steps:** Some claims may be closed directly after assignment, or notifications may be sent after evaluation without a recorded approval event.
+5. **Automated transitions:** Evaluation-to-notification and notification-to-closure intervals may be short because downstream actions are system-triggered.
+6. **Resource bottlenecks:** Specific adjusters, regions, or claim types may experience delays because of workload, specialization requirements, or staffing constraints.
+7. **Data-quality problems:** Duplicate events, incorrect timestamps, timezone conversions, or events recorded out of order could distort the temporal profile.
+8. **Claim-type-specific workflows:** Auto and home claims may follow different approval or notification procedures, making aggregate averages misleading.
+
+## 3. Verification queries
+
+### A. Calculate intervals between relevant activities
+
+The following query pairs the first occurrence of each activity per claim:
+
+```sql
+WITH activity_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS receive_time,
+        MIN(timestamp) FILTER (WHERE activity = 'A') AS assign_time,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS evaluate_time,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS approve_time,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS notify_time,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS close_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    EXTRACT(EPOCH FROM (assign_time - receive_time)) AS r_to_a_seconds,
+    EXTRACT(EPOCH FROM (evaluate_time - receive_time)) AS r_to_e_seconds,
+    EXTRACT(EPOCH FROM (approve_time - receive_time)) AS r_to_p_seconds,
+    EXTRACT(EPOCH FROM (close_time - assign_time)) AS a_to_c_seconds,
+    EXTRACT(EPOCH FROM (notify_time - evaluate_time)) AS e_to_n_seconds,
+    EXTRACT(EPOCH FROM (notify_time - approve_time)) AS p_to_n_seconds,
+    EXTRACT(EPOCH FROM (close_time - notify_time)) AS n_to_c_seconds
+FROM activity_times;
+```
+
+### B. Find claims outside profile-based ranges
+
+Using a threshold of two standard deviations:
+
+```sql
+WITH activity_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS r_time,
+        MIN(timestamp) FILTER (WHERE activity = 'A') AS a_time,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS e_time,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS p_time,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS n_time,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS c_time
+    FROM claim_events
+    GROUP BY claim_id
+),
+intervals AS (
+    SELECT
+        *,
+        EXTRACT(EPOCH FROM (p_time - r_time)) AS r_to_p,
+        EXTRACT(EPOCH FROM (n_time - p_time)) AS p_to_n,
+        EXTRACT(EPOCH FROM (c_time - a_time)) AS a_to_c,
+        EXTRACT(EPOCH FROM (n_time - e_time)) AS e_to_n
+    FROM activity_times
+)
+SELECT
+    claim_id,
+    r_to_p,
+    p_to_n,
+    a_to_c,
+    e_to_n
+FROM intervals
+WHERE
+      r_to_p NOT BETWEEN 90000 - 2 * 3600 AND 90000 + 2 * 3600
+   OR p_to_n NOT BETWEEN 604800 - 2 * 172800 AND 604800 + 2 * 172800
+   OR a_to_c NOT BETWEEN 7200 - 2 * 3600 AND 7200 + 2 * 3600
+   OR e_to_n NOT BETWEEN 300 - 2 * 60 AND 300 + 2 * 60;
+```
+
+### C. Identify claims closed shortly after assignment
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'A') AS assigned_at,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS closed_at
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_id,
+    c.customer_id,
+    c.claim_type,
+    c.claim_amount,
+    e.assigned_at,
+    e.closed_at,
+    e.closed_at - e.assigned_at AS assignment_to_close
+FROM claims c
+JOIN event_times e ON e.claim_id = c.claim_id
+WHERE e.assigned_at IS NOT NULL
+  AND e.closed_at IS NOT NULL
+  AND e.closed_at - e.assigned_at <= INTERVAL '2 hours'
+ORDER BY assignment_to_close;
+```
+
+### D. Check whether evaluation or approval was skipped
+
+```sql
+WITH activity_flags AS (
+    SELECT
+        claim_id,
+        BOOL_OR(activity = 'A') AS has_assign,
+        BOOL_OR(activity = 'E') AS has_evaluate,
+        BOOL_OR(activity = 'P') AS has_approve,
+        BOOL_OR(activity = 'N') AS has_notify,
+        BOOL_OR(activity = 'C') AS has_close
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT *
+FROM activity_flags
+WHERE has_close
+  AND (
+       NOT has_evaluate
+       OR NOT has_approve
+      );
+```
+
+### E. Find excessive approval-to-notification delays
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS approved_at,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS notified_at
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    e.approved_at,
+    e.notified_at,
+    e.notified_at - e.approved_at AS approval_to_notification
+FROM claims c
+JOIN event_times e ON e.claim_id = c.claim_id
+WHERE e.approved_at IS NOT NULL
+  AND e.notified_at IS NOT NULL
+  AND e.notified_at - e.approved_at > INTERVAL '11 days'
+ORDER BY approval_to_notification DESC;
+```
+
+### F. Correlate timing anomalies with claim type
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS approved_at,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS notified_at
+    FROM claim_events
+    GROUP BY claim_id
+),
+durations AS (
+    SELECT
+        c.claim_type,
+        EXTRACT(EPOCH FROM (e.notified_at - e.approved_at)) AS p_to_n_seconds
+    FROM claims c
+    JOIN event_times e ON e.claim_id = c.claim_id
+    WHERE e.approved_at IS NOT NULL
+      AND e.notified_at IS NOT NULL
+)
+SELECT
+    claim_type,
+    COUNT(*) AS claim_count,
+    ROUND(AVG(p_to_n_seconds), 2) AS avg_p_to_n_seconds,
+    ROUND(STDDEV_SAMP(p_to_n_seconds), 2) AS stdev_p_to_n_seconds,
+    MIN(p_to_n_seconds) AS min_p_to_n_seconds,
+    MAX(p_to_n_seconds) AS max_p_to_n_seconds
+FROM durations
+GROUP BY claim_type
+ORDER BY avg_p_to_n_seconds DESC;
+```
+
+### G. Correlate delays with event resources
+
+```sql
+WITH approval_resources AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        resource AS approval_resource
+    FROM claim_events
+    WHERE activity = 'P'
+    ORDER BY claim_id, timestamp
+),
+event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS approved_at,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS notified_at
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    ar.approval_resource,
+    COUNT(*) AS claim_count,
+    AVG(EXTRACT(EPOCH FROM (et.notified_at - et.approved_at))) AS avg_delay_seconds,
+    STDDEV_SAMP(EXTRACT(EPOCH FROM (et.notified_at - et.approved_at))) AS stdev_delay_seconds,
+    COUNT(*) FILTER (
+        WHERE et.notified_at - et.approved_at > INTERVAL '11 days'
+    ) AS excessive_delay_count
+FROM approval_resources ar
+JOIN event_times et ON et.claim_id = ar.claim_id
+WHERE et.approved_at IS NOT NULL
+  AND et.notified_at IS NOT NULL
+GROUP BY ar.approval_resource
+ORDER BY excessive_delay_count DESC;
+```
+
+### H. Detect out-of-order events
+
+```sql
+WITH ordered_events AS (
+    SELECT
+        claim_id,
+        activity,
+        timestamp,
+        LAG(activity) OVER (
+            PARTITION BY claim_id
+            ORDER BY timestamp, event_id
+        ) AS previous_activity,
+        LAG(timestamp) OVER (
+            PARTITION BY claim_id
+            ORDER BY timestamp, event_id
+        ) AS previous_timestamp
+    FROM claim_events
+)
+SELECT *
+FROM ordered_events
+WHERE
+       (previous_activity = 'A' AND activity = 'R')
+    OR (previous_activity = 'E' AND activity = 'A')
+    OR (previous_activity = 'P' AND activity IN ('R', 'A', 'E'))
+    OR (previous_activity = 'N' AND activity IN ('R', 'A', 'E', 'P'))
+    OR (previous_activity = 'C');
+```
+
+### I. Check whether fixed times explain the low R-to-P variation
+
+```sql
+WITH times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS received_at,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS approved_at
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    EXTRACT(HOUR FROM approved_at) AS approval_hour,
+    EXTRACT(DOW FROM approved_at) AS approval_day_of_week,
+    COUNT(*) AS approval_count
+FROM times
+WHERE received_at IS NOT NULL
+  AND approved_at IS NOT NULL
+GROUP BY approval_hour, approval_day_of_week
+ORDER BY approval_count DESC;
+```
+
+A concentration of approvals at the same hour or on particular weekdays would support the batch-processing hypothesis.

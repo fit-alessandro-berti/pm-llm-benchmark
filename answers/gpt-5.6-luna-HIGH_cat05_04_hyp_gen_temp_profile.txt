@@ -1,0 +1,627 @@
+## 1. Anomalies in the temporal profile
+
+| Pair | Average | Standard deviation | Interpretation |
+|---|---:|---:|---|
+| `R  A` | 1 hour | 10 minutes | Relatively stable and plausible. |
+| `R  E` | 1 day | 8 hours | Moderate variability; may reflect workload or claim complexity. |
+| `R  P` | 25 hours | 1 hour | Very low relative variation, approximately 4%. This may indicate a fixed batch schedule, timestamp rounding, or an artifact in event pairing. |
+| `A  C` | 2 hours | 1 hour | Potentially short for a process that should include evaluation, approval, and notification. May represent an expedited path or skipped events. |
+| `E  N` | 5 minutes | 1 minute | Very short and highly consistent. Could be automated, but may also indicate missing approval or evaluation events. |
+| `E  C` | 1 hour | 50 minutes | Extremely high relative variation. The process may contain multiple closure paths. |
+| `P  N` | 7 days | 2 days | Long average delay with substantial variability, suggesting a notification backlog, manual processing, or missing event records. |
+| `N  C` | 30 minutes | 5 minutes | Relatively stable and plausible if closure is automated after notification. |
+
+The most important apparent inconsistencies are:
+
+1. **`R  P` is unusually rigid.**  
+   A 25-hour average with only a one-hour standard deviation is suspiciously precise.
+
+2. **`P  N` is unusually long.**  
+   Seven days between approval and notification is inconsistent with a normally responsive claim process.
+
+3. **`A  C` may indicate skipped activities.**  
+   Closing two hours after assignment is difficult to reconcile with the intended sequence unless there is an expedited or rejected-claim path.
+
+4. **`E  N` may be too fast.**  
+   Five minutes could be valid for an automated notification, but it may also reflect missing `P` events.
+
+5. **The pairwise averages may not be mutually consistent.**  
+   If the intended order is `E  P  N`, then `E  N` should generally be at least as long as `E  P` plus `P  N` for the same execution. The reported averages may have been computed from different subsets of claims, or the event matching logic may be pairing unrelated occurrences.
+
+6. **`E  C` has a very large coefficient of variation.**  
+   Its standard deviation is larger than the average, suggesting multiple execution patterns, rework, missing events, or a strongly skewed distribution.
+
+A standard deviation cannot be interpreted fully without the number of observations and the underlying distribution. A small standard deviation based on only a few claims may not be meaningful.
+
+---
+
+## 2. Possible explanations
+
+### `R  P` is too regular
+
+Possible causes include:
+
+- Approvals are processed by a nightly or daily batch job.
+- Approval timestamps are generated using a default SLA or scheduled time.
+- Timestamps are rounded to the nearest hour or day.
+- The same approval event is repeatedly matched to the wrong receive event.
+- Approval is automatically generated for a homogeneous subset of claims.
+- The model was built from only a small number of claims.
+- Event clocks or application servers are not synchronized.
+
+### `P  N` is long and variable
+
+Possible causes include:
+
+- Notifications are manually queued after approval.
+- Notification jobs run only on certain days or during business hours.
+- Failed emails or letters are retried later.
+- Notification events are logged only when delivery is confirmed.
+- Approval and notification are performed by different departments.
+- There is a backlog in a customer-communications system.
+- Different claim types use different notification channels.
+- Some notification events are missing, causing the next recorded notification to appear very late.
+
+### `A  C` is short
+
+Possible causes include:
+
+- Certain claims are rejected or withdrawn immediately after assignment.
+- Low-value claims use an abbreviated process.
+- A system rule closes claims automatically after assignment.
+- Evaluation and approval occurred outside the claims system.
+- Required events were not logged.
+- A claim was reopened and the assignment and closure events belong to different process attempts.
+- The temporal profile pairs the first assignment with a later closure without considering intermediate case lifecycles.
+
+### `E  N` is very short
+
+Possible causes include:
+
+- Notification is automatically generated when evaluation is completed.
+- Approval is implicit for certain claim types.
+- The `P` event was skipped or recorded in another system.
+- The event labeled `E` represents a final evaluation rather than the start of evaluation.
+- Notifications are sent before approval due to a workflow defect.
+- Event timestamps were generated asynchronously or out of order.
+
+### General data-quality explanations
+
+- Duplicate events for the same activity.
+- Missing events.
+- Incorrect claim identifiers.
+- Different systems writing timestamps in different time zones.
+- Delayed ingestion into `claim_events`.
+- Multiple executions or reopened claims being treated as one trace.
+- Matching every source activity to the first later target activity rather than matching canonical process instances.
+
+---
+
+## 3. SQL verification queries
+
+The queries below use a three-standard-deviation threshold as an example. The threshold should be changed if a different ZETA factor is used.
+
+### 3.1 Find outliers for all modeled activity pairs
+
+This query matches each source event to the first later target event for the same claim.
+
+```sql
+WITH profile(from_activity, to_activity, avg_sec, sd_sec, zeta) AS (
+    VALUES
+        ('R', 'A', 3600::numeric,   600::numeric,    3::numeric),
+        ('R', 'E', 86400::numeric,  28800::numeric,  3::numeric),
+        ('R', 'P', 90000::numeric,  3600::numeric,   3::numeric),
+        ('A', 'C', 7200::numeric,   3600::numeric,   3::numeric),
+        ('E', 'N', 300::numeric,    60::numeric,     3::numeric),
+        ('E', 'C', 3600::numeric,   3000::numeric,   3::numeric),
+        ('P', 'N', 604800::numeric, 172800::numeric, 3::numeric),
+        ('N', 'C', 1800::numeric,   300::numeric,    3::numeric)
+),
+pairs AS (
+    SELECT
+        p.from_activity,
+        p.to_activity,
+        p.avg_sec,
+        p.sd_sec,
+        p.zeta,
+        s.claim_id,
+        s.event_id AS from_event_id,
+        s.timestamp AS from_ts,
+        s.resource AS from_resource,
+        t.event_id AS to_event_id,
+        t.timestamp AS to_ts,
+        t.resource AS to_resource
+    FROM profile p
+    JOIN claim_events s
+      ON s.activity = p.from_activity
+    CROSS JOIN LATERAL (
+        SELECT
+            e.event_id,
+            e.timestamp,
+            e.resource
+        FROM claim_events e
+        WHERE e.claim_id = s.claim_id
+          AND e.activity = p.to_activity
+          AND (e.timestamp, e.event_id) >
+              (s.timestamp, s.event_id)
+        ORDER BY e.timestamp, e.event_id
+        LIMIT 1
+    ) t
+),
+scored AS (
+    SELECT
+        *,
+        EXTRACT(EPOCH FROM (to_ts - from_ts)) AS observed_sec
+    FROM pairs
+)
+SELECT
+    s.claim_id,
+    c.customer_id,
+    c.claim_type,
+    s.from_activity,
+    s.to_activity,
+    s.from_ts,
+    s.to_ts,
+    s.from_resource,
+    s.to_resource,
+    ROUND(s.observed_sec, 2) AS observed_sec,
+    s.avg_sec,
+    s.sd_sec,
+    ROUND(
+        (s.observed_sec - s.avg_sec) / NULLIF(s.sd_sec, 0),
+        2
+    ) AS z_score
+FROM scored s
+JOIN claims c
+  ON c.claim_id = s.claim_id
+WHERE ABS(s.observed_sec - s.avg_sec) > s.zeta * s.sd_sec
+ORDER BY
+    s.from_activity,
+    s.to_activity,
+    ABS(s.observed_sec - s.avg_sec) DESC;
+```
+
+This produces claim-level anomalies and allows the results to be inspected by claim type, customer, and resource.
+
+If the model was created using only the first occurrence of each activity per claim, the query should use `DISTINCT ON (claim_id, activity)` instead of matching every source event to a later target event.
+
+---
+
+### 3.2 Investigate unusually rigid `R  P` intervals
+
+```sql
+WITH receive_approve AS (
+    SELECT
+        r.claim_id,
+        r.timestamp AS receive_ts,
+        p.timestamp AS approve_ts,
+        p.resource AS approval_resource,
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS delay_sec
+    FROM claim_events r
+    CROSS JOIN LATERAL (
+        SELECT
+            e.event_id,
+            e.timestamp,
+            e.resource
+        FROM claim_events e
+        WHERE e.claim_id = r.claim_id
+          AND e.activity = 'P'
+          AND (e.timestamp, e.event_id) >
+              (r.timestamp, r.event_id)
+        ORDER BY e.timestamp, e.event_id
+        LIMIT 1
+    ) p
+    WHERE r.activity = 'R'
+)
+SELECT
+    rp.claim_id,
+    c.customer_id,
+    c.claim_type,
+    rp.receive_ts,
+    rp.approve_ts,
+    rp.approval_resource,
+    rp.delay_sec,
+    rp.delay_sec - 90000 AS deviation_from_model_sec
+FROM receive_approve rp
+JOIN claims c
+  ON c.claim_id = rp.claim_id
+WHERE rp.delay_sec < 90000 - 3 * 3600
+   OR rp.delay_sec > 90000 + 3 * 3600
+ORDER BY ABS(rp.delay_sec - 90000) DESC;
+```
+
+To check whether approvals are scheduled at a small number of fixed offsets:
+
+```sql
+SELECT
+    ROUND(
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) / 3600.0,
+        1
+    ) AS delay_hours,
+    COUNT(*) AS claim_count
+FROM claim_events r
+JOIN LATERAL (
+    SELECT e.timestamp, e.event_id
+    FROM claim_events e
+    WHERE e.claim_id = r.claim_id
+      AND e.activity = 'P'
+      AND (e.timestamp, e.event_id) >
+          (r.timestamp, r.event_id)
+    ORDER BY e.timestamp, e.event_id
+    LIMIT 1
+) p ON TRUE
+WHERE r.activity = 'R'
+GROUP BY 1
+ORDER BY 1;
+```
+
+A strong concentration around exactly 24 or 25 hours would support a batch-processing or timestamp-generation hypothesis.
+
+---
+
+### 3.3 Find excessively delayed `P  N` transitions
+
+The model's three-standard-deviation upper boundary is:
+
+```text
+604800 + (3 × 172800) = 1,123,200 seconds
+```
+
+That is 13 days.
+
+```sql
+WITH approval_notification AS (
+    SELECT
+        p.claim_id,
+        p.timestamp AS approve_ts,
+        p.resource AS approval_resource,
+        n.timestamp AS notify_ts,
+        n.resource AS notification_resource,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS delay_sec
+    FROM claim_events p
+    CROSS JOIN LATERAL (
+        SELECT
+            e.event_id,
+            e.timestamp,
+            e.resource
+        FROM claim_events e
+        WHERE e.claim_id = p.claim_id
+          AND e.activity = 'N'
+          AND (e.timestamp, e.event_id) >
+              (p.timestamp, p.event_id)
+        ORDER BY e.timestamp, e.event_id
+        LIMIT 1
+    ) n
+    WHERE p.activity = 'P'
+)
+SELECT
+    pn.claim_id,
+    c.customer_id,
+    c.claim_type,
+    pn.approve_ts,
+    pn.notify_ts,
+    pn.approval_resource,
+    pn.notification_resource,
+    ROUND(pn.delay_sec / 86400.0, 2) AS delay_days
+FROM approval_notification pn
+JOIN claims c
+  ON c.claim_id = pn.claim_id
+WHERE pn.delay_sec > 604800 + 3 * 172800
+ORDER BY pn.delay_sec DESC;
+```
+
+To identify likely queue or resource effects:
+
+```sql
+WITH approval_notification AS (
+    SELECT
+        p.claim_id,
+        p.resource AS approval_resource,
+        n.resource AS notification_resource,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS delay_sec
+    FROM claim_events p
+    CROSS JOIN LATERAL (
+        SELECT e.timestamp, e.event_id, e.resource
+        FROM claim_events e
+        WHERE e.claim_id = p.claim_id
+          AND e.activity = 'N'
+          AND (e.timestamp, e.event_id) >
+              (p.timestamp, p.event_id)
+        ORDER BY e.timestamp, e.event_id
+        LIMIT 1
+    ) n
+    WHERE p.activity = 'P'
+)
+SELECT
+    c.claim_type,
+    pn.approval_resource,
+    pn.notification_resource,
+    COUNT(*) AS transition_count,
+    ROUND(AVG(pn.delay_sec) / 86400.0, 2) AS average_delay_days,
+    ROUND(
+        STDDEV_SAMP(pn.delay_sec) / 86400.0,
+        2
+    ) AS delay_sd_days,
+    COUNT(*) FILTER (
+        WHERE pn.delay_sec > 604800 + 3 * 172800
+    ) AS excessive_delay_count
+FROM approval_notification pn
+JOIN claims c
+  ON c.claim_id = pn.claim_id
+GROUP BY
+    c.claim_type,
+    pn.approval_resource,
+    pn.notification_resource
+HAVING COUNT(*) >= 5
+ORDER BY excessive_delay_count DESC, average_delay_days DESC;
+```
+
+---
+
+### 3.4 Find claims closed shortly after assignment without intermediate events
+
+This query treats two hours as the “immediate closure” threshold.
+
+```sql
+WITH assignment_close AS (
+    SELECT
+        a.claim_id,
+        a.event_id AS assignment_event_id,
+        a.timestamp AS assignment_ts,
+        a.resource AS assignment_resource,
+        c.event_id AS close_event_id,
+        c.timestamp AS close_ts,
+        EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) AS delay_sec
+    FROM claim_events a
+    CROSS JOIN LATERAL (
+        SELECT
+            e.event_id,
+            e.timestamp
+        FROM claim_events e
+        WHERE e.claim_id = a.claim_id
+          AND e.activity = 'C'
+          AND (e.timestamp, e.event_id) >
+              (a.timestamp, a.event_id)
+        ORDER BY e.timestamp, e.event_id
+        LIMIT 1
+    ) c
+    WHERE a.activity = 'A'
+)
+SELECT
+    ac.claim_id,
+    cl.customer_id,
+    cl.claim_type,
+    ac.assignment_ts,
+    ac.close_ts,
+    ac.assignment_resource,
+    ROUND(ac.delay_sec / 60.0, 2) AS delay_minutes
+FROM assignment_close ac
+JOIN claims cl
+  ON cl.claim_id = ac.claim_id
+WHERE ac.delay_sec <= 2 * 3600
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events x
+      WHERE x.claim_id = ac.claim_id
+        AND x.activity IN ('E', 'P', 'N')
+        AND (x.timestamp, x.event_id) >
+            (ac.assignment_ts, ac.assignment_event_id)
+        AND (x.timestamp, x.event_id) <
+            (ac.close_ts, ac.close_event_id)
+  )
+ORDER BY ac.delay_sec;
+```
+
+This distinguishes genuine expedited closures from closures where the intermediate events exist but were simply not matched by the temporal-profile logic.
+
+---
+
+### 3.5 Find very rapid `E  N` transitions and missing approvals
+
+The model's three-standard-deviation lower boundary is:
+
+```text
+300 - (3 × 60) = 120 seconds
+```
+
+```sql
+WITH evaluation_notification AS (
+    SELECT
+        e.claim_id,
+        e.event_id AS evaluation_event_id,
+        e.timestamp AS evaluation_ts,
+        e.resource AS evaluation_resource,
+        n.event_id AS notification_event_id,
+        n.timestamp AS notification_ts,
+        n.resource AS notification_resource,
+        EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS delay_sec
+    FROM claim_events e
+    CROSS JOIN LATERAL (
+        SELECT
+            x.event_id,
+            x.timestamp,
+            x.resource
+        FROM claim_events x
+        WHERE x.claim_id = e.claim_id
+          AND x.activity = 'N'
+          AND (x.timestamp, x.event_id) >
+              (e.timestamp, e.event_id)
+        ORDER BY x.timestamp, x.event_id
+        LIMIT 1
+    ) n
+    WHERE e.activity = 'E'
+)
+SELECT
+    en.claim_id,
+    c.customer_id,
+    c.claim_type,
+    en.evaluation_ts,
+    en.notification_ts,
+    en.evaluation_resource,
+    en.notification_resource,
+    ROUND(en.delay_sec, 2) AS delay_seconds,
+    EXISTS (
+        SELECT 1
+        FROM claim_events p
+        WHERE p.claim_id = en.claim_id
+          AND p.activity = 'P'
+          AND (p.timestamp, p.event_id) >
+              (en.evaluation_ts, en.evaluation_event_id)
+          AND (p.timestamp, p.event_id) <
+              (en.notification_ts, en.notification_event_id)
+    ) AS approval_recorded_between
+FROM evaluation_notification en
+JOIN claims c
+  ON c.claim_id = en.claim_id
+WHERE en.delay_sec <= 300
+ORDER BY en.delay_sec;
+```
+
+Claims with a short `E  N` delay and `approval_recorded_between = false` are candidates for skipped approval, missing events, or an alternative workflow.
+
+---
+
+### 3.6 Check the intended sequence for missing or out-of-order events
+
+```sql
+WITH first_events AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS r_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'A') AS a_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS e_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS p_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS n_ts,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS c_ts
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    r_ts,
+    a_ts,
+    e_ts,
+    p_ts,
+    n_ts,
+    c_ts,
+    CASE
+        WHEN r_ts IS NULL
+          OR a_ts IS NULL
+          OR e_ts IS NULL
+          OR p_ts IS NULL
+          OR n_ts IS NULL
+          OR c_ts IS NULL
+            THEN 'missing_activity'
+        WHEN NOT (
+            r_ts < a_ts
+            AND a_ts < e_ts
+            AND e_ts < p_ts
+            AND p_ts < n_ts
+            AND n_ts < c_ts
+        )
+            THEN 'out_of_order'
+        ELSE 'ordered'
+    END AS sequence_status
+FROM first_events
+WHERE r_ts IS NULL
+   OR a_ts IS NULL
+   OR e_ts IS NULL
+   OR p_ts IS NULL
+   OR n_ts IS NULL
+   OR c_ts IS NULL
+   OR NOT (
+        r_ts < a_ts
+        AND a_ts < e_ts
+        AND e_ts < p_ts
+        AND p_ts < n_ts
+        AND n_ts < c_ts
+   );
+```
+
+This is useful for determining whether the unusual temporal averages are caused by genuine process behavior or incomplete traces.
+
+---
+
+### 3.7 Correlate `R  P` anomalies with claim type and adjuster
+
+The schema does not contain a direct `adjuster_id` on `claim_events`. The query below assumes that the `resource` on the assignment event contains the numeric adjuster ID. If it contains a name or another identifier, the join condition must be changed.
+
+```sql
+WITH receive_approve AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        r.timestamp AS receive_ts,
+        p.timestamp AS approve_ts,
+        a.resource AS assignment_resource,
+        ad.name AS adjuster_name,
+        ad.region,
+        EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS delay_sec
+    FROM claims c
+    JOIN LATERAL (
+        SELECT e.event_id, e.timestamp
+        FROM claim_events e
+        WHERE e.claim_id = c.claim_id
+          AND e.activity = 'R'
+        ORDER BY e.timestamp, e.event_id
+        LIMIT 1
+    ) r ON TRUE
+    JOIN LATERAL (
+        SELECT e.event_id, e.timestamp
+        FROM claim_events e
+        WHERE e.claim_id = c.claim_id
+          AND e.activity = 'P'
+          AND (e.timestamp, e.event_id) >
+              (r.timestamp, r.event_id)
+        ORDER BY e.timestamp, e.event_id
+        LIMIT 1
+    ) p ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT e.resource
+        FROM claim_events e
+        WHERE e.claim_id = c.claim_id
+          AND e.activity = 'A'
+          AND (e.timestamp, e.event_id) >
+              (r.timestamp, r.event_id)
+          AND (e.timestamp, e.event_id) <
+              (p.timestamp, p.event_id)
+        ORDER BY e.timestamp, e.event_id
+        LIMIT 1
+    ) a ON TRUE
+    LEFT JOIN adjusters ad
+      ON ad.adjuster_id =
+         CASE
+             WHEN a.resource ~ '^[0-9]+$'
+             THEN a.resource::integer
+         END
+)
+SELECT
+    claim_type,
+    assignment_resource,
+    adjuster_name,
+    region,
+    COUNT(*) AS claim_count,
+    ROUND(AVG(delay_sec) / 3600.0, 2) AS average_delay_hours,
+    ROUND(STDDEV_SAMP(delay_sec) / 3600.0, 2) AS observed_sd_hours,
+    COUNT(*) FILTER (
+        WHERE delay_sec < 90000 - 3 * 3600
+           OR delay_sec > 90000 + 3 * 3600
+    ) AS model_outlier_count
+FROM receive_approve
+GROUP BY
+    claim_type,
+    assignment_resource,
+    adjuster_name,
+    region
+HAVING COUNT(*) >= 5
+ORDER BY model_outlier_count DESC, average_delay_hours DESC;
+```
+
+This can reveal whether the anomaly is concentrated among:
+
+- A particular adjuster.
+- A particular region.
+- A particular claim type.
+- A specific assignment or approval resource.
+
+Because `claims` has no region or adjuster column, regional analysis is only possible if `claim_events.resource` can reliably be mapped to `adjusters`.

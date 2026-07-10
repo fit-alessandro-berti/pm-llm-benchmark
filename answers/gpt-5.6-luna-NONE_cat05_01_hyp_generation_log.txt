@@ -1,0 +1,622 @@
+Below are key anomalies, plausible explanations, and PostgreSQL queries to investigate them.
+
+## 1. Events occurring out of the expected sequence
+
+The expected activity order is:
+
+1. Register Order  
+2. Perform Credit Check  
+3. Validate Stock  
+4. Confirm Shipment  
+5. Ship Goods  
+6. Issue Invoice  
+7. Receive Payment  
+
+### Detect precedence violations
+
+```sql
+WITH ordered_events AS (
+    SELECT
+        case_id,
+        activity,
+        "timestamp",
+        event_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY activity
+            ORDER BY activity
+        ) AS dummy
+    FROM order_event_log
+),
+activity_times AS (
+    SELECT
+        case_id,
+        MIN("timestamp") FILTER (
+            WHERE activity = 'Register Order'
+        ) AS register_time,
+        MIN("timestamp") FILTER (
+            WHERE activity = 'Perform Credit Check'
+        ) AS credit_time,
+        MIN("timestamp") FILTER (
+            WHERE activity = 'Validate Stock'
+        ) AS stock_time,
+        MIN("timestamp") FILTER (
+            WHERE activity = 'Confirm Shipment'
+        ) AS confirm_time,
+        MIN("timestamp") FILTER (
+            WHERE activity = 'Ship Goods'
+        ) AS ship_time,
+        MIN("timestamp") FILTER (
+            WHERE activity = 'Issue Invoice'
+        ) AS invoice_time,
+        MIN("timestamp") FILTER (
+            WHERE activity = 'Receive Payment'
+        ) AS payment_time
+    FROM order_event_log
+    GROUP BY case_id
+)
+SELECT *
+FROM activity_times
+WHERE
+    (credit_time IS NOT NULL AND register_time IS NOT NULL
+        AND credit_time < register_time)
+ OR (stock_time IS NOT NULL AND credit_time IS NOT NULL
+        AND stock_time < credit_time)
+ OR (confirm_time IS NOT NULL AND stock_time IS NOT NULL
+        AND confirm_time < stock_time)
+ OR (ship_time IS NOT NULL AND confirm_time IS NOT NULL
+        AND ship_time < confirm_time)
+ OR (invoice_time IS NOT NULL AND ship_time IS NOT NULL
+        AND invoice_time < ship_time)
+ OR (payment_time IS NOT NULL AND invoice_time IS NOT NULL
+        AND payment_time < invoice_time);
+```
+
+### Expected findings
+
+- **Case 1002:** Confirm Shipment and Ship Goods occur before Credit Check and Stock Validation.
+- **Case 1003:** Ship Goods occurs before Confirm Shipment.
+- **Case 1004:** Receive Payment occurs before Invoice, Credit Check, Stock Validation, and Shipment activities.
+- **Case 1003:** Issue Invoice occurs before Confirm Shipment.
+
+These could indicate policy violations, timestamp errors, event ingestion delays, emergency processing, or inadequate workflow enforcement.
+
+---
+
+## 2. Cases with activities missing
+
+```sql
+WITH expected_activities(activity) AS (
+    VALUES
+        ('Register Order'),
+        ('Perform Credit Check'),
+        ('Validate Stock'),
+        ('Confirm Shipment'),
+        ('Ship Goods'),
+        ('Issue Invoice'),
+        ('Receive Payment')
+),
+case_ids AS (
+    SELECT DISTINCT case_id
+    FROM order_event_log
+)
+SELECT
+    c.case_id,
+    e.activity AS missing_activity
+FROM case_ids c
+CROSS JOIN expected_activities e
+LEFT JOIN order_event_log l
+    ON l.case_id = c.case_id
+   AND l.activity = e.activity
+WHERE l.case_id IS NULL
+ORDER BY c.case_id, e.activity;
+```
+
+This identifies incomplete cases. For example, case 1004 is missing Credit Check and Validate Stock.
+
+To summarize missing activities per case:
+
+```sql
+SELECT
+    case_id,
+    ARRAY_AGG(activity ORDER BY activity) AS observed_activities
+FROM order_event_log
+GROUP BY case_id;
+```
+
+---
+
+## 3. Cases with duplicate activities
+
+```sql
+SELECT
+    case_id,
+    activity,
+    COUNT(*) AS occurrence_count,
+    MIN("timestamp") AS first_occurrence,
+    MAX("timestamp") AS last_occurrence
+FROM order_event_log
+GROUP BY case_id, activity
+HAVING COUNT(*) > 1
+ORDER BY case_id, activity;
+```
+
+Duplicates may represent retries, repeated approvals, corrections, or duplicate event ingestion.
+
+---
+
+## 4. Shipment occurring before credit approval
+
+```sql
+SELECT
+    case_id,
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Perform Credit Check'
+    ) AS credit_check_time,
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Ship Goods'
+    ) AS shipment_time
+FROM order_event_log
+GROUP BY case_id
+HAVING
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Ship Goods'
+    ) <
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Perform Credit Check'
+    );
+```
+
+This should identify cases such as 1002 and 1003.
+
+A more detailed version includes order data and credit information:
+
+```sql
+SELECT
+    l.case_id,
+    o.customer_id,
+    o.order_type,
+    o.order_value,
+    l.activity,
+    l."timestamp",
+    l.additional_info
+FROM order_event_log l
+JOIN orders o USING (case_id)
+WHERE l.case_id IN (
+    SELECT case_id
+    FROM order_event_log
+    GROUP BY case_id
+    HAVING
+        MIN("timestamp") FILTER (
+            WHERE activity = 'Ship Goods'
+        ) <
+        MIN("timestamp") FILTER (
+            WHERE activity = 'Perform Credit Check'
+        )
+)
+ORDER BY l.case_id, l."timestamp";
+```
+
+Possible explanations include priority-order exceptions, manual override, delayed credit events, or unauthorized shipment.
+
+---
+
+## 5. Shipment occurring before stock validation
+
+```sql
+SELECT
+    case_id,
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Validate Stock'
+    ) AS stock_validation_time,
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Ship Goods'
+    ) AS shipment_time
+FROM order_event_log
+GROUP BY case_id
+HAVING
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Ship Goods'
+    ) <
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Validate Stock'
+    );
+```
+
+This can reveal shipments made without confirmed stock availability.
+
+---
+
+## 6. Shipment occurring before shipment confirmation
+
+```sql
+SELECT
+    case_id,
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Confirm Shipment'
+    ) AS confirmation_time,
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Ship Goods'
+    ) AS shipment_time
+FROM order_event_log
+GROUP BY case_id
+HAVING
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Ship Goods'
+    ) <
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Confirm Shipment'
+    );
+```
+
+Expected anomaly: case 1003.
+
+---
+
+## 7. Payments received before invoices are issued
+
+```sql
+SELECT
+    case_id,
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Issue Invoice'
+    ) AS invoice_time,
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Receive Payment'
+    ) AS payment_time
+FROM order_event_log
+GROUP BY case_id
+HAVING
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Receive Payment'
+    ) <
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Issue Invoice'
+    );
+```
+
+Expected anomaly: case 1004.
+
+Possible explanations include advance payment, incorrect timestamps, manual payment entry, or invoice-generation delays.
+
+---
+
+## 8. Events occurring unusually close together
+
+Events with very short intervals may indicate automated execution, timestamp truncation, or duplicate processing.
+
+```sql
+WITH event_pairs AS (
+    SELECT
+        case_id,
+        event_id,
+        activity,
+        "timestamp",
+        LEAD(activity) OVER (
+            PARTITION BY case_id
+            ORDER BY "timestamp", event_id
+        ) AS next_activity,
+        LEAD("timestamp") OVER (
+            PARTITION BY case_id
+            ORDER BY "timestamp", event_id
+        ) AS next_timestamp
+    FROM order_event_log
+)
+SELECT
+    case_id,
+    activity,
+    next_activity,
+    "timestamp",
+    next_timestamp,
+    next_timestamp - "timestamp" AS elapsed_time
+FROM event_pairs
+WHERE next_timestamp - "timestamp" < INTERVAL '5 minutes'
+ORDER BY case_id, "timestamp";
+```
+
+For a broader duration analysis:
+
+```sql
+WITH ordered AS (
+    SELECT
+        case_id,
+        activity,
+        "timestamp",
+        LAG("timestamp") OVER (
+            PARTITION BY case_id
+            ORDER BY "timestamp", event_id
+        ) AS previous_timestamp
+    FROM order_event_log
+)
+SELECT
+    case_id,
+    activity,
+    "timestamp" - previous_timestamp AS elapsed_time
+FROM ordered
+WHERE previous_timestamp IS NOT NULL
+ORDER BY elapsed_time;
+```
+
+---
+
+## 9. Extremely long process durations
+
+```sql
+SELECT
+    case_id,
+    MAX("timestamp") - MIN("timestamp") AS total_duration,
+    MIN("timestamp") AS start_time,
+    MAX("timestamp") AS end_time
+FROM order_event_log
+GROUP BY case_id
+ORDER BY total_duration DESC;
+```
+
+The large delay between invoicing and payment may be normal, but should be compared by order type and customer.
+
+```sql
+SELECT
+    o.order_type,
+    COUNT(*) AS case_count,
+    AVG(x.total_duration) AS average_duration,
+    MAX(x.total_duration) AS maximum_duration
+FROM orders o
+JOIN (
+    SELECT
+        case_id,
+        MAX("timestamp") - MIN("timestamp") AS total_duration
+    FROM order_event_log
+    GROUP BY case_id
+) x USING (case_id)
+GROUP BY o.order_type;
+```
+
+---
+
+## 10. Resource-role and department violations
+
+Join the log with the resource reference table:
+
+```sql
+SELECT
+    l.case_id,
+    l.event_id,
+    l.activity,
+    l.resource,
+    r.role,
+    r.department
+FROM order_event_log l
+LEFT JOIN resources r
+    ON r.resource_id = l.resource
+ORDER BY l.case_id, l."timestamp";
+```
+
+### Identify unknown resources
+
+```sql
+SELECT DISTINCT
+    l.resource
+FROM order_event_log l
+LEFT JOIN resources r
+    ON r.resource_id = l.resource
+WHERE r.resource_id IS NULL;
+```
+
+### Check whether activities were performed by the expected department
+
+```sql
+WITH expected_departments(activity, expected_department) AS (
+    VALUES
+        ('Register Order', 'Sales'),
+        ('Perform Credit Check', 'Finance'),
+        ('Validate Stock', 'Logistics'),
+        ('Confirm Shipment', 'Logistics'),
+        ('Ship Goods', 'Logistics'),
+        ('Issue Invoice', 'Finance'),
+        ('Receive Payment', 'Finance')
+)
+SELECT
+    l.case_id,
+    l.event_id,
+    l.activity,
+    l.resource,
+    r.department,
+    e.expected_department
+FROM order_event_log l
+JOIN resources r
+    ON r.resource_id = l.resource
+JOIN expected_departments e
+    ON e.activity = l.activity
+WHERE r.department <> e.expected_department;
+```
+
+This detects unauthorized assignments or incorrect reference data.
+
+---
+
+## 11. Suspicious additional information
+
+### Shipment confirmation marked as unsuccessful
+
+```sql
+SELECT *
+FROM order_event_log
+WHERE activity = 'Confirm Shipment'
+  AND (
+      additional_info ILIKE '%shipment_scheduled=N%'
+      OR additional_info ILIKE '%late_confirmation=Y%'
+      OR additional_info ILIKE '%attempted_early=Y%'
+  );
+```
+
+Expected findings:
+
+- Case 1002: `attempted_early=Y`
+- Case 1003: `late_confirmation=Y`
+- Case 1004: `shipment_scheduled=N`
+
+### Validate payment amounts against order values
+
+```sql
+WITH payments AS (
+    SELECT
+        case_id,
+        SUM(
+            NULLIF(
+                substring(additional_info FROM 'amount=([0-9]+(\.[0-9]+)?)'),
+                ''
+            )::numeric
+        ) AS paid_amount
+    FROM order_event_log
+    WHERE activity = 'Receive Payment'
+    GROUP BY case_id
+)
+SELECT
+    o.case_id,
+    o.order_value,
+    p.paid_amount,
+    p.paid_amount - o.order_value AS difference
+FROM orders o
+JOIN payments p USING (case_id)
+WHERE p.paid_amount <> o.order_value;
+```
+
+This checks for underpayment, overpayment, malformed values, or incorrect order records.
+
+---
+
+## 12. Events logged outside normal business hours
+
+```sql
+SELECT
+    case_id,
+    event_id,
+    activity,
+    "timestamp",
+    resource
+FROM order_event_log
+WHERE EXTRACT(ISODOW FROM "timestamp") IN (6, 7)
+   OR "timestamp"::time < TIME '08:00'
+   OR "timestamp"::time >= TIME '18:00'
+ORDER BY "timestamp";
+```
+
+Unexpected-hour events may indicate emergency processing, batch jobs, timezone problems, or incorrect timestamps.
+
+---
+
+## 13. Events with inconsistent event IDs and timestamps
+
+Event IDs may be expected to reflect insertion order, but timestamps can reveal delayed or backdated ingestion.
+
+```sql
+WITH ordered AS (
+    SELECT
+        case_id,
+        event_id,
+        activity,
+        "timestamp",
+        LAG(event_id) OVER (
+            PARTITION BY case_id
+            ORDER BY "timestamp", event_id
+        ) AS previous_event_id
+    FROM order_event_log
+)
+SELECT *
+FROM ordered
+WHERE previous_event_id IS NOT NULL
+  AND event_id < previous_event_id;
+```
+
+To identify globally suspicious event ordering:
+
+```sql
+SELECT
+    event_id,
+    case_id,
+    activity,
+    "timestamp",
+    LAG("timestamp") OVER (
+        ORDER BY event_id
+    ) AS previous_event_timestamp
+FROM order_event_log
+WHERE "timestamp" <
+      LAG("timestamp") OVER (ORDER BY event_id);
+```
+
+Because PostgreSQL does not allow a window function directly in the `WHERE` clause, use a subquery:
+
+```sql
+WITH x AS (
+    SELECT
+        event_id,
+        case_id,
+        activity,
+        "timestamp",
+        LAG("timestamp") OVER (
+            ORDER BY event_id
+        ) AS previous_event_timestamp
+    FROM order_event_log
+)
+SELECT *
+FROM x
+WHERE "timestamp" < previous_event_timestamp;
+```
+
+---
+
+## 14. Cases with payment before shipment
+
+```sql
+SELECT
+    case_id,
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Ship Goods'
+    ) AS shipment_time,
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Receive Payment'
+    ) AS payment_time
+FROM order_event_log
+GROUP BY case_id
+HAVING
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Receive Payment'
+    ) <
+    MIN("timestamp") FILTER (
+        WHERE activity = 'Ship Goods'
+    );
+```
+
+This may be legitimate for prepaid or priority orders, so compare against `orders.order_type`.
+
+```sql
+SELECT
+    o.case_id,
+    o.order_type,
+    o.order_value,
+    t.payment_time,
+    t.shipment_time
+FROM orders o
+JOIN (
+    SELECT
+        case_id,
+        MIN("timestamp") FILTER (
+            WHERE activity = 'Ship Goods'
+        ) AS shipment_time,
+        MIN("timestamp") FILTER (
+            WHERE activity = 'Receive Payment'
+        ) AS payment_time
+    FROM order_event_log
+    GROUP BY case_id
+) t USING (case_id)
+WHERE t.payment_time < t.shipment_time;
+```
+
+## Main hypotheses suggested by the sample
+
+1. **Workflow controls are not enforced:** cases 1002–1004 violate multiple precedence rules.
+2. **Priority processing may bypass controls:** case 1002 is a priority order and ships before credit and stock validation.
+3. **Delayed or incorrectly ordered event ingestion:** timestamps may not reflect the true operational sequence.
+4. **Manual overrides or emergency handling:** early shipment and late confirmation flags support this possibility.
+5. **Advance-payment behavior:** case 1004 receives payment before invoicing.
+6. **Training or role-assignment issues:** resource-to-department checks can identify unauthorized execution.
+7. **Data-quality problems:** inconsistent timestamps, duplicate events, malformed `additional_info`, or mismatched payment amounts should be investigated.

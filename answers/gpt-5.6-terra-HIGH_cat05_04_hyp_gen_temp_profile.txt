@@ -1,0 +1,371 @@
+## Temporal-profile anomalies
+
+1. **Receive  Approve (`R`  `P`): 25 hours average, 1-hour STDEV**
+   - The average itself is not necessarily unreasonable, but the variation is unusually small relative to the rest of the process.
+   - This suggests approvals may be occurring on a fixed timer, in a batch job, or from timestamps that were populated systematically rather than when work actually occurred.
+   - Since `R`  `E` averages one day and `R`  `P` averages about 25 hours, approval may be consistently recorded shortly after evaluation. That should be checked on the same claims; pairwise averages alone are not necessarily additive.
+
+2. **Approve  Notify (`P`  `N`): 7 days average, 2-day STDEV**
+   - A seven-day wait after approval is a substantial customer-service delay.
+   - The two-day variation indicates that the delay is not fully deterministic; some claims may be notified much earlier or much later than the typical week.
+   - This is a likely backlog, batch-processing, or manual-work-queue issue.
+
+3. **Assign  Close (`A`  `C`): 2 hours average**
+   - Closing soon after assignment is suspicious if the normal path requires evaluation, approval, and notification.
+   - This may represent valid exceptions such as duplicate, withdrawn, fraudulent, or incomplete claims, but the event model has no explicit rejection or cancellation activity.
+   - It may also indicate missing event records, incorrect activity ordering, or premature closure.
+
+4. **Evaluate  Notify (`E`  `N`): 5 minutes average, 1-minute STDEV**
+   - This is a highly automated-looking transition.
+   - It is questionable if approval is supposed to occur before notification, especially when no `P` event appears between `E` and `N`.
+   - It may mean that notification is generated automatically when evaluation is saved, while approval is logged later or in another system.
+
+5. **Evaluate  Close (`E`  `C`): 1 hour average, 50-minute STDEV**
+   - The standard deviation is almost as large as the mean, indicating highly variable paths.
+   - Some claims may close almost immediately after evaluation, while others remain open for much longer.
+   - This often indicates mixed populations: normal claims, exceptions, reopened claims, and claims with missing intermediate events.
+
+6. **Notify  Close (`N`  `C`): 30 minutes average, 5-minute STDEV**
+   - This is another very rigid interval.
+   - It could be a legitimate automatic close-out rule, but it could also be a scheduled batch process or a system-generated close event rather than a human decision.
+
+---
+
+## Possible explanations
+
+| Pattern | Possible explanations |
+|---|---|
+| Very low variation for `R`  `P` | Scheduled approval batch, SLA-driven workflow timer, timestamp rounding, imported/backfilled historical events, automated approvals. |
+| Long `P`  `N` delays | Manual notification queue, insufficient staff, failed outbound communications, customer contact verification, weekly batch notifications, regional workload imbalance. |
+| Fast `A`  `C` cases | Duplicate or withdrawn claims, rejected claims represented only as closure, incorrectly assigned claims, missing `E`/`P`/`N` events, premature closure. |
+| Fast `E`  `N` cases | Automated notification trigger, approval recorded after notification, evaluation and approval performed by the same automated workflow, activity-code semantics do not match the intended process. |
+| High variability in `E`  `C` | Mixture of standard and exception paths, reopen/rework behavior, repeated evaluations, manual interventions, inconsistent event logging. |
+| Tight `N`  `C` interval | Automatic closure timer, overnight batch close process, notification event recorded only after the close decision is already made. |
+
+A key data-quality possibility is that `claim_events.timestamp` may represent *recording time* rather than the actual business-event time. Batch imports, delayed manual entry, and timestamp defaults can create artificial timing patterns.
+
+---
+
+## Reusable observed-interval view
+
+The following temporary view pairs each source event with the first later matching target event for the same claim. It uses `event_id` only to break ties when timestamps are identical.
+
+```sql
+CREATE TEMP VIEW temporal_observed AS
+WITH profile (src, dst, avg_s, sd_s) AS (
+    VALUES
+        ('R'::varchar, 'A'::varchar, 3600.0,   600.0),
+        ('R'::varchar, 'E'::varchar, 86400.0,  28800.0),
+        ('R'::varchar, 'P'::varchar, 90000.0,  3600.0),
+        ('A'::varchar, 'C'::varchar, 7200.0,   3600.0),
+        ('E'::varchar, 'N'::varchar, 300.0,    60.0),
+        ('E'::varchar, 'C'::varchar, 3600.0,   3000.0),
+        ('P'::varchar, 'N'::varchar, 604800.0, 172800.0),
+        ('N'::varchar, 'C'::varchar, 1800.0,   300.0)
+)
+SELECT
+    p.src,
+    p.dst,
+    p.avg_s,
+    p.sd_s,
+    s.claim_id,
+    s.event_id AS source_event_id,
+    s."timestamp" AS source_ts,
+    s.resource AS source_resource,
+    t.event_id AS target_event_id,
+    t."timestamp" AS target_ts,
+    t.resource AS target_resource,
+    EXTRACT(EPOCH FROM (t."timestamp" - s."timestamp"))::double precision
+        AS elapsed_s
+FROM profile p
+JOIN claim_events s
+    ON s.activity = p.src
+CROSS JOIN LATERAL (
+    SELECT e.*
+    FROM claim_events e
+    WHERE e.claim_id = s.claim_id
+      AND e.activity = p.dst
+      AND (
+            e."timestamp" > s."timestamp"
+            OR (
+                e."timestamp" = s."timestamp"
+                AND e.event_id > s.event_id
+            )
+          )
+    ORDER BY e."timestamp", e.event_id
+    LIMIT 1
+) t;
+```
+
+If the process allows repeated activities, reopened claims, or multiple approvals, the pairing rule should be aligned with the rule used when the temporal model was originally calculated.
+
+---
+
+## 1. Find timing deviations outside a three-standard-deviation range
+
+```sql
+SELECT
+    claim_id,
+    src,
+    dst,
+    source_ts,
+    target_ts,
+    elapsed_s,
+    avg_s,
+    sd_s,
+    (elapsed_s - avg_s) / NULLIF(sd_s, 0) AS z_score,
+    source_resource,
+    target_resource
+FROM temporal_observed
+WHERE ABS((elapsed_s - avg_s) / NULLIF(sd_s, 0)) > 3
+ORDER BY ABS((elapsed_s - avg_s) / NULLIF(sd_s, 0)) DESC,
+         claim_id;
+```
+
+This identifies claims whose observed duration is unusually early or late compared with the temporal model.
+
+---
+
+## 2. Recalculate empirical distributions and compare them with the model
+
+This checks whether the model still matches the current event data and whether the distribution is skewed or multi-modal.
+
+```sql
+SELECT
+    src,
+    dst,
+    COUNT(*) AS observations,
+    AVG(elapsed_s) AS observed_avg_seconds,
+    STDDEV_SAMP(elapsed_s) AS observed_stdev_seconds,
+    MIN(elapsed_s) AS min_seconds,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY elapsed_s) AS p05_seconds,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY elapsed_s) AS median_seconds,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY elapsed_s) AS p95_seconds,
+    MAX(elapsed_s) AS max_seconds
+FROM temporal_observed
+GROUP BY src, dst
+ORDER BY src, dst;
+```
+
+A large difference between mean and median, or a very wide 5th-to-95th percentile range, would indicate that a normal-distribution assumption may be inappropriate.
+
+---
+
+## 3. Check whether `R`  `P` delays cluster around fixed scheduled values
+
+```sql
+SELECT
+    ROUND(elapsed_s / 300.0) * 300 AS five_minute_delay_bucket_seconds,
+    COUNT(*) AS claims
+FROM temporal_observed
+WHERE src = 'R'
+  AND dst = 'P'
+GROUP BY ROUND(elapsed_s / 300.0) * 300
+ORDER BY claims DESC, five_minute_delay_bucket_seconds;
+```
+
+Large spikes around one or a few delay values would support a batch-job, timer, timestamp-rounding, or fixed-SLA explanation.
+
+To inspect whether approval occurs without a preceding evaluation:
+
+```sql
+SELECT
+    o.claim_id,
+    o.source_ts AS receive_ts,
+    o.target_ts AS approve_ts,
+    o.elapsed_s / 3600.0 AS receive_to_approve_hours
+FROM temporal_observed o
+WHERE o.src = 'R'
+  AND o.dst = 'P'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events e
+      WHERE e.claim_id = o.claim_id
+        AND e.activity = 'E'
+        AND (e."timestamp", e.event_id) > (o.source_ts, o.source_event_id)
+        AND (e."timestamp", e.event_id) < (o.target_ts, o.target_event_id)
+  )
+ORDER BY o.elapsed_s;
+```
+
+---
+
+## 4. Find excessive or unusually fast `P`  `N` delays
+
+For this profile, the three-standard-deviation limits are approximately:
+
+- Early: less than 1 day
+- Late: more than 13 days
+
+```sql
+SELECT
+    o.claim_id,
+    c.customer_id,
+    c.claim_type,
+    o.source_ts AS approval_ts,
+    o.target_ts AS notification_ts,
+    o.elapsed_s / 86400.0 AS approval_to_notification_days,
+    o.source_resource AS approval_resource,
+    o.target_resource AS notification_resource
+FROM temporal_observed o
+JOIN claims c
+    ON c.claim_id = o.claim_id
+WHERE o.src = 'P'
+  AND o.dst = 'N'
+  AND (
+      o.elapsed_s < 86400
+      OR o.elapsed_s > 1123200
+  )
+ORDER BY o.elapsed_s DESC;
+```
+
+---
+
+## 5. Correlate delayed notifications with claim type, resource, and region
+
+This query assumes `claim_events.resource` contains the same value as `adjusters.name`. If it instead stores a login name or an ID, a validated mapping table is needed.
+
+```sql
+SELECT
+    c.claim_type,
+    a.region,
+    o.source_resource AS approval_resource,
+    COUNT(*) AS approvals,
+    AVG(o.elapsed_s) / 86400.0 AS avg_days_to_notify,
+    COUNT(*) FILTER (
+        WHERE o.elapsed_s > 1123200
+    ) AS notifications_later_than_13_days,
+    COUNT(*) FILTER (
+        WHERE o.elapsed_s < 86400
+    ) AS notifications_under_1_day
+FROM temporal_observed o
+JOIN claims c
+    ON c.claim_id = o.claim_id
+LEFT JOIN adjusters a
+    ON a.name = o.source_resource
+WHERE o.src = 'P'
+  AND o.dst = 'N'
+GROUP BY
+    c.claim_type,
+    a.region,
+    o.source_resource
+HAVING COUNT(*) >= 10
+ORDER BY avg_days_to_notify DESC;
+```
+
+This can reveal, for example, whether a particular claim type, approval resource, or adjuster region has a consistently delayed notification process.
+
+---
+
+## 6. Find claims closed soon after assignment with missing required steps
+
+The threshold below uses 15 minutes as an operational definition of “immediate.” It should be adjusted to the business rule.
+
+```sql
+WITH assignment_close AS (
+    SELECT
+        a.claim_id,
+        a.event_id AS assign_event_id,
+        a."timestamp" AS assign_ts,
+        a.resource AS assign_resource,
+        c.event_id AS close_event_id,
+        c."timestamp" AS close_ts,
+        c.resource AS close_resource
+    FROM claim_events a
+    CROSS JOIN LATERAL (
+        SELECT e.*
+        FROM claim_events e
+        WHERE e.claim_id = a.claim_id
+          AND e.activity = 'C'
+          AND (e."timestamp", e.event_id) > (a."timestamp", a.event_id)
+        ORDER BY e."timestamp", e.event_id
+        LIMIT 1
+    ) c
+    WHERE a.activity = 'A'
+),
+step_flags AS (
+    SELECT
+        ac.*,
+        EXISTS (
+            SELECT 1
+            FROM claim_events e
+            WHERE e.claim_id = ac.claim_id
+              AND e.activity = 'E'
+              AND (e."timestamp", e.event_id) > (ac.assign_ts, ac.assign_event_id)
+              AND (e."timestamp", e.event_id) < (ac.close_ts, ac.close_event_id)
+        ) AS has_evaluation,
+        EXISTS (
+            SELECT 1
+            FROM claim_events e
+            WHERE e.claim_id = ac.claim_id
+              AND e.activity = 'P'
+              AND (e."timestamp", e.event_id) > (ac.assign_ts, ac.assign_event_id)
+              AND (e."timestamp", e.event_id) < (ac.close_ts, ac.close_event_id)
+        ) AS has_approval,
+        EXISTS (
+            SELECT 1
+            FROM claim_events e
+            WHERE e.claim_id = ac.claim_id
+              AND e.activity = 'N'
+              AND (e."timestamp", e.event_id) > (ac.assign_ts, ac.assign_event_id)
+              AND (e."timestamp", e.event_id) < (ac.close_ts, ac.close_event_id)
+        ) AS has_notification
+    FROM assignment_close ac
+)
+SELECT
+    claim_id,
+    assign_ts,
+    close_ts,
+    EXTRACT(EPOCH FROM (close_ts - assign_ts)) / 60.0 AS minutes_to_close,
+    assign_resource,
+    close_resource,
+    has_evaluation,
+    has_approval,
+    has_notification
+FROM step_flags
+WHERE close_ts - assign_ts <= INTERVAL '15 minutes'
+  AND NOT (has_evaluation AND has_approval AND has_notification)
+ORDER BY minutes_to_close;
+```
+
+Claims returned by this query should be checked for valid exception reasons, such as duplicate claims, withdrawal, invalid submissions, or a missing rejection/cancellation activity code.
+
+---
+
+## 7. Find fast `E`  `N` transitions with no approval in between
+
+A duration below two minutes is more than three standard deviations below the five-minute model average.
+
+```sql
+SELECT
+    o.claim_id,
+    o.source_ts AS evaluation_ts,
+    o.target_ts AS notification_ts,
+    o.elapsed_s AS seconds_to_notify,
+    o.source_resource AS evaluation_resource,
+    o.target_resource AS notification_resource
+FROM temporal_observed o
+WHERE o.src = 'E'
+  AND o.dst = 'N'
+  AND o.elapsed_s < 120
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events p
+      WHERE p.claim_id = o.claim_id
+        AND p.activity = 'P'
+        AND (p."timestamp", p.event_id) > (o.source_ts, o.source_event_id)
+        AND (p."timestamp", p.event_id) < (o.target_ts, o.target_event_id)
+  )
+ORDER BY o.elapsed_s;
+```
+
+These cases are strong candidates for automated notifications, missing approval records, or event-ordering defects.
+
+---
+
+## Data limitations to account for
+
+- `resource` is a `VARCHAR` and is not formally linked to `adjusters.adjuster_id`; resource-to-adjuster/region analysis is reliable only if a verified mapping exists.
+- The available schema has `customer_id` but no customer demographic or geographic attributes, so customer-segment analysis is limited unless another customer table is available.
+- A missing activity event does not necessarily prove that the business step was skipped; it may have been recorded in another application or failed to be ingested.
+- Claims with repeated activities, reopenings, or corrections should be analyzed separately because they can distort simple first-next-event timing calculations.

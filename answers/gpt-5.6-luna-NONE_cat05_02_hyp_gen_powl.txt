@@ -1,0 +1,600 @@
+## 1. Anomalies in the POWL model
+
+### a. Repeated evaluation/approval loop
+
+```python
+loop = OperatorPOWL(operator=Operator.LOOP, children=[E, P])
+```
+
+The model allows evaluation and approval to repeat. This may represent legitimate rework, but the definition is unusual because it can produce sequences such as:
+
+```text
+E  P  E  P  ...
+```
+
+Potential issues include:
+
+- Multiple evaluations for the same claim without an explicit rework reason.
+- Multiple approvals for the same claim.
+- No clear limit on the number of iterations.
+- Approval followed by another evaluation, which may be inconsistent with the intended process.
+
+### b. Optional customer notification
+
+```python
+xor = OperatorPOWL(operator=Operator.XOR, children=[N, skip])
+```
+
+The XOR allows either notification or no notification. Therefore, a claim may proceed without the customer being informed.
+
+This is anomalous if notification is mandatory after approval and before closure. It could also lead to claims being closed without any evidence that the customer was notified.
+
+### c. Premature closure
+
+The model contains:
+
+```python
+root.order.add_edge(A, C)
+```
+
+but does not add a mandatory ordering edge from the notification structure to closure:
+
+```python
+root.order.add_edge(xor, C)
+```
+
+As a result, closure is constrained only to occur after assignment, not necessarily after evaluation, approval, or notification. Conceptually, sequences such as the following may be permitted:
+
+```text
+R  A  C
+```
+
+or:
+
+```text
+R  A  C  E  P
+```
+
+This contradicts the intended flow:
+
+```text
+R  A  E  P  N  C
+```
+
+### d. Missing explicit approval-to-notification and notification-to-close constraints
+
+The intended model requires approval before notification and notification before closure. However, the model does not explicitly enforce:
+
+```text
+E  P
+P  N
+N  C
+```
+
+The loop may internally imply some ordering, but the root partial order does not clearly expose or enforce the complete business sequence.
+
+### e. Possible mismatch between model labels and database activities
+
+The POWL model uses labels such as `R`, `A`, `E`, `P`, `N`, and `C`, whereas the database stores descriptive values in `claim_events.activity`. A mapping is therefore required, for example:
+
+| POWL label | Possible database activity |
+|---|---|
+| R | `Receive Claim` |
+| A | `Assign Adjuster` |
+| E | `Evaluate Claim` |
+| P | `Approve Claim` |
+| N | `Notify Customer` |
+| C | `Close Claim` |
+
+The exact values should be verified before querying.
+
+---
+
+## 2. Hypotheses explaining the anomalies
+
+### Hypothesis 1: Legitimate rework was added incompletely
+
+The evaluation/approval loop may have been introduced to support:
+
+- Additional documentation requests.
+- Reassessment after new evidence.
+- Approval rejection followed by correction.
+- Changes in claim amount or claim type.
+
+However, the model may not distinguish between legitimate rework and repeated approval.
+
+### Hypothesis 2: Business rules changed but the model was not fully updated
+
+For example:
+
+- Notification may previously have been optional but is now mandatory.
+- Claims may be allowed to close automatically after assignment under certain conditions.
+- Approval may have been replaced by an automated decision in some cases.
+
+The process model may represent a mixture of old and new rules.
+
+### Hypothesis 3: Miscommunication between departments
+
+Claims, customer service, and underwriting teams may have had different interpretations of:
+
+- When a claim is considered approved.
+- Whether notification is mandatory.
+- Whether closure can occur before customer notification.
+- Whether repeated evaluations are expected.
+
+This could explain the optional notification branch and missing ordering constraints.
+
+### Hypothesis 4: Workflow-system or integration errors
+
+Possible technical causes include:
+
+- Events arriving out of order because of asynchronous integrations.
+- Duplicate approval messages.
+- Incorrect timestamps or timezone conversions.
+- A closure API that does not validate prior process steps.
+- Retry logic producing duplicate events.
+- Events being written to different systems inconsistently.
+
+### Hypothesis 5: Modeling-tool limitations or incorrect POWL construction
+
+The partial order may have been created incorrectly. In particular:
+
+```python
+root.order.add_edge(A, C)
+```
+
+may have been intended to express a normal dependency but instead allows a shortcut to closure. The omission of:
+
+```python
+root.order.add_edge(xor, C)
+```
+
+is especially important.
+
+### Hypothesis 6: Data-quality problems
+
+An apparent anomaly may be caused by:
+
+- Missing events.
+- Inconsistent activity labels.
+- Duplicate records.
+- Incorrect event timestamps.
+- Claims imported without their historical events.
+
+Database checks should distinguish actual process violations from incomplete logging.
+
+---
+
+## 3. Database queries to verify the hypotheses
+
+The examples below assume the descriptive activity names shown in the schema. They can be adapted if the database uses abbreviations such as `R`, `A`, `E`, `P`, `N`, and `C`.
+
+### A. Inspect the observed activity vocabulary
+
+```sql
+SELECT activity, COUNT(*) AS event_count
+FROM claim_events
+GROUP BY activity
+ORDER BY event_count DESC;
+```
+
+This identifies the actual activity labels and helps establish the mapping to the POWL transitions.
+
+---
+
+### B. Identify claims closed without evaluation or approval
+
+```sql
+SELECT
+    c.claim_id,
+    c.customer_id,
+    c.claim_amount,
+    c.submission_date,
+    MAX(ce.timestamp) FILTER (
+        WHERE ce.activity = 'Close Claim'
+    ) AS close_time
+FROM claims c
+JOIN claim_events ce
+    ON ce.claim_id = c.claim_id
+GROUP BY
+    c.claim_id,
+    c.customer_id,
+    c.claim_amount,
+    c.submission_date
+HAVING COUNT(*) FILTER (
+           WHERE ce.activity = 'Close Claim'
+       ) > 0
+   AND COUNT(*) FILTER (
+           WHERE ce.activity = 'Evaluate Claim'
+       ) = 0
+   AND COUNT(*) FILTER (
+           WHERE ce.activity = 'Approve Claim'
+       ) = 0;
+```
+
+This finds claims with a close event but neither evaluation nor approval.
+
+A stricter version can check for missing either event:
+
+```sql
+SELECT
+    claim_id,
+    COUNT(*) FILTER (WHERE activity = 'Evaluate Claim') AS evaluations,
+    COUNT(*) FILTER (WHERE activity = 'Approve Claim') AS approvals,
+    COUNT(*) FILTER (WHERE activity = 'Close Claim') AS closures
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'Close Claim') > 0
+   AND (
+       COUNT(*) FILTER (WHERE activity = 'Evaluate Claim') = 0
+       OR COUNT(*) FILTER (WHERE activity = 'Approve Claim') = 0
+   );
+```
+
+---
+
+### C. Identify closures that occurred before evaluation or approval
+
+This query compares the first closure with the first evaluation and approval.
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (
+            WHERE activity = 'Evaluate Claim'
+        ) AS first_evaluation,
+        MIN(timestamp) FILTER (
+            WHERE activity = 'Approve Claim'
+        ) AS first_approval,
+        MIN(timestamp) FILTER (
+            WHERE activity = 'Close Claim'
+        ) AS first_close
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT *
+FROM event_times
+WHERE first_close IS NOT NULL
+  AND (
+       first_evaluation IS NULL
+       OR first_close < first_evaluation
+       OR first_approval IS NULL
+       OR first_close < first_approval
+  );
+```
+
+This directly tests the premature-closure hypothesis.
+
+---
+
+### D. Identify claims closed before their last evaluation or approval
+
+If rework is legitimate, closure should occur after the final evaluation and final approval, not merely after the first ones.
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MAX(timestamp) FILTER (
+            WHERE activity = 'Evaluate Claim'
+        ) AS last_evaluation,
+        MAX(timestamp) FILTER (
+            WHERE activity = 'Approve Claim'
+        ) AS last_approval,
+        MIN(timestamp) FILTER (
+            WHERE activity = 'Close Claim'
+        ) AS first_close
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT *
+FROM event_times
+WHERE first_close IS NOT NULL
+  AND (
+       last_evaluation IS NULL
+       OR first_close < last_evaluation
+       OR last_approval IS NULL
+       OR first_close < last_approval
+  );
+```
+
+---
+
+### E. Locate claims with multiple approval events
+
+```sql
+SELECT
+    claim_id,
+    COUNT(*) AS approval_count,
+    MIN(timestamp) AS first_approval,
+    MAX(timestamp) AS last_approval
+FROM claim_events
+WHERE activity = 'Approve Claim'
+GROUP BY claim_id
+HAVING COUNT(*) > 1
+ORDER BY approval_count DESC;
+```
+
+This tests whether the loop produces repeated approvals in practice.
+
+To include the claim details:
+
+```sql
+SELECT
+    c.claim_id,
+    c.customer_id,
+    c.claim_type,
+    c.claim_amount,
+    COUNT(*) AS approval_count
+FROM claims c
+JOIN claim_events ce
+    ON ce.claim_id = c.claim_id
+WHERE ce.activity = 'Approve Claim'
+GROUP BY
+    c.claim_id,
+    c.customer_id,
+    c.claim_type,
+    c.claim_amount
+HAVING COUNT(*) > 1
+ORDER BY approval_count DESC;
+```
+
+---
+
+### F. Locate claims with multiple evaluations
+
+```sql
+SELECT
+    claim_id,
+    COUNT(*) AS evaluation_count,
+    MIN(timestamp) AS first_evaluation,
+    MAX(timestamp) AS last_evaluation
+FROM claim_events
+WHERE activity = 'Evaluate Claim'
+GROUP BY claim_id
+HAVING COUNT(*) > 1
+ORDER BY evaluation_count DESC;
+```
+
+Multiple evaluations without multiple approvals may indicate reassessment or rework.
+
+---
+
+### G. Check for evaluation/approval sequences
+
+To determine whether repeated evaluations and approvals follow the expected order, use window functions:
+
+```sql
+WITH ordered_events AS (
+    SELECT
+        claim_id,
+        activity,
+        timestamp,
+        LAG(activity) OVER (
+            PARTITION BY claim_id
+            ORDER BY timestamp, event_id
+        ) AS previous_activity
+    FROM claim_events
+)
+SELECT *
+FROM ordered_events
+WHERE activity IN ('Evaluate Claim', 'Approve Claim')
+  AND previous_activity IN ('Evaluate Claim', 'Approve Claim')
+ORDER BY claim_id, timestamp;
+```
+
+A more targeted query identifies approvals not preceded by an evaluation:
+
+```sql
+WITH events AS (
+    SELECT
+        claim_id,
+        event_id,
+        activity,
+        timestamp,
+        MAX(timestamp) FILTER (
+            WHERE activity = 'Evaluate Claim'
+        ) OVER (
+            PARTITION BY claim_id
+            ORDER BY timestamp, event_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        ) AS prior_evaluation_time
+    FROM claim_events
+)
+SELECT *
+FROM events
+WHERE activity = 'Approve Claim'
+  AND prior_evaluation_time IS NULL;
+```
+
+---
+
+### H. Measure how often notification is skipped
+
+For claims with a closure event, calculate whether a notification occurred:
+
+```sql
+SELECT
+    COUNT(*) AS closed_claims,
+    COUNT(*) FILTER (
+        WHERE notification_count > 0
+    ) AS notified_claims,
+    COUNT(*) FILTER (
+        WHERE notification_count = 0
+    ) AS non_notified_claims,
+    ROUND(
+        100.0 * COUNT(*) FILTER (
+            WHERE notification_count = 0
+        ) / NULLIF(COUNT(*), 0),
+        2
+    ) AS skipped_notification_pct
+FROM (
+    SELECT
+        claim_id,
+        COUNT(*) FILTER (
+            WHERE activity = 'Notify Customer'
+        ) AS notification_count
+    FROM claim_events
+    GROUP BY claim_id
+) x
+WHERE EXISTS (
+    SELECT 1
+    FROM claim_events c
+    WHERE c.claim_id = x.claim_id
+      AND c.activity = 'Close Claim'
+);
+```
+
+A simpler claim-level list is:
+
+```sql
+SELECT claim_id
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'Close Claim') > 0
+   AND COUNT(*) FILTER (WHERE activity = 'Notify Customer') = 0;
+```
+
+---
+
+### I. Check whether notification occurred after approval
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MAX(timestamp) FILTER (
+            WHERE activity = 'Approve Claim'
+        ) AS last_approval,
+        MIN(timestamp) FILTER (
+            WHERE activity = 'Notify Customer'
+        ) AS first_notification
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT *
+FROM event_times
+WHERE last_approval IS NOT NULL
+  AND (
+       first_notification IS NULL
+       OR first_notification < last_approval
+  );
+```
+
+This is useful if notification is required after the final approval.
+
+---
+
+### J. Check whether closure occurred after notification
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MAX(timestamp) FILTER (
+            WHERE activity = 'Notify Customer'
+        ) AS last_notification,
+        MIN(timestamp) FILTER (
+            WHERE activity = 'Close Claim'
+        ) AS first_close
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT *
+FROM event_times
+WHERE first_close IS NOT NULL
+  AND (
+       last_notification IS NULL
+       OR first_close < last_notification
+  );
+```
+
+---
+
+### K. Find exact event sequences for anomalous claims
+
+After identifying suspicious claims, inspect their complete histories:
+
+```sql
+SELECT
+    ce.claim_id,
+    ce.event_id,
+    ce.activity,
+    ce.timestamp,
+    ce.resource,
+    ce.additional_info
+FROM claim_events ce
+WHERE ce.claim_id IN (
+    SELECT claim_id
+    FROM claim_events
+    GROUP BY claim_id
+    HAVING COUNT(*) FILTER (WHERE activity = 'Close Claim') > 0
+       AND COUNT(*) FILTER (WHERE activity = 'Evaluate Claim') = 0
+)
+ORDER BY ce.claim_id, ce.timestamp, ce.event_id;
+```
+
+This helps determine whether the issue is a genuine execution path or missing/incorrect event logging.
+
+---
+
+### L. Check assignment and adjuster specialization
+
+The `adjusters` table can help identify assignment anomalies, although the current schema does not provide a direct foreign key from `claim_events` to `adjusters`. If the `resource` column stores the adjuster name or ID, it can be joined accordingly.
+
+For example, if `resource` contains the adjuster ID as text:
+
+```sql
+SELECT
+    ce.claim_id,
+    ce.timestamp,
+    ce.resource,
+    a.adjuster_id,
+    a.name,
+    a.specialization,
+    c.claim_type
+FROM claim_events ce
+JOIN claims c
+    ON c.claim_id = ce.claim_id
+LEFT JOIN adjusters a
+    ON a.adjuster_id = ce.resource::integer
+WHERE ce.activity = 'Assign Adjuster'
+  AND (
+       (c.claim_type = 'home_insurance'
+        AND a.specialization <> 'home')
+       OR
+       (c.claim_type = 'auto_insurance'
+        AND a.specialization <> 'auto')
+  );
+```
+
+This requires the actual encoding of `resource` to be confirmed first. If it contains names instead:
+
+```sql
+LEFT JOIN adjusters a
+    ON a.name = ce.resource
+```
+
+---
+
+## Recommended interpretation
+
+The database analysis should separate three categories:
+
+1. **True process deviations**  
+   For example, a claim was genuinely closed before approval.
+
+2. **Legitimate rework**  
+   Multiple evaluations or approvals may be valid if supported by `additional_info`, such as “reassessment requested.”
+
+3. **Logging or integration errors**  
+   Missing or duplicated events may indicate technical problems rather than actual process behavior.
+
+If the analysis confirms that premature closure or skipped notification occurs frequently, the POWL model should likely be revised to enforce:
+
+```text
+R  A  E  P  N  C
+```
+
+while representing rework explicitly and conditionally. For example, the model could allow repeated evaluation only when a documented rework condition exists, and closure should be ordered after the notification branch rather than directly after assignment.
