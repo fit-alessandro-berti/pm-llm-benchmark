@@ -4,68 +4,75 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 
 | Model                             | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | OPT                  | :nerd_face: VI       |
 | --------------------------------- | -------- | ------------------ | ------------------ | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- |
-| moonshotaikimi-k2.6               | **37.8** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.3** | :mage_woman: **7.2** | 5.3                  | 4.9                  | **5.3**              | :mage_woman: **5.2** | **3.6**              | 0.0                  |
-| gpt-5.4-2026-03-05-XHIGH          | **37.8** | :x:                | :white_check_mark: | **6.1**              | **7.0**              | 5.5                  | **5.2**              | **5.4**              | **4.9**              | :mage_woman: **3.8** | :mage_woman: **4.8** |
-| gpt-5.5-2026-04-23-HIGH           | **37.7** | :x:                | :white_check_mark: | **6.0**              | 6.8                  | :mage_woman: **5.9** | 4.9                  | **5.3**              | **5.0**              | **3.7**              | 4.2                  |
-| ChatGPT-5.5-Pro-20260422          | **37.7** | :x:                | :white_check_mark: | 5.9                  | **7.1**              | 5.5                  | **5.1**              | **5.3**              | **5.0**              | **3.7**              | **4.6**              |
-| deepseek-v3.2-speciale-thinking   | **37.5** | :white_check_mark: | :white_check_mark: | **6.2**              | :mage_woman: **7.2** | **5.7**              | 4.8                  | 5.1                  | **4.9**              | **3.6**              | 0.0                  |
-| gpt-5.3-codex-XHIGH               | **37.3** | :x:                | :white_check_mark: | **6.0**              | 6.7                  | **5.7**              | **5.2**              | :mage_woman: **5.5** | 4.7                  | **3.5**              | 4.3                  |
-| gpt-5.4-2026-03-05-HIGH           | **37.0** | :x:                | :white_check_mark: | 5.9                  | **7.0**              | 5.1                  | 4.8                  | **5.4**              | **5.0**              | **3.7**              | **4.7**              |
-| gpt-5-pro-2025-10-06              | **36.9** | :x:                | :white_check_mark: | 5.6                  | **7.1**              | 5.1                  | :mage_woman: **5.3** | **5.3**              | 4.8                  | **3.6**              | :mage_woman: **4.8** |
-| gpt-5.5-2026-04-23-XHIGH          | **36.9** | :x:                | :white_check_mark: | **6.0**              | **6.9**              | 4.9                  | **5.0**              | **5.3**              | **5.0**              | **3.7**              | 4.1                  |
-| gpt-5.2-2025-12-11-XHIGH          | **36.7** | :x:                | :white_check_mark: | 5.8                  | **6.9**              | 5.4                  | **5.1**              | 4.9                  | **5.0**              | **3.7**              | **4.6**              |
-| deepseek-v4-pro                   | **36.4** | :white_check_mark: | :white_check_mark: | **6.0**              | **7.0**              | 5.3                  | **5.1**              | 5.0                  | 4.5                  | **3.6**              | 0.0                  |
+| gpt-5.6-sol-XHIGH                 | **40.2** | :x:                | :white_check_mark: | **6.0**              | :mage_woman: **7.6** | :mage_woman: **6.0** | :mage_woman: **5.8** | :mage_woman: **5.6** | :mage_woman: **5.2** | :mage_woman: **4.0** | **4.6**              |
+| gpt-5.6-sol-HIGH                  | **39.8** | :x:                | :white_check_mark: | **6.1**              | **7.3**              | :mage_woman: **6.0** | :mage_woman: **5.8** | **5.5**              | :mage_woman: **5.2** | **3.9**              | **4.7**              |
+| gpt-5.6-terra-HIGH                | **38.4** | :x:                | :white_check_mark: | **6.1**              | 7.2                  | 5.5                  | 5.3                  | **5.4**              | **5.1**              | **3.8**              | **4.7**              |
+| moonshotaikimi-k2.6               | **37.8** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.3** | 7.2                  | 5.3                  | 4.9                  | **5.3**              | :mage_woman: **5.2** | 3.6                  | 0.0                  |
+| gpt-5.4-2026-03-05-XHIGH          | **37.8** | :x:                | :white_check_mark: | **6.1**              | 7.0                  | 5.5                  | 5.2                  | **5.4**              | **4.9**              | **3.8**              | :mage_woman: **4.8** |
+| gpt-5.5-2026-04-23-HIGH           | **37.7** | :x:                | :white_check_mark: | **6.0**              | 6.8                  | **5.9**              | 4.9                  | **5.3**              | **5.0**              | **3.7**              | 4.2                  |
+| ChatGPT-5.5-Pro-20260422          | **37.7** | :x:                | :white_check_mark: | 5.9                  | 7.1                  | 5.5                  | 5.1                  | **5.3**              | **5.0**              | **3.7**              | **4.6**              |
+| deepseek-v3.2-speciale-thinking   | **37.5** | :white_check_mark: | :white_check_mark: | **6.2**              | 7.2                  | **5.7**              | 4.8                  | 5.1                  | **4.9**              | 3.6                  | 0.0                  |
+| gpt-5.3-codex-XHIGH               | **37.3** | :x:                | :white_check_mark: | **6.0**              | 6.7                  | **5.7**              | 5.2                  | **5.5**              | 4.7                  | 3.5                  | 4.3                  |
+| gpt-5.6-luna-HIGH                 | **37.2** | :x:                | :white_check_mark: | **6.0**              | 6.7                  | 4.8                  | 5.4                  | **5.5**              | **5.0**              | **3.8**              | **4.6**              |
+| gpt-5.4-2026-03-05-HIGH           | **37.0** | :x:                | :white_check_mark: | 5.9                  | 7.0                  | 5.1                  | 4.8                  | **5.4**              | **5.0**              | **3.7**              | **4.7**              |
+| gpt-5-pro-2025-10-06              | **36.9** | :x:                | :white_check_mark: | 5.6                  | 7.1                  | 5.1                  | 5.3                  | **5.3**              | 4.8                  | 3.6                  | :mage_woman: **4.8** |
+| gpt-5.5-2026-04-23-XHIGH          | **36.9** | :x:                | :white_check_mark: | **6.0**              | 6.9                  | 4.9                  | 5.0                  | **5.3**              | **5.0**              | **3.7**              | 4.1                  |
+| gpt-5.2-2025-12-11-XHIGH          | **36.7** | :x:                | :white_check_mark: | 5.8                  | 6.9                  | 5.4                  | 5.1                  | 4.9                  | **5.0**              | **3.7**              | **4.6**              |
+| deepseek-v4-pro                   | **36.4** | :white_check_mark: | :white_check_mark: | **6.0**              | 7.0                  | 5.3                  | 5.1                  | 5.0                  | 4.5                  | 3.6                  | 0.0                  |
 | gpt-5.2-2025-12-11-HIGH           | **36.3** | :x:                | :white_check_mark: | **6.0**              | 6.5                  | 5.2                  | 4.7                  | **5.3**              | 4.8                  | **3.7**              | 4.0                  |
-| anthropicclaude-fable-5           | **35.6** | :x:                | :x:                | 5.7                  | **6.9**              | 4.7                  | 4.6                  | 5.1                  | 4.7                  | :mage_woman: **3.8** | **4.6**              |
+| gpt-5.6-sol-NONE                  | **36.3** | :x:                | :x:                | 5.9                  | 7.0                  | 4.4                  | 5.1                  | 4.9                  | **5.0**              | **3.9**              | **4.7**              |
+| anthropicclaude-fable-5           | **35.6** | :x:                | :x:                | 5.7                  | 6.9                  | 4.7                  | 4.6                  | 5.1                  | 4.7                  | **3.8**              | **4.6**              |
 | moonshotaikimi-k2.7-code          | **35.6** | :white_check_mark: | :white_check_mark: | **6.2**              | 6.3                  | 4.7                  | 4.7                  | **5.4**              | 4.6                  | **3.7**              | 0.0                  |
-| claude-opus-4-8-thinking          | **35.3** | :x:                | :white_check_mark: | 5.7                  | 6.8                  | 4.8                  | 4.9                  | 5.0                  | 4.5                  | **3.5**              | 4.1                  |
-| qwen3.7-max                       | **35.1** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.4                  | 4.8                  | 5.1                  | **5.0**              | **3.5**              | 0.0                  |
-| gpt-5.4-2026-03-05-NONE           | **34.9** | :x:                | :x:                | 5.9                  | 6.8                  | 4.0                  | 4.6                  | :mage_woman: **5.5** | 4.6                  | **3.7**              | **4.6**              |
-| qwen3.6-plus                      | **34.9** | :x:                | :white_check_mark: | **6.1**              | 6.6                  | 4.8                  | 3.8                  | 5.0                  | **5.0**              | **3.6**              | **4.5**              |
-| z-aiglm-5-turbo                   | **34.7** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.8                  | 4.8                  | 4.4                  | 4.6                  | 4.7                  | **3.5**              | 0.0                  |
-| z-aiglm-5.1                       | **34.6** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.5                  | 4.8                  | 4.5                  | **5.2**              | 4.6                  | 3.4                  | 0.0                  |
-| qwen3.7-plus                      | **34.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.3                  | 4.7                  | 4.5                  | 4.9                  | 4.7                  | **3.5**              | 0.0                  |
-| gpt-5.5-2026-04-23-NONE           | **34.5** | :x:                | :x:                | **6.0**              | 6.8                  | 3.4                  | 4.8                  | **5.2**              | 4.7                  | **3.7**              | 4.2                  |
-| qwen3.6-max-preview               | **34.4** | :x:                | :white_check_mark: | **6.0**              | 6.8                  | 3.7                  | 4.3                  | 4.9                  | **5.0**              | **3.6**              | 0.0                  |
+| claude-opus-4-8-thinking          | **35.3** | :x:                | :white_check_mark: | 5.7                  | 6.8                  | 4.8                  | 4.9                  | 5.0                  | 4.5                  | 3.5                  | 4.1                  |
+| qwen3.7-max                       | **35.1** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.4                  | 4.8                  | 5.1                  | **5.0**              | 3.5                  | 0.0                  |
+| gpt-5.6-terra-NONE                | **34.9** | :x:                | :x:                | **6.0**              | 6.8                  | 4.3                  | 4.9                  | 4.6                  | 4.6                  | **3.8**              | 4.3                  |
+| gpt-5.4-2026-03-05-NONE           | **34.9** | :x:                | :x:                | 5.9                  | 6.8                  | 4.0                  | 4.6                  | **5.5**              | 4.6                  | **3.7**              | **4.6**              |
+| qwen3.6-plus                      | **34.9** | :x:                | :white_check_mark: | **6.1**              | 6.6                  | 4.8                  | 3.8                  | 5.0                  | **5.0**              | 3.6                  | **4.5**              |
+| z-aiglm-5-turbo                   | **34.7** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.8                  | 4.8                  | 4.4                  | 4.6                  | 4.7                  | 3.5                  | 0.0                  |
+| z-aiglm-5.1                       | **34.6** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.5                  | 4.8                  | 4.5                  | 5.2                  | 4.6                  | 3.4                  | 0.0                  |
+| qwen3.7-plus                      | **34.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.3                  | 4.7                  | 4.5                  | 4.9                  | 4.7                  | 3.5                  | 0.0                  |
+| gpt-5.5-2026-04-23-NONE           | **34.5** | :x:                | :x:                | **6.0**              | 6.8                  | 3.4                  | 4.8                  | 5.2                  | 4.7                  | **3.7**              | 4.2                  |
+| qwen3.6-max-preview               | **34.4** | :x:                | :white_check_mark: | **6.0**              | 6.8                  | 3.7                  | 4.3                  | 4.9                  | **5.0**              | 3.6                  | 0.0                  |
 | z-aiglm-5                         | **34.3** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.4                  | 5.2                  | 4.3                  | 4.5                  | 4.8                  | 3.2                  | 0.0                  |
-| gpt-5.4-mini-2026-03-17-HIGH      | **34.2** | :x:                | :white_check_mark: | 5.8                  | 6.5                  | 4.0                  | 4.5                  | 5.0                  | 4.7                  | **3.5**              | **4.5**              |
-| grok-4.20-heavy                   | **34.0** | :x:                | :white_check_mark: | 5.5                  | 6.8                  | 4.8                  | 3.9                  | 4.7                  | 4.8                  | **3.5**              | **4.6**              |
-| moonshotaikimi-k2.5               | **34.0** | :white_check_mark: | :white_check_mark: | 5.8                  | 6.1                  | 4.6                  | 4.2                  | 4.9                  | 4.8                  | **3.5**              | 0.0                  |
-| grok-4.20-multi-agent             | **33.9** | :x:                | :white_check_mark: | 5.5                  | 6.8                  | 4.3                  | 4.6                  | 4.4                  | 4.7                  | **3.6**              | **4.6**              |
+| gpt-5.4-mini-2026-03-17-HIGH      | **34.2** | :x:                | :white_check_mark: | 5.8                  | 6.5                  | 4.0                  | 4.5                  | 5.0                  | 4.7                  | 3.5                  | **4.5**              |
+| grok-4.20-heavy                   | **34.0** | :x:                | :white_check_mark: | 5.5                  | 6.8                  | 4.8                  | 3.9                  | 4.7                  | 4.8                  | 3.5                  | **4.6**              |
+| moonshotaikimi-k2.5               | **34.0** | :white_check_mark: | :white_check_mark: | 5.8                  | 6.1                  | 4.6                  | 4.2                  | 4.9                  | 4.8                  | 3.5                  | 0.0                  |
+| grok-4.20-multi-agent             | **33.9** | :x:                | :white_check_mark: | 5.5                  | 6.8                  | 4.3                  | 4.6                  | 4.4                  | 4.7                  | 3.6                  | **4.6**              |
 | z-aiglm-5.2                       | **33.8** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.7                  | 4.3                  | 4.2                  | 5.0                  | 4.6                  | 3.3                  | 0.0                  |
 | gemini-3.5-flash                  | **33.7** | :x:                | :white_check_mark: | 5.4                  | 6.3                  | 5.0                  | 4.4                  | 4.9                  | 4.5                  | 3.2                  | **4.6**              |
-| gpt-5.2-2025-12-11-NONE           | **33.7** | :x:                | :x:                | 5.8                  | 6.3                  | 3.9                  | 4.7                  | 4.5                  | 4.7                  | :mage_woman: **3.8** | 4.1                  |
-| claude-opus-4-7-thinking          | **33.6** | :x:                | :white_check_mark: | 5.8                  | 6.3                  | 4.3                  | 4.4                  | 4.8                  | 4.4                  | **3.6**              | **4.7**              |
+| gpt-5.2-2025-12-11-NONE           | **33.7** | :x:                | :x:                | 5.8                  | 6.3                  | 3.9                  | 4.7                  | 4.5                  | 4.7                  | **3.8**              | 4.1                  |
+| claude-opus-4-7-thinking          | **33.6** | :x:                | :white_check_mark: | 5.8                  | 6.3                  | 4.3                  | 4.4                  | 4.8                  | 4.4                  | 3.6                  | **4.7**              |
 | deepseek-v4-flash                 | **33.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.8                  | 4.6                  | 4.8                  | 4.7                  | 2.3                  | 0.0                  |
+| gpt-5.6-luna-NONE                 | **33.6** | :x:                | :x:                | 5.8                  | 6.6                  | 2.8                  | 4.7                  | 5.2                  | 4.8                  | **3.8**              | **4.6**              |
 | gpt-5.2-codex-XHIGH               | **33.5** | :x:                | :white_check_mark: | 5.7                  | 6.2                  | 5.1                  | 4.2                  | 5.0                  | 4.3                  | 3.0                  | **4.6**              |
-| claude-opus-4-6-thinking          | **33.5** | :x:                | :white_check_mark: | 5.7                  | 6.4                  | 3.9                  | 4.2                  | 5.0                  | 4.5                  | **3.6**              | **4.5**              |
-| claude-opus-4-8                   | **33.4** | :x:                | :x:                | 5.5                  | 6.7                  | 4.1                  | 4.2                  | 5.0                  | 4.5                  | **3.5**              | 4.1                  |
+| claude-opus-4-6-thinking          | **33.5** | :x:                | :white_check_mark: | 5.7                  | 6.4                  | 3.9                  | 4.2                  | 5.0                  | 4.5                  | 3.6                  | **4.5**              |
+| claude-opus-4-8                   | **33.4** | :x:                | :x:                | 5.5                  | 6.7                  | 4.1                  | 4.2                  | 5.0                  | 4.5                  | 3.5                  | 4.1                  |
 | claude-sonnet-5-thinking          | **33.3** | :x:                | :white_check_mark: | 5.7                  | 6.2                  | 4.2                  | 4.2                  | 4.8                  | 4.6                  | **3.7**              | **4.6**              |
-| claude-opus-4-6                   | **33.3** | :x:                | :x:                | 5.7                  | 6.1                  | 4.1                  | 4.2                  | 5.1                  | 4.6                  | **3.6**              | **4.6**              |
+| claude-opus-4-6                   | **33.3** | :x:                | :x:                | 5.7                  | 6.1                  | 4.1                  | 4.2                  | 5.1                  | 4.6                  | 3.6                  | **4.6**              |
 | claude-opus-4-5-thinking-20251101 | **33.2** | :x:                | :white_check_mark: | 5.5                  | 6.4                  | 4.7                  | 3.8                  | 4.7                  | 4.6                  | 3.4                  | **4.5**              |
-| claude-sonnet-4-6-thinking        | **32.9** | :x:                | :white_check_mark: | 5.7                  | 6.0                  | 4.4                  | 4.2                  | 4.8                  | 4.2                  | **3.5**              | 4.0                  |
+| claude-sonnet-4-6-thinking        | **32.9** | :x:                | :white_check_mark: | 5.7                  | 6.0                  | 4.4                  | 4.2                  | 4.8                  | 4.2                  | 3.5                  | 4.0                  |
 | grok-build-0.1                    | **32.8** | :x:                | :x:                | 5.5                  | 5.7                  | 4.7                  | 3.9                  | 4.9                  | **4.9**              | 3.3                  | 0.0                  |
 | o3-pro-2025-06-10                 | **32.8** | :x:                | :white_check_mark: | 5.7                  | 6.4                  | 4.0                  | 4.2                  | 4.4                  | 4.7                  | 3.3                  | **4.7**              |
-| gpt-5.4-mini-2026-03-17-NONE      | **32.7** | :x:                | :x:                | 5.5                  | 6.6                  | 3.9                  | 4.5                  | 4.3                  | 4.5                  | **3.5**              | **4.7**              |
-| qwen3.6-27b                       | **32.7** | :x:                | :white_check_mark: | 5.7                  | 6.5                  | 3.3                  | 3.9                  | 5.0                  | 4.7                  | **3.6**              | 3.4                  |
-| z-aiglm-5v-turbo                  | **32.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 5.8                  | 4.8                  | 3.9                  | 4.5                  | 4.4                  | **3.5**              | 4.0                  |
-| anthropicclaude-sonnet-5          | **32.6** | :x:                | :x:                | 5.6                  | 6.1                  | 3.9                  | 4.3                  | 4.5                  | 4.6                  | **3.6**              | **4.5**              |
+| gpt-5.4-mini-2026-03-17-NONE      | **32.7** | :x:                | :x:                | 5.5                  | 6.6                  | 3.9                  | 4.5                  | 4.3                  | 4.5                  | 3.5                  | **4.7**              |
+| qwen3.6-27b                       | **32.7** | :x:                | :white_check_mark: | 5.7                  | 6.5                  | 3.3                  | 3.9                  | 5.0                  | 4.7                  | 3.6                  | 3.4                  |
+| z-aiglm-5v-turbo                  | **32.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 5.8                  | 4.8                  | 3.9                  | 4.5                  | 4.4                  | 3.5                  | 4.0                  |
+| anthropicclaude-sonnet-5          | **32.6** | :x:                | :x:                | 5.6                  | 6.1                  | 3.9                  | 4.3                  | 4.5                  | 4.6                  | 3.6                  | **4.5**              |
 | deepseek-v3.2-thinking            | **32.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.3                  | 4.1                  | 4.3                  | 4.3                  | 4.5                  | 3.3                  | 0.0                  |
-| claude-sonnet-4-5-thinking        | **32.5** | :x:                | :white_check_mark: | 5.3                  | 6.3                  | 4.3                  | 4.3                  | 4.7                  | 4.0                  | **3.5**              | 3.9                  |
+| claude-sonnet-4-5-thinking        | **32.5** | :x:                | :white_check_mark: | 5.3                  | 6.3                  | 4.3                  | 4.3                  | 4.7                  | 4.0                  | 3.5                  | 3.9                  |
 | qwen3.5-397b-a17b                 | **32.5** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.3                  | 4.2                  | 3.8                  | 4.4                  | 4.6                  | 3.4                  | 0.0                  |
-| x-aigrok-4.5                      | **32.4** | :x:                | :x:                | 5.3                  | 6.0                  | 4.1                  | 4.2                  | 4.8                  | 4.4                  | **3.6**              | **4.7**              |
+| x-aigrok-4.5                      | **32.4** | :x:                | :x:                | 5.3                  | 6.0                  | 4.1                  | 4.2                  | 4.8                  | 4.4                  | 3.6                  | **4.7**              |
 | gpt-5.3-chat-latest-2026-03-05    | **32.4** | :x:                | :white_check_mark: | 5.6                  | 5.8                  | 4.3                  | 4.4                  | 4.8                  | 4.4                  | 3.0                  | **4.6**              |
-| gpt-5.4-nano-2026-03-17-HIGH      | **32.4** | :x:                | :white_check_mark: | 4.7                  | 6.3                  | 3.7                  | 4.6                  | 5.1                  | 4.5                  | **3.5**              | **4.6**              |
+| gpt-5.4-nano-2026-03-17-HIGH      | **32.4** | :x:                | :white_check_mark: | 4.7                  | 6.3                  | 3.7                  | 4.6                  | 5.1                  | 4.5                  | 3.5                  | **4.6**              |
 | grok-4.20-experimental-beta-0304  | **32.3** | :x:                | :white_check_mark: | 5.6                  | 5.9                  | 4.2                  | 4.1                  | 4.6                  | 4.5                  | 3.4                  | 3.6                  |
 | qwen3.5-27b                       | **32.2** | :white_check_mark: | :white_check_mark: | 5.8                  | 6.5                  | 3.5                  | 3.6                  | 4.7                  | **4.9**              | 3.1                  | 0.0                  |
-| claude-opus-4-7                   | **32.2** | :x:                | :x:                | 5.7                  | 6.0                  | 3.6                  | 4.0                  | 4.7                  | 4.6                  | **3.6**              | **4.5**              |
-| claude-sonnet-4-6                 | **32.0** | :x:                | :x:                | 5.4                  | 5.6                  | 3.7                  | 4.2                  | 5.0                  | 4.5                  | **3.5**              | **4.5**              |
+| claude-opus-4-7                   | **32.2** | :x:                | :x:                | 5.7                  | 6.0                  | 3.6                  | 4.0                  | 4.7                  | 4.6                  | 3.6                  | **4.5**              |
+| claude-sonnet-4-6                 | **32.0** | :x:                | :x:                | 5.4                  | 5.6                  | 3.7                  | 4.2                  | 5.0                  | 4.5                  | 3.5                  | **4.5**              |
 | grok-4-0709                       | **31.8** | :x:                | :white_check_mark: | 5.3                  | 6.1                  | 4.5                  | 4.0                  | 4.4                  | 4.5                  | 2.9                  | 2.5                  |
-| minimaxminimax-m3                 | **31.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 5.9                  | 3.4                  | 3.9                  | 4.7                  | 4.5                  | **3.5**              | 0.0                  |
+| minimaxminimax-m3                 | **31.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 5.9                  | 3.4                  | 3.9                  | 4.7                  | 4.5                  | 3.5                  | 0.0                  |
 | gemini-3-pro-preview              | **31.7** | :x:                | :white_check_mark: | 5.7                  | 6.2                  | 4.2                  | 4.2                  | 3.9                  | 4.5                  | 3.2                  | **4.7**              |
 | qwen3.6-flash                     | **31.5** | :x:                | :white_check_mark: | 5.7                  | 6.0                  | 2.9                  | 4.3                  | 4.6                  | 4.5                  | 3.4                  | 3.9                  |
 | grok-4.3                          | **31.4** | :x:                | :white_check_mark: | 5.1                  | 5.9                  | 4.5                  | 4.0                  | 4.0                  | 4.7                  | 3.2                  | 4.4                  |
-| nemotron-3-ultra-550b-a55b        | **31.4** | :white_check_mark: | :white_check_mark: | 5.7                  | 5.8                  | 4.3                  | 3.9                  | 4.1                  | 4.0                  | **3.5**              | 0.0                  |
+| nemotron-3-ultra-550b-a55b        | **31.4** | :white_check_mark: | :white_check_mark: | 5.7                  | 5.8                  | 4.3                  | 3.9                  | 4.1                  | 4.0                  | 3.5                  | 0.0                  |
 | claude-opus-4-5-20251101          | **31.3** | :x:                | :x:                | 5.4                  | 5.6                  | 3.7                  | 4.0                  | 4.9                  | 4.3                  | 3.3                  | 4.4                  |
 | inclusionailing-2.6-1t            | **31.3** | :white_check_mark: | :x:                | 5.3                  | 5.8                  | 3.2                  | 4.3                  | 4.8                  | 4.6                  | 3.2                  | 0.0                  |
 | o4-mini-2025-04-16-HIGH           | **31.3** | :x:                | :white_check_mark: | 5.5                  | 6.2                  | 4.2                  | 3.6                  | 4.5                  | 4.2                  | 3.2                  | **4.6**              |
@@ -155,6 +162,192 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | ministral-3b-2512                 | **19.1** | :x:                | :x:                | 3.7                  | 2.3                  | 1.9                  | 2.9                  | 2.9                  | 3.2                  | 2.2                  | 3.5                  |
 | gpt-3.5-turbo                     | **17.6** | :x:                | :x:                | 3.4                  | 3.4                  | 1.2                  | 2.4                  | 2.8                  | 3.1                  | 1.3                  | 0.0                  |
 | granite4.13b                      | **16.4** | :white_check_mark: | :x:                | 2.0                  | 2.8                  | 1.2                  | 2.4                  | 3.0                  | 3.0                  | 1.9                  | 0.0                  |
+
+### gpt-5.6-sol-XHIGH   => 40.2 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 9.2   |
+| cat01_02_activity_context          | 7.5   |
+| cat01_03_high_level_events         | 7.7   |
+| cat01_04_sensor_recordings         | 5.8   |
+| cat01_05_merge_two_logs            | 7.4   |
+| cat01_06_system_logs               | 7.7   |
+| cat01_07_interv_to_pseudo_bpmn     | 7.2   |
+| cat01_08_tables_to_log             | 7.6   |
+| cat02_01_conformance_textual       | 7.9   |
+| cat02_02_conf_desiderata           | 7.7   |
+| cat02_03_anomaly_event_log         | 8.8   |
+| cat02_04_powl_anomaly_detection    | 8.8   |
+| cat02_05_two_powls_anomalies       | 8.0   |
+| cat02_06_root_cause_1              | 8.0   |
+| cat02_07_root_cause_2              | 8.8   |
+| cat02_08_underfitting_process_tree | 9.0   |
+| cat02_09_fix_process_tree          | 9.2   |
+| cat03_01_process_tree_generation   | 7.2   |
+| cat03_02_powl_generation           | 8.4   |
+| cat03_03_log_skeleton_generation   | 6.0   |
+| cat03_04_declare_generation        | 7.1   |
+| cat03_05_temp_profile_generation   | 7.8   |
+| cat03_06_petri_net_generation      | 7.5   |
+| cat03_07_process_tree_discovery    | 8.4   |
+| cat03_08_powl_discovery            | 7.4   |
+| cat04_01_pseudo_bpmn_description   | 7.6   |
+| cat04_02_pseudo_bpmn_open_question | 7.8   |
+| cat04_03_declare_open_question     | 9.2   |
+| cat04_04_declare_description       | 7.5   |
+| cat04_05_sql_filt_num_events       | 9.6   |
+| cat04_06_sql_filt_three_df         | 7.9   |
+| cat04_07_sql_filt_top_k_vars       | 8.2   |
+| cat05_01_hyp_generation_log        | 7.7   |
+| cat05_02_hyp_gen_powl              | 7.9   |
+| cat05_03_hyp_gen_declare           | 7.7   |
+| cat05_04_hyp_gen_temp_profile      | 7.9   |
+| cat05_05_question_gen_nlp          | 8.6   |
+| cat05_06_question_pseudo_bpmn      | 8.8   |
+| cat05_07_question_interview        | 7.7   |
+| cat06_01_bias_text                 | 7.7   |
+| cat06_02_bias_event_log            | 7.8   |
+| cat06_03_bias_powl                 | 7.8   |
+| cat06_04_bias_two_logs             | 7.4   |
+| cat06_05_bias_two_logs_2           | 7.9   |
+| cat06_06_bias_mitigation_declare   | 6.0   |
+| cat06_07_fair_unfair_powl          | 7.0   |
+| cat07_01_ocdfg                     | 6.5   |
+| cat07_02_bpmn_orders               | 7.8   |
+| cat07_03_bpmn_dispatch             | 8.0   |
+| cat07_04_causal_net                | 7.8   |
+| cat07_05_proclets                  | 8.0   |
+| cat07_06_perf_spectrum             | 7.9   |
+| cat08_01_queue_mining              | 7.8   |
+| cat08_02_instance_spanning         | 7.8   |
+| cat08_03_transport_opt             | 8.2   |
+| cat08_04_resource_assign           | 8.4   |
+| cat08_05_task_schedul              | 7.9   |
+
+### gpt-5.6-sol-HIGH   => 39.8 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 9.6   |
+| cat01_02_activity_context          | 7.4   |
+| cat01_03_high_level_events         | 7.7   |
+| cat01_04_sensor_recordings         | 6.3   |
+| cat01_05_merge_two_logs            | 7.7   |
+| cat01_06_system_logs               | 7.3   |
+| cat01_07_interv_to_pseudo_bpmn     | 7.4   |
+| cat01_08_tables_to_log             | 7.8   |
+| cat02_01_conformance_textual       | 8.4   |
+| cat02_02_conf_desiderata           | 7.7   |
+| cat02_03_anomaly_event_log         | 8.0   |
+| cat02_04_powl_anomaly_detection    | 8.0   |
+| cat02_05_two_powls_anomalies       | 8.2   |
+| cat02_06_root_cause_1              | 7.7   |
+| cat02_07_root_cause_2              | 7.7   |
+| cat02_08_underfitting_process_tree | 9.2   |
+| cat02_09_fix_process_tree          | 8.4   |
+| cat03_01_process_tree_generation   | 7.9   |
+| cat03_02_powl_generation           | 8.4   |
+| cat03_03_log_skeleton_generation   | 7.5   |
+| cat03_04_declare_generation        | 4.5   |
+| cat03_05_temp_profile_generation   | 7.7   |
+| cat03_06_petri_net_generation      | 8.2   |
+| cat03_07_process_tree_discovery    | 8.4   |
+| cat03_08_powl_discovery            | 7.1   |
+| cat04_01_pseudo_bpmn_description   | 7.8   |
+| cat04_02_pseudo_bpmn_open_question | 7.7   |
+| cat04_03_declare_open_question     | 7.8   |
+| cat04_04_declare_description       | 9.4   |
+| cat04_05_sql_filt_num_events       | 9.8   |
+| cat04_06_sql_filt_three_df         | 7.6   |
+| cat04_07_sql_filt_top_k_vars       | 7.5   |
+| cat05_01_hyp_generation_log        | 7.2   |
+| cat05_02_hyp_gen_powl              | 7.9   |
+| cat05_03_hyp_gen_declare           | 7.8   |
+| cat05_04_hyp_gen_temp_profile      | 7.9   |
+| cat05_05_question_gen_nlp          | 8.0   |
+| cat05_06_question_pseudo_bpmn      | 8.4   |
+| cat05_07_question_interview        | 7.8   |
+| cat06_01_bias_text                 | 7.8   |
+| cat06_02_bias_event_log            | 7.7   |
+| cat06_03_bias_powl                 | 7.7   |
+| cat06_04_bias_two_logs             | 7.6   |
+| cat06_05_bias_two_logs_2           | 7.7   |
+| cat06_06_bias_mitigation_declare   | 6.4   |
+| cat06_07_fair_unfair_powl          | 6.8   |
+| cat07_01_ocdfg                     | 7.8   |
+| cat07_02_bpmn_orders               | 8.0   |
+| cat07_03_bpmn_dispatch             | 8.0   |
+| cat07_04_causal_net                | 7.8   |
+| cat07_05_proclets                  | 8.0   |
+| cat07_06_perf_spectrum             | 7.8   |
+| cat08_01_queue_mining              | 7.8   |
+| cat08_02_instance_spanning         | 7.6   |
+| cat08_03_transport_opt             | 7.9   |
+| cat08_04_resource_assign           | 8.2   |
+| cat08_05_task_schedul              | 7.7   |
+
+### gpt-5.6-terra-HIGH   => 38.4 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 9.4   |
+| cat01_02_activity_context          | 7.7   |
+| cat01_03_high_level_events         | 7.7   |
+| cat01_04_sensor_recordings         | 6.7   |
+| cat01_05_merge_two_logs            | 7.8   |
+| cat01_06_system_logs               | 6.5   |
+| cat01_07_interv_to_pseudo_bpmn     | 7.3   |
+| cat01_08_tables_to_log             | 8.0   |
+| cat02_01_conformance_textual       | 8.8   |
+| cat02_02_conf_desiderata           | 7.5   |
+| cat02_03_anomaly_event_log         | 8.4   |
+| cat02_04_powl_anomaly_detection    | 7.0   |
+| cat02_05_two_powls_anomalies       | 8.2   |
+| cat02_06_root_cause_1              | 7.7   |
+| cat02_07_root_cause_2              | 7.5   |
+| cat02_08_underfitting_process_tree | 8.4   |
+| cat02_09_fix_process_tree          | 8.8   |
+| cat03_01_process_tree_generation   | 7.7   |
+| cat03_02_powl_generation           | 7.6   |
+| cat03_03_log_skeleton_generation   | 6.5   |
+| cat03_04_declare_generation        | 6.3   |
+| cat03_05_temp_profile_generation   | 7.3   |
+| cat03_06_petri_net_generation      | 4.0   |
+| cat03_07_process_tree_discovery    | 7.6   |
+| cat03_08_powl_discovery            | 7.7   |
+| cat04_01_pseudo_bpmn_description   | 7.9   |
+| cat04_02_pseudo_bpmn_open_question | 7.7   |
+| cat04_03_declare_open_question     | 5.4   |
+| cat04_04_declare_description       | 6.2   |
+| cat04_05_sql_filt_num_events       | 9.6   |
+| cat04_06_sql_filt_three_df         | 7.7   |
+| cat04_07_sql_filt_top_k_vars       | 8.6   |
+| cat05_01_hyp_generation_log        | 7.3   |
+| cat05_02_hyp_gen_powl              | 7.7   |
+| cat05_03_hyp_gen_declare           | 7.2   |
+| cat05_04_hyp_gen_temp_profile      | 7.7   |
+| cat05_05_question_gen_nlp          | 9.2   |
+| cat05_06_question_pseudo_bpmn      | 7.9   |
+| cat05_07_question_interview        | 7.4   |
+| cat06_01_bias_text                 | 7.9   |
+| cat06_02_bias_event_log            | 7.3   |
+| cat06_03_bias_powl                 | 7.0   |
+| cat06_04_bias_two_logs             | 7.6   |
+| cat06_05_bias_two_logs_2           | 7.6   |
+| cat06_06_bias_mitigation_declare   | 6.2   |
+| cat06_07_fair_unfair_powl          | 7.3   |
+| cat07_01_ocdfg                     | 7.8   |
+| cat07_02_bpmn_orders               | 7.8   |
+| cat07_03_bpmn_dispatch             | 7.8   |
+| cat07_04_causal_net                | 7.5   |
+| cat07_05_proclets                  | 8.2   |
+| cat07_06_perf_spectrum             | 7.8   |
+| cat08_01_queue_mining              | 7.7   |
+| cat08_02_instance_spanning         | 7.7   |
+| cat08_03_transport_opt             | 7.4   |
+| cat08_04_resource_assign           | 7.5   |
+| cat08_05_task_schedul              | 7.6   |
 
 ### moonshotaikimi-k2.6   => 37.8 points
 
@@ -515,6 +708,68 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             | 6.8   |
 | cat08_04_resource_assign           | 6.8   |
 | cat08_05_task_schedul              | 7.1   |
+
+### gpt-5.6-luna-HIGH   => 37.2 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 9.0   |
+| cat01_02_activity_context          | 7.5   |
+| cat01_03_high_level_events         | 7.5   |
+| cat01_04_sensor_recordings         | 6.6   |
+| cat01_05_merge_two_logs            | 7.5   |
+| cat01_06_system_logs               | 7.2   |
+| cat01_07_interv_to_pseudo_bpmn     | 7.5   |
+| cat01_08_tables_to_log             | 7.7   |
+| cat02_01_conformance_textual       | 7.6   |
+| cat02_02_conf_desiderata           | 6.8   |
+| cat02_03_anomaly_event_log         | 8.4   |
+| cat02_04_powl_anomaly_detection    | 3.8   |
+| cat02_05_two_powls_anomalies       | 8.0   |
+| cat02_06_root_cause_1              | 7.7   |
+| cat02_07_root_cause_2              | 7.6   |
+| cat02_08_underfitting_process_tree | 7.9   |
+| cat02_09_fix_process_tree          | 8.8   |
+| cat03_01_process_tree_generation   | 7.4   |
+| cat03_02_powl_generation           | 9.2   |
+| cat03_03_log_skeleton_generation   | 4.0   |
+| cat03_04_declare_generation        | 4.0   |
+| cat03_05_temp_profile_generation   | 7.2   |
+| cat03_06_petri_net_generation      | 7.5   |
+| cat03_07_process_tree_discovery    | 4.5   |
+| cat03_08_powl_discovery            | 4.5   |
+| cat04_01_pseudo_bpmn_description   | 7.9   |
+| cat04_02_pseudo_bpmn_open_question | 7.7   |
+| cat04_03_declare_open_question     | 6.3   |
+| cat04_04_declare_description       | 6.6   |
+| cat04_05_sql_filt_num_events       | 9.8   |
+| cat04_06_sql_filt_three_df         | 7.8   |
+| cat04_07_sql_filt_top_k_vars       | 7.5   |
+| cat05_01_hyp_generation_log        | 6.3   |
+| cat05_02_hyp_gen_powl              | 7.7   |
+| cat05_03_hyp_gen_declare           | 7.6   |
+| cat05_04_hyp_gen_temp_profile      | 7.3   |
+| cat05_05_question_gen_nlp          | 9.2   |
+| cat05_06_question_pseudo_bpmn      | 8.6   |
+| cat05_07_question_interview        | 7.8   |
+| cat06_01_bias_text                 | 8.0   |
+| cat06_02_bias_event_log            | 7.9   |
+| cat06_03_bias_powl                 | 8.4   |
+| cat06_04_bias_two_logs             | 7.1   |
+| cat06_05_bias_two_logs_2           | 7.7   |
+| cat06_06_bias_mitigation_declare   | 4.6   |
+| cat06_07_fair_unfair_powl          | 6.8   |
+| cat07_01_ocdfg                     | 7.5   |
+| cat07_02_bpmn_orders               | 7.8   |
+| cat07_03_bpmn_dispatch             | 7.8   |
+| cat07_04_causal_net                | 7.5   |
+| cat07_05_proclets                  | 7.5   |
+| cat07_06_perf_spectrum             | 7.8   |
+| cat08_01_queue_mining              | 7.5   |
+| cat08_02_instance_spanning         | 7.6   |
+| cat08_03_transport_opt             | 7.7   |
+| cat08_04_resource_assign           | 7.6   |
+| cat08_05_task_schedul              | 7.7   |
 
 ### gpt-5.4-2026-03-05-HIGH   => 37.0 points
 
@@ -882,6 +1137,68 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 7.6   |
 | cat08_05_task_schedul              | 7.2   |
 
+### gpt-5.6-sol-NONE   => 36.3 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 9.4   |
+| cat01_02_activity_context          | 7.6   |
+| cat01_03_high_level_events         | 7.5   |
+| cat01_04_sensor_recordings         | 6.7   |
+| cat01_05_merge_two_logs            | 6.5   |
+| cat01_06_system_logs               | 6.2   |
+| cat01_07_interv_to_pseudo_bpmn     | 7.7   |
+| cat01_08_tables_to_log             | 7.7   |
+| cat02_01_conformance_textual       | 8.0   |
+| cat02_02_conf_desiderata           | 8.0   |
+| cat02_03_anomaly_event_log         | 8.6   |
+| cat02_04_powl_anomaly_detection    | 6.1   |
+| cat02_05_two_powls_anomalies       | 7.0   |
+| cat02_06_root_cause_1              | 7.5   |
+| cat02_07_root_cause_2              | 8.2   |
+| cat02_08_underfitting_process_tree | 8.0   |
+| cat02_09_fix_process_tree          | 8.4   |
+| cat03_01_process_tree_generation   | 4.0   |
+| cat03_02_powl_generation           | 9.2   |
+| cat03_03_log_skeleton_generation   | 3.0   |
+| cat03_04_declare_generation        | 6.5   |
+| cat03_05_temp_profile_generation   | 5.8   |
+| cat03_06_petri_net_generation      | 5.2   |
+| cat03_07_process_tree_discovery    | 3.0   |
+| cat03_08_powl_discovery            | 7.4   |
+| cat04_01_pseudo_bpmn_description   | 7.7   |
+| cat04_02_pseudo_bpmn_open_question | 8.0   |
+| cat04_03_declare_open_question     | 6.0   |
+| cat04_04_declare_description       | 4.6   |
+| cat04_05_sql_filt_num_events       | 9.6   |
+| cat04_06_sql_filt_three_df         | 7.8   |
+| cat04_07_sql_filt_top_k_vars       | 7.9   |
+| cat05_01_hyp_generation_log        | 1.0   |
+| cat05_02_hyp_gen_powl              | 7.5   |
+| cat05_03_hyp_gen_declare           | 7.9   |
+| cat05_04_hyp_gen_temp_profile      | 7.4   |
+| cat05_05_question_gen_nlp          | 8.4   |
+| cat05_06_question_pseudo_bpmn      | 9.4   |
+| cat05_07_question_interview        | 7.7   |
+| cat06_01_bias_text                 | 7.8   |
+| cat06_02_bias_event_log            | 7.7   |
+| cat06_03_bias_powl                 | 7.5   |
+| cat06_04_bias_two_logs             | 7.3   |
+| cat06_05_bias_two_logs_2           | 7.8   |
+| cat06_06_bias_mitigation_declare   | 4.2   |
+| cat06_07_fair_unfair_powl          | 7.4   |
+| cat07_01_ocdfg                     | 7.8   |
+| cat07_02_bpmn_orders               | 7.8   |
+| cat07_03_bpmn_dispatch             | 7.8   |
+| cat07_04_causal_net                | 7.8   |
+| cat07_05_proclets                  | 7.9   |
+| cat07_06_perf_spectrum             | 8.0   |
+| cat08_01_queue_mining              | 7.8   |
+| cat08_02_instance_spanning         | 7.7   |
+| cat08_03_transport_opt             | 7.8   |
+| cat08_04_resource_assign           | 7.8   |
+| cat08_05_task_schedul              | 8.0   |
+
 ### anthropicclaude-fable-5   => 35.6 points
 
 | Question                           | Score |
@@ -1117,6 +1434,68 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             | 6.8   |
 | cat08_04_resource_assign           | 7.1   |
 | cat08_05_task_schedul              | 7.0   |
+
+### gpt-5.6-terra-NONE   => 34.9 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 8.8   |
+| cat01_02_activity_context          | 7.7   |
+| cat01_03_high_level_events         | 7.6   |
+| cat01_04_sensor_recordings         | 7.0   |
+| cat01_05_merge_two_logs            | 7.2   |
+| cat01_06_system_logs               | 6.4   |
+| cat01_07_interv_to_pseudo_bpmn     | 7.6   |
+| cat01_08_tables_to_log             | 7.3   |
+| cat02_01_conformance_textual       | 7.5   |
+| cat02_02_conf_desiderata           | 7.4   |
+| cat02_03_anomaly_event_log         | 8.2   |
+| cat02_04_powl_anomaly_detection    | 7.5   |
+| cat02_05_two_powls_anomalies       | 6.1   |
+| cat02_06_root_cause_1              | 7.7   |
+| cat02_07_root_cause_2              | 7.2   |
+| cat02_08_underfitting_process_tree | 7.8   |
+| cat02_09_fix_process_tree          | 8.8   |
+| cat03_01_process_tree_generation   | 6.8   |
+| cat03_02_powl_generation           | 8.8   |
+| cat03_03_log_skeleton_generation   | 3.5   |
+| cat03_04_declare_generation        | 4.0   |
+| cat03_05_temp_profile_generation   | 8.2   |
+| cat03_06_petri_net_generation      | 2.0   |
+| cat03_07_process_tree_discovery    | 5.5   |
+| cat03_08_powl_discovery            | 4.0   |
+| cat04_01_pseudo_bpmn_description   | 7.9   |
+| cat04_02_pseudo_bpmn_open_question | 7.8   |
+| cat04_03_declare_open_question     | 4.5   |
+| cat04_04_declare_description       | 4.5   |
+| cat04_05_sql_filt_num_events       | 8.6   |
+| cat04_06_sql_filt_three_df         | 7.5   |
+| cat04_07_sql_filt_top_k_vars       | 7.9   |
+| cat05_01_hyp_generation_log        | 1.0   |
+| cat05_02_hyp_gen_powl              | 7.5   |
+| cat05_03_hyp_gen_declare           | 6.8   |
+| cat05_04_hyp_gen_temp_profile      | 7.6   |
+| cat05_05_question_gen_nlp          | 7.7   |
+| cat05_06_question_pseudo_bpmn      | 7.8   |
+| cat05_07_question_interview        | 7.8   |
+| cat06_01_bias_text                 | 7.6   |
+| cat06_02_bias_event_log            | 6.2   |
+| cat06_03_bias_powl                 | 8.0   |
+| cat06_04_bias_two_logs             | 7.2   |
+| cat06_05_bias_two_logs_2           | 7.2   |
+| cat06_06_bias_mitigation_declare   | 4.3   |
+| cat06_07_fair_unfair_powl          | 5.9   |
+| cat07_01_ocdfg                     | 7.2   |
+| cat07_02_bpmn_orders               | 7.5   |
+| cat07_03_bpmn_dispatch             | 7.9   |
+| cat07_04_causal_net                | 4.0   |
+| cat07_05_proclets                  | 7.9   |
+| cat07_06_perf_spectrum             | 8.0   |
+| cat08_01_queue_mining              | 7.2   |
+| cat08_02_instance_spanning         | 7.5   |
+| cat08_03_transport_opt             | 7.7   |
+| cat08_04_resource_assign           | 7.6   |
+| cat08_05_task_schedul              | 7.5   |
 
 ### gpt-5.4-2026-03-05-NONE   => 34.9 points
 
@@ -2123,6 +2502,68 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             | 1.7   |
 | cat08_04_resource_assign           | 6.9   |
 | cat08_05_task_schedul              | 6.8   |
+
+### gpt-5.6-luna-NONE   => 33.6 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 9.6   |
+| cat01_02_activity_context          | 7.7   |
+| cat01_03_high_level_events         | 7.5   |
+| cat01_04_sensor_recordings         | 6.3   |
+| cat01_05_merge_two_logs            | 6.2   |
+| cat01_06_system_logs               | 5.6   |
+| cat01_07_interv_to_pseudo_bpmn     | 7.4   |
+| cat01_08_tables_to_log             | 7.5   |
+| cat02_01_conformance_textual       | 7.4   |
+| cat02_02_conf_desiderata           | 6.9   |
+| cat02_03_anomaly_event_log         | 7.8   |
+| cat02_04_powl_anomaly_detection    | 6.2   |
+| cat02_05_two_powls_anomalies       | 6.0   |
+| cat02_06_root_cause_1              | 7.3   |
+| cat02_07_root_cause_2              | 7.2   |
+| cat02_08_underfitting_process_tree | 8.0   |
+| cat02_09_fix_process_tree          | 8.8   |
+| cat03_01_process_tree_generation   | 2.0   |
+| cat03_02_powl_generation           | 8.0   |
+| cat03_03_log_skeleton_generation   | 3.0   |
+| cat03_04_declare_generation        | 2.5   |
+| cat03_05_temp_profile_generation   | 4.5   |
+| cat03_06_petri_net_generation      | 2.0   |
+| cat03_07_process_tree_discovery    | 2.0   |
+| cat03_08_powl_discovery            | 4.0   |
+| cat04_01_pseudo_bpmn_description   | 7.7   |
+| cat04_02_pseudo_bpmn_open_question | 7.6   |
+| cat04_03_declare_open_question     | 3.4   |
+| cat04_04_declare_description       | 3.5   |
+| cat04_05_sql_filt_num_events       | 9.6   |
+| cat04_06_sql_filt_three_df         | 7.6   |
+| cat04_07_sql_filt_top_k_vars       | 7.5   |
+| cat05_01_hyp_generation_log        | 6.4   |
+| cat05_02_hyp_gen_powl              | 7.5   |
+| cat05_03_hyp_gen_declare           | 7.2   |
+| cat05_04_hyp_gen_temp_profile      | 6.2   |
+| cat05_05_question_gen_nlp          | 7.8   |
+| cat05_06_question_pseudo_bpmn      | 7.8   |
+| cat05_07_question_interview        | 8.6   |
+| cat06_01_bias_text                 | 7.5   |
+| cat06_02_bias_event_log            | 7.7   |
+| cat06_03_bias_powl                 | 7.6   |
+| cat06_04_bias_two_logs             | 6.8   |
+| cat06_05_bias_two_logs_2           | 7.6   |
+| cat06_06_bias_mitigation_declare   | 3.5   |
+| cat06_07_fair_unfair_powl          | 7.4   |
+| cat07_01_ocdfg                     | 7.2   |
+| cat07_02_bpmn_orders               | 7.8   |
+| cat07_03_bpmn_dispatch             | 7.8   |
+| cat07_04_causal_net                | 7.8   |
+| cat07_05_proclets                  | 7.8   |
+| cat07_06_perf_spectrum             | 7.8   |
+| cat08_01_queue_mining              | 7.6   |
+| cat08_02_instance_spanning         | 7.6   |
+| cat08_03_transport_opt             | 7.4   |
+| cat08_04_resource_assign           | 7.6   |
+| cat08_05_task_schedul              | 7.5   |
 
 ### gpt-5.2-codex-XHIGH   => 33.5 points
 
