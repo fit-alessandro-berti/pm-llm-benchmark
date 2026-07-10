@@ -1,0 +1,608 @@
+## Anomaly assessment
+
+| Relationship | Assessment |
+|---|---|
+| **R  P: 25 hours, SD 1 hour** | The coefficient of variation is only about 4%, making approval timing unusually rigid. This may indicate an SLA-driven batch job, timestamp rounding, backfilled events, or derived rather than actual approval timestamps. |
+| **P  N: 7 days, SD 2 days** | The mean delay is operationally long, and the two-day standard deviation represents substantial absolute variation. At three standard deviations, the expected upper limit would be about 13 days. |
+| **A  C: 2 hours, SD 1 hour** | Closure soon after assignment may represent withdrawn, duplicate, automatically rejected, or prematurely closed claims. It is especially suspicious because evaluation normally occurs about 24 hours after receipt. |
+| **E  N: 5 minutes, SD 1 minute** | This is likely an automated notification, a non-final notification, or evidence that approval is being skipped or recorded out of order. |
+| **E  C: 1 hour, SD 50 minutes** | The 83% coefficient of variation suggests a mixture of process variants rather than one stable process. |
+| **Cross-pair inconsistency** | If the same claims and event occurrences underlie all pairs, `E  N = 5 minutes` is incompatible with an intended intervening approval followed by `P  N = 7 days`. Similarly, `A  C = 2 hours` conflicts with `R  E = 24 hours` when assignment occurs about one hour after receipt. |
+
+The cross-pair inconsistencies are not conclusive if the averages use different claim populations or different occurrences of repeated activities. That distinction should be checked explicitly.
+
+## Likely explanations
+
+1. **Different process variants**
+   - Withdrawn or duplicate claims may close directly after assignment.
+   - Low-value claims may be evaluated and notified automatically.
+   - Rejected claims may not require an approval event.
+   - Full manual claims may follow the longer process.
+
+2. **Notification backlog or batching**
+   - Notifications may be sent by a daily or weekly batch.
+   - Weekend approvals may wait until a business day.
+   - External mail, SMS, or document-generation systems may be constrained.
+
+3. **Artificial or SLA-driven approval timestamps**
+   - Approval timestamps may be generated at a fixed deadline.
+   - A scheduler may run at a fixed hour.
+   - Approval events may be backfilled from another system.
+
+4. **Ambiguous activity semantics**
+   - `N` may include acknowledgements, requests for information, and final decisions.
+   - `C` may include temporary or administrative closure.
+   - Multiple `P` or `N` events may occur for the same claim.
+
+5. **Event-log extraction problems**
+   - The profile may pair the wrong occurrences of repeated events.
+   - An all-pairs join could multiply event combinations.
+   - Timestamps may represent ingestion time rather than execution time.
+   - Regional timestamps stored without timezone information may be misaligned.
+
+6. **Resource or workload effects**
+   - Particular adjusters, regions, claim types, or claim-amount bands may have larger backlogs.
+   - Specialized claims may wait for scarce evaluators or approvers.
+
+---
+
+## SQL verification
+
+### 1. Construct deterministic eventual-following durations
+
+The following view uses the first source activity for each claim and the first matching target activity after it. If repeated activities have different business semantics, the pairing rule should be changed to use, for example, the final approval or final notification.
+
+```sql
+CREATE OR REPLACE TEMP VIEW profile_pair_durations AS
+WITH profile (
+    from_activity,
+    to_activity,
+    model_avg_seconds,
+    model_sd_seconds
+) AS (
+    VALUES
+        ('R'::varchar, 'A'::varchar,   3600::numeric,    600::numeric),
+        ('R'::varchar, 'E'::varchar,  86400::numeric,  28800::numeric),
+        ('R'::varchar, 'P'::varchar,  90000::numeric,   3600::numeric),
+        ('A'::varchar, 'C'::varchar,   7200::numeric,   3600::numeric),
+        ('E'::varchar, 'N'::varchar,    300::numeric,     60::numeric),
+        ('E'::varchar, 'C'::varchar,   3600::numeric,   3000::numeric),
+        ('P'::varchar, 'N'::varchar, 604800::numeric, 172800::numeric),
+        ('N'::varchar, 'C'::varchar,   1800::numeric,    300::numeric)
+),
+source_candidates AS (
+    SELECT
+        p.*,
+        e.claim_id,
+        e.event_id AS source_event_id,
+        e."timestamp" AS source_ts,
+        e.resource AS source_resource,
+        e.additional_info AS source_info,
+        ROW_NUMBER() OVER (
+            PARTITION BY p.from_activity, p.to_activity, e.claim_id
+            ORDER BY e."timestamp", e.event_id
+        ) AS source_number
+    FROM profile p
+    JOIN claim_events e
+      ON e.activity = p.from_activity
+)
+SELECT
+    s.from_activity,
+    s.to_activity,
+    s.model_avg_seconds,
+    s.model_sd_seconds,
+    s.claim_id,
+    s.source_event_id,
+    s.source_ts,
+    s.source_resource,
+    s.source_info,
+    target.event_id AS target_event_id,
+    target.target_ts,
+    target.target_resource,
+    target.target_info,
+    EXTRACT(EPOCH FROM target.target_ts - s.source_ts) AS duration_seconds,
+    (
+        EXTRACT(EPOCH FROM target.target_ts - s.source_ts)
+        - s.model_avg_seconds
+    ) / NULLIF(s.model_sd_seconds, 0) AS z_score
+FROM source_candidates s
+JOIN LATERAL (
+    SELECT
+        e2.event_id,
+        e2."timestamp" AS target_ts,
+        e2.resource AS target_resource,
+        e2.additional_info AS target_info
+    FROM claim_events e2
+    WHERE e2.claim_id = s.claim_id
+      AND e2.activity = s.to_activity
+      AND (
+          e2."timestamp" > s.source_ts
+          OR (
+              e2."timestamp" = s.source_ts
+              AND e2.event_id > s.source_event_id
+          )
+      )
+    ORDER BY e2."timestamp", e2.event_id
+    LIMIT 1
+) AS target ON TRUE
+WHERE s.source_number = 1;
+```
+
+### 2. Recalculate the profile and count statistical deviations
+
+```sql
+SELECT
+    from_activity,
+    to_activity,
+    COUNT(*) AS matched_claims,
+    model_avg_seconds,
+    model_sd_seconds,
+    ROUND(AVG(duration_seconds), 1) AS empirical_avg_seconds,
+    ROUND(STDDEV_SAMP(duration_seconds), 1) AS empirical_sd_seconds,
+    ROUND(
+        PERCENTILE_CONT(0.50)
+            WITHIN GROUP (ORDER BY duration_seconds)::numeric,
+        1
+    ) AS median_seconds,
+    ROUND(
+        PERCENTILE_CONT(0.95)
+            WITHIN GROUP (ORDER BY duration_seconds)::numeric,
+        1
+    ) AS p95_seconds,
+    COUNT(*) FILTER (WHERE ABS(z_score) > 2) AS outside_2_sd,
+    COUNT(*) FILTER (WHERE ABS(z_score) > 3) AS outside_3_sd
+FROM profile_pair_durations
+GROUP BY
+    from_activity,
+    to_activity,
+    model_avg_seconds,
+    model_sd_seconds
+ORDER BY from_activity, to_activity;
+```
+
+Large differences between the stored and empirical statistics could indicate a different pairing rule, stale profile data, or an extraction defect.
+
+### 3. List individual claims outside the expected range
+
+Here `3` is the example ZETA threshold.
+
+```sql
+SELECT
+    d.claim_id,
+    c.customer_id,
+    c.claim_type,
+    c.claim_amount,
+    d.from_activity,
+    d.to_activity,
+    d.source_ts,
+    d.target_ts,
+    ROUND(d.duration_seconds / 3600.0, 2) AS duration_hours,
+    ROUND(d.z_score, 2) AS z_score,
+    d.source_resource,
+    d.target_resource,
+    d.source_info,
+    d.target_info
+FROM profile_pair_durations d
+JOIN claims c
+  ON c.claim_id = d.claim_id
+WHERE ABS(d.z_score) > 3
+ORDER BY ABS(d.z_score) DESC;
+```
+
+Because the profile itself may be abnormal, these results should also be compared with business SLAs rather than relying only on model-derived Z-scores.
+
+### 4. Check for source activities with no later target
+
+This identifies missing activities and cases where the target may have occurred before the source.
+
+```sql
+WITH pairs(from_activity, to_activity) AS (
+    VALUES
+        ('R', 'A'), ('R', 'E'), ('R', 'P'), ('A', 'C'),
+        ('E', 'N'), ('E', 'C'), ('P', 'N'), ('N', 'C')
+),
+sources AS (
+    SELECT DISTINCT
+        p.from_activity,
+        p.to_activity,
+        e.claim_id
+    FROM pairs p
+    JOIN claim_events e
+      ON e.activity = p.from_activity
+)
+SELECT
+    p.from_activity,
+    p.to_activity,
+    COUNT(s.claim_id) AS claims_with_source,
+    COUNT(d.claim_id) AS claims_with_later_target,
+    COUNT(s.claim_id) - COUNT(d.claim_id) AS missing_or_reversed_target
+FROM pairs p
+LEFT JOIN sources s
+  ON s.from_activity = p.from_activity
+ AND s.to_activity = p.to_activity
+LEFT JOIN profile_pair_durations d
+  ON d.from_activity = s.from_activity
+ AND d.to_activity = s.to_activity
+ AND d.claim_id = s.claim_id
+GROUP BY p.from_activity, p.to_activity
+ORDER BY p.from_activity, p.to_activity;
+```
+
+### 5. Find rapid closures after assignment with missing intermediate steps
+
+The three-hour threshold is illustrative and should be replaced with the applicable business rule.
+
+```sql
+WITH parameters AS (
+    SELECT INTERVAL '3 hours' AS maximum_assignment_to_close
+),
+first_assignment AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        event_id AS assignment_event_id,
+        "timestamp" AS assignment_ts,
+        resource AS assignment_resource
+    FROM claim_events
+    WHERE activity = 'A'
+    ORDER BY claim_id, "timestamp", event_id
+),
+assignment_to_close AS (
+    SELECT
+        a.*,
+        close_event.event_id AS close_event_id,
+        close_event.close_ts,
+        close_event.close_resource
+    FROM first_assignment a
+    JOIN LATERAL (
+        SELECT
+            e.event_id,
+            e."timestamp" AS close_ts,
+            e.resource AS close_resource
+        FROM claim_events e
+        WHERE e.claim_id = a.claim_id
+          AND e.activity = 'C'
+          AND (
+              e."timestamp" > a.assignment_ts
+              OR (
+                  e."timestamp" = a.assignment_ts
+                  AND e.event_id > a.assignment_event_id
+              )
+          )
+        ORDER BY e."timestamp", e.event_id
+        LIMIT 1
+    ) AS close_event ON TRUE
+)
+SELECT
+    ac.claim_id,
+    cl.claim_type,
+    cl.claim_amount,
+    ac.assignment_ts,
+    ac.close_ts,
+    ROUND(
+        EXTRACT(EPOCH FROM ac.close_ts - ac.assignment_ts) / 60.0,
+        1
+    ) AS elapsed_minutes,
+    ac.assignment_resource,
+    ac.close_resource,
+    middle.intervening_events,
+    middle.evaluation_events,
+    middle.approval_events
+FROM assignment_to_close ac
+JOIN claims cl
+  ON cl.claim_id = ac.claim_id
+CROSS JOIN parameters p
+CROSS JOIN LATERAL (
+    SELECT
+        COUNT(*) AS intervening_events,
+        COUNT(*) FILTER (WHERE e.activity = 'E') AS evaluation_events,
+        COUNT(*) FILTER (WHERE e.activity = 'P') AS approval_events
+    FROM claim_events e
+    WHERE e.claim_id = ac.claim_id
+      AND (e."timestamp", e.event_id)
+            > (ac.assignment_ts, ac.assignment_event_id)
+      AND (e."timestamp", e.event_id)
+            < (ac.close_ts, ac.close_event_id)
+) AS middle
+WHERE ac.close_ts - ac.assignment_ts
+          <= p.maximum_assignment_to_close
+  AND (
+      middle.evaluation_events = 0
+      OR middle.approval_events = 0
+  )
+ORDER BY elapsed_minutes;
+```
+
+This separates genuinely compressed processing from closures that omit evaluation or approval.
+
+### 6. Find missing or delayed notifications after approval
+
+```sql
+WITH parameters AS (
+    SELECT INTERVAL '7 days' AS notification_sla
+),
+first_approval AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        event_id AS approval_event_id,
+        "timestamp" AS approval_ts,
+        resource AS approval_resource
+    FROM claim_events
+    WHERE activity = 'P'
+    ORDER BY claim_id, "timestamp", event_id
+),
+approval_notification AS (
+    SELECT
+        p.*,
+        n.notification_event_id,
+        n.notification_ts,
+        n.notification_resource
+    FROM first_approval p
+    LEFT JOIN LATERAL (
+        SELECT
+            e.event_id AS notification_event_id,
+            e."timestamp" AS notification_ts,
+            e.resource AS notification_resource
+        FROM claim_events e
+        WHERE e.claim_id = p.claim_id
+          AND e.activity = 'N'
+          AND (
+              e."timestamp" > p.approval_ts
+              OR (
+                  e."timestamp" = p.approval_ts
+                  AND e.event_id > p.approval_event_id
+              )
+          )
+        ORDER BY e."timestamp", e.event_id
+        LIMIT 1
+    ) n ON TRUE
+)
+SELECT
+    pn.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    pn.approval_ts,
+    pn.notification_ts,
+    ROUND(
+        EXTRACT(EPOCH FROM pn.notification_ts - pn.approval_ts)
+            / 86400.0,
+        2
+    ) AS delay_days,
+    pn.approval_resource,
+    pn.notification_resource,
+    CASE
+        WHEN pn.notification_ts IS NULL THEN 'missing notification'
+        ELSE 'late notification'
+    END AS anomaly
+FROM approval_notification pn
+JOIN claims c
+  ON c.claim_id = pn.claim_id
+CROSS JOIN parameters p
+WHERE pn.notification_ts IS NULL
+   OR pn.notification_ts - pn.approval_ts > p.notification_sla
+ORDER BY pn.notification_ts NULLS FIRST, delay_days DESC;
+```
+
+### 7. Correlate notification problems with claim type, amount, adjuster, and region
+
+This query assumes that the `resource` on the assignment event contains `adjusters.name`.
+
+```sql
+WITH first_assignment AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        resource AS assignment_resource
+    FROM claim_events
+    WHERE activity = 'A'
+    ORDER BY claim_id, "timestamp", event_id
+),
+first_approval AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        event_id AS approval_event_id,
+        "timestamp" AS approval_ts
+    FROM claim_events
+    WHERE activity = 'P'
+    ORDER BY claim_id, "timestamp", event_id
+),
+approval_notification AS (
+    SELECT
+        p.claim_id,
+        p.approval_ts,
+        n.notification_ts
+    FROM first_approval p
+    LEFT JOIN LATERAL (
+        SELECT e."timestamp" AS notification_ts
+        FROM claim_events e
+        WHERE e.claim_id = p.claim_id
+          AND e.activity = 'N'
+          AND (
+              e."timestamp" > p.approval_ts
+              OR (
+                  e."timestamp" = p.approval_ts
+                  AND e.event_id > p.approval_event_id
+              )
+          )
+        ORDER BY e."timestamp", e.event_id
+        LIMIT 1
+    ) n ON TRUE
+),
+base AS (
+    SELECT
+        pn.claim_id,
+        pn.approval_ts,
+        pn.notification_ts,
+        c.claim_type,
+        CASE
+            WHEN c.claim_amount IS NULL THEN 'unknown'
+            WHEN c.claim_amount < 1000 THEN '<1k'
+            WHEN c.claim_amount < 10000 THEN '1k-10k'
+            ELSE '10k+'
+        END AS amount_band,
+        COALESCE(ad.name, fa.assignment_resource, '<unmapped>')
+            AS adjuster_key,
+        COALESCE(ad.region, '<unmapped>') AS adjuster_region
+    FROM approval_notification pn
+    JOIN claims c
+      ON c.claim_id = pn.claim_id
+    LEFT JOIN first_assignment fa
+      ON fa.claim_id = pn.claim_id
+    LEFT JOIN adjusters ad
+      ON ad.name = fa.assignment_resource
+)
+SELECT
+    claim_type,
+    amount_band,
+    adjuster_region,
+    adjuster_key,
+    COUNT(*) AS approved_claims,
+    COUNT(*) FILTER (
+        WHERE notification_ts IS NULL
+    ) AS missing_notifications,
+    COUNT(*) FILTER (
+        WHERE notification_ts IS NOT NULL
+          AND notification_ts - approval_ts > INTERVAL '7 days'
+    ) AS late_notifications,
+    ROUND(
+        100.0 * COUNT(*) FILTER (
+            WHERE notification_ts IS NULL
+               OR notification_ts - approval_ts > INTERVAL '7 days'
+        ) / NULLIF(COUNT(*), 0),
+        1
+    ) AS late_or_missing_percent,
+    ROUND(
+        AVG(
+            EXTRACT(EPOCH FROM notification_ts - approval_ts)
+            / 86400.0
+        )::numeric,
+        2
+    ) AS average_delay_days
+FROM base
+GROUP BY
+    claim_type,
+    amount_band,
+    adjuster_region,
+    adjuster_key
+HAVING COUNT(*) >= 10
+ORDER BY late_or_missing_percent DESC, approved_claims DESC;
+```
+
+### 8. Test for batch schedules
+
+A narrow `R  P` histogram around exactly 1,500 minutes would support a scheduler or timestamp derivation hypothesis.
+
+```sql
+SELECT
+    ROUND(duration_seconds / 60.0) AS elapsed_minutes,
+    COUNT(*) AS claim_count
+FROM profile_pair_durations
+WHERE from_activity = 'R'
+  AND to_activity = 'P'
+GROUP BY 1
+ORDER BY claim_count DESC
+LIMIT 20;
+```
+
+Weekly or hourly notification concentrations can be checked with:
+
+```sql
+SELECT
+    EXTRACT(ISODOW FROM source_ts)::integer AS approval_weekday,
+    EXTRACT(ISODOW FROM target_ts)::integer AS notification_weekday,
+    EXTRACT(HOUR FROM target_ts)::integer AS notification_hour,
+    COUNT(*) AS claim_count,
+    ROUND(AVG(duration_seconds) / 86400.0, 2) AS average_delay_days
+FROM profile_pair_durations
+WHERE from_activity = 'P'
+  AND to_activity = 'N'
+GROUP BY 1, 2, 3
+ORDER BY 1, 2, 3;
+```
+
+### 9. Check duplicates, direct skips, and ordering defects
+
+Repeated activities can cause materially different results depending on the pairing rule.
+
+```sql
+SELECT
+    claim_id,
+    activity,
+    COUNT(*) AS occurrence_count,
+    MIN("timestamp") AS first_occurrence,
+    MAX("timestamp") AS last_occurrence
+FROM claim_events
+GROUP BY claim_id, activity
+HAVING COUNT(*) > 1
+ORDER BY occurrence_count DESC, claim_id, activity;
+```
+
+Direct `A  C` and `E  N` transitions can be measured independently of the eventual-following profile:
+
+```sql
+WITH ordered_events AS (
+    SELECT
+        claim_id,
+        activity,
+        "timestamp",
+        LEAD(activity) OVER event_order AS next_activity,
+        LEAD("timestamp") OVER event_order AS next_timestamp
+    FROM claim_events
+    WINDOW event_order AS (
+        PARTITION BY claim_id
+        ORDER BY "timestamp", event_id
+    )
+)
+SELECT
+    activity AS from_activity,
+    next_activity AS to_activity,
+    COUNT(*) AS transition_count,
+    ROUND(
+        AVG(EXTRACT(EPOCH FROM next_timestamp - "timestamp"))::numeric,
+        1
+    ) AS average_seconds
+FROM ordered_events
+WHERE (activity = 'A' AND next_activity = 'C')
+   OR (activity = 'E' AND next_activity = 'N')
+GROUP BY activity, next_activity;
+```
+
+Finally, missing and out-of-order mandatory steps can be identified from their first occurrences:
+
+```sql
+WITH first_steps AS (
+    SELECT
+        c.claim_id,
+        MIN(e."timestamp") FILTER (WHERE e.activity = 'R') AS r_ts,
+        MIN(e."timestamp") FILTER (WHERE e.activity = 'A') AS a_ts,
+        MIN(e."timestamp") FILTER (WHERE e.activity = 'E') AS e_ts,
+        MIN(e."timestamp") FILTER (WHERE e.activity = 'P') AS p_ts,
+        MIN(e."timestamp") FILTER (WHERE e.activity = 'N') AS n_ts,
+        MIN(e."timestamp") FILTER (WHERE e.activity = 'C') AS c_ts
+    FROM claims c
+    LEFT JOIN claim_events e
+      ON e.claim_id = c.claim_id
+    GROUP BY c.claim_id
+)
+SELECT
+    f.*,
+    c.claim_type,
+    c.claim_amount
+FROM first_steps f
+JOIN claims c
+  ON c.claim_id = f.claim_id
+WHERE f.r_ts IS NULL
+   OR f.a_ts IS NULL
+   OR f.e_ts IS NULL
+   OR f.p_ts IS NULL
+   OR f.n_ts IS NULL
+   OR f.c_ts IS NULL
+   OR f.r_ts > f.a_ts
+   OR f.a_ts > f.e_ts
+   OR f.e_ts > f.p_ts
+   OR f.p_ts > f.n_ts
+   OR f.n_ts > f.c_ts
+ORDER BY f.claim_id;
+```
+
+Missing steps should only be classified as errors after accounting for legitimate rejection, withdrawal, and duplicate-claim branches.
+
+A final schema limitation is that there is no explicit `adjuster_id` on either `claims` or `claim_events`. If `resource` is not exactly the adjuster name or identifier, adjuster and region attribution cannot be verified reliably. A structured claim-to-adjuster relationship would be needed. Likewise, customer geographic segments are not present, and the timezone interpretation of the `TIMESTAMP` values is unspecified.

@@ -1,0 +1,327 @@
+## 1. Anomalies in the DECLARE model
+
+Assuming the conventional interpretations:
+
+- `responded_existence(E, A)`: if an evaluation occurs, an assignment must occur somewhere in the same trace.
+- `precedence(R, C)`: a claim may close only after it has been received.
+- `noncoexistence(E, C)`: evaluation and closing cannot occur in the same trace.
+
+### Mandatory closing makes evaluation impossible
+
+`existence(C)` requires every completed trace to contain `C`, while `noncoexistence(E, C)` prohibits any trace from containing both `E` and `C`.
+
+Consequently, every model-compliant trace must omit evaluation. Any trace containing `E` either:
+
+- also contains `C` and violates noncoexistence, or
+- omits `C` and violates mandatory closing.
+
+This directly conflicts with the expected role of evaluation in claim processing.
+
+### The model permits a minimal `R  C` process
+
+A trace containing only:
+
+```text
+R, C
+```
+
+satisfies the model. Assignment, evaluation, approval, and notification can all be skipped.
+
+Thus, the model is not formally unsatisfiable; it has valid traces. Its constraints instead encode a process that is inconsistent with the intended business workflow.
+
+### Responded existence is effectively vacuous
+
+Because valid traces cannot contain `E`, the rule requiring `A` whenever `E` occurs is never activated.
+
+Even without the noncoexistence issue, responded existence is too weak to enforce assignment before evaluation. It accepts:
+
+```text
+R, E, A, C
+```
+
+because assignment occurs somewhere in the trace, even though it occurs too late.
+
+### Approval and notification are unconstrained
+
+There are no rules requiring `P` or `N`, or controlling their order. The model may therefore permit:
+
+- closing without approval;
+- approval without evaluation;
+- notification before approval;
+- closing before notification;
+- repeated or otherwise misplaced approval and notification events.
+
+### Partial redundancy between initialization and precedence
+
+Since `R` must be the initial event and `C` must exist, `precedence(R, C)` adds little under normal trace semantics. It does not repair the missing intermediate stages.
+
+---
+
+## 2. Possible explanations
+
+1. **Incorrect constraint selection**  
+   A precedence rule requiring evaluation before closing may have been encoded as noncoexistence instead.
+
+2. **Activity-code ambiguity**  
+   `C` may have been interpreted as “Cancel” in one source and “Close” in another. Noncoexistence between evaluation and cancellation could be reasonable, while noncoexistence between evaluation and closing is not.
+
+3. **Misunderstanding of responded existence**  
+   The model author may have assumed that responded existence enforces `A` before `E`, when it only requires both activities to appear somewhere in the trace.
+
+4. **Incomplete event collection**  
+   Evaluations may happen in another application and not be written to `claim_events`. A model learned from such logs could incorrectly suggest that closed claims are never evaluated.
+
+5. **Inconsistent policy revisions**  
+   A rule added to accelerate claim closure may have been combined with older constraints without checking the resulting model globally.
+
+6. **Mixed process variants**  
+   Automatically approved, low-value, emergency, rejected, and manually assessed claims may have been combined into one model without variant-specific conditions.
+
+7. **Data filtering or mining errors**  
+   The model may have been generated from a small, closed-only, truncated, or otherwise unrepresentative sample. Support and confidence values of `1.0` do not establish that the underlying data or rule interpretation is correct.
+
+8. **Operational pressure to skip controls**  
+   Assignment, evaluation, approval, or notification may have been bypassed to reduce turnaround time, and the discovered model may reflect those shortcuts rather than the approved process.
+
+---
+
+## 3. SQL-based investigation
+
+The queries below use `event_id` as a tie-breaker when events have the same timestamp.
+
+### Find claims closed without evaluation
+
+```sql
+SELECT
+    c.claim_id,
+    c.customer_id,
+    c.claim_amount,
+    c.claim_type,
+    c.submission_date
+FROM claims AS c
+WHERE EXISTS (
+    SELECT 1
+    FROM claim_events AS ce
+    WHERE ce.claim_id = c.claim_id
+      AND ce.activity = 'C'
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM claim_events AS ce
+    WHERE ce.claim_id = c.claim_id
+      AND ce.activity = 'E'
+)
+ORDER BY c.claim_id;
+```
+
+### Find traces containing both evaluation and closing
+
+These traces violate the noncoexistence rule.
+
+```sql
+SELECT
+    ce.claim_id,
+    MIN(ce."timestamp") FILTER (WHERE ce.activity = 'E') AS first_evaluation,
+    MIN(ce."timestamp") FILTER (WHERE ce.activity = 'C') AS first_closing
+FROM claim_events AS ce
+GROUP BY ce.claim_id
+HAVING BOOL_OR(ce.activity = 'E')
+   AND BOOL_OR(ce.activity = 'C')
+ORDER BY ce.claim_id;
+```
+
+### Find evaluations with no assignment anywhere in the trace
+
+This checks the responded-existence rule directly.
+
+```sql
+SELECT
+    e.claim_id,
+    e.event_id AS evaluation_event_id,
+    e."timestamp" AS evaluation_time,
+    e.resource AS evaluator
+FROM claim_events AS e
+WHERE e.activity = 'E'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events AS a
+      WHERE a.claim_id = e.claim_id
+        AND a.activity = 'A'
+  )
+ORDER BY e.claim_id, e."timestamp", e.event_id;
+```
+
+### Find evaluations that do not have a prior assignment
+
+This checks the stronger business requirement that assignment precede evaluation.
+
+```sql
+SELECT
+    e.claim_id,
+    e.event_id AS evaluation_event_id,
+    e."timestamp" AS evaluation_time,
+    e.resource AS evaluator
+FROM claim_events AS e
+WHERE e.activity = 'E'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events AS a
+      WHERE a.claim_id = e.claim_id
+        AND a.activity = 'A'
+        AND (a."timestamp", a.event_id)
+            < (e."timestamp", e.event_id)
+  )
+ORDER BY e.claim_id, e."timestamp", e.event_id;
+```
+
+### Find closing events without a prior receipt
+
+```sql
+SELECT
+    cl.claim_id,
+    cl.event_id AS closing_event_id,
+    cl."timestamp" AS closing_time
+FROM claim_events AS cl
+WHERE cl.activity = 'C'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events AS r
+      WHERE r.claim_id = cl.claim_id
+        AND r.activity = 'R'
+        AND (r."timestamp", r.event_id)
+            < (cl."timestamp", cl.event_id)
+  )
+ORDER BY cl.claim_id, cl."timestamp", cl.event_id;
+```
+
+### Find claims whose first event is not receipt
+
+```sql
+WITH first_event AS (
+    SELECT DISTINCT ON (ce.claim_id)
+        ce.claim_id,
+        ce.activity,
+        ce."timestamp",
+        ce.event_id
+    FROM claim_events AS ce
+    ORDER BY
+        ce.claim_id,
+        ce."timestamp" NULLS LAST,
+        ce.event_id
+)
+SELECT
+    c.claim_id,
+    fe.activity AS first_activity,
+    fe."timestamp" AS first_event_time
+FROM claims AS c
+LEFT JOIN first_event AS fe
+    ON fe.claim_id = c.claim_id
+WHERE fe.claim_id IS NULL
+   OR fe.activity <> 'R'
+ORDER BY c.claim_id;
+```
+
+### Find traces missing mandatory closing
+
+This should normally be restricted to claims considered complete; otherwise open claims will appear as false positives.
+
+```sql
+SELECT
+    c.claim_id,
+    c.submission_date,
+    c.claim_type,
+    c.claim_amount
+FROM claims AS c
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM claim_events AS ce
+    WHERE ce.claim_id = c.claim_id
+      AND ce.activity = 'C'
+)
+ORDER BY c.submission_date, c.claim_id;
+```
+
+### Screen closed claims for missing or misordered stages
+
+```sql
+WITH ordered_events AS (
+    SELECT
+        ce.claim_id,
+        ce.activity,
+        ROW_NUMBER() OVER (
+            PARTITION BY ce.claim_id
+            ORDER BY ce."timestamp", ce.event_id
+        ) AS position
+    FROM claim_events AS ce
+),
+milestones AS (
+    SELECT
+        claim_id,
+        MIN(position) FILTER (WHERE activity = 'R') AS receive_pos,
+        MIN(position) FILTER (WHERE activity = 'A') AS assign_pos,
+        MIN(position) FILTER (WHERE activity = 'E') AS evaluate_pos,
+        MIN(position) FILTER (WHERE activity = 'P') AS approve_pos,
+        MIN(position) FILTER (WHERE activity = 'N') AS notify_pos,
+        MIN(position) FILTER (WHERE activity = 'C') AS close_pos
+    FROM ordered_events
+    GROUP BY claim_id
+)
+SELECT
+    c.claim_id,
+    m.receive_pos,
+    m.assign_pos,
+    m.evaluate_pos,
+    m.approve_pos,
+    m.notify_pos,
+    m.close_pos
+FROM claims AS c
+JOIN milestones AS m
+    ON m.claim_id = c.claim_id
+WHERE m.close_pos IS NOT NULL
+  AND (
+       m.receive_pos IS NULL
+    OR m.assign_pos IS NULL
+    OR m.evaluate_pos IS NULL
+    OR m.approve_pos IS NULL
+    OR m.notify_pos IS NULL
+    OR NOT (
+        m.receive_pos < m.assign_pos
+        AND m.assign_pos < m.evaluate_pos
+        AND m.evaluate_pos < m.approve_pos
+        AND m.approve_pos < m.notify_pos
+        AND m.notify_pos < m.close_pos
+    )
+  )
+ORDER BY c.claim_id;
+```
+
+### Check whether evaluators exist in the adjuster master and have the correct specialization
+
+```sql
+SELECT
+    e.claim_id,
+    e.event_id,
+    e."timestamp",
+    e.resource AS evaluator,
+    c.claim_type,
+    ad.adjuster_id,
+    ad.specialization
+FROM claim_events AS e
+JOIN claims AS c
+    ON c.claim_id = e.claim_id
+LEFT JOIN adjusters AS ad
+    ON LOWER(BTRIM(ad.name)) = LOWER(BTRIM(e.resource))
+WHERE e.activity = 'E'
+  AND c.claim_type IN ('home_insurance', 'auto_insurance')
+  AND (
+      ad.adjuster_id IS NULL
+      OR ad.specialization IS DISTINCT FROM
+         CASE c.claim_type
+             WHEN 'home_insurance' THEN 'home'
+             WHEN 'auto_insurance' THEN 'auto'
+         END
+  )
+ORDER BY e.claim_id, e."timestamp", e.event_id;
+```
+
+Matching `resource` to `adjusters.name` is inherently fragile because no adjuster identifier is stored in `claim_events`. A reliable investigation should ideally log `adjuster_id`, distinguish the person making an assignment from the assigned person, and explicitly record whether an event was performed by a human or by a system.

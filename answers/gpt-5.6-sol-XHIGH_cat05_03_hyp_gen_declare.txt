@@ -1,0 +1,385 @@
+## 1. Anomalies in the DECLARE model
+
+### Evaluation is effectively prohibited
+
+The combination of:
+
+- `existence(C)`: every compliant claim must contain a close event.
+- `noncoexistence(E, C)`: evaluation and close cannot occur in the same claim.
+
+implies that a compliant claim can never contain `E`:
+
+\[
+Existence(C) \land NonCoexistence(E,C) \Rightarrow \neg E
+\]
+
+This conflicts directly with the expected lifecycle, where evaluated claims are eventually closed.
+
+The constraints are not globally unsatisfiable—a trace such as `R, C` satisfies them—but every trace containing an evaluation must violate either mandatory closing or noncoexistence.
+
+### The assignment rule becomes vacuous
+
+`responded_existence(E, A)` requires an assignment somewhere whenever an evaluation occurs. Since compliant traces cannot contain `E`, the rule can report perfect confidence without requiring any assignments in practice.
+
+Even without the noncoexistence rule, responded existence only establishes co-occurrence. It does not require `A` to happen before `E`; a sequence containing `E` followed by `A` would satisfy that constraint in isolation.
+
+### Essential activities can be skipped
+
+There are no existence requirements for:
+
+- `A`
+- `E`
+- `P`
+- `N`
+
+Consequently, traces such as `R, C` or `R, P, C` can be compliant even though they omit essential processing steps.
+
+### Most of the intended ordering is absent
+
+The model does not require:
+
+- `A` after `R`
+- `E` after `A`
+- `P` after `E`
+- `N` after `P`
+- `C` after `N`
+
+It also does not require `C` to be the final event. For example, `R, C, P, N` is permitted by the stated rules.
+
+### Redundant receive/close rule
+
+Because `R` must be the initial event, every later `C` will already have an earlier `R`. Therefore, `precedence(C, R)` adds little or no restriction under normal trace semantics.
+
+### Resource and specialization controls are missing
+
+Nothing in the model ensures that:
+
+- An evaluation is performed by an actual adjuster.
+- The evaluator is the adjuster assigned to the claim.
+- A home claim is handled by a home specialist.
+- An auto claim is handled by an auto specialist.
+
+---
+
+## 2. Possible explanations
+
+- **Incorrect constraint selection:** A precedence or succession constraint between evaluation and closing may have been encoded as noncoexistence.
+- **Policy changes applied incompletely:** Mandatory closing may have been added without removing an older rule intended for canceled or automatically closed claims.
+- **Different process variants were merged:** Withdrawn, duplicate, rejected, or automatically settled claims may legitimately close without evaluation, while regular claims require it.
+- **Incomplete event extraction:** Evaluations may be recorded in another application or under a different activity code.
+- **Observation-window effects:** Claims may be extracted before completion, making mandatory-close statistics unreliable, or events before the extraction start may be missing.
+- **Trace-correlation errors:** Events may have been associated with the wrong `claim_id`, producing artificial omissions or coexistence violations.
+- **Vacuous process-mining metrics:** Rules activated only by `E` can appear to have perfect confidence if evaluations are rare or absent.
+- **Operational shortcuts:** Low-value or high-volume claims may be fast-tracked directly to closure.
+- **Weak assignment data:** The schema records the resource performing an assignment event but does not explicitly record the adjuster who was assigned.
+
+---
+
+## 3. SQL investigation strategies
+
+The following queries treat each `claim_id` as one trace and order events by `timestamp`, with `event_id` as a tie-breaker.
+
+### A. Check the main constraint interactions
+
+```sql
+WITH trace_counts AS (
+    SELECT
+        c.claim_id,
+        c.customer_id,
+        c.claim_type,
+        c.claim_amount,
+        COUNT(e.event_id) FILTER (WHERE e.activity = 'R') AS receive_count,
+        COUNT(e.event_id) FILTER (WHERE e.activity = 'A') AS assign_count,
+        COUNT(e.event_id) FILTER (WHERE e.activity = 'E') AS eval_count,
+        COUNT(e.event_id) FILTER (WHERE e.activity = 'P') AS approve_count,
+        COUNT(e.event_id) FILTER (WHERE e.activity = 'N') AS notify_count,
+        COUNT(e.event_id) FILTER (WHERE e.activity = 'C') AS close_count
+    FROM claims c
+    LEFT JOIN claim_events e
+        ON e.claim_id = c.claim_id
+    GROUP BY
+        c.claim_id,
+        c.customer_id,
+        c.claim_type,
+        c.claim_amount
+)
+SELECT
+    *,
+    close_count = 0 AS violates_existence_c,
+    eval_count > 0 AND close_count > 0
+        AS violates_noncoexistence_e_c,
+    eval_count > 0 AND assign_count = 0
+        AS violates_responded_existence_e_a,
+    close_count > 0 AND eval_count = 0
+        AS closed_without_evaluation
+FROM trace_counts
+WHERE close_count = 0
+   OR (eval_count > 0 AND close_count > 0)
+   OR (eval_count > 0 AND assign_count = 0)
+   OR (close_count > 0 AND eval_count = 0)
+ORDER BY claim_id;
+```
+
+The `closed_without_evaluation` condition is allowed—and effectively encouraged—by the current model, but conflicts with the standard business flow.
+
+### B. Find traces whose first event is not receive
+
+```sql
+WITH first_event AS (
+    SELECT DISTINCT ON (e.claim_id)
+        e.claim_id,
+        e.event_id,
+        e.activity,
+        e."timestamp"
+    FROM claim_events e
+    ORDER BY
+        e.claim_id,
+        e."timestamp",
+        e.event_id
+)
+SELECT
+    c.claim_id,
+    c.submission_date,
+    f.event_id AS first_event_id,
+    f.activity AS first_activity,
+    f."timestamp" AS first_event_time
+FROM claims c
+LEFT JOIN first_event f
+    ON f.claim_id = c.claim_id
+WHERE f.claim_id IS NULL
+   OR f.activity <> 'R'
+ORDER BY c.claim_id;
+```
+
+Claims with no events are also returned because they cannot satisfy the initial-event rule.
+
+### C. Find close events without an earlier receive
+
+```sql
+SELECT
+    c.claim_id,
+    cl.event_id AS close_event_id,
+    cl."timestamp" AS close_time
+FROM claims c
+JOIN claim_events cl
+    ON cl.claim_id = c.claim_id
+WHERE cl.activity = 'C'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM claim_events r
+      WHERE r.claim_id = cl.claim_id
+        AND r.activity = 'R'
+        AND (r."timestamp", r.event_id)
+            < (cl."timestamp", cl.event_id)
+  )
+ORDER BY c.claim_id, cl."timestamp", cl.event_id;
+```
+
+### D. Test the full intended predecessor chain
+
+This query checks whether every activity has its required predecessor somewhere earlier in the trace.
+
+```sql
+WITH required_predecessor (
+    target_activity,
+    predecessor_activity
+) AS (
+    VALUES
+        ('A', 'R'),
+        ('E', 'A'),
+        ('P', 'E'),
+        ('N', 'P'),
+        ('C', 'N')
+)
+SELECT
+    c.claim_id,
+    c.claim_type,
+    e.event_id AS offending_event_id,
+    e.activity AS offending_activity,
+    e."timestamp" AS offending_time,
+    rp.predecessor_activity AS missing_earlier_activity
+FROM claim_events e
+JOIN claims c
+    ON c.claim_id = e.claim_id
+JOIN required_predecessor rp
+    ON rp.target_activity = e.activity
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM claim_events prior
+    WHERE prior.claim_id = e.claim_id
+      AND prior.activity = rp.predecessor_activity
+      AND (prior."timestamp", prior.event_id)
+          < (e."timestamp", e.event_id)
+)
+ORDER BY
+    c.claim_id,
+    e."timestamp",
+    e.event_id;
+```
+
+This detects cases such as evaluation before assignment, approval without evaluation, notification without approval, and closing without prior notification.
+
+### E. Find activity occurring after closure
+
+```sql
+SELECT
+    c.claim_id,
+    cl.event_id AS close_event_id,
+    cl."timestamp" AS close_time,
+    later.event_id AS later_event_id,
+    later.activity AS later_activity,
+    later."timestamp" AS later_time
+FROM claim_events cl
+JOIN claim_events later
+    ON later.claim_id = cl.claim_id
+   AND (later."timestamp", later.event_id)
+       > (cl."timestamp", cl.event_id)
+JOIN claims c
+    ON c.claim_id = cl.claim_id
+WHERE cl.activity = 'C'
+ORDER BY
+    c.claim_id,
+    cl."timestamp",
+    later."timestamp",
+    later.event_id;
+```
+
+If reopening is permitted, those cases should be separated from genuinely invalid post-close processing.
+
+### F. Check evaluations for prior assignment and valid specialization
+
+This query assumes an evaluation resource is represented either by the adjuster ID as text or by the adjuster name.
+
+```sql
+WITH evaluations AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        e.event_id AS evaluation_event_id,
+        e."timestamp" AS evaluation_time,
+        e.resource AS evaluation_resource,
+        ad.adjuster_id,
+        ad.name AS adjuster_name,
+        ad.specialization,
+        CASE c.claim_type
+            WHEN 'home_insurance' THEN 'home'
+            WHEN 'auto_insurance' THEN 'auto'
+            ELSE NULL
+        END AS expected_specialization
+    FROM claims c
+    JOIN claim_events e
+        ON e.claim_id = c.claim_id
+       AND e.activity = 'E'
+    LEFT JOIN adjusters ad
+        ON e.resource = ad.adjuster_id::text
+        OR LOWER(e.resource) = LOWER(ad.name)
+),
+checked AS (
+    SELECT
+        ev.*,
+        NOT EXISTS (
+            SELECT 1
+            FROM claim_events ae
+            WHERE ae.claim_id = ev.claim_id
+              AND ae.activity = 'A'
+              AND (ae."timestamp", ae.event_id)
+                  < (ev.evaluation_time, ev.evaluation_event_id)
+        ) AS no_prior_assignment
+    FROM evaluations ev
+)
+SELECT *
+FROM checked
+WHERE no_prior_assignment
+   OR adjuster_id IS NULL
+   OR (
+       expected_specialization IS NOT NULL
+       AND specialization IS DISTINCT FROM expected_specialization
+   )
+ORDER BY claim_id, evaluation_time, evaluation_event_id;
+```
+
+This distinguishes three problems:
+
+- No assignment occurred before evaluation.
+- The evaluator cannot be matched to an adjuster.
+- The evaluator has the wrong specialization.
+
+### G. Verify that the evaluator was the assigned adjuster
+
+The current schema does not have a structured `assigned_adjuster_id`. If `A.additional_info` consistently contains the assigned adjuster’s ID or name, the following can be adapted:
+
+```sql
+WITH evaluations AS (
+    SELECT
+        e.claim_id,
+        e.event_id AS evaluation_event_id,
+        e."timestamp" AS evaluation_time,
+        e.resource AS evaluation_resource,
+        ad.adjuster_id,
+        ad.name AS adjuster_name
+    FROM claim_events e
+    JOIN adjusters ad
+        ON e.resource = ad.adjuster_id::text
+        OR LOWER(e.resource) = LOWER(ad.name)
+    WHERE e.activity = 'E'
+)
+SELECT
+    ev.*
+FROM evaluations ev
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM claim_events ae
+    WHERE ae.claim_id = ev.claim_id
+      AND ae.activity = 'A'
+      AND (ae."timestamp", ae.event_id)
+          < (ev.evaluation_time, ev.evaluation_event_id)
+      AND (
+          TRIM(ae.additional_info) = ev.adjuster_id::text
+          OR LOWER(TRIM(ae.additional_info))
+             = LOWER(ev.adjuster_name)
+      )
+)
+ORDER BY ev.claim_id, ev.evaluation_time;
+```
+
+If `additional_info` has no documented assignment format, exact evaluator-to-assignment correspondence cannot be established reliably. A dedicated `assigned_adjuster_id` should be recorded on the assignment event or in a separate assignment table.
+
+### H. Determine whether skipped evaluations are concentrated in process variants
+
+```sql
+WITH flags AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount,
+        COUNT(e.event_id) FILTER (WHERE e.activity = 'C') > 0 AS has_close,
+        COUNT(e.event_id) FILTER (WHERE e.activity = 'E') > 0 AS has_evaluation,
+        COUNT(e.event_id) FILTER (WHERE e.activity = 'A') > 0 AS has_assignment
+    FROM claims c
+    LEFT JOIN claim_events e
+        ON e.claim_id = c.claim_id
+    GROUP BY
+        c.claim_id,
+        c.claim_type,
+        c.claim_amount
+)
+SELECT
+    claim_type,
+    COUNT(*) AS total_claims,
+    COUNT(*) FILTER (
+        WHERE has_close AND NOT has_evaluation
+    ) AS closed_without_evaluation,
+    COUNT(*) FILTER (
+        WHERE has_evaluation AND NOT has_assignment
+    ) AS evaluated_without_assignment,
+    AVG(claim_amount) FILTER (
+        WHERE has_close AND NOT has_evaluation
+    ) AS average_amount_closed_without_evaluation
+FROM flags
+GROUP BY claim_type
+ORDER BY claim_type;
+```
+
+This can reveal whether the anomaly is associated with particular claim types or low-value fast-track processing.
+
+Mandatory-close results should be interpreted against a completed-claim cohort. Since the schema has no claim status, recent or still-open claims may otherwise appear as false violations.

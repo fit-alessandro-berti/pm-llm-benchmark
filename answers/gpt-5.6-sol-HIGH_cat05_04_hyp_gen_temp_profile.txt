@@ -1,0 +1,460 @@
+## Anomalies and likely interpretations
+
+| Relationship | Observation | Possible interpretation |
+|---|---|---|
+| **R  P** | Mean of 25 hours with only a 1-hour standard deviation | Approval may be driven by a rigid SLA, scheduled batch, synthetic/default timestamps, or timestamp rounding rather than actual work completion. |
+| **P  N** | Mean of 7 days with a 2-day standard deviation | Notification backlog, batch notifications, failed integrations, invalid customer contact details, weekend effects, or inconsistent staff availability. |
+| **A  C** | Closure occurs about 2 hours after assignment | Claims may be rejected, withdrawn, or identified as duplicates early. Alternatively, evaluation and approval events may be missing or the process may be bypassed. |
+| **E  N** | Notification follows evaluation in about 5 minutes | Notification may be automated, `N` may represent an acknowledgement rather than an approval notice, or approval is being skipped or recorded later. |
+| **E  C** | Standard deviation is almost as large as the one-hour mean | Likely a mixture of fast auto-closures and cases requiring manual work. |
+| **Cross-pair inconsistency** | RE is about 24 hours and RP about 25 hours, implying roughly one hour from EP. That is incompatible with EN taking five minutes when P must occur between E and N. Likewise, AC in two hours conflicts with RE in one day for a uniform process. | Different process variants or claim subsets may be represented, required events may be missing, events may be out of order, or the temporal-pair matching method may be pairing repeated events incorrectly. |
+
+Other possible causes include clock skew, systems using different time zones, ETL backfills, manually entered timestamps, and inconsistent meanings for activity codes. Because the column is `TIMESTAMP` rather than `TIMESTAMPTZ`, cross-system time-zone handling deserves particular attention.
+
+## Reusable claim timeline
+
+The following view selects the first occurrence of each activity for each claim. It also preserves event counts so repeated activities can be identified.
+
+```sql
+CREATE TEMP VIEW claim_timeline AS
+WITH ranked AS (
+    SELECT
+        ce.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY ce.claim_id, ce.activity
+            ORDER BY ce."timestamp", ce.event_id
+        ) AS rn
+    FROM claim_events ce
+)
+SELECT
+    claim_id,
+
+    MAX("timestamp") FILTER (WHERE activity = 'R' AND rn = 1) AS r_ts,
+    MAX("timestamp") FILTER (WHERE activity = 'A' AND rn = 1) AS a_ts,
+    MAX("timestamp") FILTER (WHERE activity = 'E' AND rn = 1) AS e_ts,
+    MAX("timestamp") FILTER (WHERE activity = 'P' AND rn = 1) AS p_ts,
+    MAX("timestamp") FILTER (WHERE activity = 'N' AND rn = 1) AS n_ts,
+    MAX("timestamp") FILTER (WHERE activity = 'C' AND rn = 1) AS c_ts,
+
+    MAX(resource) FILTER (WHERE activity = 'A' AND rn = 1) AS a_resource,
+    MAX(resource) FILTER (WHERE activity = 'E' AND rn = 1) AS e_resource,
+    MAX(resource) FILTER (WHERE activity = 'P' AND rn = 1) AS p_resource,
+    MAX(resource) FILTER (WHERE activity = 'N' AND rn = 1) AS n_resource,
+    MAX(resource) FILTER (WHERE activity = 'C' AND rn = 1) AS c_resource,
+
+    COUNT(*) FILTER (WHERE activity = 'R') AS r_count,
+    COUNT(*) FILTER (WHERE activity = 'A') AS a_count,
+    COUNT(*) FILTER (WHERE activity = 'E') AS e_count,
+    COUNT(*) FILTER (WHERE activity = 'P') AS p_count,
+    COUNT(*) FILTER (WHERE activity = 'N') AS n_count,
+    COUNT(*) FILTER (WHERE activity = 'C') AS c_count
+FROM ranked
+GROUP BY claim_id;
+```
+
+If the temporal model used “first subsequent event,” “last event,” or every possible pair rather than first occurrences, the SQL pairing logic should be changed to match it.
+
+## Compare observed statistics with the temporal profile
+
+```sql
+WITH model(pair_name, expected_mean_s, expected_stddev_s) AS (
+    VALUES
+        ('R-A',  3600.0,   600.0),
+        ('R-E', 86400.0, 28800.0),
+        ('R-P', 90000.0,  3600.0),
+        ('A-C',  7200.0,  3600.0),
+        ('E-N',   300.0,    60.0),
+        ('E-C',  3600.0,  3000.0),
+        ('P-N',604800.0,172800.0),
+        ('N-C',  1800.0,   300.0)
+),
+measured AS (
+    SELECT
+        t.claim_id,
+        v.pair_name,
+        v.seconds
+    FROM claim_timeline t
+    CROSS JOIN LATERAL (
+        VALUES
+            ('R-A', EXTRACT(EPOCH FROM (t.a_ts - t.r_ts))),
+            ('R-E', EXTRACT(EPOCH FROM (t.e_ts - t.r_ts))),
+            ('R-P', EXTRACT(EPOCH FROM (t.p_ts - t.r_ts))),
+            ('A-C', EXTRACT(EPOCH FROM (t.c_ts - t.a_ts))),
+            ('E-N', EXTRACT(EPOCH FROM (t.n_ts - t.e_ts))),
+            ('E-C', EXTRACT(EPOCH FROM (t.c_ts - t.e_ts))),
+            ('P-N', EXTRACT(EPOCH FROM (t.n_ts - t.p_ts))),
+            ('N-C', EXTRACT(EPOCH FROM (t.c_ts - t.n_ts)))
+    ) AS v(pair_name, seconds)
+)
+SELECT
+    m.pair_name,
+    m.expected_mean_s,
+    m.expected_stddev_s,
+    COUNT(d.seconds) FILTER (WHERE d.seconds >= 0) AS valid_observations,
+    COUNT(d.seconds) FILTER (WHERE d.seconds < 0) AS negative_durations,
+    ROUND(
+        (AVG(d.seconds) FILTER (WHERE d.seconds >= 0))::numeric,
+        1
+    ) AS observed_mean_s,
+    ROUND(
+        (STDDEV_SAMP(d.seconds) FILTER (WHERE d.seconds >= 0))::numeric,
+        1
+    ) AS observed_stddev_s
+FROM model m
+LEFT JOIN measured d USING (pair_name)
+GROUP BY
+    m.pair_name,
+    m.expected_mean_s,
+    m.expected_stddev_s
+ORDER BY m.pair_name;
+```
+
+Negative durations indicate out-of-order timestamps or incorrect event pairing.
+
+## Find claims outside profile ranges
+
+This example uses a ZETA value of 3.
+
+```sql
+WITH model(pair_name, expected_mean_s, expected_stddev_s) AS (
+    VALUES
+        ('R-A',  3600.0,   600.0),
+        ('R-E', 86400.0, 28800.0),
+        ('R-P', 90000.0,  3600.0),
+        ('A-C',  7200.0,  3600.0),
+        ('E-N',   300.0,    60.0),
+        ('E-C',  3600.0,  3000.0),
+        ('P-N',604800.0,172800.0),
+        ('N-C',  1800.0,   300.0)
+),
+measured AS (
+    SELECT
+        t.claim_id,
+        v.pair_name,
+        v.start_ts,
+        v.end_ts
+    FROM claim_timeline t
+    CROSS JOIN LATERAL (
+        VALUES
+            ('R-A', t.r_ts, t.a_ts),
+            ('R-E', t.r_ts, t.e_ts),
+            ('R-P', t.r_ts, t.p_ts),
+            ('A-C', t.a_ts, t.c_ts),
+            ('E-N', t.e_ts, t.n_ts),
+            ('E-C', t.e_ts, t.c_ts),
+            ('P-N', t.p_ts, t.n_ts),
+            ('N-C', t.n_ts, t.c_ts)
+    ) AS v(pair_name, start_ts, end_ts)
+)
+SELECT
+    d.claim_id,
+    c.customer_id,
+    c.claim_type,
+    c.claim_amount,
+    d.pair_name,
+    d.start_ts,
+    d.end_ts,
+    d.end_ts - d.start_ts AS elapsed,
+    EXTRACT(EPOCH FROM (d.end_ts - d.start_ts)) AS elapsed_seconds,
+    (
+        EXTRACT(EPOCH FROM (d.end_ts - d.start_ts))
+        - m.expected_mean_s
+    ) / NULLIF(m.expected_stddev_s, 0) AS z_score
+FROM measured d
+JOIN model m USING (pair_name)
+JOIN claims c ON c.claim_id = d.claim_id
+WHERE d.start_ts IS NOT NULL
+  AND d.end_ts IS NOT NULL
+  AND (
+        d.end_ts < d.start_ts
+        OR ABS(
+            EXTRACT(EPOCH FROM (d.end_ts - d.start_ts))
+            - m.expected_mean_s
+        ) >= 3 * m.expected_stddev_s
+      )
+ORDER BY ABS(
+    EXTRACT(EPOCH FROM (d.end_ts - d.start_ts))
+    - m.expected_mean_s
+) / NULLIF(m.expected_stddev_s, 0) DESC;
+```
+
+## Check for missing or out-of-order activities
+
+```sql
+SELECT
+    t.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    ARRAY_REMOVE(ARRAY[
+        CASE WHEN t.r_ts IS NULL THEN 'R' END,
+        CASE WHEN t.a_ts IS NULL THEN 'A' END,
+        CASE WHEN t.e_ts IS NULL THEN 'E' END,
+        CASE WHEN t.p_ts IS NULL THEN 'P' END,
+        CASE WHEN t.n_ts IS NULL THEN 'N' END,
+        CASE WHEN t.c_ts IS NULL THEN 'C' END
+    ], NULL) AS missing_activities,
+    t.r_ts,
+    t.a_ts,
+    t.e_ts,
+    t.p_ts,
+    t.n_ts,
+    t.c_ts
+FROM claim_timeline t
+JOIN claims c ON c.claim_id = t.claim_id
+WHERE t.r_ts IS NULL
+   OR t.a_ts IS NULL
+   OR t.e_ts IS NULL
+   OR t.p_ts IS NULL
+   OR t.n_ts IS NULL
+   OR t.c_ts IS NULL
+   OR t.r_ts > t.a_ts
+   OR t.a_ts > t.e_ts
+   OR t.e_ts > t.p_ts
+   OR t.p_ts > t.n_ts
+   OR t.n_ts > t.c_ts
+ORDER BY t.claim_id;
+```
+
+## Investigate rapid closure after assignment
+
+The three-hour threshold is the AC mean plus one standard deviation. The query specifically finds claims without both evaluation and approval between assignment and closure.
+
+```sql
+SELECT
+    t.claim_id,
+    c.customer_id,
+    c.claim_type,
+    c.claim_amount,
+    t.a_ts,
+    t.c_ts,
+    t.c_ts - t.a_ts AS assignment_to_close,
+    t.a_resource,
+    t.c_resource,
+    ad.region,
+    CASE
+        WHEN t.e_ts BETWEEN t.a_ts AND t.c_ts THEN true
+        ELSE false
+    END AS evaluation_between,
+    CASE
+        WHEN t.p_ts BETWEEN t.a_ts AND t.c_ts THEN true
+        ELSE false
+    END AS approval_between
+FROM claim_timeline t
+JOIN claims c ON c.claim_id = t.claim_id
+LEFT JOIN adjusters ad
+    ON ad.name = t.a_resource
+WHERE t.a_ts IS NOT NULL
+  AND t.c_ts IS NOT NULL
+  AND t.c_ts >= t.a_ts
+  AND t.c_ts - t.a_ts <= INTERVAL '3 hours'
+  AND (
+        t.e_ts IS NULL
+        OR t.e_ts NOT BETWEEN t.a_ts AND t.c_ts
+        OR t.p_ts IS NULL
+        OR t.p_ts NOT BETWEEN t.a_ts AND t.c_ts
+      )
+ORDER BY assignment_to_close;
+```
+
+Closure-event context can also be inspected directly:
+
+```sql
+SELECT
+    ce.claim_id,
+    ce."timestamp",
+    ce.resource,
+    ce.additional_info
+FROM claim_events ce
+WHERE ce.activity = 'C'
+  AND ce.claim_id IN (
+      SELECT t.claim_id
+      FROM claim_timeline t
+      WHERE t.a_ts IS NOT NULL
+        AND t.c_ts BETWEEN t.a_ts AND t.a_ts + INTERVAL '3 hours'
+  )
+ORDER BY ce.claim_id, ce."timestamp";
+```
+
+## Investigate very rapid evaluation-to-notification transitions
+
+Seven minutes is the modeled mean plus two standard deviations.
+
+```sql
+SELECT
+    t.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    t.e_ts,
+    t.p_ts,
+    t.n_ts,
+    t.n_ts - t.e_ts AS evaluation_to_notification,
+    t.e_resource,
+    t.p_resource,
+    t.n_resource,
+    COALESCE(
+        t.p_ts > t.e_ts AND t.p_ts < t.n_ts,
+        false
+    ) AS approval_between
+FROM claim_timeline t
+JOIN claims c ON c.claim_id = t.claim_id
+WHERE t.e_ts IS NOT NULL
+  AND t.n_ts IS NOT NULL
+  AND t.n_ts >= t.e_ts
+  AND t.n_ts - t.e_ts <= INTERVAL '7 minutes'
+ORDER BY evaluation_to_notification;
+```
+
+Rows where `approval_between` is false are candidates for approval bypass, missing approval logs, or a notification event with a different business meaning.
+
+## Investigate approval-to-notification tails
+
+For PN, a two-standard-deviation interval is approximately 3 to 11 days.
+
+```sql
+SELECT
+    t.claim_id,
+    c.customer_id,
+    c.claim_type,
+    c.claim_amount,
+    t.p_ts,
+    t.n_ts,
+    t.n_ts - t.p_ts AS approval_to_notification,
+    t.p_resource,
+    t.n_resource,
+    t.a_resource,
+    ad.region,
+    CASE
+        WHEN t.n_ts < t.p_ts THEN 'out_of_order'
+        WHEN t.n_ts - t.p_ts > INTERVAL '11 days' THEN 'very_late'
+        WHEN t.n_ts - t.p_ts < INTERVAL '3 days' THEN 'unusually_fast'
+    END AS anomaly_type
+FROM claim_timeline t
+JOIN claims c ON c.claim_id = t.claim_id
+LEFT JOIN adjusters ad
+    ON ad.name = t.a_resource
+WHERE t.p_ts IS NOT NULL
+  AND t.n_ts IS NOT NULL
+  AND (
+        t.n_ts < t.p_ts
+        OR t.n_ts - t.p_ts > INTERVAL '11 days'
+        OR t.n_ts - t.p_ts < INTERVAL '3 days'
+      )
+ORDER BY approval_to_notification DESC;
+```
+
+## Test the rigid RP scheduling hypothesis
+
+This groups RP durations into five-minute buckets and checks whether approval occurs at a small number of clock hours.
+
+```sql
+SELECT
+    ROUND(
+        EXTRACT(EPOCH FROM (t.p_ts - t.r_ts)) / 300
+    ) * 300 AS elapsed_5_minute_bucket_s,
+    EXTRACT(ISODOW FROM t.p_ts) AS approval_weekday,
+    EXTRACT(HOUR FROM t.p_ts) AS approval_hour,
+    COUNT(*) AS claim_count
+FROM claim_timeline t
+WHERE t.r_ts IS NOT NULL
+  AND t.p_ts >= t.r_ts
+GROUP BY 1, 2, 3
+ORDER BY claim_count DESC
+LIMIT 30;
+```
+
+A large concentration at exactly 24 or 25 hours, or at a particular approval hour, would support batch scheduling, timestamp normalization, or SLA-driven processing.
+
+## Correlate anomalies with claim type, resource, and region
+
+```sql
+WITH flags AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        c.customer_id,
+        t.a_resource,
+        ad.region,
+
+        CASE
+            WHEN t.r_ts IS NOT NULL AND t.p_ts IS NOT NULL
+            THEN (
+                ABS(EXTRACT(EPOCH FROM (t.p_ts - t.r_ts)) - 90000)
+                > 3 * 3600
+            )::integer
+        END AS rp_outlier,
+
+        CASE
+            WHEN t.p_ts IS NOT NULL AND t.n_ts IS NOT NULL
+            THEN (
+                ABS(EXTRACT(EPOCH FROM (t.n_ts - t.p_ts)) - 604800)
+                > 2 * 172800
+            )::integer
+        END AS pn_outlier,
+
+        CASE
+            WHEN t.a_ts IS NOT NULL AND t.c_ts IS NOT NULL
+            THEN (
+                t.c_ts < t.a_ts
+                OR (
+                    t.c_ts - t.a_ts <= INTERVAL '3 hours'
+                    AND (
+                        t.e_ts IS NULL
+                        OR t.e_ts NOT BETWEEN t.a_ts AND t.c_ts
+                        OR t.p_ts IS NULL
+                        OR t.p_ts NOT BETWEEN t.a_ts AND t.c_ts
+                    )
+                )
+            )::integer
+        END AS suspicious_ac,
+
+        CASE
+            WHEN t.e_ts IS NOT NULL AND t.n_ts IS NOT NULL
+            THEN (
+                t.n_ts >= t.e_ts
+                AND t.n_ts - t.e_ts <= INTERVAL '7 minutes'
+                AND NOT COALESCE(
+                    t.p_ts > t.e_ts AND t.p_ts < t.n_ts,
+                    false
+                )
+            )::integer
+        END AS fast_en_without_approval
+    FROM claim_timeline t
+    JOIN claims c ON c.claim_id = t.claim_id
+    LEFT JOIN adjusters ad
+        ON ad.name = t.a_resource
+)
+SELECT
+    claim_type,
+    region,
+    a_resource,
+    COUNT(*) AS claims,
+    ROUND(100 * AVG(rp_outlier), 2) AS rp_outlier_pct,
+    ROUND(100 * AVG(pn_outlier), 2) AS pn_outlier_pct,
+    ROUND(100 * AVG(suspicious_ac), 2) AS suspicious_ac_pct,
+    ROUND(100 * AVG(fast_en_without_approval), 2)
+        AS fast_en_without_approval_pct
+FROM flags
+GROUP BY claim_type, region, a_resource
+HAVING COUNT(*) >= 10
+ORDER BY pn_outlier_pct DESC NULLS LAST;
+```
+
+The join `adjusters.name = claim_events.resource` is only valid if `resource` contains the exact adjuster name. If it contains usernames, team names, or system identifiers, a mapping table is required. The available schema also has no customer demographic or geographic attributes, so customer analysis is limited to `customer_id`, claim type, amount, and recurrence unless another customer table is available.
+
+## Check repeated events before trusting first-event calculations
+
+```sql
+SELECT
+    claim_id,
+    activity,
+    COUNT(*) AS event_count,
+    MIN("timestamp") AS first_timestamp,
+    MAX("timestamp") AS last_timestamp,
+    COUNT(DISTINCT "timestamp") AS distinct_timestamps
+FROM claim_events
+GROUP BY claim_id, activity
+HAVING COUNT(*) > 1
+ORDER BY event_count DESC, claim_id, activity;
+```
+
+A high number of repeated E, P, N, or C events would indicate rework or retries and could materially change durations depending on whether the profile paired first-to-first, first-to-next, or every possible occurrence.

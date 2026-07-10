@@ -1,0 +1,438 @@
+## 1. Receive  Approve (`R`  `P`)
+
+**Observation:** Approval occurs after roughly 25 hours on average, with only a one-hour standard deviation. The unusually low variation may indicate scheduled batch processing, timestamp normalization, an SLA-driven automation, or synthetic/default timestamps rather than natural handling times.
+
+**Verification:**
+
+```sql
+WITH durations AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        MIN(ce.timestamp) FILTER (WHERE ce.activity = 'R') AS received_at,
+        MIN(ce.timestamp) FILTER (WHERE ce.activity = 'P') AS approved_at
+    FROM claims c
+    JOIN claim_events ce ON ce.claim_id = c.claim_id
+    GROUP BY c.claim_id, c.claim_type
+)
+SELECT
+    *,
+    EXTRACT(EPOCH FROM (approved_at - received_at)) / 3600.0 AS hours_to_approve
+FROM durations
+WHERE received_at IS NOT NULL
+  AND approved_at IS NOT NULL
+ORDER BY hours_to_approve;
+```
+
+Check whether approvals cluster at fixed clock times or near exactly 25 hours:
+
+```sql
+WITH durations AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS received_at,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS approved_at
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    EXTRACT(HOUR FROM approved_at) AS approval_hour,
+    ROUND(EXTRACT(EPOCH FROM (approved_at - received_at)) / 3600.0, 1)
+        AS elapsed_hours,
+    COUNT(*) AS claim_count
+FROM durations
+WHERE received_at IS NOT NULL
+  AND approved_at IS NOT NULL
+GROUP BY 1, 2
+ORDER BY claim_count DESC;
+```
+
+Find observations outside a three-standard-deviation range of the supplied profile:
+
+```sql
+WITH durations AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'R') AS received_at,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS approved_at
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    received_at,
+    approved_at,
+    EXTRACT(EPOCH FROM (approved_at - received_at)) AS elapsed_seconds
+FROM durations
+WHERE received_at IS NOT NULL
+  AND approved_at IS NOT NULL
+  AND ABS(
+      EXTRACT(EPOCH FROM (approved_at - received_at)) - 90000
+  ) > 3 * 3600
+ORDER BY elapsed_seconds;
+```
+
+---
+
+## 2. Approve  Notify (`P`  `N`)
+
+**Observation:** A seven-day average delay is excessive for customer notification, while the two-day standard deviation indicates substantial inconsistency.
+
+**Possible reasons:**
+
+- Notification jobs run in delayed batches.
+- Manual review is performed after approval.
+- Notification queues are backlogged.
+- Contact details are invalid and require remediation.
+- Certain resources, claim types, or regions have capacity shortages.
+- Timestamps record attempted rather than successful notification.
+
+**Verification:**
+
+```sql
+WITH durations AS (
+    SELECT
+        c.claim_id,
+        c.customer_id,
+        c.claim_type,
+        c.claim_amount,
+        MIN(ce.timestamp) FILTER (WHERE ce.activity = 'P') AS approved_at,
+        MIN(ce.timestamp) FILTER (WHERE ce.activity = 'N') AS notified_at
+    FROM claims c
+    JOIN claim_events ce ON ce.claim_id = c.claim_id
+    GROUP BY c.claim_id, c.customer_id, c.claim_type, c.claim_amount
+)
+SELECT
+    *,
+    notified_at - approved_at AS notification_delay
+FROM durations
+WHERE approved_at IS NOT NULL
+  AND notified_at IS NOT NULL
+  AND notified_at - approved_at > INTERVAL '7 days'
+ORDER BY notification_delay DESC;
+```
+
+Correlate the delay with claim type:
+
+```sql
+WITH durations AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        MIN(ce.timestamp) FILTER (WHERE ce.activity = 'P') AS approved_at,
+        MIN(ce.timestamp) FILTER (WHERE ce.activity = 'N') AS notified_at
+    FROM claims c
+    JOIN claim_events ce ON ce.claim_id = c.claim_id
+    GROUP BY c.claim_id, c.claim_type
+)
+SELECT
+    claim_type,
+    COUNT(*) AS claims,
+    ROUND(AVG(EXTRACT(EPOCH FROM (notified_at - approved_at))) / 86400.0, 2)
+        AS avg_days,
+    ROUND(STDDEV_SAMP(
+        EXTRACT(EPOCH FROM (notified_at - approved_at))
+    ) / 86400.0, 2) AS stdev_days,
+    COUNT(*) FILTER (
+        WHERE notified_at - approved_at > INTERVAL '7 days'
+    ) AS over_seven_days
+FROM durations
+WHERE approved_at IS NOT NULL
+  AND notified_at IS NOT NULL
+GROUP BY claim_type
+ORDER BY avg_days DESC;
+```
+
+Correlate delays with the resource responsible for approval:
+
+```sql
+WITH approvals AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        timestamp AS approved_at,
+        resource AS approval_resource
+    FROM claim_events
+    WHERE activity = 'P'
+    ORDER BY claim_id, timestamp
+),
+notifications AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        timestamp AS notified_at
+    FROM claim_events
+    WHERE activity = 'N'
+    ORDER BY claim_id, timestamp
+)
+SELECT
+    a.approval_resource,
+    COUNT(*) AS claims,
+    ROUND(AVG(EXTRACT(EPOCH FROM (n.notified_at - a.approved_at))) / 86400.0, 2)
+        AS avg_delay_days,
+    COUNT(*) FILTER (
+        WHERE n.notified_at - a.approved_at > INTERVAL '7 days'
+    ) AS delayed_claims
+FROM approvals a
+JOIN notifications n USING (claim_id)
+WHERE n.notified_at >= a.approved_at
+GROUP BY a.approval_resource
+ORDER BY avg_delay_days DESC;
+```
+
+---
+
+## 3. Assign  Close (`A`  `C`)
+
+**Observation:** Closing a claim only two hours after assignment may be legitimate for withdrawals, duplicates, or immediately rejected claims. However, it is suspicious when evaluation and approval are absent.
+
+**Possible reasons:**
+
+- Premature closure or skipped controls.
+- Duplicate, invalid, or withdrawn claims.
+- Events were not logged despite work being performed.
+- Incorrect event ordering or backdated timestamps.
+- Automated closure rules are overly aggressive.
+
+**Verification:**
+
+```sql
+WITH per_claim AS (
+    SELECT
+        c.claim_id,
+        c.claim_type,
+        MIN(ce.timestamp) FILTER (WHERE ce.activity = 'A') AS assigned_at,
+        MIN(ce.timestamp) FILTER (WHERE ce.activity = 'C') AS closed_at,
+        BOOL_OR(ce.activity = 'E') AS has_evaluation,
+        BOOL_OR(ce.activity = 'P') AS has_approval
+    FROM claims c
+    JOIN claim_events ce ON ce.claim_id = c.claim_id
+    GROUP BY c.claim_id, c.claim_type
+)
+SELECT
+    *,
+    closed_at - assigned_at AS time_to_close
+FROM per_claim
+WHERE assigned_at IS NOT NULL
+  AND closed_at IS NOT NULL
+  AND closed_at >= assigned_at
+  AND closed_at - assigned_at <= INTERVAL '2 hours'
+  AND (NOT has_evaluation OR NOT has_approval)
+ORDER BY time_to_close;
+```
+
+Inspect the complete event sequences for these claims:
+
+```sql
+WITH suspicious AS (
+    SELECT claim_id
+    FROM claim_events
+    GROUP BY claim_id
+    HAVING
+        MIN(timestamp) FILTER (WHERE activity = 'A') IS NOT NULL
+        AND MIN(timestamp) FILTER (WHERE activity = 'C') IS NOT NULL
+        AND MIN(timestamp) FILTER (WHERE activity = 'C')
+            - MIN(timestamp) FILTER (WHERE activity = 'A')
+            <= INTERVAL '2 hours'
+        AND (
+            COUNT(*) FILTER (WHERE activity = 'E') = 0
+            OR COUNT(*) FILTER (WHERE activity = 'P') = 0
+        )
+)
+SELECT
+    ce.claim_id,
+    ce.activity,
+    ce.timestamp,
+    ce.resource,
+    ce.additional_info
+FROM claim_events ce
+JOIN suspicious s USING (claim_id)
+ORDER BY ce.claim_id, ce.timestamp, ce.event_id;
+```
+
+---
+
+## 4. Evaluate  Notify (`E`  `N`)
+
+**Observation:** A five-minute transition with only one minute of variation suggests automation. It is problematic if approval is required but does not occur between evaluation and notification.
+
+**Possible reasons:**
+
+- Notifications are automatically generated after evaluation.
+- Approval is bypassed for some claim categories.
+- Approval events are missing or recorded later.
+- Evaluation and notification timestamps are generated by the same batch.
+- Notification may actually be an acknowledgment rather than a final decision.
+
+**Verification:**
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS evaluated_at,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS approved_at,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS notified_at
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT
+    claim_id,
+    evaluated_at,
+    approved_at,
+    notified_at,
+    notified_at - evaluated_at AS evaluation_to_notification
+FROM event_times
+WHERE evaluated_at IS NOT NULL
+  AND notified_at IS NOT NULL
+  AND notified_at >= evaluated_at
+  AND notified_at - evaluated_at <= INTERVAL '5 minutes'
+  AND (
+      approved_at IS NULL
+      OR approved_at < evaluated_at
+      OR approved_at > notified_at
+  )
+ORDER BY evaluation_to_notification;
+```
+
+Check whether a specific notification resource drives the rapid transitions:
+
+```sql
+WITH evaluations AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        timestamp AS evaluated_at
+    FROM claim_events
+    WHERE activity = 'E'
+    ORDER BY claim_id, timestamp
+),
+notifications AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        timestamp AS notified_at,
+        resource AS notification_resource
+    FROM claim_events
+    WHERE activity = 'N'
+    ORDER BY claim_id, timestamp
+)
+SELECT
+    n.notification_resource,
+    COUNT(*) AS claims,
+    ROUND(AVG(EXTRACT(EPOCH FROM (n.notified_at - e.evaluated_at))), 1)
+        AS avg_seconds,
+    COUNT(*) FILTER (
+        WHERE n.notified_at - e.evaluated_at <= INTERVAL '5 minutes'
+    ) AS within_five_minutes
+FROM evaluations e
+JOIN notifications n USING (claim_id)
+WHERE n.notified_at >= e.evaluated_at
+GROUP BY n.notification_resource
+ORDER BY within_five_minutes DESC;
+```
+
+---
+
+## 5. Cross-Pair Inconsistencies
+
+The pairwise averages are not mutually coherent:
+
+- `E  N` averages five minutes.
+- `P  N` averages seven days.
+- The intended process requires `E  P  N`.
+
+This could mean that claims follow multiple variants, events repeat, pair durations were computed from unrelated occurrences, or many notifications happen before approval.
+
+Find ordering violations:
+
+```sql
+WITH event_times AS (
+    SELECT
+        claim_id,
+        MIN(timestamp) FILTER (WHERE activity = 'E') AS evaluated_at,
+        MIN(timestamp) FILTER (WHERE activity = 'P') AS approved_at,
+        MIN(timestamp) FILTER (WHERE activity = 'N') AS notified_at,
+        MIN(timestamp) FILTER (WHERE activity = 'C') AS closed_at
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT *
+FROM event_times
+WHERE (approved_at IS NOT NULL AND evaluated_at IS NOT NULL
+       AND approved_at < evaluated_at)
+   OR (notified_at IS NOT NULL AND approved_at IS NOT NULL
+       AND notified_at < approved_at)
+   OR (closed_at IS NOT NULL AND notified_at IS NOT NULL
+       AND closed_at < notified_at);
+```
+
+Identify missing intended steps:
+
+```sql
+SELECT
+    claim_id,
+    STRING_AGG(activity, ' -> ' ORDER BY timestamp, event_id) AS event_sequence
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity = 'E') = 0
+    OR COUNT(*) FILTER (WHERE activity = 'P') = 0
+    OR COUNT(*) FILTER (WHERE activity = 'N') = 0
+ORDER BY claim_id;
+```
+
+Check repeated activities, which can distort calculations based only on `MIN()` or `MAX()`:
+
+```sql
+SELECT
+    claim_id,
+    activity,
+    COUNT(*) AS occurrence_count,
+    MIN(timestamp) AS first_occurrence,
+    MAX(timestamp) AS last_occurrence
+FROM claim_events
+GROUP BY claim_id, activity
+HAVING COUNT(*) > 1
+ORDER BY occurrence_count DESC, claim_id;
+```
+
+---
+
+## 6. Adjuster and Region Correlation
+
+The schema does not provide a direct adjuster identifier on `claim_events`; `resource` is text. If it contains the adjuster name, it can be joined to `adjusters.name`.
+
+```sql
+WITH assignments AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        resource,
+        timestamp AS assigned_at
+    FROM claim_events
+    WHERE activity = 'A'
+    ORDER BY claim_id, timestamp
+),
+closures AS (
+    SELECT DISTINCT ON (claim_id)
+        claim_id,
+        timestamp AS closed_at
+    FROM claim_events
+    WHERE activity = 'C'
+    ORDER BY claim_id, timestamp
+)
+SELECT
+    ad.adjuster_id,
+    ad.name,
+    ad.specialization,
+    ad.region,
+    COUNT(*) AS claims,
+    ROUND(AVG(EXTRACT(EPOCH FROM (cl.closed_at - a.assigned_at))) / 3600.0, 2)
+        AS avg_hours_to_close,
+    COUNT(*) FILTER (
+        WHERE cl.closed_at - a.assigned_at <= INTERVAL '2 hours'
+    ) AS rapid_closures
+FROM assignments a
+JOIN closures cl USING (claim_id)
+LEFT JOIN adjusters ad ON ad.name = a.resource
+WHERE cl.closed_at >= a.assigned_at
+GROUP BY ad.adjuster_id, ad.name, ad.specialization, ad.region
+ORDER BY rapid_closures DESC;
+```
+
+A durable design should store `adjuster_id` directly on the assignment event or in a claim-assignment table; joining human-readable names can produce missing or ambiguous matches.
