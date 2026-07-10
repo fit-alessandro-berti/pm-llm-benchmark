@@ -46,6 +46,22 @@ JUDGE_LLMS: Sequence[Tuple[Any, ...]] = [
         },
     ),
     (
+        "gpt-5.6-sol",
+        {
+            "api_url": "https://api.openai.com/v1/responses",
+            "api_key": os.environ.get("OPENAI_API_KEY", ""),
+            "additional_payload": {"reasoning": {"effort": "low"}},
+        },
+    ),
+    (
+        "gpt-5.6-terra",
+        {
+            "api_url": "https://api.openai.com/v1/responses",
+            "api_key": os.environ.get("OPENAI_API_KEY", ""),
+            "additional_payload": {"reasoning": {"effort": "medium"}},
+        },
+    ),
+    (
         "grok-4.20-0309-reasoning",
         {"api_url": "https://api.x.ai/v1/responses", "api_key": os.environ["GROK_API_KEY"]},
     ),
