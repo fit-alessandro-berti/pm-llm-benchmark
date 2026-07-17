@@ -862,33 +862,33 @@ How different hallucination categories correlate with each other:
 
 **Category 1: Input Misalignment**
   vs **Category 2: Factual Errors:**
-- Correlation: -0.092 
-- Linear fit: y = -0.091x + 54.6
+- Correlation: -0.080 
+- Linear fit: y = -0.078x + 53.5
 
 **Category 1: Input Misalignment**
   vs **Category 3: Logical Errors:**
-- Correlation: 0.183 *
-- Linear fit: y = 0.146x + 93.1
+- Correlation: 0.194 *
+- Linear fit: y = 0.153x + 92.6
 
 **Category 1: Input Misalignment**
   vs **Category 4: Technical Errors:**
-- Correlation: 0.182 *
-- Linear fit: y = 0.087x + 24.3
+- Correlation: 0.191 *
+- Linear fit: y = 0.091x + 24.0
 
 **Category 2: Factual Errors**
   vs **Category 3: Logical Errors:**
-- Correlation: 0.661 ***
-- Linear fit: y = 0.532x + 77.6
+- Correlation: 0.664 ***
+- Linear fit: y = 0.534x + 77.4
 
 **Category 2: Factual Errors**
   vs **Category 4: Technical Errors:**
-- Correlation: 0.552 ***
-- Linear fit: y = 0.269x + 17.4
+- Correlation: 0.555 ***
+- Linear fit: y = 0.270x + 17.3
 
 **Category 3: Logical Errors**
   vs **Category 4: Technical Errors:**
-- Correlation: 0.577 ***
-- Linear fit: y = 0.349x + -5.7
+- Correlation: 0.580 ***
+- Linear fit: y = 0.351x + -5.9
 
 ### TOP 20 STRONGEST INTER-HALLUCINATION CORRELATIONS
 ----------------------------------------
@@ -897,79 +897,79 @@ How different hallucination categories correlate with each other:
   r = 0.980 ***, y = 0.838x + 7.6
 
 **Category 1: Input Misalignment vs 1b: Context Omission:**
-  r = 0.966 ***, y = 0.829x + -3.7
+  r = 0.967 ***, y = 0.830x + -3.8
 
 **Category 2: Factual Errors vs 2b: Spurious Numeric:**
-  r = 0.932 ***, y = 0.519x + 1.3
+  r = 0.932 ***, y = 0.518x + 1.4
 
 **Category 2: Factual Errors vs 2a: Concept Fabrication:**
-  r = 0.914 ***, y = 0.457x + -1.0
+  r = 0.914 ***, y = 0.458x + -1.1
 
 **Category 4: Technical Errors vs 4b: Model Semantics Breach:**
-  r = 0.821 ***, y = 0.415x + 3.9
-
-**Category 4: Technical Errors vs 4a: Syntax Error:**
-  r = 0.708 ***, y = 0.324x + -2.7
+  r = 0.822 ***, y = 0.417x + 3.8
 
 **2a: Concept Fabrication vs 2b: Spurious Numeric:**
-  r = 0.707 ***, y = 0.787x + 9.8
+  r = 0.708 ***, y = 0.786x + 9.9
+
+**Category 4: Technical Errors vs 4a: Syntax Error:**
+  r = 0.701 ***, y = 0.320x + -2.5
 
 **Category 3: Logical Errors vs 3b: Self Contradiction:**
-  r = 0.686 ***, y = 0.160x + -7.5
+  r = 0.688 ***, y = 0.161x + -7.6
 
 **Category 2: Factual Errors vs Category 3: Logical Errors:**
-  r = 0.661 ***, y = 0.532x + 77.6
+  r = 0.664 ***, y = 0.534x + 77.4
 
 **2b: Spurious Numeric vs 3b: Self Contradiction:**
-  r = 0.657 ***, y = 0.222x + 3.2
+  r = 0.659 ***, y = 0.223x + 3.2
 
 **Category 3: Logical Errors vs 2b: Spurious Numeric:**
-  r = 0.640 ***, y = 0.443x + -19.4
+  r = 0.642 ***, y = 0.443x + -19.3
 
 **Category 2: Factual Errors vs 3b: Self Contradiction:**
-  r = 0.630 ***, y = 0.119x + 3.3
+  r = 0.632 ***, y = 0.119x + 3.3
 
 **Category 4: Technical Errors vs 4c: Visual Descr Mismatch:**
-  r = 0.607 ***, y = 0.261x + -1.2
+  r = 0.610 ***, y = 0.263x + -1.3
 
 **Category 2: Factual Errors vs 3a: Unsupported Leap:**
-  r = 0.602 ***, y = 0.414x + 74.1
+  r = 0.604 ***, y = 0.416x + 74.0
 
 **3b: Self Contradiction vs 4b: Model Semantics Breach:**
-  r = 0.589 ***, y = 0.769x + 9.6
+  r = 0.592 ***, y = 0.777x + 9.5
 
 **Category 4: Technical Errors vs 3b: Self Contradiction:**
-  r = 0.587 ***, y = 0.226x + 2.2
+  r = 0.589 ***, y = 0.228x + 2.1
 
 **Category 3: Logical Errors vs Category 4: Technical Errors:**
-  r = 0.577 ***, y = 0.349x + -5.7
-
-**2b: Spurious Numeric vs 3a: Unsupported Leap:**
-  r = 0.569 ***, y = 0.704x + 75.6
+  r = 0.580 ***, y = 0.351x + -5.9
 
 **Category 3: Logical Errors vs 2a: Concept Fabrication:**
-  r = 0.569 ***, y = 0.354x + -15.5
+  r = 0.572 ***, y = 0.356x + -15.7
+
+**2b: Spurious Numeric vs 3a: Unsupported Leap:**
+  r = 0.571 ***, y = 0.707x + 75.4
 
 **1c: Prompt Contradiction vs 3b: Self Contradiction:**
-  r = 0.562 ***, y = 0.759x + 5.6
+  r = 0.565 ***, y = 0.763x + 5.5
 
 ### NOTABLE NEGATIVE CORRELATIONS (Trade-offs)
 ----------------------------------------
 
 **1b: Context Omission vs 2c: False Citation:**
-  r = -0.289 ***, y = -0.016x + 1.7
+  r = -0.277 ***, y = -0.015x + 1.6
   (Models good at one tend to be worse at the other)
 
 **1b: Context Omission vs 2a: Concept Fabrication:**
-  r = -0.249 **, y = -0.144x + 28.8
+  r = -0.232 **, y = -0.133x + 28.1
   (Models good at one tend to be worse at the other)
 
 **Category 2: Factual Errors vs 1b: Context Omission:**
-  r = -0.228 **, y = -0.198x + 63.7
+  r = -0.213 **, y = -0.187x + 62.9
   (Models good at one tend to be worse at the other)
 
 **Category 1: Input Misalignment vs 2c: False Citation:**
-  r = -0.215 **, y = -0.010x + 1.5
+  r = -0.204 **, y = -0.009x + 1.5
   (Models good at one tend to be worse at the other)
 
 ================================================================================

@@ -4,16 +4,16 @@ Aggregated hallucination counts across all LLMs, organized by PM-LLM benchmark c
 
 | Hallucination Type | CAT01 | CAT02 | CAT03 | CAT04 | CAT05 | CAT06 | CAT07 | CAT08 | Total |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1a. Instruction Override | 409 | 161 | 446 | 210 | 294 | 146 | 6 | 65 | 1737 |
-| 1b. Context Omission | 1179 | 1145 | 751 | 936 | 1302 | 1091 | 429 | 1718 | 8551 |
-| 1c. Prompt Contradiction | 200 | 98 | 170 | 96 | 49 | 60 | 24 | 33 | 730 |
-| 2a. Concept Fabrication | 510 | 244 | 322 | 804 | 242 | 328 | 269 | 609 | 3328 |
-| 2b. Spurious Numeric | 486 | 594 | 531 | 339 | 354 | 295 | 141 | 1430 | 4170 |
+| 1a. Instruction Override | 409 | 163 | 450 | 211 | 296 | 146 | 6 | 65 | 1746 |
+| 1b. Context Omission | 1181 | 1145 | 754 | 937 | 1303 | 1093 | 429 | 1721 | 8563 |
+| 1c. Prompt Contradiction | 200 | 98 | 170 | 97 | 49 | 60 | 24 | 33 | 731 |
+| 2a. Concept Fabrication | 510 | 245 | 322 | 808 | 242 | 330 | 269 | 609 | 3335 |
+| 2b. Spurious Numeric | 491 | 597 | 534 | 340 | 355 | 297 | 141 | 1432 | 4187 |
 | 2c. False Citation | 7 | 16 | 4 | 15 | 1 | 64 | 3 | 20 | 130 |
-| 3a. Unsupported Leap | 2110 | 2289 | 1752 | 1877 | 1743 | 2285 | 868 | 1950 | 14874 |
-| 3b. Self Contradiction | 351 | 187 | 356 | 196 | 75 | 170 | 21 | 77 | 1433 |
-| 3c. Circular Reasoning | 2 | 2 | 1 | 2 | 0 | 0 | 0 | 7 | 14 |
-| 4a. Syntax Error | 165 | 51 | 251 | 104 | 263 | 110 | 11 | 174 | 1129 |
-| 4b. Model Semantics Breach | 279 | 142 | 923 | 505 | 282 | 300 | 125 | 59 | 2615 |
+| 3a. Unsupported Leap | 2123 | 2298 | 1764 | 1883 | 1751 | 2303 | 868 | 1960 | 14950 |
+| 3b. Self Contradiction | 352 | 189 | 356 | 196 | 76 | 170 | 21 | 77 | 1437 |
+| 3c. Circular Reasoning | 2 | 2 | 1 | 2 | 0 | 0 | 0 | 8 | 15 |
+| 4a. Syntax Error | 166 | 51 | 251 | 104 | 263 | 110 | 11 | 184 | 1140 |
+| 4b. Model Semantics Breach | 279 | 143 | 924 | 507 | 282 | 303 | 125 | 59 | 2622 |
 | 4c. Visual Description Mismatch | 173 | 54 | 83 | 108 | 49 | 20 | 543 | 34 | 1064 |
-| **Total** | **5871** | **4983** | **5590** | **5192** | **4654** | **4869** | **2440** | **6176** | **39775** |
+| **Total** | **5893** | **5001** | **5613** | **5208** | **4667** | **4896** | **2440** | **6202** | **39920** |
