@@ -3,13 +3,18 @@ import json
 import os
 import glob
 import ast
+import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from file_utils import read_file_with_fallback
 
 # Read leaderboard stats
-with open(SCRIPT_DIR / 'leaderboard_stats.md', 'r') as f:
-    content = f.read()
+content = read_file_with_fallback(SCRIPT_DIR / 'leaderboard_stats.md')
 
 # Parse the JSON from markdown file
 leaderboard_data = ast.literal_eval(content)
@@ -73,16 +78,14 @@ matched_model_names = set(model_scores)
 model_date = {}
 model_date_path = SCRIPT_DIR / 'model_date.json'
 if os.path.exists(model_date_path):
-    with open(model_date_path, 'r') as f:
-        model_date = json.load(f)
+    model_date = json.loads(read_file_with_fallback(model_date_path))
     print(f"\nLoaded existing model_date.json with {len(model_date)} entries")
 
 # Handle model_info.json (model information like parameters)
 model_info = {}
 model_info_path = SCRIPT_DIR / 'model_info.json'
 if os.path.exists(model_info_path):
-    with open(model_info_path, 'r') as f:
-        model_info = json.load(f)
+    model_info = json.loads(read_file_with_fallback(model_info_path))
     print(f"Loaded existing model_info.json with {len(model_info)} entries")
 
 # Remove stale metadata for models that do not have a matched leaderboard entry.

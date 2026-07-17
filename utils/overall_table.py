@@ -8,6 +8,7 @@ except ModuleNotFoundError:
 
 from utils.table_per_model import execute_script, index_evaluation_files, render_markdown_table
 from common import EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, is_open_source, is_large_reasoning_model, force_custom_evaluation_lrm, is_excluded_from_table
+from file_utils import read_file_with_fallback
 
 
 def format_numb_in_table(score, max_score, good_diff=0.3):
@@ -275,8 +276,7 @@ def write_evaluation(base_path, extra=True):
     model_info_path = os.path.join(base_path, "hallucinations", "model_info.json")
     small_models = set()
     try:
-        with open(model_info_path, "r") as f:
-            model_info = json.load(f)
+        model_info = json.loads(read_file_with_fallback(model_info_path))
         for k, v in model_info.items():
             if isinstance(v, list) and len(v) > 0:
                 first_val = v[0]

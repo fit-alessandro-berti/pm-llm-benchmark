@@ -13,6 +13,8 @@ import sys
 
 from typing import Dict, Any
 
+from file_utils import read_file_with_fallback
+
 PROVIDER_API_KEY_ENVS = {
     "openrouter": "OPENROUTER_API_KEY",
     "openai": "OPENAI_API_KEY",
@@ -249,8 +251,7 @@ MODELS_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "m
 
 
 def _load_models_dict(config_path=MODELS_CONFIG_PATH):
-    with open(config_path, "r", encoding="utf-8") as handler:
-        return json.load(handler)
+    return json.loads(read_file_with_fallback(config_path))
 
 
 MODELS_DICT = _load_models_dict()
@@ -267,8 +268,7 @@ def is_excluded_from_table(model_name):
 def _load_ordered_llms_from_leaderboard_stats(base_path="."):
     stats_path = os.path.join(base_path, "hallucinations", "leaderboard_stats.md")
     try:
-        with open(stats_path, "r", encoding="utf-8") as handler:
-            data = json.load(handler)
+        data = json.loads(read_file_with_fallback(stats_path))
         ordered_llms = [
             clean_model_name(entry["Model"])
             for entry in data
@@ -296,8 +296,7 @@ def _parse_leaderboard_score(raw_score):
 def _load_ordered_llm_scores_from_leaderboard_stats(base_path="."):
     stats_path = os.path.join(base_path, "hallucinations", "leaderboard_stats.md")
     try:
-        with open(stats_path, "r", encoding="utf-8") as handler:
-            data = json.load(handler)
+        data = json.loads(read_file_with_fallback(stats_path))
 
         ordered_llms_with_scores = []
         for entry in data:
@@ -601,7 +600,7 @@ def set_api_key(type_key):
     if type_key == "answer":
         answering_api_key_path = "answering_api_key.txt" if os.path.exists(
             "answering_api_key.txt") else "../answering_api_key.txt"
-        Shared.API_KEY = open(answering_api_key_path, "r").read().strip()
+        Shared.API_KEY = read_file_with_fallback(answering_api_key_path).strip()
         Shared.MODEL_NAME = ANSWERING_MODEL_NAME
         Shared.ALIAS_MODEL_NAME = Shared.MODEL_NAME
     else:
@@ -1085,14 +1084,9 @@ def _load_prompt_text(question_path, explicit_text):
     if not question_path:
         return ""
     try:
-        with open(question_path, "r", encoding="utf-8") as handler:
-            return handler.read()
+        return read_file_with_fallback(question_path)
     except Exception:
-        try:
-            with open(question_path, "r") as handler:
-                return handler.read()
-        except Exception:
-            return ""
+        return ""
 
 
 def _estimate_text_tokens(text):
@@ -1154,7 +1148,7 @@ def query_text_simple_with_rate_limit(question_path, target_file, callback, ques
 
 def query_text_simple(question_path, target_file, callback, question=None):
     if question is None:
-        question = open(question_path, "r", encoding="utf-8").read()
+        question = read_file_with_fallback(question_path)
 
     if Shared.ADDED_TO_PROMPT is not None:
         question = question + " " + Shared.ADDED_TO_PROMPT
@@ -1471,8 +1465,7 @@ def _read_api_key(provider):
     if file_path:
         candidate = os.path.abspath(os.path.join(os.path.dirname(__file__), file_path))
         if os.path.exists(candidate):
-            with open(candidate, "r", encoding="utf-8") as handler:
-                return handler.read().strip()
+            return read_file_with_fallback(candidate).strip()
 
     return ""
 

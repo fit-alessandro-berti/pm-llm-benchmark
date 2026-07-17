@@ -7,14 +7,11 @@ except ModuleNotFoundError:
 
 chdir_repo_root()
 
+from file_utils import read_file_with_fallback
+
 
 def starts_with_think(file_path):
-    try:
-        with open(file_path, "r", encoding="utf-8") as handler:
-            return handler.read(1024).lstrip().startswith("<think>")
-    except UnicodeDecodeError:
-        with open(file_path, "r", encoding="latin-1") as handler:
-            return handler.read(1024).lstrip().startswith("<think>")
+    return read_file_with_fallback(file_path)[:1024].lstrip().startswith("<think>")
 
 
 llms = set()

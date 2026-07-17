@@ -11,13 +11,14 @@ from benchlib import (
     population_stdev,
     read_text,
 )
+from file_utils import open_file_with_fallback
 
 
 MAX_SCORE_STDEV = 4.5
 
 
 def _load_selected_rows(path: Path) -> List[Dict[str, str]]:
-    with path.open(newline="", encoding="utf-8") as file:
+    with open_file_with_fallback(path, newline="") as file:
         reader = csv.DictReader(file)
         required = {"category", "copied_answer_file"}
         if reader.fieldnames is None or not required.issubset(set(reader.fieldnames)):

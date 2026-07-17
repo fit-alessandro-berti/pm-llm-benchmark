@@ -8,6 +8,7 @@ from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, query_text_simpl
     set_api_key, is_visual_model, get_base_evaluation_path, query_text_simple_with_rate_limit, \
     query_image_simple_with_rate_limit, RATE_LIMITER, configure_rate_limiter
 import common
+from file_utils import read_file_with_fallback
 
 
 class Shared:
@@ -72,10 +73,7 @@ def evaluate_single_question(q, answering_model_name, INCLUDE_EVALUATING_MNAME_I
             
             print(f"Evaluating: {answer_path}")
             
-            try:
-                answer = open(answer_path, "r").read()
-            except:
-                answer = open(answer_path, "r", encoding="utf-8").read()
+            answer = read_file_with_fallback(answer_path)
             
             if answer is not None and answer:
                 try:

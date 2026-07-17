@@ -8,18 +8,14 @@ except ModuleNotFoundError:
 import common
 from utils import forge_eval_prompt
 import subprocess
+from file_utils import read_file_with_fallback
 
 
 chdir_repo_root()
 
 
 def read_contents(file_path):
-    try:
-        content = open(file_path, "r").read()
-    except:
-        content = open(file_path, "r", encoding="utf-8").read()
-
-    return content
+    return read_file_with_fallback(file_path)
 
 
 def copy_to_clipboard(text):

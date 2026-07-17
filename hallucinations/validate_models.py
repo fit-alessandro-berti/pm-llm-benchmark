@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 import json
+import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from file_utils import read_file_with_fallback
 
 def resolve_script_path(filepath):
     path = Path(filepath)
@@ -11,8 +17,7 @@ def resolve_script_path(filepath):
     return SCRIPT_DIR / path
 
 def validate_model_info(json_file='model_info.json'):
-    with open(resolve_script_path(json_file), 'r') as f:
-        models = json.load(f)
+    models = json.loads(read_file_with_fallback(resolve_script_path(json_file)))
     
     models_without_info = []
     models_with_info = []

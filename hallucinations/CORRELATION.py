@@ -2,11 +2,17 @@
 import json
 from datetime import datetime
 from pathlib import Path
+import sys
 import numpy as np
 from scipy import stats
 import pandas as pd
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from file_utils import read_file_with_fallback
 
 def resolve_script_path(filepath):
     path = Path(filepath)
@@ -17,8 +23,7 @@ def resolve_script_path(filepath):
 def parse_hallucination_report(filepath='hallucination_report.md'):
     """Parse the markdown table from hallucination report"""
     data = []
-    with open(resolve_script_path(filepath), 'r') as f:
-        lines = f.readlines()
+    lines = read_file_with_fallback(resolve_script_path(filepath)).splitlines(keepends=True)
     
     # Find the table (skip header lines)
     in_table = False
@@ -54,8 +59,7 @@ def parse_hallucination_report(filepath='hallucination_report.md'):
 
 def load_json_data(filepath):
     """Load JSON file"""
-    with open(resolve_script_path(filepath), 'r') as f:
-        return json.load(f)
+    return json.loads(read_file_with_fallback(resolve_script_path(filepath)))
 
 def calculate_model_size(model_info):
     """Calculate total model size from model_info.json"""

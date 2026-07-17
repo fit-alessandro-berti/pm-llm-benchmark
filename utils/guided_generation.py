@@ -8,24 +8,14 @@ except ModuleNotFoundError:
     from script_bootstrap import chdir_repo_root
 
 from common import clean_model_name
+from file_utils import read_file_with_fallback
 
 
 chdir_repo_root()
 
 
 def read_contents(file_path):
-    content = ""
-
-    try:
-        F = open(file_path, "r", encoding="utf-8")
-        content = F.read()
-        F.close()
-    except:
-        F = open(file_path, "r")
-        content = F.read()
-        F.close()
-
-    return content
+    return read_file_with_fallback(file_path)
 
 
 def copy_to_clipboard(text):
@@ -85,7 +75,7 @@ if also_graphical == "y":
         if not os.path.exists(answer_path):
             proceed = True
         else:
-            contents = open(answer_path, "r", encoding="utf-8").read().strip()
+            contents = read_file_with_fallback(answer_path).strip()
             if not contents:
                 proceed = True
 

@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import requests
 
 from benchlib import sanitize_name
+from file_utils import open_file_with_fallback, read_file_with_fallback
 
 
 OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -151,7 +152,7 @@ _logger = logging.getLogger(__name__)
 
 
 def _load_selected_answers(path: Path) -> List[Dict[str, str]]:
-    with path.open(newline="", encoding="utf-8") as file:
+    with open_file_with_fallback(path, newline="") as file:
         reader = csv.DictReader(file)
         required = {"question", "copied_answer_file", "copied_question_file"}
         if reader.fieldnames is None or not required.issubset(set(reader.fieldnames)):
@@ -171,11 +172,7 @@ def _build_judge_prompt(question: str, answer: str) -> str:
 
 
 def _read_text_resilient(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        with path.open("r") as file:
-            return file.read()
+    return read_file_with_fallback(path)
 
 
 def _extract_text_from_api_response(response_json: Dict[str, Any], is_responses_api: bool) -> str:

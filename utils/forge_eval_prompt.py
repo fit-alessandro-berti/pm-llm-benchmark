@@ -7,11 +7,12 @@ add_repo_root_to_path()
 
 from common import encode_image, force_custom_evaluation_lrm
 from common import Shared as CommonShared
+from file_utils import read_file_with_fallback
 
 
 def forge(question_path, answer, answering_model_name=""):
     if question_path.endswith(".txt"):
-        question = open(question_path, "r", encoding="utf-8").read()
+        question = read_file_with_fallback(question_path)
 
         inquiry = ["Given the following question:\n\n"]
         inquiry.append(question)

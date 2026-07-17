@@ -12,6 +12,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict
 
+from file_utils import read_file_with_fallback
+
 
 REPO_ROOT = Path(__file__).resolve().parent
 MODELS_CONFIG_PATH = REPO_ROOT / "models_config.json"
@@ -121,8 +123,7 @@ def parse_json_object(raw: str | None, label: str) -> Dict[str, Any]:
 def load_runtime_config(args: argparse.Namespace) -> Dict[str, Any]:
     config: Dict[str, Any] = {}
     if args.config_file:
-        with open(args.config_file, "r", encoding="utf-8") as handler:
-            file_config = json.load(handler)
+        file_config = json.loads(read_file_with_fallback(args.config_file))
         if not isinstance(file_config, dict):
             raise ValueError("config-file must contain a JSON object.")
         config = merge_dicts(config, file_config)
@@ -170,15 +171,13 @@ def read_api_key(config: Dict[str, Any]) -> str | None:
         if not candidate.is_absolute():
             candidate = (REPO_ROOT / candidate).resolve()
         if candidate.exists():
-            with open(candidate, "r", encoding="utf-8") as handler:
-                return handler.read().strip()
+            return read_file_with_fallback(candidate).strip()
 
     fallback_path = PROVIDER_API_KEY_FILES.get(config["provider"])
     if fallback_path:
         candidate = (REPO_ROOT / fallback_path).resolve()
         if candidate.exists():
-            with open(candidate, "r", encoding="utf-8") as handler:
-                return handler.read().strip()
+            return read_file_with_fallback(candidate).strip()
 
     return None
 
@@ -199,8 +198,7 @@ def needs_manual_entry(config: Dict[str, Any]) -> bool:
 
 
 def ensure_model_registered(config: Dict[str, Any], dry_run: bool) -> None:
-    with open(MODELS_CONFIG_PATH, "r", encoding="utf-8") as handler:
-        models_config = json.load(handler)
+    models_config = json.loads(read_file_with_fallback(MODELS_CONFIG_PATH))
 
     provider = config["provider"]
     alias = config["alias"]

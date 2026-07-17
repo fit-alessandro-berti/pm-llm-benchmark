@@ -8,6 +8,7 @@ except ModuleNotFoundError:
     from script_bootstrap import chdir_repo_root
 
 from common import ANSWERING_MODEL_NAME, EVALUATING_MODEL_NAME, clean_model_name, get_base_evaluation_path, force_custom_evaluation_lrm
+from file_utils import read_file_with_fallback
 
 
 pattern = r'(?P<sign>[-+]?)(?:(?P<float>\d+\.\d+)|(?P<int>\d+)|(?P<numerator>\d+)/(?P<denominator>\d+))(?!\.)'
@@ -97,12 +98,7 @@ def execute_script(evaluation_folder, model_name, responses=None):
         catnum = int(question.split("_")[0].split("cat")[1])
         is_textual = True if catnum != 7 else False
 
-        try:
-            with open(target_path, "r", encoding="utf-8") as handler:
-                contents = handler.read()
-        except UnicodeDecodeError:
-            with open(target_path, "r", encoding="latin-1") as handler:
-                contents = handler.read()
+        contents = read_file_with_fallback(target_path)
 
         numbers = match_regex(contents)
         numb = float(numbers) if numbers is not None else 1.0

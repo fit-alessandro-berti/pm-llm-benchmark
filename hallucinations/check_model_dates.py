@@ -5,11 +5,15 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from file_utils import read_file_with_fallback
 
 # Load model_date.json
 try:
-    with open(SCRIPT_DIR / 'model_date.json', 'r') as f:
-        model_dates = json.load(f)
+    model_dates = json.loads(read_file_with_fallback(SCRIPT_DIR / 'model_date.json'))
 except FileNotFoundError:
     print("Error: model_date.json not found. Please run create_model_json_files.py first.")
     sys.exit(1)

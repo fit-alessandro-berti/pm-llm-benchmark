@@ -3,11 +3,17 @@ import argparse
 import csv
 import json
 import os
+import sys
 from pathlib import Path
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from file_utils import read_file_with_fallback
 
 # Define the fixed category ordering
 CATEGORY_KEYS = [
@@ -65,8 +71,7 @@ def load_report(report_entry):
     pm_cat = extract_pm_category(filename_parts)
 
     try:
-        with open(path, "r", encoding="utf-8") as handler:
-            data = json.load(handler)
+        data = json.loads(read_file_with_fallback(path))
     except Exception:
         return None
 

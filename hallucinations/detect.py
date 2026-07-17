@@ -4,10 +4,15 @@ import threading
 import requests
 import argparse
 import json
+import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from file_utils import read_file_with_fallback
 
 # List of required category keys
 CATEGORY_KEYS = [
@@ -168,13 +173,7 @@ def process_file(input_path, output_path, semaphore, model):
     try:
         semaphore.acquire()
 
-        # Read input with fallback for encoding
-        try:
-            with open(input_path, 'r') as f:
-                content = f.read()
-        except UnicodeDecodeError:
-            with open(input_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+        content = read_file_with_fallback(input_path)
 
         # Get API key
         api_key = os.getenv('OPENAI_API_KEY')

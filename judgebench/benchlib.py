@@ -1,7 +1,14 @@
 import math
 import re
+import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from file_utils import open_file_with_fallback, read_file_with_fallback
 
 
 PM_SCORE_RE = re.compile(
@@ -10,10 +17,7 @@ PM_SCORE_RE = re.compile(
 
 
 def read_text(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return path.read_text(encoding="latin-1")
+    return read_file_with_fallback(path)
 
 
 def extract_raw_pm_score(text: str) -> Optional[float]:
@@ -159,7 +163,7 @@ def pairwise_order_accuracy(reference_scores: Sequence[float], judge_scores: Seq
 def load_score_csv(path: Path) -> Tuple[List[str], Dict[str, Dict[str, float]]]:
     import csv
 
-    with path.open(newline="", encoding="utf-8") as file:
+    with open_file_with_fallback(path, newline="") as file:
         reader = csv.DictReader(file)
         if reader.fieldnames is None or "model" not in reader.fieldnames:
             raise ValueError(f"Score CSV must contain a 'model' column: {path}")
