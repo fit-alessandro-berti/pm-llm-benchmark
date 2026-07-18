@@ -1,0 +1,157 @@
+**Identified Anomalies and Undesirable Behaviors**
+
+Analysis of the provided `order_event_log` data against the assumed normal process flow (Register Order → Perform Credit Check → Validate Stock → Confirm Shipment → Ship Goods → Issue Invoice → Receive Payment) reveals multiple clear deviations. Only case 1001 is fully compliant.
+
+**Case 1001 (compliant baseline):**  
+Exact sequence followed with increasing timestamps. No issues.
+
+**Case 1002 (priority order, value 2000):**  
+- Confirm Shipment and Ship Goods occur immediately after Register Order (within ~20 minutes).  
+- Perform Credit Check and Validate Stock occur *after* goods have already been shipped.  
+- additional_info on Confirm Shipment explicitly flags `attempted_early=Y`.  
+- Stock validation after shipment is operationally useless as a control.
+
+**Case 1003 (standard, value 1500):**  
+- Ship Goods occurs right after Perform Credit Check, completely skipping Validate Stock (activity entirely absent).  
+- Confirm Shipment occurs *after* both Ship Goods and Issue Invoice.  
+- additional_info flags `late_confirmation=Y`.
+
+**Case 1004 (standard, highest value 3000):**  
+- Receive Payment occurs only 5 minutes after Register Order—before Credit Check, Validate Stock, Confirm Shipment, Ship Goods, *and* Issue Invoice.  
+- Issue Invoice occurs after payment has already been received.  
+- Both Perform Credit Check and Validate Stock are completely missing.  
+- Confirm Shipment records `shipment_scheduled=N`, yet Ship Goods still proceeds.
+
+**Cross-cutting patterns / undesirable behaviors:**  
+- Sequence violations are common (shipping or confirmation before credit/stock checks; payment before invoicing or fulfillment).  
+- Critical control activities (Perform Credit Check, Validate Stock) are frequently skipped.  
+- Logistics activities can execute without prior Finance or Warehouse prerequisites.  
+- Explicit flags in `additional_info` (`attempted_early`, `late_confirmation`, `shipment_scheduled=N`) confirm awareness of issues at the time of logging.  
+- Stronger deviations appear associated with the priority order (1002) and the highest-value order (1004).  
+- No obvious resource-role mismatches (activities are generally performed by expected departments), no repeated/rework activities, and timestamps within each case are consistent (no clear clock skew).
+
+These represent failures of process control, risk management (credit and inventory), and financial controls.
+
+**Hypotheses for Root Causes**
+
+1. **Lack of process enforcement / workflow orchestration** — The system appears to allow free-form logging of any activity at any time with no hard sequential constraints or mandatory steps. This is the most direct explanation for arbitrary ordering and missing activities.
+
+2. **Informal expediting / policy overrides for priority or high-value orders** — Case 1002 (priority) and 1004 (highest value) show the most aggressive deviations. Staff or managers may be using “fast-track” workarounds that bypass credit and stock controls, creating financial and inventory risk.
+
+3. **Training, compliance, or role-awareness gaps** — Especially visible in Logistics/Warehouse executing Ship Goods without prior Confirm Shipment, Credit Check, or Validate Stock. Staff may not understand (or may ignore) prerequisites.
+
+4. **Loosely coupled or independent subsystems** — Payment recording may operate independently of the fulfillment/invoice process, allowing early payment capture (possible legitimate prepayment, or a control gap).
+
+5. **Secondary possibilities** — Incomplete logging (activities performed but not recorded), concurrent processing without proper synchronization, or data-entry errors. Less likely as the primary driver given the consistent patterns and explicit flags in `additional_info`.
+
+**Proposed SQL Queries for Further Investigation**
+
+These PostgreSQL queries operate on the given schema (`order_event_log`, optionally joined to `orders` and `resources`). They are designed to detect the patterns above at scale, quantify frequency, and support correlation analysis. No assumptions beyond the provided schema are required.
+
+**1. Cases missing critical control activities (Credit Check or Validate Stock)**  
+```sql
+SELECT case_id,
+       MAX(CASE WHEN activity = 'Perform Credit Check' THEN 1 ELSE 0 END) AS has_credit_check,
+       MAX(CASE WHEN activity = 'Validate Stock' THEN 1 ELSE 0 END) AS has_validate_stock,
+       COUNT(DISTINCT activity) AS distinct_activities
+FROM order_event_log
+GROUP BY case_id
+HAVING MAX(CASE WHEN activity = 'Perform Credit Check' THEN 1 ELSE 0 END) = 0
+    OR MAX(CASE WHEN activity = 'Validate Stock' THEN 1 ELSE 0 END) = 0
+ORDER BY case_id;
+```
+*Purpose:* Quickly surface every case lacking mandatory risk controls.
+
+**2. Temporal sequence violations — Ship Goods before Credit Check or Validate Stock (or those activities missing)**  
+```sql
+SELECT s.case_id,
+       s.timestamp AS ship_time,
+       c.timestamp AS credit_time,
+       v.timestamp AS stock_time
+FROM order_event_log s
+LEFT JOIN order_event_log c
+  ON s.case_id = c.case_id AND c.activity = 'Perform Credit Check'
+LEFT JOIN order_event_log v
+  ON s.case_id = v.case_id AND v.activity = 'Validate Stock'
+WHERE s.activity = 'Ship Goods'
+  AND (c.timestamp IS NULL OR s.timestamp < c.timestamp
+       OR v.timestamp IS NULL OR s.timestamp < v.timestamp)
+ORDER BY s.case_id;
+```
+*Purpose:* Detect the most severe control failure (shipping without prior credit or stock validation).
+
+**3. Payment received before Invoice (or before Ship Goods)**  
+```sql
+SELECT p.case_id,
+       p.timestamp AS payment_time,
+       i.timestamp AS invoice_time,
+       s.timestamp AS ship_time
+FROM order_event_log p
+LEFT JOIN order_event_log i
+  ON p.case_id = i.case_id AND i.activity = 'Issue Invoice'
+LEFT JOIN order_event_log s
+  ON p.case_id = s.case_id AND s.activity = 'Ship Goods'
+WHERE p.activity = 'Receive Payment'
+  AND (i.timestamp IS NULL OR p.timestamp < i.timestamp
+       OR s.timestamp IS NULL OR p.timestamp < s.timestamp)
+ORDER BY p.case_id;
+```
+*Purpose:* Identify financial-control breaks (payment preceding invoicing or fulfillment).
+
+**4. Full process path reconstruction + correlation with order attributes**  
+```sql
+SELECT o.case_id,
+       o.order_type,
+       o.order_value,
+       o.customer_id,
+       STRING_AGG(e.activity, ' → ' ORDER BY e.timestamp) AS process_path,
+       COUNT(*) AS event_count
+FROM orders o
+JOIN order_event_log e ON o.case_id = e.case_id
+GROUP BY o.case_id, o.order_type, o.order_value, o.customer_id
+ORDER BY o.case_id;
+```
+*Purpose:* Make every case’s actual sequence visible and immediately show whether anomalies correlate with `order_type` or `order_value`.
+
+**5. Explicit issue flags in additional_info + resource context**  
+```sql
+SELECT e.case_id,
+       e.activity,
+       e.timestamp,
+       e.resource,
+       r.role,
+       r.department,
+       e.additional_info,
+       o.order_type,
+       o.order_value
+FROM order_event_log e
+JOIN orders o ON e.case_id = o.case_id
+LEFT JOIN resources r ON e.resource = r.resource_id
+WHERE e.additional_info ILIKE '%early%'
+   OR e.additional_info ILIKE '%late%'
+   OR e.additional_info ILIKE '%scheduled=N%'
+ORDER BY e.case_id, e.timestamp;
+```
+*Purpose:* Surface all explicitly flagged problems and show which roles/departments and order types are involved.
+
+**6. Resource / department involvement in anomalous cases (example focused on missing-control cases)**  
+```sql
+SELECT r.role,
+       r.department,
+       e.activity,
+       COUNT(*) AS occurrences
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE e.case_id IN (
+    SELECT case_id
+    FROM order_event_log
+    GROUP BY case_id
+    HAVING MAX(CASE WHEN activity = 'Perform Credit Check' THEN 1 ELSE 0 END) = 0
+        OR MAX(CASE WHEN activity = 'Validate Stock' THEN 1 ELSE 0 END) = 0
+)
+GROUP BY r.role, r.department, e.activity
+ORDER BY occurrences DESC;
+```
+*Purpose:* Determine whether particular roles or departments are disproportionately involved in cases that skip controls.
+
+These queries can be further combined (CTEs, window functions with LAG/LEAD for consecutive transitions, time-delta calculations, etc.) once the basic patterns are quantified. Running them on the full production log would reveal the prevalence of each anomaly type, any strong correlations with order attributes or resources, and the overall fitness of the process to the assumed normal flow.

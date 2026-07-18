@@ -1,4 +1,6 @@
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 
@@ -24,6 +26,30 @@ def copy_to_clipboard(text):
     except ModuleNotFoundError as exc:
         raise RuntimeError("pyperclip is required for clipboard operations.") from exc
     pyperclip.copy(text)
+
+
+def open_text_editor(file_path):
+    configured_editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+    if configured_editor:
+        subprocess.run(shlex.split(configured_editor) + [file_path])
+        return
+
+    if sys.platform.startswith("linux"):
+        editor_candidates = ["mousepad", "xdg-open"]
+    elif os.name == "nt":
+        editor_candidates = ["notepad++.exe", "notepad.exe"]
+    else:
+        editor_candidates = ["open"]
+
+    for editor in editor_candidates:
+        if shutil.which(editor):
+            subprocess.run([editor, file_path])
+            return
+
+    raise RuntimeError(
+        "No supported text editor found. Install mousepad on Linux, "
+        "Notepad++/Notepad on Windows, or set VISUAL/EDITOR."
+    )
 
 
 questions_folder = "questions"
@@ -61,7 +87,7 @@ for q in questions:
         F = open(answer_path, "w")
         F.close()
 
-        subprocess.run(["notepad.exe", answer_path])
+        open_text_editor(answer_path)
 
 also_graphical = input("Does the model support multi-modality (pictures) ? (y/n)")
 
@@ -85,4 +111,4 @@ if also_graphical == "y":
             F = open(answer_path, "w")
             F.close()
 
-            subprocess.run(["notepad.exe", answer_path])
+            open_text_editor(answer_path)

@@ -6,7 +6,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | --------------------------------- | -------- | ------------------ | ------------------ | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- |
 | gpt-5.6-sol-XHIGH                 | **40.2** | :x:                | :white_check_mark: | **6.0**              | :mage_woman: **7.6** | **6.0**              | :mage_woman: **5.8** | :mage_woman: **5.6** | :mage_woman: **5.2** | :mage_woman: **4.0** | **4.6**              |
 | gpt-5.6-sol-HIGH                  | **39.8** | :x:                | :white_check_mark: | **6.1**              | **7.3**              | **6.0**              | :mage_woman: **5.8** | **5.5**              | :mage_woman: **5.2** | **3.9**              | **4.7**              |
-| moonshotaikimi-k3                 | **39.2** | :white_check_mark: | :white_check_mark: | **6.1**              | **7.4**              | :mage_woman: **6.1** | **5.5**              | **5.4**              | **5.0**              | **3.7**              | 0.0                  |
+| moonshotaikimi-k3                 | **39.2** | :white_check_mark: | :white_check_mark: | **6.1**              | **7.3**              | :mage_woman: **6.1** | **5.5**              | **5.4**              | **5.0**              | **3.7**              | 0.0                  |
 | gpt-5.6-terra-HIGH                | **38.4** | :x:                | :white_check_mark: | **6.1**              | 7.2                  | 5.5                  | 5.3                  | **5.4**              | **5.1**              | **3.8**              | **4.7**              |
 | moonshotaikimi-k2.6               | **37.8** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.3** | 7.2                  | 5.3                  | 4.9                  | **5.3**              | :mage_woman: **5.2** | 3.6                  | 0.0                  |
 | gpt-5.4-2026-03-05-XHIGH          | **37.8** | :x:                | :white_check_mark: | **6.1**              | 7.0                  | 5.5                  | 5.2                  | **5.4**              | **4.9**              | **3.8**              | :mage_woman: **4.8** |
@@ -19,13 +19,14 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | gpt-5-pro-2025-10-06              | **36.9** | :x:                | :white_check_mark: | 5.6                  | 7.1                  | 5.1                  | 5.3                  | **5.3**              | 4.8                  | 3.6                  | :mage_woman: **4.8** |
 | gpt-5.5-2026-04-23-XHIGH          | **36.9** | :x:                | :white_check_mark: | **6.0**              | 6.9                  | 4.9                  | 5.0                  | **5.3**              | **5.0**              | **3.7**              | 4.1                  |
 | gpt-5.2-2025-12-11-XHIGH          | **36.7** | :x:                | :white_check_mark: | 5.8                  | 6.9                  | 5.4                  | 5.1                  | 4.9                  | **5.0**              | **3.7**              | **4.6**              |
+| Grok-4.5-Heavy-20260718           | **36.6** | :x:                | :white_check_mark: | 5.9                  | 7.0                  | 5.1                  | 4.9                  | **5.3**              | 4.6                  | **3.7**              | :mage_woman: **4.8** |
 | deepseek-v4-pro                   | **36.4** | :white_check_mark: | :white_check_mark: | **6.0**              | 7.0                  | 5.3                  | 5.1                  | 5.0                  | 4.5                  | 3.6                  | 0.0                  |
 | gpt-5.2-2025-12-11-HIGH           | **36.3** | :x:                | :white_check_mark: | **6.0**              | 6.5                  | 5.2                  | 4.7                  | **5.3**              | 4.8                  | **3.7**              | 4.0                  |
 | gpt-5.6-sol-NONE                  | **36.3** | :x:                | :x:                | 5.9                  | 7.0                  | 4.4                  | 5.1                  | 4.9                  | **5.0**              | **3.9**              | **4.7**              |
 | anthropicclaude-fable-5           | **35.6** | :x:                | :x:                | 5.7                  | 6.9                  | 4.7                  | 4.6                  | 5.1                  | 4.7                  | **3.8**              | **4.6**              |
 | moonshotaikimi-k2.7-code          | **35.6** | :white_check_mark: | :white_check_mark: | **6.2**              | 6.3                  | 4.7                  | 4.7                  | **5.4**              | 4.6                  | **3.7**              | 0.0                  |
 | claude-opus-4-8-thinking          | **35.3** | :x:                | :white_check_mark: | 5.7                  | 6.8                  | 4.8                  | 4.9                  | 5.0                  | 4.5                  | 3.5                  | 4.1                  |
-| qwen3.7-max                       | **35.1** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.4                  | 4.8                  | 5.1                  | **5.0**              | 3.5                  | 0.0                  |
+| qwen3.7-max                       | **35.2** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.4                  | 4.8                  | 5.1                  | **5.0**              | 3.5                  | 0.0                  |
 | gpt-5.6-terra-NONE                | **34.9** | :x:                | :x:                | **6.0**              | 6.8                  | 4.3                  | 4.9                  | 4.6                  | 4.6                  | **3.8**              | 4.3                  |
 | gpt-5.4-2026-03-05-NONE           | **34.9** | :x:                | :x:                | 5.9                  | 6.8                  | 4.0                  | 4.6                  | **5.5**              | 4.6                  | **3.7**              | **4.6**              |
 | qwen3.6-plus                      | **34.9** | :x:                | :white_check_mark: | **6.1**              | 6.6                  | 4.8                  | 3.8                  | 5.0                  | **5.0**              | 3.6                  | **4.5**              |
@@ -42,7 +43,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | z-aiglm-5.2                       | **33.8** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.7                  | 4.3                  | 4.2                  | 5.0                  | 4.6                  | 3.3                  | 0.0                  |
 | gemini-3.5-flash                  | **33.7** | :x:                | :white_check_mark: | 5.4                  | 6.3                  | 5.0                  | 4.4                  | 4.9                  | 4.5                  | 3.2                  | **4.6**              |
 | gpt-5.2-2025-12-11-NONE           | **33.7** | :x:                | :x:                | 5.8                  | 6.3                  | 3.9                  | 4.7                  | 4.5                  | 4.7                  | **3.8**              | 4.1                  |
-| claude-opus-4-7-thinking          | **33.6** | :x:                | :white_check_mark: | 5.8                  | 6.3                  | 4.3                  | 4.4                  | 4.8                  | 4.4                  | 3.6                  | **4.7**              |
+| claude-opus-4-7-thinking          | **33.6** | :x:                | :white_check_mark: | 5.8                  | 6.4                  | 4.3                  | 4.4                  | 4.8                  | 4.4                  | 3.6                  | **4.7**              |
 | deepseek-v4-flash                 | **33.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.8                  | 4.6                  | 4.8                  | 4.7                  | 2.3                  | 0.0                  |
 | gpt-5.6-luna-NONE                 | **33.6** | :x:                | :x:                | 5.8                  | 6.6                  | 2.8                  | 4.7                  | 5.2                  | 4.8                  | **3.8**              | **4.6**              |
 | gpt-5.2-codex-XHIGH               | **33.5** | :x:                | :white_check_mark: | 5.7                  | 6.2                  | 5.1                  | 4.2                  | 5.0                  | 4.3                  | 3.0                  | **4.6**              |
@@ -57,10 +58,10 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | gpt-5.4-mini-2026-03-17-NONE      | **32.7** | :x:                | :x:                | 5.5                  | 6.6                  | 3.9                  | 4.5                  | 4.3                  | 4.5                  | 3.5                  | **4.7**              |
 | qwen3.6-27b                       | **32.7** | :x:                | :white_check_mark: | 5.7                  | 6.5                  | 3.3                  | 3.9                  | 5.0                  | 4.7                  | 3.6                  | 3.4                  |
 | z-aiglm-5v-turbo                  | **32.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 5.8                  | 4.8                  | 3.9                  | 4.5                  | 4.4                  | 3.5                  | 4.0                  |
-| anthropicclaude-sonnet-5          | **32.6** | :x:                | :x:                | 5.6                  | 6.1                  | 3.9                  | 4.3                  | 4.5                  | 4.6                  | 3.6                  | **4.5**              |
+| anthropicclaude-sonnet-5          | **32.6** | :x:                | :x:                | 5.7                  | 6.1                  | 3.9                  | 4.3                  | 4.5                  | 4.6                  | 3.6                  | **4.5**              |
 | deepseek-v3.2-thinking            | **32.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.3                  | 4.1                  | 4.3                  | 4.3                  | 4.5                  | 3.3                  | 0.0                  |
 | claude-sonnet-4-5-thinking        | **32.5** | :x:                | :white_check_mark: | 5.3                  | 6.3                  | 4.3                  | 4.3                  | 4.7                  | 4.0                  | 3.5                  | 3.9                  |
-| qwen3.5-397b-a17b                 | **32.5** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.3                  | 4.2                  | 3.8                  | 4.4                  | 4.6                  | 3.4                  | 0.0                  |
+| qwen3.5-397b-a17b                 | **32.5** | :white_check_mark: | :white_check_mark: | 5.6                  | 6.3                  | 4.2                  | 3.8                  | 4.4                  | 4.6                  | 3.4                  | 0.0                  |
 | x-aigrok-4.5                      | **32.4** | :x:                | :x:                | 5.3                  | 6.0                  | 4.1                  | 4.2                  | 4.8                  | 4.4                  | 3.6                  | **4.7**              |
 | gpt-5.3-chat-latest-2026-03-05    | **32.4** | :x:                | :white_check_mark: | 5.6                  | 5.8                  | 4.3                  | 4.4                  | 4.8                  | 4.4                  | 3.0                  | **4.6**              |
 | gpt-5.4-nano-2026-03-17-HIGH      | **32.4** | :x:                | :white_check_mark: | 4.7                  | 6.3                  | 3.7                  | 4.6                  | 5.1                  | 4.5                  | 3.5                  | **4.6**              |
@@ -69,7 +70,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | claude-opus-4-7                   | **32.2** | :x:                | :x:                | 5.7                  | 6.0                  | 3.6                  | 4.0                  | 4.7                  | 4.6                  | 3.6                  | **4.5**              |
 | claude-sonnet-4-6                 | **32.0** | :x:                | :x:                | 5.4                  | 5.6                  | 3.7                  | 4.2                  | 5.0                  | 4.5                  | 3.5                  | **4.5**              |
 | grok-4-0709                       | **31.8** | :x:                | :white_check_mark: | 5.3                  | 6.1                  | 4.5                  | 4.0                  | 4.4                  | 4.5                  | 2.9                  | 2.5                  |
-| minimaxminimax-m3                 | **31.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 5.9                  | 3.4                  | 3.9                  | 4.7                  | 4.5                  | 3.5                  | 0.0                  |
+| minimaxminimax-m3                 | **31.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 5.9                  | 3.4                  | 3.9                  | 4.8                  | 4.5                  | 3.5                  | 0.0                  |
 | gemini-3-pro-preview              | **31.7** | :x:                | :white_check_mark: | 5.7                  | 6.2                  | 4.2                  | 4.2                  | 3.9                  | 4.5                  | 3.2                  | **4.7**              |
 | qwen3.6-flash                     | **31.5** | :x:                | :white_check_mark: | 5.7                  | 6.0                  | 2.9                  | 4.3                  | 4.6                  | 4.5                  | 3.4                  | 3.9                  |
 | grok-4.3                          | **31.4** | :x:                | :white_check_mark: | 5.1                  | 5.9                  | 4.5                  | 4.0                  | 4.0                  | 4.7                  | 3.2                  | 4.4                  |
@@ -84,7 +85,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | gemini-2.5-pro-thinkhigh          | **30.9** | :x:                | :white_check_mark: | 5.2                  | 6.2                  | 4.0                  | 3.2                  | 4.6                  | 4.6                  | 3.3                  | 4.2                  |
 | gemini-3-flash-preview-thinkhigh  | **30.9** | :x:                | :white_check_mark: | 5.2                  | 6.1                  | 4.4                  | 3.7                  | 4.6                  | 4.1                  | 2.7                  | **4.6**              |
 | xiaomimimo-v2-pro                 | **30.8** | :x:                | :white_check_mark: | 5.5                  | 5.7                  | 3.7                  | 3.8                  | 4.5                  | 4.3                  | 3.3                  | 0.0                  |
-| qwen3.5-122b-a10b                 | **30.7** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.9                  | 4.1                  | 4.3                  | 4.7                  | 3.4                  | 0.0                  |
+| qwen3.5-122b-a10b                 | **30.7** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.9                  | 4.1                  | 4.3                  | 4.8                  | 3.4                  | 0.0                  |
 | xiaomimimo-v2.5-pro               | **30.6** | :x:                | :white_check_mark: | 5.5                  | 5.8                  | 3.5                  | 3.4                  | 4.4                  | 4.7                  | 3.3                  | 0.0                  |
 | googlegemini-3.1-pro-preview      | **30.5** | :x:                | :x:                | 5.3                  | 6.2                  | 4.8                  | 3.2                  | 4.0                  | 4.0                  | 3.0                  | :mage_woman: **4.8** |
 | qwen3.6-35b-a3b                   | **30.2** | :x:                | :white_check_mark: | 5.6                  | 6.0                  | 2.9                  | 3.8                  | 4.1                  | 4.5                  | 3.4                  | 3.9                  |
@@ -92,13 +93,13 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | arcee-aitrinity-large-thinking    | **30.1** | :white_check_mark: | :white_check_mark: | 4.9                  | 6.6                  | 4.3                  | 3.9                  | 3.6                  | 4.0                  | 2.8                  | 0.0                  |
 | Muse-Spark-20260409               | **30.1** | :x:                | :x:                | 5.5                  | 5.2                  | 3.0                  | 4.2                  | 4.4                  | 4.5                  | 3.3                  | 4.2                  |
 | gemini-2.5-pro-thinklow           | **30.1** | :x:                | :white_check_mark: | 5.0                  | 5.6                  | 3.9                  | 3.3                  | 4.4                  | 4.5                  | 3.3                  | 4.2                  |
-| grok-4-1-fast-reasoning           | **30.1** | :x:                | :white_check_mark: | 5.5                  | 5.6                  | 4.2                  | 3.4                  | 3.9                  | 4.4                  | 3.0                  | 1.9                  |
+| grok-4-1-fast-reasoning           | **30.1** | :x:                | :white_check_mark: | 5.6                  | 5.6                  | 4.2                  | 3.4                  | 3.9                  | 4.4                  | 3.0                  | 1.9                  |
 | claude-sonnet-4-5-20250929        | **30.0** | :x:                | :x:                | 5.0                  | 5.6                  | 3.6                  | 3.4                  | 4.8                  | 4.3                  | 3.3                  | **4.5**              |
 | claude-opus-4-1-thinking-20250805 | **30.0** | :x:                | :white_check_mark: | 5.5                  | 5.8                  | 3.5                  | 4.0                  | 4.2                  | 4.0                  | 3.0                  | 3.5                  |
 | gemma-4-31b-it                    | **29.8** | :white_check_mark: | :white_check_mark: | 5.2                  | 5.8                  | 3.6                  | 3.6                  | 4.3                  | 4.5                  | 2.9                  | 3.0                  |
 | claude-opus-4-1-20250805          | **29.8** | :x:                | :x:                | 5.0                  | 5.4                  | 3.7                  | 4.1                  | 4.3                  | 4.1                  | 3.1                  | 4.0                  |
 | xiaomimimo-v2-omni                | **29.7** | :x:                | :white_check_mark: | 5.3                  | 5.2                  | 3.8                  | 3.6                  | 4.0                  | 4.4                  | 3.3                  | 4.2                  |
-| gpt-4.1-2025-04-14                | **29.6** | :x:                | :x:                | 5.3                  | 5.3                  | 3.1                  | 4.2                  | 4.2                  | 4.3                  | 3.1                  | 4.0                  |
+| gpt-4.1-2025-04-14                | **29.6** | :x:                | :x:                | 5.3                  | 5.3                  | 3.1                  | 4.2                  | 4.3                  | 4.3                  | 3.1                  | 4.0                  |
 | gemma-4-26b-a4b-it                | **29.6** | :white_check_mark: | :white_check_mark: | 5.0                  | 5.7                  | 3.3                  | 4.1                  | 4.1                  | 4.4                  | 3.0                  | 2.5                  |
 | gpt-4.5-preview                   | **29.6** | :x:                | :x:                | 5.3                  | 5.2                  | 3.6                  | 4.1                  | 4.5                  | 4.3                  | 2.5                  | 4.1                  |
 | nousresearchhermes-4-70b          | **29.5** | :white_check_mark: | :white_check_mark: | 4.9                  | 6.0                  | 3.4                  | 4.1                  | 3.6                  | 4.3                  | 3.2                  | 0.0                  |
@@ -106,12 +107,12 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | qwen3.5-35b-a3b                   | **29.3** | :white_check_mark: | :white_check_mark: | 5.7                  | 5.7                  | 2.1                  | 3.9                  | 4.2                  | 4.5                  | 3.2                  | 0.0                  |
 | gpt-5.4-nano-2026-03-17-NONE      | **29.3** | :x:                | :x:                | 4.5                  | 5.1                  | 3.0                  | 4.2                  | 4.7                  | 4.5                  | 3.4                  | 4.2                  |
 | gemini-2.5-flash-lite             | **29.3** | :x:                | :x:                | 5.1                  | 5.8                  | 2.7                  | 4.0                  | 4.0                  | 4.4                  | 3.4                  | 3.9                  |
-| grok-code-fast-1                  | **29.2** | :x:                | :white_check_mark: | 5.5                  | 5.5                  | 3.1                  | 3.9                  | 4.3                  | 3.9                  | 3.1                  | 0.0                  |
+| grok-code-fast-1                  | **29.2** | :x:                | :white_check_mark: | 5.5                  | 5.5                  | 3.1                  | 3.9                  | 4.3                  | 3.9                  | 3.0                  | 0.0                  |
 | prime-intellectintellect-3        | **29.0** | :white_check_mark: | :white_check_mark: | 5.5                  | 5.1                  | 2.8                  | 3.8                  | 4.3                  | 4.5                  | 3.0                  | 0.0                  |
 | phi4-reasoningplus                | **28.9** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.7                  | 3.7                  | 4.3                  | 4.2                  | 2.8                  | 0.0                  |
 | Grok-4.1-20251219                 | **28.9** | :x:                | :white_check_mark: | 5.5                  | 5.0                  | 2.9                  | 3.3                  | 4.5                  | 4.4                  | 3.3                  | 4.0                  |
-| gpt-oss-120b                      | **28.8** | :white_check_mark: | :white_check_mark: | 5.1                  | 5.2                  | 3.1                  | 3.5                  | 4.7                  | 3.9                  | 3.4                  | 0.0                  |
-| nemotron-super-49b-v1.5-thinking  | **28.7** | :white_check_mark: | :white_check_mark: | 5.1                  | 5.4                  | 3.0                  | 4.1                  | 4.1                  | 4.6                  | 2.4                  | 0.0                  |
+| gpt-oss-120b                      | **28.8** | :white_check_mark: | :white_check_mark: | 5.1                  | 5.2                  | 3.1                  | 3.5                  | 4.6                  | 3.9                  | 3.4                  | 0.0                  |
+| nemotron-super-49b-v1.5-thinking  | **28.7** | :white_check_mark: | :white_check_mark: | 5.1                  | 5.4                  | 3.0                  | 4.1                  | 4.1                  | 4.6                  | 2.5                  | 0.0                  |
 | writerpalmyra-x5                  | **28.5** | :white_check_mark: | :x:                | 4.8                  | 5.2                  | 2.1                  | 4.1                  | 4.5                  | 4.6                  | 3.1                  | 0.0                  |
 | phi4-reasoning                    | **28.4** | :white_check_mark: | :white_check_mark: | 5.6                  | 5.3                  | 2.6                  | 3.9                  | 4.1                  | 4.2                  | 2.7                  | 0.0                  |
 | xiaomimimo-v2.5                   | **28.3** | :x:                | :white_check_mark: | 5.0                  | 5.5                  | 3.1                  | 3.1                  | 4.3                  | 4.5                  | 2.8                  | 0.0                  |
@@ -122,7 +123,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | mistral-medium-3.5                | **27.5** | :x:                | :x:                | 5.0                  | 4.6                  | 2.8                  | 3.8                  | 4.0                  | 4.2                  | 3.1                  | 4.0                  |
 | grok-3                            | **27.4** | :x:                | :x:                | 5.0                  | 5.0                  | 3.0                  | 3.0                  | 4.2                  | 4.4                  | 2.8                  | 0.0                  |
 | stepfunstep-3.7-flash             | **27.2** | :white_check_mark: | :white_check_mark: | 4.3                  | 5.9                  | 3.4                  | 3.3                  | 4.2                  | 4.1                  | 2.0                  | 0.0                  |
-| gemini-3.1-flash-lite-preview     | **26.9** | :x:                | :white_check_mark: | 4.1                  | 5.2                  | 3.0                  | 3.5                  | 4.2                  | 4.4                  | 2.3                  | 4.3                  |
+| gemini-3.1-flash-lite-preview     | **26.9** | :x:                | :white_check_mark: | 4.2                  | 5.2                  | 3.0                  | 3.5                  | 4.3                  | 4.4                  | 2.4                  | 4.3                  |
 | mistral-medium-2508               | **26.9** | :x:                | :x:                | 5.0                  | 4.6                  | 2.5                  | 3.5                  | 4.1                  | 4.2                  | 2.9                  | 3.9                  |
 | grok-4.20-experimental-beta-0304  | **26.7** | :x:                | :x:                | 4.9                  | 4.6                  | 2.3                  | 3.5                  | 4.4                  | 3.7                  | 3.4                  | 3.8                  |
 | qwen3-next-80b-a3b-instruct       | **26.6** | :white_check_mark: | :x:                | 4.7                  | 4.6                  | 2.5                  | 3.6                  | 4.1                  | 4.1                  | 3.0                  | 0.0                  |
@@ -133,7 +134,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | claude-3-opus-20240229            | **25.7** | :x:                | :x:                | 4.8                  | 4.5                  | 3.4                  | 3.5                  | 3.5                  | 4.0                  | 1.9                  | 3.0                  |
 | qwen3.54b                         | **25.7** | :white_check_mark: | :white_check_mark: | 4.6                  | 4.9                  | 2.1                  | 3.8                  | 3.2                  | 4.2                  | 2.9                  | 0.0                  |
 | poolsidelaguna-xs.2               | **25.6** | :white_check_mark: | :x:                | 4.8                  | 4.3                  | 2.7                  | 3.7                  | 3.8                  | 3.8                  | 2.6                  | 0.0                  |
-| gemini-1.5-pro-002                | **25.5** | :x:                | :x:                | 4.5                  | 4.5                  | 2.8                  | 2.8                  | 4.2                  | 4.3                  | 2.5                  | 3.8                  |
+| gemini-1.5-pro-002                | **25.6** | :x:                | :x:                | 4.5                  | 4.5                  | 2.8                  | 2.8                  | 4.2                  | 4.3                  | 2.5                  | 3.8                  |
 | claude-3-5-sonnet-20241022        | **25.5** | :x:                | :x:                | 4.4                  | 5.3                  | 2.8                  | 3.0                  | 3.9                  | 4.2                  | 2.0                  | 4.1                  |
 | amazonnova-2-lite-v1              | **25.5** | :white_check_mark: | :x:                | 4.3                  | 4.5                  | 1.9                  | 3.9                  | 3.8                  | 4.0                  | 3.3                  | 0.0                  |
 | gpt-4o-2024-11-20                 | **25.3** | :x:                | :x:                | 4.9                  | 4.4                  | 2.5                  | 3.1                  | 4.1                  | 3.8                  | 2.5                  | 4.0                  |
@@ -143,7 +144,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | grok-4-1-fast-non-reasoning       | **24.5** | :x:                | :x:                | 3.8                  | 3.6                  | 2.9                  | 3.4                  | 3.9                  | 4.1                  | 2.8                  | 1.8                  |
 | ministral-14b-2512                | **24.4** | :white_check_mark: | :x:                | 4.5                  | 3.7                  | 2.3                  | 3.6                  | 3.7                  | 3.9                  | 2.6                  | 4.0                  |
 | qwen3-30b-a3b-instruct-2507       | **24.0** | :white_check_mark: | :x:                | 3.4                  | 4.1                  | 2.4                  | 3.3                  | 3.8                  | 3.9                  | 3.0                  | 0.0                  |
-| gemma4e4b                         | **23.9** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.8                  | 2.1                  | 3.0                  | 3.6                  | 3.4                  | 2.7                  | 0.0                  |
+| gemma4e4b                         | **23.9** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.8                  | 2.0                  | 3.0                  | 3.6                  | 3.4                  | 2.7                  | 0.0                  |
 | mistral-small-2506                | **23.8** | :white_check_mark: | :x:                | 4.5                  | 4.0                  | 2.6                  | 3.5                  | 3.3                  | 3.6                  | 2.2                  | 3.5                  |
 | gemini-2.0-flash-lite             | **23.6** | :x:                | :x:                | 4.0                  | 4.5                  | 2.2                  | 2.4                  | 4.2                  | 3.5                  | 2.8                  | 4.0                  |
 | gpt-4-turbo-2024-04-09            | **23.6** | :x:                | :x:                | 4.3                  | 4.7                  | 2.4                  | 3.0                  | 3.6                  | 4.0                  | 1.6                  | 3.6                  |
@@ -153,7 +154,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | mistral-small-2603                | **22.6** | :white_check_mark: | :x:                | 3.4                  | 3.8                  | 1.9                  | 3.5                  | 3.5                  | 3.6                  | 3.0                  | 3.9                  |
 | nemotron-3-super-120b-a12b        | **22.1** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.5                  | 1.7                  | 3.2                  | 2.9                  | 3.1                  | 2.2                  | 0.0                  |
 | gemma4e2b                         | **21.7** | :white_check_mark: | :white_check_mark: | 3.4                  | 4.0                  | 1.7                  | 3.0                  | 3.2                  | 3.7                  | 2.9                  | 0.0                  |
-| phi-4                             | **21.7** | :white_check_mark: | :x:                | 4.3                  | 3.4                  | 2.2                  | 3.3                  | 3.2                  | 3.4                  | 2.0                  | 0.0                  |
+| phi-4                             | **21.7** | :white_check_mark: | :x:                | 4.2                  | 3.4                  | 2.2                  | 3.3                  | 3.2                  | 3.4                  | 2.0                  | 0.0                  |
 | ibm-granitegranite-4.1-8b         | **21.1** | :white_check_mark: | :x:                | 3.8                  | 3.7                  | 2.1                  | 2.9                  | 3.5                  | 3.0                  | 2.1                  | 0.0                  |
 | ai21jamba-large-1.7               | **20.9** | :white_check_mark: | :x:                | 3.1                  | 3.5                  | 1.6                  | 3.4                  | 3.2                  | 3.9                  | 2.2                  | 0.0                  |
 | granite4small-h                   | **20.3** | :white_check_mark: | :x:                | 3.1                  | 3.6                  | 2.2                  | 2.6                  | 3.5                  | 3.0                  | 2.2                  | 0.0                  |
@@ -1076,6 +1077,68 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 7.1   |
 | cat08_05_task_schedul              | 7.5   |
 
+### Grok-4.5-Heavy-20260718   => 36.6 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 8.6   |
+| cat01_02_activity_context          | 7.4   |
+| cat01_03_high_level_events         | 7.5   |
+| cat01_04_sensor_recordings         | 7.2   |
+| cat01_05_merge_two_logs            | 6.8   |
+| cat01_06_system_logs               | 6.3   |
+| cat01_07_interv_to_pseudo_bpmn     | 7.7   |
+| cat01_08_tables_to_log             | 7.7   |
+| cat02_01_conformance_textual       | 7.9   |
+| cat02_02_conf_desiderata           | 7.0   |
+| cat02_03_anomaly_event_log         | 7.6   |
+| cat02_04_powl_anomaly_detection    | 8.4   |
+| cat02_05_two_powls_anomalies       | 7.7   |
+| cat02_06_root_cause_1              | 7.7   |
+| cat02_07_root_cause_2              | 7.5   |
+| cat02_08_underfitting_process_tree | 8.4   |
+| cat02_09_fix_process_tree          | 7.9   |
+| cat03_01_process_tree_generation   | 5.5   |
+| cat03_02_powl_generation           | 9.2   |
+| cat03_03_log_skeleton_generation   | 5.0   |
+| cat03_04_declare_generation        | 2.5   |
+| cat03_05_temp_profile_generation   | 7.1   |
+| cat03_06_petri_net_generation      | 6.5   |
+| cat03_07_process_tree_discovery    | 7.7   |
+| cat03_08_powl_discovery            | 7.5   |
+| cat04_01_pseudo_bpmn_description   | 7.6   |
+| cat04_02_pseudo_bpmn_open_question | 7.6   |
+| cat04_03_declare_open_question     | 4.5   |
+| cat04_04_declare_description       | 4.5   |
+| cat04_05_sql_filt_num_events       | 9.8   |
+| cat04_06_sql_filt_three_df         | 7.6   |
+| cat04_07_sql_filt_top_k_vars       | 7.5   |
+| cat05_01_hyp_generation_log        | 7.4   |
+| cat05_02_hyp_gen_powl              | 7.8   |
+| cat05_03_hyp_gen_declare           | 7.0   |
+| cat05_04_hyp_gen_temp_profile      | 6.6   |
+| cat05_05_question_gen_nlp          | 8.4   |
+| cat05_06_question_pseudo_bpmn      | 8.4   |
+| cat05_07_question_interview        | 7.7   |
+| cat06_01_bias_text                 | 7.2   |
+| cat06_02_bias_event_log            | 7.6   |
+| cat06_03_bias_powl                 | 7.7   |
+| cat06_04_bias_two_logs             | 6.0   |
+| cat06_05_bias_two_logs_2           | 7.6   |
+| cat06_06_bias_mitigation_declare   | 4.5   |
+| cat06_07_fair_unfair_powl          | 5.8   |
+| cat07_01_ocdfg                     | 7.7   |
+| cat07_02_bpmn_orders               | 7.8   |
+| cat07_03_bpmn_dispatch             | 8.4   |
+| cat07_04_causal_net                | 8.0   |
+| cat07_05_proclets                  | 8.0   |
+| cat07_06_perf_spectrum             | 8.0   |
+| cat08_01_queue_mining              | 7.5   |
+| cat08_02_instance_spanning         | 7.3   |
+| cat08_03_transport_opt             | 7.2   |
+| cat08_04_resource_assign           | 7.5   |
+| cat08_05_task_schedul              | 7.7   |
+
 ### deepseekdeepseek-v4-pro   => 36.4 points
 
 | Question                           | Score |
@@ -1436,7 +1499,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 7.4   |
 | cat08_05_task_schedul              | 7.2   |
 
-### qwenqwen3.7-max   => 35.1 points
+### qwenqwen3.7-max   => 35.2 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |
@@ -7880,7 +7943,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 4.9   |
 | cat08_05_task_schedul              | 4.6   |
 
-### gemini-1.5-pro-002   => 25.5 points
+### gemini-1.5-pro-002   => 25.6 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |

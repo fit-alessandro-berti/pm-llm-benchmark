@@ -1,0 +1,146 @@
+**Anomalies in the temporal profile**
+
+The following pairs stand out as irregular relative to a normal sequential claims process (R → A → E → P → N → C):
+
+- **(R, P)**: Average interval of 90 000 s (~25 h) combined with an extremely low standard deviation of only 3 600 s (1 h).  
+- **(P, N)**: Average interval of 604 800 s (exactly 7 days) with a large standard deviation of 172 800 s (2 days).  
+- **(A, C)**: Average interval of only 7 200 s (2 h) with a standard deviation of 3 600 s.  
+- **(E, N)**: Average interval of only 300 s (5 min) with a standard deviation of 60 s (1 min).
+
+The remaining pairs ((R, A), (R, E), (E, C), (N, C)) fall within more plausible ranges and variances for a multi-step insurance workflow.
+
+**Hypotheses explaining the anomalies**
+
+- The near-constant R-to-P duration suggests either batch/scheduled auto-approval jobs that fire at fixed times of day, synthetic or test data with artificially regular timestamps, or a process path in which evaluation variance is suppressed (e.g., rules-engine approvals that ignore claim complexity).  
+- The long and highly variable P-to-N lag is consistent with a manual or batched notification step, resource shortages among customer-service staff, weekly notification cycles, or prioritization that delays low-value or non-urgent claims while accelerating others.  
+- The short A-to-C interval implies the existence of an alternative process variant in which many claims are closed shortly after assignment—possible causes include early rejection of invalid/low-value claims, automated fraud-screening that terminates the case, or logging errors that omit intermediate activities.  
+- The extremely tight E-to-N transition points to either fully automated notification triggered the moment evaluation completes, concurrent or bulk timestamp recording of the two events, or a path that systematically skips the formal approval step.  
+
+Additional contributing factors may include incomplete event logs (missing intermediate activities), regional or adjuster-specific workload differences, and claim-type or claim-amount segmentation that produces systematically different timing distributions.
+
+**Verification approaches using SQL**
+
+All queries assume PostgreSQL and operate primarily on `claim_events`, joining to `claims` and (where useful) `adjusters`. Resource values are treated as VARCHAR and may need casting or fuzzy matching depending on whether they store names or identifiers.
+
+1. Locate claims whose R-to-P interval falls outside the model range and examine associated attributes:
+
+```sql
+WITH rp AS (
+  SELECT
+    r.claim_id,
+    EXTRACT(EPOCH FROM (p.timestamp - r.timestamp)) AS secs,
+    c.claim_type,
+    c.claim_amount,
+    c.customer_id
+  FROM claim_events r
+  JOIN claim_events p
+    ON r.claim_id = p.claim_id
+   AND p.activity = 'P'
+   AND p.timestamp > r.timestamp
+  JOIN claims c ON c.claim_id = r.claim_id
+  WHERE r.activity = 'R'
+)
+SELECT *
+FROM rp
+WHERE ABS(secs - 90000) > 2 * 3600
+ORDER BY secs;
+```
+
+2. Identify claims with excessively long or highly variable P-to-N delays and correlate with adjuster/region/claim attributes:
+
+```sql
+WITH pn AS (
+  SELECT
+    p.claim_id,
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS delay_secs,
+    c.claim_type,
+    c.claim_amount,
+    a.region,
+    a.name AS adjuster_name,
+    a.specialization
+  FROM claim_events p
+  JOIN claim_events n
+    ON p.claim_id = n.claim_id
+   AND n.activity = 'N'
+   AND n.timestamp > p.timestamp
+  JOIN claims c ON c.claim_id = p.claim_id
+  LEFT JOIN claim_events ass
+    ON ass.claim_id = p.claim_id
+   AND ass.activity = 'A'
+  LEFT JOIN adjusters a
+    ON ass.resource = a.name
+    OR ass.resource ~ '^\d+$' AND a.adjuster_id = ass.resource::integer
+  WHERE p.activity = 'P'
+)
+SELECT *
+FROM pn
+WHERE delay_secs > 604800 + 2 * 172800
+   OR delay_secs < 604800 - 2 * 172800
+ORDER BY delay_secs DESC;
+```
+
+3. Detect short A-to-C paths and check whether intermediate activities are missing:
+
+```sql
+SELECT
+  a.claim_id,
+  EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) AS ac_secs,
+  COUNT(DISTINCT e.activity) FILTER (
+    WHERE e.activity IN ('E', 'P', 'N')
+  ) AS intermediate_steps,
+  array_agg(DISTINCT e.activity ORDER BY e.activity) AS present_activities
+FROM claim_events a
+JOIN claim_events c
+  ON a.claim_id = c.claim_id
+ AND c.activity = 'C'
+ AND c.timestamp > a.timestamp
+LEFT JOIN claim_events e
+  ON e.claim_id = a.claim_id
+ AND e.timestamp BETWEEN a.timestamp AND c.timestamp
+WHERE a.activity = 'A'
+GROUP BY a.claim_id, a.timestamp, c.timestamp
+HAVING EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) < 7200 + 3600
+ORDER BY ac_secs;
+```
+
+4. Examine the unrealistically short E-to-N transitions and verify presence/absence of a subsequent P activity:
+
+```sql
+WITH en AS (
+  SELECT
+    e.claim_id,
+    EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS en_secs,
+    EXISTS (
+      SELECT 1
+      FROM claim_events p
+      WHERE p.claim_id = e.claim_id
+        AND p.activity = 'P'
+        AND p.timestamp BETWEEN e.timestamp AND n.timestamp
+    ) AS has_approve_between
+  FROM claim_events e
+  JOIN claim_events n
+    ON e.claim_id = n.claim_id
+   AND n.activity = 'N'
+   AND n.timestamp > e.timestamp
+  WHERE e.activity = 'E'
+)
+SELECT *
+FROM en
+WHERE en_secs < 300 + 2 * 60
+ORDER BY en_secs;
+```
+
+5. Global check for claims that never recorded expected intermediate activities:
+
+```sql
+SELECT
+  claim_id,
+  array_agg(activity ORDER BY timestamp) AS observed_sequence
+FROM claim_events
+GROUP BY claim_id
+HAVING NOT ('E' = ANY(array_agg(activity)))
+    OR NOT ('P' = ANY(array_agg(activity)))
+    OR NOT ('N' = ANY(array_agg(activity)));
+```
+
+These queries surface the concrete claim instances that drive the observed averages and standard deviations, allow correlation with claim type, amount, region and adjuster, and thereby confirm or refute the hypothesized causes.
