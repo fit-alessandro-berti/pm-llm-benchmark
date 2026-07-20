@@ -1,4 +1,8 @@
 import os
+import shlex
+import shutil
+import subprocess
+import sys
 
 try:
     from utils.script_bootstrap import chdir_repo_root
@@ -7,7 +11,6 @@ except ModuleNotFoundError:
 
 import common
 from utils import forge_eval_prompt
-import subprocess
 from file_utils import read_file_with_fallback
 
 
@@ -24,6 +27,30 @@ def copy_to_clipboard(text):
     except ModuleNotFoundError as exc:
         raise RuntimeError("pyperclip is required for clipboard operations.") from exc
     pyperclip.copy(text)
+
+
+def open_text_editor(file_path):
+    configured_editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+    if configured_editor:
+        subprocess.run(shlex.split(configured_editor) + [file_path])
+        return
+
+    if sys.platform.startswith("linux"):
+        editor_candidates = ["mousepad", "xdg-open"]
+    elif os.name == "nt":
+        editor_candidates = ["notepad++.exe", "notepad.exe"]
+    else:
+        editor_candidates = ["open"]
+
+    for editor in editor_candidates:
+        if shutil.which(editor):
+            subprocess.run([editor, file_path])
+            return
+
+    raise RuntimeError(
+        "No supported text editor found. Install mousepad on Linux, "
+        "Notepad++/Notepad on Windows, or set VISUAL/EDITOR."
+    )
 
 
 ANSWERING_MODEL_NAMES = ["gpt-4o-mini-2024-07-18"]
@@ -71,4 +98,4 @@ for ANSWERING_MODEL_NAME in ANSWERING_MODEL_NAMES:
 
             F = open(ev_path, "w")
             F.close()
-            subprocess.run(["notepad.exe", ev_path])
+            open_text_editor(ev_path)
