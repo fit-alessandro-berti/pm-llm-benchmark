@@ -6,6 +6,7 @@
 | deepseekdeepseek-v3.2-speciale-thinking | 133 | 7 | 41 | 0 | 7 | 6 | 0 | 62 | 2 | 0 | 3 | 4 | 0 |
 | gpt-5.6-sol-XHIGH | 133 | 7 | 26 | 1 | 9 | 9 | 0 | 64 | 1 | 0 | 2 | 7 | 5 |
 | deepseekdeepseek-v4-pro | 141 | 6 | 29 | 1 | 7 | 18 | 0 | 61 | 3 | 0 | 6 | 9 | 1 |
+| thinkingmachinesinkling | 141 | 5 | 13 | 2 | 16 | 19 | 0 | 58 | 5 | 0 | 7 | 13 | 0 |
 | moonshotaikimi-k2.6 | 143 | 0 | 26 | 3 | 14 | 14 | 0 | 67 | 3 | 0 | 1 | 8 | 5 |
 | moonshotaikimi-k3 | 146 | 9 | 12 | 1 | 7 | 17 | 0 | 76 | 4 | 1 | 11 | 7 | 0 |
 | gpt-5.6-sol-HIGH | 157 | 3 | 34 | 0 | 8 | 10 | 0 | 85 | 2 | 0 | 2 | 6 | 5 |

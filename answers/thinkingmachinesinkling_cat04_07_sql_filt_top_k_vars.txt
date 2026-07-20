@@ -1,0 +1,604 @@
+<think>
+The user wants a DuckDB SQL query that performs several steps on an event log table `event_log` with columns `case_id`, `activity`, `timestamp`.
+
+Steps:
+1. Determine the sequence of activities for each `case_id`, ordered by `timestamp`.
+2. Group cases by their complete activity sequence to identify unique process variants.
+3. Count how many cases correspond to each variant and determine the top K variants by frequency.
+4. Return all events from the original event log that belong only to cases which are part of these top K variants.
+
+We need to produce a single DuckDB SQL query (or a set of CTEs) that does this. The user asks "In your query..." so likely one query with CTEs.
+
+Key DuckDB features:
+- `STRING_AGG` or `LIST_AGG` can aggregate sequences. For ordered sequence of activities per case, we can use `STRING_AGG(activity, ' -> ' ORDER BY timestamp)` or `LIST(activity ORDER BY timestamp)`. But to group by the complete sequence, using a string representation is easier, or using an array. In DuckDB, arrays can be compared and used as grouping keys? Yes, DuckDB supports arrays as group keys if they are of the same type and equality is defined? Actually, grouping by array might work if using `LISTAGG`? Let's think.
+
+In DuckDB, `LIST_AGG` can create lists. But grouping by a list column might be tricky but possible: `GROUP BY case_id` first to get the list, then group by that list. Alternatively, convert the list to a string using `ARRAY_TO_STRING` or `STRING_AGG`.
+
+Simpler approach:
+- CTE `variant_sequences`: For each `case_id`, compute `variant_str = STRING_AGG(activity, ',' ORDER BY timestamp)` or using `LIST_TO_STRING`? Actually `STRING_AGG` with delimiter.
+- Then CTE `variant_counts`: `SELECT variant_str, COUNT(DISTINCT case_id) as freq FROM variant_sequences GROUP BY variant_str ORDER BY freq DESC LIMIT K`. But K is not specified; we can parameterize it. The prompt says "top K variants". We should probably use a parameter or a placeholder like `?` or mention setting a variable. In DuckDB, we can use a macro or just put `LIMIT K` with a note. But to make it a concrete query, maybe we define a constant using a CTE or use `LIMIT 5` as an example, but better to allow parameterization. Since this is a benchmark prompt, they likely want to see the logic with a placeholder or using a window function to rank and then filter. Actually step 3 says "determine the top K variants". So we need to filter to top K. We can do this with `QUALIFY` or window functions.
+
+Let's outline:
+
+```sql
+WITH ordered_events AS (
+    SELECT 
+        case_id, 
+        activity, 
+        timestamp,
+        -- maybe row_number? Not needed yet
+    FROM event_log
+),
+case_variants AS (
+    SELECT 
+        case_id,
+        STRING_AGG(activity, '->' ORDER BY timestamp) AS variant_sequence
+    FROM ordered_events
+    GROUP BY case_id
+),
+variant_frequencies AS (
+    SELECT 
+        variant_sequence,
+        COUNT(*) AS case_count
+    FROM case_variants
+    GROUP BY variant_sequence
+),
+ranked_variants AS (
+    SELECT 
+        variant_sequence,
+        case_count,
+        RANK() OVER (ORDER BY case_count DESC) AS rnk
+        -- or ROW_NUMBER if ties shouldn't be included? The prompt says "top K variants by their frequency". Usually we can use RANK or DENSE_RANK. Let's use RANK() or ROW_NUMBER? If ties exist, RANK might include more than K. But for simplicity, use ROW_NUMBER() or RANK() with a filter rnk <= K. Let's assume K is a parameter.
+    FROM variant_frequencies
+),
+top_k_variants AS (
+    SELECT variant_sequence
+    FROM ranked_variants
+    WHERE rnk <= $K  -- or LIMIT? But we need the list to filter cases.
+),
+-- Alternatively, to avoid parameter in CTE, we can compute top K in a separate CTE with LIMIT.
+-- Let's do:
+top_k AS (
+    SELECT variant_sequence
+    FROM variant_frequencies
+    ORDER BY case_count DESC
+    LIMIT 10 -- but K should be parameterized.
+)
+```
+
+But the prompt asks for "the top K variants". In SQL, we can either:
+- Use a placeholder parameter `?` with `LIMIT ?`
+- Or define a constant in a CTE: `WITH params AS (SELECT 5 AS K) ...`
+
+The best approach for a self-contained query is to define a parameter CTE or use a macro. But since it's a benchmark answer, we can present the query with a placeholder `LIMIT K` or with a CTE parameter.
+
+Let's produce a query that uses a CTE `params(k_value)` so the user can just change one value.
+
+Wait, the final result should return all events from original event log belonging to cases in these top K variants.
+
+So we need to join back.
+
+Let's structure precisely:
+
+```sql
+WITH params AS (
+    SELECT 5 AS k  -- set K here
+),
+ordered_case_variants AS (
+    SELECT
+        case_id,
+        STRING_AGG(activity, ',' ORDER BY timestamp) AS variant_str
+    FROM event_log
+    GROUP BY case_id
+),
+variant_counts AS (
+    SELECT
+        variant_str,
+        COUNT(*) AS freq
+    FROM ordered_case_variants
+    GROUP BY variant_str
+),
+ranked_variants AS (
+    SELECT
+        variant_str,
+        freq,
+        ROW_NUMBER() OVER (ORDER BY freq DESC) AS rnk
+    FROM variant_counts
+),
+top_k_variant_strs AS (
+    SELECT variant_str
+    FROM ranked_variants, params
+    WHERE rnk <= params.k
+),
+filtered_cases AS (
+    SELECT DISTINCT case_id
+    FROM ordered_case_variants
+    WHERE variant_str IN (SELECT variant_str FROM top_k_variant_strs)
+)
+SELECT e.*
+FROM event_log e
+JOIN filtered_cases fc ON e.case_id = fc.case_id
+ORDER BY e.case_id, e.timestamp;
+```
+
+Wait, using `STRING_AGG` with delimiter ',' might be ambiguous if activities contain commas. Better to use a delimiter unlikely to appear, like ' -> ' or '|'. Or use arrays.
+
+DuckDB supports arrays. We can do `LIST_AGG(activity ORDER BY timestamp)` which creates a list. Then comparing lists is possible? In DuckDB, arrays can be used in `GROUP BY`? Let's check mental model: DuckDB allows grouping by expressions, including arrays if they are deterministic? Actually, `GROUP BY list_column` works if the list column is in the SELECT. But here we want to group by the list itself across cases.
+
+Let's try array approach:
+
+```sql
+WITH params AS (SELECT 3 AS k),
+case_sequences AS (
+    SELECT 
+        case_id,
+        LIST_AGG(activity ORDER BY timestamp) AS variant_list
+    FROM event_log
+    GROUP BY case_id
+),
+variant_counts AS (
+    SELECT 
+        variant_list,
+        COUNT(*) AS freq
+    FROM case_sequences
+    GROUP BY variant_list
+),
+...
+```
+
+But grouping by `variant_list` (an array) should work in DuckDB? I think DuckDB supports grouping by arrays because arrays have equality and hash functions. Yes, DuckDB can group by arrays. But then selecting `variant_str` for the IN clause: comparing arrays with `IN` also works.
+
+However, using arrays might be less readable for some. The string approach is more universal. But to avoid delimiter issues, we can use a delimiter like `||` or use `ARRAY_AGG` then `ARRAY_TO_STRING`? Actually DuckDB has `ARRAY_AGG`? No, `LIST_AGG` is the function. `STRING_AGG` is standard.
+
+Let's stick to `STRING_AGG(activity, ' -> ' ORDER BY timestamp)` but note that the delimiter should be unique. Or we can just use `STRING_AGG` with a delimiter like `chr(0)` but that's overkill.
+
+Given the benchmark context, string aggregation is fine.
+
+But there is a subtlety: The prompt says "Construct a DuckDB SQL query...". They might want a single query. Also, they want "Return all events from the original event log that belong only to cases which are part of these top K variants."
+
+So the query above does that.
+
+Let's refine to make it robust and use window functions for ranking without ties issues? The prompt doesn't specify tie-breaking. We can use `RANK()` or `ROW_NUMBER()`. Let's use `RANK()` but filter `rnk <= k`. If there are ties at the K-th boundary, `RANK()` might include more than K variants. That's actually okay for "top K" sometimes, but "top K variants" usually implies exactly K or at most K? Usually "top K" can include ties. But to be safe, we can mention that `ROW_NUMBER()` gives exactly K. Let's use `ROW_NUMBER()` and mention that ties are broken arbitrarily, or use `RANK()` and explain.
+
+Actually, the prompt says "the top K variants by their frequency". This is ambiguous with ties. Let's provide the query using `RANK()` and filtering `<= K`, which includes ties, but also mention that `ROW_NUMBER()` can be used for exactly K.
+
+But for a benchmark, they likely just want the logic. Let's provide a query with a parameter `K` and use `QUALIFY` or CTE.
+
+Wait, DuckDB has `QUALIFY` clause? Yes, similar to Snowflake. But in a subquery? Yes, `SELECT ... QUALIFY ROW_NUMBER() ...`.
+
+But we need to apply it per variant. So we can do:
+
+```sql
+WITH params AS (SELECT 3 AS K),
+variants AS (
+    SELECT 
+        case_id,
+        STRING_AGG(activity, ',' ORDER BY timestamp) AS seq
+    FROM event_log
+    GROUP BY case_id
+),
+variant_stats AS (
+    SELECT 
+        seq,
+        COUNT(*) AS cnt
+    FROM variants
+    GROUP BY seq
+),
+top_k AS (
+    SELECT seq
+    FROM variant_stats
+    QUALIFY ROW_NUMBER() OVER (ORDER BY cnt DESC) <= (SELECT K FROM params)
+)
+SELECT e.*
+FROM event_log e
+WHERE e.case_id IN (
+    SELECT case_id FROM variants WHERE seq IN (SELECT seq FROM top_k)
+)
+ORDER BY e.case_id, e.timestamp;
+```
+
+Wait, `QUALIFY` applies after window functions but in the same query block. So `SELECT seq FROM variant_stats QUALIFY ROW_NUMBER() OVER (ORDER BY cnt DESC) <= ...` works. But we need to reference `params`. That should work.
+
+However, using `IN` with a subquery that returns `seq` is fine.
+
+But we need to make sure that the query returns the original events in original order? The prompt says "Return all events from the original event log...". So selecting `e.*` and ordering by `case_id, timestamp` is appropriate.
+
+Let's check for correctness.
+
+One issue: `STRING_AGG` in DuckDB requires `ORDER BY` inside? Yes, DuckDB supports `STRING_AGG(expression, delimiter ORDER BY ...)`? Actually, in DuckDB, `STRING_AGG` is an aggregate function that takes `STRING_AGG(column, separator)`. Does it support `ORDER BY` inside? Let's recall. In many SQL dialects, `STRING_AGG` supports `WITHIN GROUP (ORDER BY ...)`. In DuckDB, I think `STRING_AGG` can be used with `ORDER BY` directly inside the aggregate? Let's check mental documentation.
+
+DuckDB documentation:
+- `string_agg(expr, separator)` or `group_concat(expr, separator)`.
+- To specify order: `string_agg(expr, separator ORDER BY ...)`? Actually, in DuckDB, aggregate functions can take `ORDER BY` clause as part of the aggregate expression: `STRING_AGG(activity, ',' ORDER BY timestamp)`. Yes, I believe DuckDB supports this syntax: `aggregate_function(expression [ORDER BY ...])`. For example, `LIST_AGG(x ORDER BY y)` is standard in DuckDB. For `STRING_AGG`, I think it's `STRING_AGG(x, separator ORDER BY y)`. Let's assume yes. If not, we can use `LIST_AGG` then convert.
+
+Actually, to be safe, we can use `LIST(activity ORDER BY timestamp)` to get the list, and then `LIST_TO_STRING(...)`? Or compare lists directly.
+
+But grouping by a list is fine. Let's check: `GROUP BY case_id` with `LIST_AGG` works.
+
+Then for grouping variants: `GROUP BY variant_list`. That works if `variant_list` is a list.
+
+But using `IN` with lists: `WHERE variant_list IN (...)` works in DuckDB? Yes, arrays can be compared with equality and used in IN lists.
+
+But the user might prefer a string representation for readability. Let's use `STRING_AGG` with `ORDER BY`. Even if the syntax is slightly off, it's acceptable in a benchmark context? Actually, the prompt specifically mentions DuckDB, so we should be accurate with DuckDB syntax.
+
+Let me recall DuckDB's exact syntax for ordered string aggregation.
+
+In DuckDB:
+- `STRING_AGG(column, separator)` aggregates.
+- There is also `GROUP_CONCAT(column, separator)`.
+- For ordering within aggregation, DuckDB uses the `ORDER BY` clause inside the aggregate, like `STRING_AGG(column, separator ORDER BY other_column)`. Let me verify: In DuckDB SQL, aggregate functions accept an optional `ORDER BY` clause: `agg_func(expr [ORDER BY ...])`. Yes, for `STRING_AGG`, it's `string_agg(expr, separator)` but can we put `ORDER BY` inside? Actually, the syntax might be:
+`STRING_AGG(activity, ',' ORDER BY timestamp)`
+But I need to be sure.
+
+Alternatively, we can avoid ordering inside the aggregate by using a subquery that orders the rows, but aggregate ordering is independent of input order unless specified. Actually, in SQL, if you don't specify `ORDER BY` inside the aggregate, the order is undefined. So we must specify it.
+
+Another approach: Use `ARRAY_AGG` with `ORDER BY` then `ARRAY_TO_STRING`. In DuckDB, `ARRAY_AGG` is `LIST_AGG`. So:
+
+```sql
+LIST_AGG(activity ORDER BY timestamp) AS variant_list
+```
+
+This is definitely correct DuckDB syntax: `LIST_AGG(expr ORDER BY ...)`.
+
+Then to convert list to string for easier comparison? Actually, we can keep it as list.
+
+So:
+
+```sql
+WITH params AS (SELECT 3 AS k),
+case_variants AS (
+    SELECT 
+        case_id,
+        LIST_AGG(activity ORDER BY timestamp) AS variant_seq
+    FROM event_log
+    GROUP BY case_id
+),
+variant_counts AS (
+    SELECT 
+        variant_seq,
+        COUNT(*) AS case_count
+    FROM case_variants
+    GROUP BY variant_seq
+),
+top_k_variants AS (
+    SELECT variant_seq
+    FROM variant_counts
+    QUALIFY ROW_NUMBER() OVER (ORDER BY case_count DESC) <= (SELECT k FROM params)
+)
+SELECT e.*
+FROM event_log e
+INNER JOIN case_variants cv ON e.case_id = cv.case_id
+WHERE cv.variant_seq IN (SELECT variant_seq FROM top_k_variants)
+ORDER BY e.case_id, e.timestamp;
+```
+
+Wait, using `QUALIFY` with a subquery `(SELECT k FROM params)` should work? `QUALIFY` is evaluated after window functions, but can reference other columns and maybe CTEs. Yes.
+
+But `IN` with arrays: `cv.variant_seq IN (...)` compares arrays. That should work.
+
+However, there is a potential performance issue: comparing arrays for equality might be okay for small lists.
+
+But is `LIST_AGG` returning a list? Yes, `LIST_AGG` returns a list.
+
+Let's check DuckDB documentation for `LIST_AGG`: It aggregates values into a list. Example: `SELECT LIST_AGG(i ORDER BY i DESC) FROM generate_series(1,3) t(i);` Yes.
+
+So this query is syntactically correct for DuckDB.
+
+But the prompt asks for "ordered sequence of activities... maintaining the order imposed by timestamp". Using `LIST_AGG(activity ORDER BY timestamp)` does exactly that.
+
+Then "Group cases by their complete activity sequence to identify unique process variants." We do that in `variant_counts` by grouping `variant_seq`.
+
+Then "Count how many cases correspond to each variant and determine the top K variants by their frequency". We do `COUNT(*)` and then `QUALIFY ROW_NUMBER() ... <= K`.
+
+Then "Return all events from the original event log that belong only to cases which are part of these top K variants." We join back.
+
+One detail: The `case_variants` CTE computes the sequence per case. Then `variant_counts` computes frequency. Then `top_k_variants` picks the sequences. Then we filter `event_log` by joining `case_variants` and checking if `variant_seq` is in `top_k_variants`.
+
+This returns all original columns (`e.*`) for the filtered cases.
+
+We should also include `ORDER BY e.case_id, e.timestamp` to maintain order, though not strictly required.
+
+Let's make sure we use proper aliases and avoid ambiguity.
+
+Let's refine the final query:
+
+```sql
+WITH params AS (
+    SELECT 5 AS k_value
+),
+case_sequences AS (
+    SELECT
+        case_id,
+        LIST_AGG(activity ORDER BY timestamp) AS variant_sequence
+    FROM event_log
+    GROUP BY case_id
+),
+variant_frequencies AS (
+    SELECT
+        variant_sequence,
+        COUNT(*) AS frequency
+    FROM case_sequences
+    GROUP BY variant_sequence
+),
+top_k_variants AS (
+    SELECT variant_sequence
+    FROM variant_frequencies
+    QUALIFY ROW_NUMBER() OVER (ORDER BY frequency DESC) <= (SELECT k_value FROM params)
+)
+SELECT e.*
+FROM event_log AS e
+INNER JOIN case_sequences AS cs
+    ON e.case_id = cs.case_id
+WHERE cs.variant_sequence IN (SELECT variant_sequence FROM top_k_variants)
+ORDER BY e.case_id, e.timestamp;
+```
+
+Wait, is `(SELECT k_value FROM params)` allowed inside the `QUALIFY` clause? In DuckDB, `QUALIFY` can reference expressions but I'm not 100% sure about scalar subqueries there. To be safe, we can cross join params or reference it differently.
+
+We can do:
+
+```sql
+variant_frequencies AS (
+    SELECT variant_sequence, COUNT(*) AS frequency
+    FROM case_sequences
+    GROUP BY variant_sequence
+),
+ranked_variants AS (
+    SELECT variant_sequence, frequency,
+           ROW_NUMBER() OVER (ORDER BY frequency DESC) AS rnk
+    FROM variant_frequencies
+    CROSS JOIN params
+)
+```
+
+Then `top_k_variants` selects where `rnk <= k_value`.
+
+That is safer.
+
+So:
+
+```sql
+WITH params AS (SELECT 3 AS k),
+...
+ranked_variants AS (
+    SELECT 
+        variant_sequence, 
+        frequency,
+        ROW_NUMBER() OVER (ORDER BY frequency DESC) AS rnk
+    FROM variant_frequencies
+    CROSS JOIN params
+),
+top_k_variants AS (
+    SELECT variant_sequence FROM ranked_variants WHERE rnk <= k
+)
+...
+```
+
+This avoids subquery in QUALIFY.
+
+Also, we need to be careful: `CROSS JOIN params` will multiply rows if `params` has more than one row, but it has exactly one row, so it's fine.
+
+Let's write the full query clearly.
+
+One more thing: The user asks "In your query, ensure that you: - Correctly extract the ordered sequence of activities per case. - Aggregate and count cases per variant. - Filter down to the cases belonging to the top K variants. - Return the corresponding events from those filtered cases."
+
+So we should explain each part briefly, then present the query.
+
+Given that the prompt is "Prompt for the Benchmark" and asks to construct the query, I should provide the SQL query and a brief explanation of each CTE.
+
+Let's produce the answer with the query using `STRING_AGG`? Or `LIST_AGG`? Let's think about which one is more standard for "sequence of activities". The prompt defines a process variant as "ordered sequence of activities". Both work. `STRING_AGG` gives a readable string like "A,B,C". `LIST_AGG` gives an array `[A, B, C]`. For grouping, arrays are more robust (no delimiter ambiguity). But for presentation, strings are easier.
+
+However, in DuckDB, comparing arrays in `IN` is okay. But some users might find arrays less intuitive. Let's provide the string version using `STRING_AGG` but mention that delimiter should be chosen carefully. Actually, we can use `STRING_AGG` with a delimiter that is unlikely to appear, like `' || '`. But to be robust, we can use arrays.
+
+Wait, there's another option: Use `ARRAY_AGG`? No, `LIST_AGG` is correct.
+
+Actually, I just want to double-check: In DuckDB, can we do `GROUP BY` on a column that is a list? Yes. Example from docs: `SELECT list_value(i) FROM table GROUP BY list_value(i)`? Not exactly. But grouping by an array column should be supported because arrays are comparable.
+
+Let's check mental model: DuckDB supports equality (`=`) and hashing for lists? Yes, lists have equality comparison element-wise, and they are hashable, so they can be used in `GROUP BY`, `DISTINCT`, and `IN`.
+
+Thus, using `LIST_AGG` is safe.
+
+But let's also consider `STRING_AGG`. In DuckDB, `STRING_AGG` syntax: `string_agg(expression, separator)`. Does it support ordering? According to DuckDB docs: "The order of the concatenated values is not guaranteed unless an ORDER BY clause is specified inside the aggregate." The syntax is `string_agg(expression, separator ORDER BY ...)`. Actually, I think the syntax is:
+
+`STRING_AGG(column, ',')` and for ordering: `STRING_AGG(column, ',' ORDER BY timestamp)`.
+
+But to avoid syntax ambiguity, using `LIST_AGG` with explicit `ORDER BY` is unambiguous.
+
+So I'll present the query using `LIST_AGG`.
+
+But wait: The prompt asks to "determine the sequence of activities for each case_id, maintaining the order imposed by timestamp." If we return lists, that's correct. But then "Group cases by their complete activity sequence" - grouping by the list column works.
+
+However, the final result should be "Return all events from the original event log...". So we don't actually need to return the variant sequence in the final output, just filter based on it.
+
+Thus, the query is correct.
+
+Let's write the final answer with explanation and the SQL.
+
+We should also mention that `k` is parameterized in the `params` CTE.
+
+One more refinement: We need to make sure that `event_log` table is used correctly.
+
+The final query:
+
+```sql
+-- Set the desired number of top variants (K)
+WITH params AS (
+    SELECT 5 AS k
+),
+
+-- 1. Build the ordered activity sequence for each case
+case_variants AS (
+    SELECT
+        case_id,
+        LIST_AGG(activity ORDER BY timestamp) AS activity_sequence
+    FROM event_log
+    GROUP BY case_id
+),
+
+-- 2. Identify unique variants and count cases per variant
+variant_counts AS (
+    SELECT
+        activity_sequence,
+        COUNT(*) AS case_frequency
+    FROM case_variants
+    GROUP BY activity_sequence
+),
+
+-- 3. Rank variants and keep only the top K
+ranked_variants AS (
+    SELECT
+        activity_sequence,
+        case_frequency,
+        ROW_NUMBER() OVER (ORDER BY case_frequency DESC) AS rnk
+    FROM variant_counts
+    CROSS JOIN params
+),
+
+top_k_variants AS (
+    SELECT activity_sequence
+    FROM ranked_variants
+    WHERE rnk <= k
+)
+
+-- 4. Retrieve all original events belonging to cases in the top K variants
+SELECT e.*
+FROM event_log e
+INNER JOIN case_variants cv ON e.case_id = cv.case_id
+WHERE cv.activity_sequence IN (SELECT activity_sequence FROM top_k_variants)
+ORDER BY e.case_id, e.timestamp;
+```
+
+This looks correct. Let me check for potential issues:
+
+- `LIST_AGG` returns a list. Comparing lists with `IN` works.
+- `CROSS JOIN params` adds the `k` column to every row in `variant_counts`. Since `params` has one row, it's fine.
+- `ROW_NUMBER()` assigns unique ranks. If there are ties in frequency, only one gets each rank number, so exactly K variants are selected (ties broken arbitrarily by order of appearance, but since there's no tie-breaker, it's arbitrary). This is standard for "top K" when using `ROW_NUMBER`. If they want ties included, they should use `RANK()`. I can mention this.
+
+Actually, the prompt says "the top K variants by their frequency". If there is a tie for the Kth place, `ROW_NUMBER()` will arbitrarily drop some tied variants. `RANK()` would include all tied at K, possibly returning more than K. To be precise, maybe we should use `RANK()`? But then filtering `rnk <= k` with `RANK()` includes ties. Let's think: If frequencies are [10, 10, 10, 5] and K=2, `RANK()` gives ranks 1,1,1,4. Filtering `<=2` gives all three with frequency 10, which is 3 variants, not 2. So `RANK()` can return more than K.
+
+Given the prompt says "the top K variants", it's ambiguous. Usually in such benchmarks, `ROW_NUMBER()` is acceptable if they want exactly K. But sometimes they want all with rank <= K. I think providing `RANK()` with a note is good, but let's stick to `ROW_NUMBER()` and mention that it selects exactly K, breaking ties arbitrarily, and that `RANK()` can be substituted to include ties.
+
+But to be safe and match typical expectations, I'll present it with `ROW_NUMBER()` and add a comment.
+
+Wait, is there any issue with using `IN` with lists? In DuckDB, `IN` expects a list of values. `SELECT activity_sequence FROM top_k_variants` returns a column of lists. Then `cv.activity_sequence IN (...)` checks if the list value equals any of the lists in the subquery. Yes, that works.
+
+Alternatively, we can avoid `IN` by joining:
+
+```sql
+SELECT e.*
+FROM event_log e
+INNER JOIN case_variants cv ON e.case_id = cv.case_id
+INNER JOIN top_k_variants tk ON cv.activity_sequence = tk.activity_sequence
+ORDER BY e.case_id, e.timestamp;
+```
+
+This might be more efficient and avoids `IN` with arrays. Let's use the JOIN approach. It's cleaner.
+
+So final query:
+
+```sql
+WITH params AS (SELECT 5 AS k),
+case_variants AS (
+    SELECT case_id, LIST_AGG(activity ORDER BY timestamp) AS seq
+    FROM event_log
+    GROUP BY case_id
+),
+variant_counts AS (
+    SELECT seq, COUNT(*) AS freq
+    FROM case_variants
+    GROUP BY seq
+),
+ranked AS (
+    SELECT seq, freq, ROW_NUMBER() OVER (ORDER BY freq DESC) AS rnk
+    FROM variant_counts CROSS JOIN params
+),
+top_k AS (
+    SELECT seq FROM ranked WHERE rnk <= k
+)
+SELECT e.*
+FROM event_log e
+JOIN case_variants cv ON e.case_id = cv.case_id
+JOIN top_k tk ON cv.seq = tk.seq
+ORDER BY e.case_id, e.timestamp;
+```
+
+This is perfect.
+
+Now, I will present the answer with explanation of each step and the query.
+
+One more check: Does `LIST_AGG(activity ORDER BY timestamp)` require `timestamp` to be in the GROUP BY? No, because it's inside the aggregate and refers to the row within the group. That's correct.
+
+Also, `event_log` is the table name.
+
+Thus, the answer is ready.
+
+I'll write a concise explanation and then the SQL block. I should also mention that `k` can be adjusted in the `params` CTE.
+
+Given the benchmark style, they might want just the query. But a brief explanation is good.
+
+Let's produce the final answer.
+</think>
+Here is a complete, self-contained DuckDB query.  
+It uses a parameter CTE (`params`) so you can change **K** in one place, builds the ordered variant per case with `LIST_AGG(... ORDER BY timestamp)`, ranks the variants by case-frequency, keeps the top K, and finally joins back to the original log to return only the events belonging to those cases.
+
+```sql
+-- 1. Set K (the number of top variants to keep)
+WITH params AS (
+    SELECT 5 AS k
+),
+
+-- 2. Extract the ordered activity sequence for each case_id
+case_variants AS (
+    SELECT
+        case_id,
+        LIST_AGG(activity ORDER BY timestamp) AS variant_seq
+    FROM event_log
+    GROUP BY case_id
+),
+
+-- 3. Count cases per unique variant
+variant_counts AS (
+    SELECT
+        variant_seq,
+        COUNT(*) AS case_frequency
+    FROM case_variants
+    GROUP BY variant_seq
+),
+
+-- 4. Rank variants by frequency and filter to the top K
+ranked_variants AS (
+    SELECT
+        variant_seq,
+        case_frequency,
+        ROW_NUMBER() OVER (ORDER BY case_frequency DESC) AS rnk
+    FROM variant_counts
+    CROSS JOIN params
+),
+
+top_k_variants AS (
+    SELECT variant_seq
+    FROM ranked_variants
+    WHERE rnk <= k
+)
+
+-- 5. Return all original events for cases that match the top K variants
+SELECT e.*
+FROM event_log e
+INNER JOIN case_variants cv
+    ON e.case_id = cv.case_id
+INNER JOIN top_k_variants tk
+    ON cv.variant_seq = tk.variant_seq
+ORDER BY e.case_id, e.timestamp;
+```
+
+### What each part does
+| CTE / Step | Purpose |
+|---|---|
+| `params` | Defines `k`. Change `5` to any desired value. |
+| `case_variants` | Aggregates activities per `case_id` in timestamp order, producing a list (`variant_seq`) that represents the full process variant. |
+| `variant_counts` | Groups by that sequence and counts how many cases (`case_frequency`) follow each variant. |
+| `ranked_variants` | Assigns a rank (`rnk`) ordered by `case_frequency DESC`. The `CROSS JOIN` brings in `k`. |
+| `top_k_variants` | Keeps only the variant sequences with `rnk <= k`. |
+| Final `SELECT` | Joins the filtered variant list back to `event_log` via `case_id`, returning every original row (`e.*`) for the retained cases, ordered for readability. |
+
+**Notes on ties:** `ROW_NUMBER()` selects *exactly* K variants (breaking ties arbitrarily). If you prefer to include all variants tied at the K-th rank, replace `ROW_NUMBER()` with `RANK()` in `ranked_variants`.
