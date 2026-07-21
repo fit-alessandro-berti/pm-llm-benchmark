@@ -1,0 +1,161 @@
+### 1. Temporal Profile Anomalies
+
+* **Receive (`R`) to Approve (`P`) [~25 Hours, STDEV = 1 Hour]:**
+  The standard deviation (1 hour) is exceptionally low relative to the average duration (90,000 seconds / ~25 hours). In a human-driven process, claim approval times usually vary based on claim complexity, workload, and documentation. Such a tight distribution suggests an artificial or automated schedule rather than organic case handling.
+
+* **Approve (`P`) to Notify (`N`) [7 Days, STDEV = 2 Days]:**
+  An average delay of 7 days between internal approval and customer notification is unusually prolonged. Once a claim is approved, informing the customer should typically take minimal time. A multi-day lag indicates process friction or significant queuing downstream.
+
+* **Assign (`A`) to Close (`C`) [2 Hours, STDEV = 1 Hour]:**
+  Closing a claim within an average of 2 hours after assignment is extremely rapid. Given that standard claim execution requires evaluation (`E`) and approval (`P`), a 2-hour window implies that required intermediate steps are either being bypassed or that claims are being prematurely canceled/rejected.
+
+* **Evaluate (`E`) to Notify (`N`) [5 Minutes, STDEV = 1 Minute]:**
+  A 5-minute transition from evaluation to customer notification is unnaturally fast if the standard process sequence (`R` $\rightarrow$ `A` $\rightarrow$ `E` $\rightarrow$ `P` $\rightarrow$ `N` $\rightarrow$ `C`) is followed. It indicates that either approval (`P`) is being skipped entirely, recorded retroactively, or triggered automatically without human verification.
+
+---
+
+### 2. Hypotheses for Anomalies
+
+1. **Scheduled Batch Processing (R $\rightarrow$ P):**
+   Approvals may be managed by an automated cron job or scheduled system process that executes once every 24 hours. This creates a uniform time interval across claims regardless of individual evaluation times.
+
+2. **Communication Bottlenecks & Outgoing Queue Backlogs (P $\rightarrow$ N):**
+   The long delay in notifications could stem from manual batch sending of customer communications (e.g., weekly physical mailings or centralized call-center queue assignments), understaffed customer support departments, or failure of an automated email gateway.
+
+3. **Mass Triage & Fast-Track Rejections (A $\rightarrow$ C):**
+   Adjusters may be closing invalid, duplicate, or withdrawn claims immediately upon assignment without performing a full evaluation. Alternatively, claims may be auto-closed due to system errors or incorrect categorization.
+
+4. **Bypassing Approval Gates / Automated Triggers (E $\rightarrow$ N):**
+   The notification system might be configured to trigger directly upon submission of the evaluation form (`E`), circumventing the approval step (`P`). Alternatively, small claim amounts might auto-approve without generating a distinct `P` log entry.
+
+---
+
+### 3. SQL Verification Queries
+
+#### Query 1: Detect Batch-Like Execution Timing Between Receive (`R`) and Approve (`P`)
+*Verifies whether approvals cluster around specific hours of the day (indicating scheduled automated jobs) and calculates actual variance.*
+
+```sql
+WITH receive_approve AS (
+    SELECT 
+        e1.claim_id,
+        e1.timestamp AS receive_time,
+        e2.timestamp AS approve_time,
+        EXTRACT(EPOCH FROM (e2.timestamp - e1.timestamp)) AS duration_seconds
+    FROM claim_events e1
+    JOIN claim_events e2 ON e1.claim_id = e2.claim_id
+    WHERE e1.activity = 'R' 
+      AND e2.activity = 'P'
+)
+SELECT 
+    EXTRACT(HOUR FROM approve_time) AS approval_hour_of_day,
+    COUNT(*) AS total_approvals,
+    ROUND(AVG(duration_seconds) / 3600.0, 2) AS avg_duration_hours,
+    ROUND(STDDEV(duration_seconds) / 3600.0, 2) AS stddev_duration_hours
+FROM receive_approve
+GROUP BY EXTRACT(HOUR FROM approve_time)
+ORDER BY total_approvals DESC;
+```
+
+---
+
+#### Query 2: Identify Excessive Delays Between Approval (`P`) and Notification (`N`) Correlated by Region and Claim Type
+*Pinpoints where the 7-day notification delay is concentrated across claim types, regions, and adjusters.*
+
+```sql
+WITH approve_notify AS (
+    SELECT 
+        p.claim_id,
+        p.timestamp AS approve_time,
+        n.timestamp AS notify_time,
+        EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) / 86400.0 AS delay_days
+    FROM claim_events p
+    JOIN claim_events n ON p.claim_id = n.claim_id
+    WHERE p.activity = 'P' 
+      AND n.activity = 'N'
+)
+SELECT 
+    c.claim_type,
+    a.region,
+    COUNT(an.claim_id) AS delayed_claims_count,
+    ROUND(AVG(an.delay_days), 2) AS avg_delay_days,
+    ROUND(MAX(an.delay_days), 2) AS max_delay_days
+FROM approve_notify an
+JOIN claims c ON an.claim_id = c.claim_id
+LEFT JOIN claim_events ae ON c.claim_id = ae.claim_id AND ae.activity = 'A'
+LEFT JOIN adjusters a ON ae.resource = a.name
+WHERE an.delay_days > 3 -- Filtering for abnormally delayed notifications
+GROUP BY c.claim_type, a.region
+ORDER BY avg_delay_days DESC;
+```
+
+---
+
+#### Query 3: Identify Claims Closed (`C`) Quickly After Assignment (`A`) Missing Intermediate Steps
+*Finds claims closed within 2 hours of assignment and checks if Evaluation (`E`) or Approval (`P`) were omitted.*
+
+```sql
+WITH assign_close AS (
+    SELECT 
+        a.claim_id,
+        a.timestamp AS assign_time,
+        c.timestamp AS close_time,
+        EXTRACT(EPOCH FROM (c.timestamp - a.timestamp)) / 3600.0 AS duration_hours
+    FROM claim_events a
+    JOIN claim_events c ON a.claim_id = c.claim_id
+    WHERE a.activity = 'A' 
+      AND c.activity = 'C'
+)
+SELECT 
+    ac.claim_id,
+    cl.claim_type,
+    cl.claim_amount,
+    ROUND(ac.duration_hours, 2) AS hours_to_close,
+    ARRAY_AGG(ce.activity ORDER BY ce.timestamp) AS activity_sequence
+FROM assign_close ac
+JOIN claims cl ON ac.claim_id = cl.claim_id
+JOIN claim_events ce ON ac.claim_id = ce.claim_id
+WHERE ac.duration_hours <= 2
+GROUP BY ac.claim_id, cl.claim_type, cl.claim_amount, ac.duration_hours
+HAVING NOT ('E' = ANY(ARRAY_AGG(ce.activity))) 
+    OR NOT ('P' = ANY(ARRAY_AGG(ce.activity)))
+ORDER BY ac.duration_hours ASC;
+```
+
+---
+
+#### Query 4: Evaluate Direct Rapid Transitions from Evaluate (`E`) to Notify (`N`) and Check Approval Status
+*Checks claims where notification occurred within 10 minutes of evaluation and verifies if an Approval (`P`) event existed between them.*
+
+```sql
+WITH eval_notify AS (
+    SELECT 
+        e.claim_id,
+        e.timestamp AS eval_time,
+        n.timestamp AS notify_time,
+        EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) / 60.0 AS duration_minutes
+    FROM claim_events e
+    JOIN claim_events n ON e.claim_id = n.claim_id
+    WHERE e.activity = 'E' 
+      AND n.activity = 'N'
+)
+SELECT 
+    en.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    ROUND(en.duration_minutes, 2) AS minutes_e_to_n,
+    CASE 
+        WHEN EXISTS (
+            SELECT 1 
+            FROM claim_events p 
+            WHERE p.claim_id = en.claim_id 
+              AND p.activity = 'P' 
+              AND p.timestamp BETWEEN en.eval_time AND en.notify_time
+        ) THEN 'Approved Between E and N'
+        ELSE 'Approval Skipped / Missing'
+    END AS approval_status
+FROM eval_notify en
+JOIN claims c ON en.claim_id = c.claim_id
+WHERE en.duration_minutes <= 10
+ORDER BY en.duration_minutes ASC;
+```

@@ -1,0 +1,157 @@
+Here is the analysis of the POWL process model, the hypotheses explaining the anomalies, and PostgreSQL queries to verify whether these anomalies occurred in reality.
+
+---
+
+### 1. Identification of Anomalies in the POWL Model
+
+Comparing the POWL model to the intended process flow (**R  A  E  P  N  C**), three major anomalies exist:
+
+#### Anomaly A: Premature / Concurrent Claim Closure
+* **POWL Modeling**: 
+  `root.order.add_edge(A, C)` is added without strictly ordering `xor -> C` or `loop -> C`.
+* **Behavioral Impact**: 
+  In partial order semantics, an edge `A -> C` means Activity `C` (Close Claim) is enabled as soon as Activity `A` (Assign Adjuster) completes. Because `C` does not depend on `loop` or `xor` finishing, the process allows closing a claim immediately after assignment—completely skipping evaluation, approval, and notification—or executing `C` concurrently while evaluation/approval is still taking place.
+
+#### Anomaly B: Infinite / Repeated Evaluation and Approval Loop
+* **POWL Modeling**: 
+  `loop = OperatorPOWL(operator=Operator.LOOP, children=[E, P])`
+* **Behavioral Impact**: 
+  In PM4Py process tree / POWL semantics, `LOOP(Do, Redo)` executes `Do` (`E`), followed by zero or more iterations of `Redo` (`P`) and `Do` (`E`). This creates valid execution traces such as `E -> P -> E -> P -> E`. This allows claims to be approved multiple times, re-evaluated after approval, or stuck in an endless loop between evaluation and approval.
+
+#### Anomaly C: Optional Customer Notification
+* **POWL Modeling**: 
+  `xor = OperatorPOWL(operator=Operator.XOR, children=[N, skip])`
+* **Behavioral Impact**: 
+  The XOR operator allows a choice between executing `N` (Notify Customer) or `skip` (SilentTransition). This means customer notification is treated as completely optional, allowing claims to proceed to closure without informing the customer.
+
+---
+
+### 2. Hypotheses on Why These Anomalies Exist
+
+| Anomaly | Domain / Technical Hypothesis |
+| :--- | :--- |
+| **Premature Closure (`A -> C`)** | **1. Fast-Track / Low-Value Claims:** A business rule allows small claims (e.g., under $100) to be auto-closed upon assignment, but the rule was applied universally in the process model instead of conditionally.<br>**2. UI/System Control Defect:** The claim management software leaves the "Close Claim" button active at all times after an adjuster is assigned, allowing adjusters to manually close claims prematurely.<br>**3. Modeling Error:** The workflow designer intended to express parallel execution or missed the transitive dependency `xor -> C`. |
+| **Repeated Loop (`LOOP(E, P)`)** | **1. Rework Due to Disputes / Re-evaluations:** If new evidence arrives after an initial approval, adjusters re-evaluate the claim, leading to a second approval.<br>**2. Rejection Logic Misconfiguration:** A rejection at the approval stage should loop back to evaluation *before* approval (`E -> reject -> E -> P`), but it was incorrectly modeled as approving first, then looping (`E -> P -> E`). |
+| **Skipped Notification (`XOR(N, skip)`)** | **1. Customer Opt-Out / Alternative Channels:** Customers who opted out of digital communications or were notified via an unlogged channel (e.g., direct phone call) bypass the formal `N` event.<br>**2. Integration / System Failure:** The messaging gateway/email service fails intermittently, dropping notification events without blocking the overall claim lifecycle. |
+
+---
+
+### 3. Database Verification Queries (PostgreSQL)
+
+Below are PostgreSQL queries against the underlying database to verify whether these anomalous behaviors are actually occurring in production.
+
+#### Query 1: Detect Claims Closed Prematurely (Without Evaluation or Approval)
+This query identifies claims that reached the `C` (Close Claim) activity without ever executing `E` (Evaluate Claim) or `P` (Approve Claim), or where `C` occurred before `E`/`P`.
+
+```sql
+WITH ActivityTimestamps AS (
+    SELECT 
+        claim_id,
+        MIN(CASE WHEN activity = 'A' THEN timestamp END) AS assign_time,
+        MIN(CASE WHEN activity = 'E' THEN timestamp END) AS eval_time,
+        MIN(CASE WHEN activity = 'P' THEN timestamp END) AS approve_time,
+        MIN(CASE WHEN activity = 'C' THEN timestamp END) AS close_time
+    FROM claim_events
+    GROUP BY claim_id
+)
+SELECT 
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    t.assign_time,
+    t.eval_time,
+    t.approve_time,
+    t.close_time,
+    CASE 
+        WHEN t.close_time IS NOT NULL AND t.eval_time IS NULL THEN 'Closed Without Evaluation'
+        WHEN t.close_time IS NOT NULL AND t.approve_time IS NULL THEN 'Closed Without Approval'
+        WHEN t.close_time < t.eval_time THEN 'Closed Before Evaluation'
+        WHEN t.close_time < t.approve_time THEN 'Closed Before Approval'
+    END AS anomaly_reason
+FROM ActivityTimestamps t
+JOIN claims c ON c.claim_id = t.claim_id
+WHERE t.close_time IS NOT NULL 
+  AND (
+      t.eval_time IS NULL 
+      OR t.approve_time IS NULL 
+      OR t.close_time < t.eval_time 
+      OR t.close_time < t.approve_time
+  );
+```
+
+---
+
+#### Query 2: Detect Multiple Approvals or Evaluation Loops
+This query identifies claims that underwent multiple `P` (Approve Claim) or `E` (Evaluate Claim) events, confirming the existence of the loop in actual logs.
+
+```sql
+SELECT 
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    COUNT(CASE WHEN ce.activity = 'E' THEN 1 END) AS evaluation_count,
+    COUNT(CASE WHEN ce.activity = 'P' THEN 1 END) AS approval_count
+FROM claims c
+JOIN claim_events ce ON c.claim_id = ce.claim_id
+WHERE ce.activity IN ('E', 'P')
+GROUP BY c.claim_id, c.claim_type, c.claim_amount
+HAVING COUNT(CASE WHEN ce.activity = 'P' THEN 1 END) > 1
+    OR COUNT(CASE WHEN ce.activity = 'E' THEN 1 END) > 1
+ORDER BY approval_count DESC, evaluation_count DESC;
+```
+
+---
+
+#### Query 3: Detect Closed Claims Where Customer Notification Was Skipped
+This query checks for claims that have been closed (`C`), but have no corresponding `N` (Notify Customer) event logged in `claim_events`.
+
+```sql
+SELECT 
+    c.claim_id,
+    c.claim_type,
+    c.claim_amount,
+    c.submission_date,
+    close_event.timestamp AS closed_at
+FROM claims c
+JOIN claim_events close_event 
+    ON c.claim_id = close_event.claim_id 
+   AND close_event.activity = 'C'
+WHERE NOT EXISTS (
+    SELECT 1 
+    FROM claim_events notify_event 
+    WHERE notify_event.claim_id = c.claim_id 
+      AND notify_event.activity = 'N'
+)
+ORDER BY close_event.timestamp DESC;
+```
+
+---
+
+#### Query 4: Comprehensive Anomaly Summary Per Claim Type
+To help process managers understand which claim types or regions are most affected by these anomalies:
+
+```sql
+SELECT 
+    c.claim_type,
+    COUNT(DISTINCT c.claim_id) AS total_claims,
+    COUNT(DISTINCT CASE WHEN ce_close.claim_id IS NOT NULL AND ce_eval.claim_id IS NULL THEN c.claim_id END) AS closed_without_eval_count,
+    COUNT(DISTINCT CASE WHEN app_counts.p_count > 1 THEN c.claim_id END) AS multi_approval_count,
+    COUNT(DISTINCT CASE WHEN ce_close.claim_id IS NOT NULL AND ce_notify.claim_id IS NULL THEN c.claim_id END) AS skipped_notification_count
+FROM claims c
+LEFT JOIN (
+    SELECT DISTINCT claim_id FROM claim_events WHERE activity = 'C'
+) ce_close ON c.claim_id = ce_close.claim_id
+LEFT JOIN (
+    SELECT DISTINCT claim_id FROM claim_events WHERE activity = 'E'
+) ce_eval ON c.claim_id = ce_eval.claim_id
+LEFT JOIN (
+    SELECT DISTINCT claim_id FROM claim_events WHERE activity = 'N'
+) ce_notify ON c.claim_id = ce_notify.claim_id
+LEFT JOIN (
+    SELECT claim_id, COUNT(*) AS p_count 
+    FROM claim_events 
+    WHERE activity = 'P' 
+    GROUP BY claim_id
+) app_counts ON c.claim_id = app_counts.claim_id
+GROUP BY c.claim_type;
+```

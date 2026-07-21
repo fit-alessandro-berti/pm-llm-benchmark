@@ -868,8 +868,8 @@ How different hallucination categories correlate with each other:
 
 **Category 1: Input Misalignment**
   vs **Category 2: Factual Errors:**
-- Correlation: -0.070 
-- Linear fit: y = -0.068x + 52.5
+- Correlation: -0.068 
+- Linear fit: y = -0.067x + 52.6
 
 **Category 1: Input Misalignment**
   vs **Category 3: Logical Errors:**
@@ -878,23 +878,23 @@ How different hallucination categories correlate with each other:
 
 **Category 1: Input Misalignment**
   vs **Category 4: Technical Errors:**
-- Correlation: 0.202 **
+- Correlation: 0.201 *
 - Linear fit: y = 0.096x + 23.5
 
 **Category 2: Factual Errors**
   vs **Category 3: Logical Errors:**
-- Correlation: 0.662 ***
-- Linear fit: y = 0.538x + 77.1
+- Correlation: 0.660 ***
+- Linear fit: y = 0.536x + 77.1
 
 **Category 2: Factual Errors**
   vs **Category 4: Technical Errors:**
-- Correlation: 0.558 ***
-- Linear fit: y = 0.274x + 17.1
+- Correlation: 0.552 ***
+- Linear fit: y = 0.270x + 17.1
 
 **Category 3: Logical Errors**
   vs **Category 4: Technical Errors:**
-- Correlation: 0.583 ***
-- Linear fit: y = 0.351x + -5.9
+- Correlation: 0.581 ***
+- Linear fit: y = 0.351x + -6.0
 
 ### TOP 20 STRONGEST INTER-HALLUCINATION CORRELATIONS
 ----------------------------------------
@@ -912,52 +912,52 @@ How different hallucination categories correlate with each other:
   r = 0.914 ***, y = 0.457x + -1.0
 
 **Category 4: Technical Errors vs 4b: Model Semantics Breach:**
-  r = 0.822 ***, y = 0.415x + 3.9
+  r = 0.822 ***, y = 0.414x + 4.0
 
 **2a: Concept Fabrication vs 2b: Spurious Numeric:**
-  r = 0.708 ***, y = 0.787x + 9.7
+  r = 0.709 ***, y = 0.789x + 9.7
 
 **Category 4: Technical Errors vs 4a: Syntax Error:**
-  r = 0.703 ***, y = 0.320x + -2.5
+  r = 0.704 ***, y = 0.322x + -2.6
 
 **Category 3: Logical Errors vs 3b: Self Contradiction:**
   r = 0.689 ***, y = 0.160x + -7.5
 
-**2b: Spurious Numeric vs 3b: Self Contradiction:**
-  r = 0.662 ***, y = 0.225x + 3.1
-
 **Category 2: Factual Errors vs Category 3: Logical Errors:**
-  r = 0.662 ***, y = 0.538x + 77.1
+  r = 0.660 ***, y = 0.536x + 77.1
+
+**2b: Spurious Numeric vs 3b: Self Contradiction:**
+  r = 0.659 ***, y = 0.223x + 3.1
 
 **Category 3: Logical Errors vs 2b: Spurious Numeric:**
-  r = 0.640 ***, y = 0.438x + -18.9
+  r = 0.639 ***, y = 0.438x + -18.8
 
 **Category 2: Factual Errors vs 3b: Self Contradiction:**
-  r = 0.635 ***, y = 0.120x + 3.2
+  r = 0.633 ***, y = 0.119x + 3.2
 
 **Category 4: Technical Errors vs 4c: Visual Descr Mismatch:**
-  r = 0.615 ***, y = 0.265x + -1.4
+  r = 0.614 ***, y = 0.264x + -1.4
 
 **Category 2: Factual Errors vs 3a: Unsupported Leap:**
-  r = 0.602 ***, y = 0.419x + 73.7
+  r = 0.601 ***, y = 0.417x + 73.8
 
 **Category 4: Technical Errors vs 3b: Self Contradiction:**
   r = 0.595 ***, y = 0.229x + 2.1
 
 **3b: Self Contradiction vs 4b: Model Semantics Breach:**
-  r = 0.595 ***, y = 0.778x + 9.5
+  r = 0.595 ***, y = 0.779x + 9.5
 
 **Category 3: Logical Errors vs Category 4: Technical Errors:**
-  r = 0.583 ***, y = 0.351x + -5.9
-
-**2b: Spurious Numeric vs 3a: Unsupported Leap:**
-  r = 0.569 ***, y = 0.711x + 75.2
+  r = 0.581 ***, y = 0.351x + -6.0
 
 **Category 3: Logical Errors vs 2a: Concept Fabrication:**
-  r = 0.569 ***, y = 0.350x + -15.2
+  r = 0.568 ***, y = 0.350x + -15.1
+
+**2b: Spurious Numeric vs 3a: Unsupported Leap:**
+  r = 0.568 ***, y = 0.708x + 75.2
 
 **1c: Prompt Contradiction vs 3b: Self Contradiction:**
-  r = 0.567 ***, y = 0.769x + 5.5
+  r = 0.568 ***, y = 0.769x + 5.5
 
 ### NOTABLE NEGATIVE CORRELATIONS (Trade-offs)
 ----------------------------------------
@@ -967,11 +967,11 @@ How different hallucination categories correlate with each other:
   (Models good at one tend to be worse at the other)
 
 **1b: Context Omission vs 2a: Concept Fabrication:**
-  r = -0.224 **, y = -0.127x + 27.6
+  r = -0.223 **, y = -0.126x + 27.7
   (Models good at one tend to be worse at the other)
 
 **Category 2: Factual Errors vs 1b: Context Omission:**
-  r = -0.201 *, y = -0.178x + 62.0
+  r = -0.200 *, y = -0.177x + 62.0
   (Models good at one tend to be worse at the other)
 
 ================================================================================

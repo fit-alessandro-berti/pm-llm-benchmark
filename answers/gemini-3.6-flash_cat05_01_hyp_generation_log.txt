@@ -1,0 +1,163 @@
+Based on the provided process definition, schema, and sample event log data, here is a process mining and anomaly analysis report, along with underlying hypotheses and SQL investigation queries.
+
+---
+
+# Process Anomaly & Conformance Analysis Report
+
+## 1. Identified Anomalies and Process Deviations
+
+### **Case 1001: Baseline / Happy Path**
+* **Status:** **Fully Compliant**
+* **Sequence:** `Register Order` $\rightarrow$ `Perform Credit Check` $\rightarrow$ `Validate Stock` $\rightarrow$ `Confirm Shipment` $\rightarrow$ `Ship Goods` $\rightarrow$ `Issue Invoice` $\rightarrow$ `Receive Payment`
+* **Observation:** Follows the expected process flow perfectly with logical time gaps and appropriate role separation.
+
+---
+
+### **Case 1002: Out-of-Order Execution & Post-Shipment Controls**
+* **Anomalies Identified:**
+  1. **Premature Shipping:** Goods were confirmed (`08:25`) and shipped (`08:40`) **before** mandatory credit and stock checks were conducted.
+  2. **Retroactive Risk & Control Checks:** `Perform Credit Check` (`09:10`) and `Validate Stock` (`09:15`) occurred **after** the physical goods had already left the warehouse.
+* **Impact:** Exposure to unapproved credit risk (shipping to insolvent customers) and inventory discrepancy risks (shipping without prior allocation).
+
+---
+
+### **Case 1003: Skipped Controls & Post-Hoc Confirmation**
+* **Anomalies Identified:**
+  1. **Skipped Step:** `Validate Stock` was completely bypassed.
+  2. **Inverted Confirmation Flow:** `Ship Goods` (`09:10`) occurred before `Confirm Shipment` (`09:45`), explicitly flagged as `late_confirmation=Y`.
+* **Impact:** High risk of partial/failed fulfillment due to unverified inventory, alongside compliance breaches in logistical workflow authorization.
+
+---
+
+### **Case 1004: Payment-Before-Billing & Unscheduled Dispatch**
+* **Anomalies Identified:**
+  1. **Inverted Financial Flow:** `Receive Payment` (`09:05`) occurred 15 minutes **before** `Issue Invoice` (`09:20`).
+  2. **Skipped Steps:** Both `Perform Credit Check` and `Validate Stock` were bypassed.
+  3. **Disregarded Logistics Gate:** `Confirm Shipment` was explicitly logged with `shipment_scheduled=N` at `09:25`, yet `Ship Goods` still executed at `09:50`.
+* **Impact:** Revenue recognition errors, potential unallocated cash, and failure of warehouse dispatch controls.
+
+---
+
+## 2. Process Anomaly Hypotheses
+
+| Anomaly Category | Root Cause Hypotheses |
+| :--- | :--- |
+| **Premature Shipping (Cases 1002, 1003)** | • **Bypass of ERP Hard Gates:** The ERP/WMS system lacks system-level blocking rules preventing warehouse staff from creating picking/shipping tasks prior to order approval.<br>• **Priority Overrides:** High-priority orders (`order_type = 'priority'` in Case 1002) are being rushed manually via direct communication between sales and warehouse staff. |
+| **Skipped Credit / Stock Checks (Cases 1003, 1004)** | • **UI/UX Workarounds:** Warehouse staff bypassing mandatory checks when processing urgent orders.<br>• **System Outages:** Downstream integration failures between Credit/Inventory services and the core Order Management System. |
+| **Payment Before Invoice (Case 1004)** | • **Pre-payment / Pro-Forma Process:** Customer paid upfront via cash/credit card, but the process lacks a dedicated `Receive Prepayment` event type.<br>• **Manual Entry Error:** Accounting team back-dated or mistimed event logging. |
+| **Shipment Despite Unscheduled Status (Case 1004)** | • **Physical Process Decoupling:** Warehouse personnel rely on physical paperwork or direct verbal instruction rather than system authorization flags (`shipment_scheduled=N`). |
+
+---
+
+## 3. Investigative SQL Queries (PostgreSQL)
+
+### **Query 1: Detect Cases Where Goods Were Shipped Before Credit Approval**
+*Identifies cases where physical dispatch occurred before financial credit authorization.*
+
+```sql
+WITH credit_checks AS (
+    SELECT case_id, MIN(timestamp) AS credit_check_time
+    FROM order_event_log
+    WHERE activity = 'Perform Credit Check'
+    GROUP BY case_id
+),
+shipments AS (
+    SELECT case_id, MIN(timestamp) AS ship_time
+    FROM order_event_log
+    WHERE activity = 'Ship Goods'
+    GROUP BY case_id
+)
+SELECT 
+    s.case_id,
+    o.order_type,
+    o.order_value,
+    c.credit_check_time,
+    s.ship_time,
+    CASE 
+        WHEN c.credit_check_time IS NULL THEN 'Credit Check Skipped'
+        WHEN s.ship_time < c.credit_check_time THEN 'Shipped Before Credit Check'
+    END AS anomaly_type
+FROM shipments s
+LEFT JOIN credit_checks c ON s.case_id = c.case_id
+JOIN orders o ON s.case_id = o.case_id
+WHERE c.credit_check_time IS NULL 
+   OR s.ship_time < c.credit_check_time;
+```
+
+---
+
+### **Query 2: Identify Completely Bypassed Process Steps**
+*Evaluates process completeness against mandatory process steps for all completed orders.*
+
+```sql
+SELECT 
+    o.case_id,
+    o.order_type,
+    BOOL_OR(l.activity = 'Perform Credit Check') AS has_credit_check,
+    BOOL_OR(l.activity = 'Validate Stock')       AS has_stock_validation,
+    BOOL_OR(l.activity = 'Confirm Shipment')     AS has_shipment_confirmation,
+    BOOL_OR(l.activity = 'Issue Invoice')        AS has_invoice
+FROM orders o
+JOIN order_event_log l ON o.case_id = l.case_id
+GROUP BY o.case_id, o.order_type
+HAVING NOT (
+    BOOL_OR(l.activity = 'Perform Credit Check') 
+    AND BOOL_OR(l.activity = 'Validate Stock')
+    AND BOOL_OR(l.activity = 'Confirm Shipment')
+);
+```
+
+---
+
+### **Query 3: Detect Out-of-Sequence Events Using Lead/Lag Window Functions**
+*Tracks any case where dependent events were logged out of chronological order.*
+
+```sql
+WITH ordered_events AS (
+    SELECT 
+        case_id,
+        event_id,
+        activity,
+        timestamp,
+        LAG(activity) OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS prev_activity,
+        LAG(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS prev_timestamp
+    FROM order_event_log
+)
+SELECT 
+    case_id,
+    prev_activity,
+    prev_timestamp,
+    activity AS current_activity,
+    timestamp AS current_timestamp
+FROM ordered_events
+WHERE 
+    -- Payment received before Invoice
+    (activity = 'Issue Invoice' AND prev_activity = 'Receive Payment')
+    -- Confirm Shipment after Ship Goods
+    OR (activity = 'Confirm Shipment' AND prev_activity = 'Ship Goods')
+    -- Shipping before Stock Validation
+    OR (activity = 'Validate Stock' AND prev_activity = 'Ship Goods');
+```
+
+---
+
+### **Query 4: Identify Unscheduled Dispatches (`shipment_scheduled = 'N'`)**
+*Finds orders that were physically shipped despite failing logistics approval.*
+
+```sql
+SELECT 
+    l_confirm.case_id,
+    l_confirm.timestamp AS confirmed_time,
+    l_confirm.resource  AS confirmed_by,
+    l_ship.timestamp    AS shipped_time,
+    l_ship.resource     AS shipped_by,
+    r.department        AS shipped_by_dept
+FROM order_event_log l_confirm
+JOIN order_event_log l_ship 
+    ON l_confirm.case_id = l_ship.case_id 
+   AND l_ship.activity = 'Ship Goods'
+LEFT JOIN resources r 
+    ON l_ship.resource = r.resource_id
+WHERE l_confirm.activity = 'Confirm Shipment'
+  AND l_confirm.additional_info LIKE '%shipment_scheduled=N%';
+```
