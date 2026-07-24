@@ -1,0 +1,161 @@
+**Anomalies and undesirable behaviors identified in the event log**
+
+Comparing each case against the assumed normal process flow (Register Order → Perform Credit Check → Validate Stock → Confirm Shipment → Ship Goods → Issue Invoice → Receive Payment), the following clear deviations appear:
+
+**Case 1001**  
+- Fully compliant. No anomalies.
+
+**Case 1002**  
+- Confirm Shipment and Ship Goods occur *before* Perform Credit Check and Validate Stock.  
+- Credit check and stock validation are performed only after the goods have already been shipped.  
+- This is a severe control failure (shipping without credit approval or inventory confirmation).
+
+**Case 1003**  
+- Ship Goods occurs immediately after credit check and *before* both Validate Stock and Confirm Shipment.  
+- Confirm Shipment is recorded after Issue Invoice (late confirmation).  
+- Validate Stock is completely missing.  
+- Goods leave the warehouse without stock validation or proper shipment confirmation.
+
+**Case 1004**  
+- Receive Payment occurs almost immediately after Register Order (before any credit check, stock validation, shipment, or even invoicing).  
+- Issue Invoice follows payment.  
+- Confirm Shipment and Ship Goods occur after payment has already been received.  
+- Perform Credit Check and Validate Stock are entirely absent.  
+- This creates a high-risk pattern of accepting payment and shipping without the required control activities.
+
+**Cross-case undesirable patterns**  
+- Missing mandatory activities (credit check / stock validation) in multiple cases.  
+- Activities executed out of sequence (especially shipment-related steps appearing too early).  
+- Payment received before invoice or before any risk controls in case 1004.  
+- Late or post-facto confirmation of shipment.
+
+### Hypotheses for why these anomalies occur
+
+1. **System / workflow configuration errors**  
+   The process engine or ERP may lack hard sequential constraints or mandatory activity enforcement, allowing users to skip or reorder steps.
+
+2. **Policy or authorization overrides**  
+   Certain roles (especially Logistics Managers or Finance staff) may have override privileges that are being used inappropriately, or “emergency” flags are being set too freely (see `attempted_early=Y` and `late_confirmation=Y` in additional_info).
+
+3. **Training / awareness gaps**  
+   Warehouse and logistics staff may not understand that credit check and stock validation are prerequisites, or they may be under pressure to ship quickly (especially for priority orders such as case 1002).
+
+4. **Data-entry or timestamp errors**  
+   Activities may be logged retrospectively with incorrect timestamps, or batch updates may reorder events.
+
+5. **Business-pressure / incentive misalignment**  
+   High-value or priority orders may be fast-tracked, bypassing controls to meet service-level targets.
+
+6. **Incomplete process coverage**  
+   Some activities (Validate Stock, Perform Credit Check) may not be mandatory in the system for certain order types or channels.
+
+### Proposed SQL queries for further investigation
+
+These queries are designed to surface the anomalies systematically across the full `order_event_log` (and related tables) without assuming any particular root cause.
+
+```sql
+-- 1. Detect cases missing mandatory activities
+SELECT o.case_id, o.order_type, o.order_value,
+       MAX(CASE WHEN e.activity = 'Perform Credit Check' THEN 1 ELSE 0 END) AS has_credit_check,
+       MAX(CASE WHEN e.activity = 'Validate Stock' THEN 1 ELSE 0 END) AS has_stock_validation,
+       MAX(CASE WHEN e.activity = 'Confirm Shipment' THEN 1 ELSE 0 END) AS has_confirm_shipment
+FROM orders o
+LEFT JOIN order_event_log e ON o.case_id = e.case_id
+GROUP BY o.case_id, o.order_type, o.order_value
+HAVING MAX(CASE WHEN e.activity = 'Perform Credit Check' THEN 1 ELSE 0 END) = 0
+    OR MAX(CASE WHEN e.activity = 'Validate Stock' THEN 1 ELSE 0 END) = 0;
+```
+
+```sql
+-- 2. Find cases where Ship Goods occurs before Perform Credit Check or Validate Stock
+WITH ordered_events AS (
+  SELECT case_id, activity, timestamp,
+         ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS seq
+  FROM order_event_log
+)
+SELECT s.case_id,
+       s.timestamp AS ship_time,
+       c.timestamp AS credit_time,
+       v.timestamp AS stock_time
+FROM ordered_events s
+LEFT JOIN ordered_events c ON s.case_id = c.case_id AND c.activity = 'Perform Credit Check'
+LEFT JOIN ordered_events v ON s.case_id = v.case_id AND v.activity = 'Validate Stock'
+WHERE s.activity = 'Ship Goods'
+  AND (c.timestamp IS NULL OR s.timestamp < c.timestamp
+       OR v.timestamp IS NULL OR s.timestamp < v.timestamp);
+```
+
+```sql
+-- 3. Detect payment received before invoice or before key control activities
+SELECT p.case_id, p.timestamp AS payment_time,
+       i.timestamp AS invoice_time,
+       c.timestamp AS credit_time
+FROM order_event_log p
+LEFT JOIN order_event_log i ON p.case_id = i.case_id AND i.activity = 'Issue Invoice'
+LEFT JOIN order_event_log c ON p.case_id = c.case_id AND c.activity = 'Perform Credit Check'
+WHERE p.activity = 'Receive Payment'
+  AND (i.timestamp IS NULL OR p.timestamp < i.timestamp
+       OR c.timestamp IS NULL OR p.timestamp < c.timestamp);
+```
+
+```sql
+-- 4. Sequence violation: Confirm Shipment or Ship Goods appearing before credit/stock checks
+SELECT e1.case_id, e1.activity AS early_activity, e1.timestamp AS early_ts,
+       e2.activity AS later_control, e2.timestamp AS control_ts
+FROM order_event_log e1
+JOIN order_event_log e2 ON e1.case_id = e2.case_id
+WHERE e1.activity IN ('Confirm Shipment', 'Ship Goods')
+  AND e2.activity IN ('Perform Credit Check', 'Validate Stock')
+  AND e1.timestamp < e2.timestamp
+ORDER BY e1.case_id, e1.timestamp;
+```
+
+```sql
+-- 5. Resource and role analysis for anomalous activities
+SELECT e.case_id, e.activity, e.timestamp, e.resource,
+       r.role, r.department, e.additional_info
+FROM order_event_log e
+JOIN resources r ON e.resource = r.resource_id
+WHERE e.case_id IN (
+    SELECT DISTINCT case_id
+    FROM order_event_log
+    WHERE activity IN ('Ship Goods', 'Confirm Shipment', 'Receive Payment')
+)
+ORDER BY e.case_id, e.timestamp;
+```
+
+```sql
+-- 6. Frequency of early/late indicators in additional_info
+SELECT additional_info, COUNT(*) AS occurrence_count,
+       COUNT(DISTINCT case_id) AS affected_cases
+FROM order_event_log
+WHERE additional_info ILIKE '%early%' 
+   OR additional_info ILIKE '%late%'
+   OR additional_info ILIKE '%attempted%'
+GROUP BY additional_info
+ORDER BY occurrence_count DESC;
+```
+
+```sql
+-- 7. Throughput time and order-value correlation for anomalous vs. normal cases
+WITH case_flags AS (
+  SELECT case_id,
+         BOOL_OR(activity = 'Ship Goods' AND EXISTS (
+           SELECT 1 FROM order_event_log e2
+           WHERE e2.case_id = order_event_log.case_id
+             AND e2.activity IN ('Perform Credit Check','Validate Stock')
+             AND e2.timestamp > order_event_log.timestamp
+         )) AS shipped_before_controls
+  FROM order_event_log
+  GROUP BY case_id
+)
+SELECT o.order_type, o.order_value,
+       f.shipped_before_controls,
+       COUNT(*) AS case_count
+FROM orders o
+JOIN case_flags f ON o.case_id = f.case_id
+GROUP BY o.order_type, o.order_value, f.shipped_before_controls
+ORDER BY f.shipped_before_controls DESC, o.order_value DESC;
+```
+
+These queries allow systematic discovery of missing steps, sequence violations, role involvement, and correlation with order attributes, supporting further root-cause analysis.

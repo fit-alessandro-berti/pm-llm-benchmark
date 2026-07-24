@@ -1,0 +1,117 @@
+**Anomalies in the given POWL model**
+
+The model deviates from the intended sequential flow (R → A → E → P → N → C) in three clear ways:
+
+1. **Loop between Evaluate (E) and Approve (P)**  
+   ```python
+   loop = OperatorPOWL(operator=Operator.LOOP, children=[E, P])
+   ```  
+   In POWL semantics this constructs the pattern “do E, then either exit or do P and repeat.” Consequently the model permits repeated evaluation–approval cycles (E (P E)*). A claim can be evaluated multiple times, approved multiple times, or even re-evaluated after an approval has already occurred. The ideal process expects a single evaluation followed by a single approval.
+
+2. **XOR that can omit customer notification**  
+   ```python
+   xor = OperatorPOWL(operator=Operator.XOR, children=[N, skip])
+   ```  
+   After the loop the process may choose the silent transition instead of N. Notification is therefore optional rather than mandatory.
+
+3. **Partial-order edges that allow premature or concurrent closing**  
+   ```python
+   root = StrictPartialOrder(nodes=[R, A, loop, xor, C])
+   root.order.add_edge(R, A)
+   root.order.add_edge(A, loop)
+   root.order.add_edge(loop, xor)
+   root.order.add_edge(A, C)   # anomalous extra edge
+   ```  
+   There is an explicit edge from A to C and no edge from the XOR (or from the loop) to C. Consequently the model admits executions in which C occurs immediately after A (or concurrently with the loop/XOR), i.e., a claim can be closed without ever having been evaluated, approved or notified.
+
+Taken together the model therefore permits non-compliant traces such as  
+R → A → C,  
+R → A → E → P → E → C (notification skipped and re-evaluation after approval),  
+R → A → E → C, etc.
+
+**Hypotheses explaining the anomalies**
+
+- **Incomplete or evolutionary change of business rules.** A policy may have been introduced that allows re-evaluation after provisional approval (e.g., for high-value or disputed claims). The modeller encoded the new rule as a loop but never removed the old sequential path or added the necessary exit constraints, leaving both behaviours possible.
+
+- **Miscommunication between process owners and IT/modellers.** The claims department may have requested “optional notification for low-severity claims” and “ability to re-open evaluation.” The modeller translated these requests literally into an XOR-with-skip and a LOOP, while the operations team still expected the original linear flow; the two views were never reconciled.
+
+- **Technical artefact of the modelling tool or import process.** The extra edge A → C may be an accidental residual from an earlier draft, a copy-paste error, or an automatic “add all possible orders” option that was left enabled. Likewise the silent transition in the XOR may have been inserted by a default template for optional activities.
+
+- **Missing guard conditions / data-driven constraints.** The modeller intended the loop and the skip to be guarded by claim attributes (amount, type, region, etc.) but never attached the guards in the POWL representation. Consequently the structural model over-approximates the intended behaviour.
+
+- **Legacy system behaviour that was reverse-engineered.** The event log already contained occasional re-approvals and missing notifications; the discovered model simply reflected those observed deviations rather than the normative process.
+
+**Database queries that can test the hypotheses**
+
+All queries operate on the `claim_events` table (joined when needed with `claims`). Activity labels are assumed to match the single-letter abbreviations used in the model; adapt the string literals if the real log uses the full names.
+
+1. **Claims closed without a prior evaluation or approval** (tests the premature-close anomaly)  
+   ```sql
+   SELECT c.claim_id, c.claim_amount, c.claim_type,
+          MAX(CASE WHEN e.activity = 'C' THEN e.timestamp END) AS close_ts
+   FROM claims c
+   JOIN claim_events e ON e.claim_id = c.claim_id
+   GROUP BY c.claim_id, c.claim_amount, c.claim_type
+   HAVING MAX(CASE WHEN e.activity = 'E' THEN 1 ELSE 0 END) = 0
+      OR MAX(CASE WHEN e.activity = 'P' THEN 1 ELSE 0 END) = 0
+      AND MAX(CASE WHEN e.activity = 'C' THEN 1 ELSE 0 END) = 1;
+   ```
+
+2. **Claims that received multiple approvals (or an approval followed by a later evaluation)** (tests the LOOP anomaly)  
+   ```sql
+   SELECT claim_id,
+          COUNT(*) FILTER (WHERE activity = 'P') AS approval_count,
+          COUNT(*) FILTER (WHERE activity = 'E') AS evaluation_count,
+          MIN(timestamp) FILTER (WHERE activity = 'P') AS first_approval,
+          MAX(timestamp) FILTER (WHERE activity = 'E') AS last_evaluation
+   FROM claim_events
+   GROUP BY claim_id
+   HAVING COUNT(*) FILTER (WHERE activity = 'P') > 1
+       OR MAX(timestamp) FILTER (WHERE activity = 'E')
+          > MIN(timestamp) FILTER (WHERE activity = 'P');
+   ```
+
+3. **Claims closed without a notification event** (tests the skippable N)  
+   ```sql
+   SELECT c.claim_id, c.submission_date, c.claim_type
+   FROM claims c
+   WHERE EXISTS (SELECT 1 FROM claim_events e
+                 WHERE e.claim_id = c.claim_id AND e.activity = 'C')
+     AND NOT EXISTS (SELECT 1 FROM claim_events e
+                     WHERE e.claim_id = c.claim_id AND e.activity = 'N');
+   ```
+
+4. **Frequency and correlation of the anomalies with claim attributes** (helps distinguish “rule change” vs. “tool error”)  
+   ```sql
+   SELECT c.claim_type,
+          COUNT(*) AS total_claims,
+          COUNT(*) FILTER (WHERE NOT EXISTS (
+              SELECT 1 FROM claim_events e2
+              WHERE e2.claim_id = c.claim_id AND e2.activity = 'N')) AS no_notification,
+          COUNT(*) FILTER (WHERE (
+              SELECT COUNT(*) FROM claim_events e3
+              WHERE e3.claim_id = c.claim_id AND e3.activity = 'P') > 1) AS multi_approval
+   FROM claims c
+   GROUP BY c.claim_type
+   ORDER BY total_claims DESC;
+   ```
+
+5. **Order-violation check (C appears before the last E/P)**  
+   ```sql
+   SELECT claim_id
+   FROM claim_events
+   GROUP BY claim_id
+   HAVING MAX(CASE WHEN activity = 'C' THEN timestamp END)
+        < GREATEST(
+              MAX(CASE WHEN activity = 'E' THEN timestamp END),
+              MAX(CASE WHEN activity = 'P' THEN timestamp END)
+          );
+   ```
+
+Running the above queries on the real event data will show:
+
+- whether the anomalous paths actually occur,
+- how frequently they occur,
+- whether they are concentrated on particular claim types, amounts or regions (supporting a “business-rule change” hypothesis), or appear uniformly / randomly (supporting a modelling-tool or data-quality hypothesis).
+
+If the anomalies are rare or absent from the log, the POWL model is simply an over-approximation; if they are systematic, the underlying process (or the system that records it) truly permits the deviant behaviour and the model correctly reflects reality.

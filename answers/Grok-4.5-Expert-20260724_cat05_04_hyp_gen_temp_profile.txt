@@ -1,0 +1,124 @@
+**Anomalies in the temporal profile**
+
+- Receive → Approve (`R`→`P`): average ~25 hours with an extremely tight standard deviation of only 1 hour.  
+- Approve → Notify (`P`→`N`): average 7 days with a large standard deviation of 2 days.  
+- Assign → Close (`A`→`C`): average only 2 hours.  
+- Evaluate → Notify (`E`→`N`): average only 5 minutes with a 1-minute standard deviation.  
+
+**Hypotheses**
+
+- The near-constant interval from Receive to Approve suggests either a hard-coded batch schedule or an automated approval rule that fires at a fixed offset after receipt, independent of actual evaluation effort.  
+- The long and highly variable lag from Approve to Notify points to a backlog in the notification queue, intermittent resource shortages, or a manual step that is frequently postponed.  
+- A 2-hour average from Assign to Close implies that a non-negligible subset of claims is closed without traversing Evaluate or Approve, possibly because of early rejection rules, data-quality failures, or operator shortcuts.  
+- A 5-minute Evaluate-to-Notify transition is unrealistically short for any meaningful human review and is therefore likely produced by an automated path that skips intermediate checks or by event timestamps that are written out of order.
+
+**Verification queries (PostgreSQL)**
+
+```sql
+-- 1. Claims whose Receive-to-Approve interval falls outside ±2 σ of the profile
+WITH ordered AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity = 'R' THEN timestamp END) AS r_ts,
+         MIN(CASE WHEN activity = 'P' THEN timestamp END) AS p_ts
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       EXTRACT(EPOCH FROM (p_ts - r_ts)) AS seconds_r_to_p
+FROM ordered
+WHERE p_ts IS NOT NULL
+  AND ABS(EXTRACT(EPOCH FROM (p_ts - r_ts)) - 90000) > 2 * 3600;
+```
+
+```sql
+-- 2. Claims with Approve-to-Notify lag > 9 days (profile mean + 1 σ)
+WITH ordered AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity = 'P' THEN timestamp END) AS p_ts,
+         MIN(CASE WHEN activity = 'N' THEN timestamp END) AS n_ts
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT o.claim_id,
+       c.claim_type,
+       c.customer_id,
+       a.region,
+       EXTRACT(EPOCH FROM (n_ts - p_ts))/86400 AS days_p_to_n
+FROM ordered o
+JOIN claims c ON c.claim_id = o.claim_id
+LEFT JOIN claim_events e ON e.claim_id = o.claim_id AND e.activity = 'A'
+LEFT JOIN adjusters a ON a.adjuster_id = NULLIF(e.resource, '')::INTEGER
+WHERE n_ts IS NOT NULL
+  AND EXTRACT(EPOCH FROM (n_ts - p_ts)) > 604800 + 172800
+ORDER BY days_p_to_n DESC;
+```
+
+```sql
+-- 3. Claims closed within 3 hours of assignment (possible premature closure)
+WITH ordered AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity = 'A' THEN timestamp END) AS a_ts,
+         MIN(CASE WHEN activity = 'C' THEN timestamp END) AS c_ts,
+         BOOL_OR(activity = 'E') AS has_evaluate,
+         BOOL_OR(activity = 'P') AS has_approve
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       EXTRACT(EPOCH FROM (c_ts - a_ts))/3600 AS hours_a_to_c,
+       has_evaluate,
+       has_approve
+FROM ordered
+WHERE c_ts IS NOT NULL
+  AND EXTRACT(EPOCH FROM (c_ts - a_ts)) < 10800
+ORDER BY hours_a_to_c;
+```
+
+```sql
+-- 4. Claims with Evaluate-to-Notify < 10 minutes, joined to resource and claim attributes
+WITH ordered AS (
+  SELECT claim_id,
+         MIN(CASE WHEN activity = 'E' THEN timestamp END) AS e_ts,
+         MIN(CASE WHEN activity = 'N' THEN timestamp END) AS n_ts,
+         MAX(CASE WHEN activity = 'E' THEN resource END) AS eval_resource
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT o.claim_id,
+       c.claim_type,
+       o.eval_resource,
+       EXTRACT(EPOCH FROM (n_ts - e_ts)) AS seconds_e_to_n
+FROM ordered o
+JOIN claims c ON c.claim_id = o.claim_id
+WHERE n_ts IS NOT NULL
+  AND EXTRACT(EPOCH FROM (n_ts - e_ts)) < 600
+ORDER BY seconds_e_to_n;
+```
+
+```sql
+-- 5. Aggregate deviation counts by adjuster / region / claim type
+SELECT a.name AS adjuster,
+       a.region,
+       c.claim_type,
+       COUNT(*) FILTER (WHERE ABS(EXTRACT(EPOCH FROM (p_ts - r_ts)) - 90000) > 2*3600) AS r_p_outliers,
+       COUNT(*) FILTER (WHERE EXTRACT(EPOCH FROM (n_ts - p_ts)) > 604800 + 172800) AS p_n_outliers,
+       COUNT(*) FILTER (WHERE EXTRACT(EPOCH FROM (c_ts - a_ts)) < 10800) AS premature_close
+FROM (
+  SELECT claim_id,
+         MIN(CASE WHEN activity = 'R' THEN timestamp END) AS r_ts,
+         MIN(CASE WHEN activity = 'A' THEN timestamp END) AS a_ts,
+         MIN(CASE WHEN activity = 'P' THEN timestamp END) AS p_ts,
+         MIN(CASE WHEN activity = 'N' THEN timestamp END) AS n_ts,
+         MIN(CASE WHEN activity = 'C' THEN timestamp END) AS c_ts,
+         MAX(CASE WHEN activity = 'A' THEN resource END) AS assign_resource
+  FROM claim_events
+  GROUP BY claim_id
+) t
+JOIN claims c ON c.claim_id = t.claim_id
+LEFT JOIN adjusters a ON a.adjuster_id = NULLIF(t.assign_resource, '')::INTEGER
+GROUP BY a.name, a.region, c.claim_type
+HAVING COUNT(*) FILTER (WHERE ABS(EXTRACT(EPOCH FROM (p_ts - r_ts)) - 90000) > 2*3600) > 0
+    OR COUNT(*) FILTER (WHERE EXTRACT(EPOCH FROM (n_ts - p_ts)) > 604800 + 172800) > 0
+    OR COUNT(*) FILTER (WHERE EXTRACT(EPOCH FROM (c_ts - a_ts)) < 10800) > 0
+ORDER BY r_p_outliers + p_n_outliers + premature_close DESC;
+```
