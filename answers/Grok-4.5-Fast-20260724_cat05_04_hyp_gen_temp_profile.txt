@@ -1,0 +1,117 @@
+**Anomalies in the temporal profile model**
+
+The temporal profile shows several notable irregularities in average times and standard deviations between activity pairs:
+
+- **R → P**: Average ~25 hours with an extremely low standard deviation (1 hour). This suggests an unusually rigid and consistent interval that is difficult to explain by normal variation in claim processing.
+- **P → N**: Average of 7 days with a high standard deviation of 2 days. The combination of a very long mean delay and large variance indicates highly inconsistent notification timing after approval.
+- **A → C**: Average of only 2 hours. This is short relative to the full intended sequence that normally includes evaluation and approval steps between assignment and closure.
+- **E → N**: Average of only 5 minutes with a very small standard deviation (1 minute). The transition is unrealistically rapid for a process that typically requires additional review or preparation before customer notification.
+- Secondary observations include the relatively tight window from R → A (1 hour ± 10 min) contrasted with much larger spreads elsewhere, and the moderate but still variable E → C interval.
+
+These patterns collectively deviate from what would be expected in a stable, sequential claims-handling process.
+
+**Hypotheses for the observed anomalies**
+
+- The tight R → P interval may result from automated or batch-scheduled approval rules that fire on a fixed cadence rather than on completion of evaluation, or from system-generated timestamps that do not reflect actual human decision time.
+- The long and highly variable P → N delay could stem from backlog in the notification queue, resource constraints on the notification team, dependence on external systems (e.g., mail or portal generation), or manual hand-offs that accumulate waiting time.
+- Short A → C times may indicate premature closure of certain claims (for example, low-value or straightforward cases that skip evaluation/approval), data-entry errors that record close events too early, or parallel processing paths not captured in the model.
+- Extremely rapid E → N transitions suggest either fully automated notification immediately after evaluation, missing intermediate validation steps, or logging of both events by the same system action within a short window.
+- Overall variability may also be driven by differences in claim type, adjuster workload, regional staffing, or intermittent system outages that affect only certain activity pairs.
+
+**Verification approaches using SQL**
+
+The following queries can be run against the `claim_events` table (joined where useful to `claims` or `adjusters`) to surface concrete instances and correlate anomalies with other attributes.
+
+1. Claims with R-to-P intervals outside the observed profile range (e.g., more than 2–3 standard deviations from the mean):
+
+```sql
+WITH ordered AS (
+  SELECT claim_id,
+         MAX(CASE WHEN activity = 'R' THEN timestamp END) AS r_ts,
+         MAX(CASE WHEN activity = 'P' THEN timestamp END) AS p_ts
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       EXTRACT(EPOCH FROM (p_ts - r_ts)) AS seconds_r_to_p
+FROM ordered
+WHERE p_ts IS NOT NULL AND r_ts IS NOT NULL
+  AND ABS(EXTRACT(EPOCH FROM (p_ts - r_ts)) - 90000) > 3 * 3600
+ORDER BY seconds_r_to_p;
+```
+
+2. Claims exhibiting long P-to-N delays, optionally joined to claim attributes:
+
+```sql
+WITH ordered AS (
+  SELECT claim_id,
+         MAX(CASE WHEN activity = 'P' THEN timestamp END) AS p_ts,
+         MAX(CASE WHEN activity = 'N' THEN timestamp END) AS n_ts
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT o.claim_id,
+       c.claim_type,
+       c.claim_amount,
+       EXTRACT(EPOCH FROM (o.n_ts - o.p_ts))/86400.0 AS days_p_to_n
+FROM ordered o
+JOIN claims c ON c.claim_id = o.claim_id
+WHERE o.n_ts IS NOT NULL AND o.p_ts IS NOT NULL
+  AND EXTRACT(EPOCH FROM (o.n_ts - o.p_ts)) > 604800 + 2 * 172800
+ORDER BY days_p_to_n DESC;
+```
+
+3. Claims closed shortly after assignment (possible premature closure):
+
+```sql
+WITH ordered AS (
+  SELECT claim_id,
+         MAX(CASE WHEN activity = 'A' THEN timestamp END) AS a_ts,
+         MAX(CASE WHEN activity = 'C' THEN timestamp END) AS c_ts,
+         COUNT(DISTINCT activity) AS distinct_activities
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT claim_id,
+       EXTRACT(EPOCH FROM (c_ts - a_ts)) AS seconds_a_to_c,
+       distinct_activities
+FROM ordered
+WHERE c_ts IS NOT NULL AND a_ts IS NOT NULL
+  AND EXTRACT(EPOCH FROM (c_ts - a_ts)) < 7200 + 3600
+  AND distinct_activities < 4   -- fewer than expected intermediate steps
+ORDER BY seconds_a_to_c;
+```
+
+4. Rapid E-to-N transitions and the resources involved:
+
+```sql
+SELECT e1.claim_id,
+       e1.resource AS eval_resource,
+       e2.resource AS notify_resource,
+       EXTRACT(EPOCH FROM (e2.timestamp - e1.timestamp)) AS seconds_e_to_n
+FROM claim_events e1
+JOIN claim_events e2 ON e1.claim_id = e2.claim_id
+WHERE e1.activity = 'E' AND e2.activity = 'N'
+  AND e2.timestamp > e1.timestamp
+  AND EXTRACT(EPOCH FROM (e2.timestamp - e1.timestamp)) < 300 + 3 * 60
+ORDER BY seconds_e_to_n;
+```
+
+5. Correlation of anomalous intervals with adjuster or region (example for P-to-N):
+
+```sql
+SELECT a.name, a.region, a.specialization,
+       COUNT(*) AS anomaly_count,
+       AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)))/86400.0 AS avg_days
+FROM claim_events p
+JOIN claim_events n ON p.claim_id = n.claim_id AND n.activity = 'N'
+JOIN claims c ON c.claim_id = p.claim_id
+LEFT JOIN adjusters a ON a.adjuster_id = CAST(p.resource AS INTEGER)  -- assuming resource holds adjuster_id
+WHERE p.activity = 'P'
+  AND EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) > 604800
+GROUP BY a.name, a.region, a.specialization
+HAVING COUNT(*) > 5
+ORDER BY avg_days DESC;
+```
+
+These queries isolate outlier claims, quantify the magnitude of deviations, and allow cross-checking against claim type, amount, adjuster, region, or resource to determine whether the anomalies are systemic, localized, or artifactual.

@@ -1,0 +1,196 @@
+**Anomalies and undesirable behaviors identified in the event log**
+
+Comparing the observed traces against the assumed normal sequence  
+(Register Order → Perform Credit Check → Validate Stock → Confirm Shipment → Ship Goods → Issue Invoice → Receive Payment):
+
+- **Case 1002**  
+  - Confirm Shipment and Ship Goods occur *before* Perform Credit Check and Validate Stock.  
+  - Credit check is performed after goods have already been shipped.  
+  - This is a clear process-order violation (shipment before risk/credit assessment and stock validation).
+
+- **Case 1003**  
+  - Ship Goods occurs before Confirm Shipment (and before Validate Stock is recorded at all).  
+  - Confirm Shipment appears *after* Ship Goods and Issue Invoice, flagged with `late_confirmation=Y`.  
+  - Missing Validate Stock activity entirely.  
+  - Sequence is severely scrambled relative to the expected flow.
+
+- **Case 1004**  
+  - Receive Payment occurs almost immediately after Register Order and *before* Issue Invoice.  
+  - Issue Invoice follows payment (inverted finance sequence).  
+  - Confirm Shipment has `shipment_scheduled=N` yet Ship Goods still occurs.  
+  - Missing Perform Credit Check and Validate Stock entirely.  
+  - Payment is received without an invoice having been issued first.
+
+- **Cross-case observations**  
+  - Several cases skip mandatory control steps (credit check, stock validation).  
+  - Activities that should be strictly sequential are interleaved or reversed.  
+  - `additional_info` flags (`attempted_early=Y`, `late_confirmation=Y`, `shipment_scheduled=N`) explicitly signal deviations.  
+  - Resource usage spans multiple departments with no obvious enforcement of hand-off rules.
+
+These patterns indicate process non-compliance, potential control failures, and risk exposure (shipping without credit approval, shipping without stock confirmation, receiving payment without invoicing, etc.).
+
+**Hypotheses for why the anomalies occur**
+
+1. **System / workflow-engine failures**  
+   - Missing or incorrectly configured sequence constraints / gateways in the BPM system.  
+   - Race conditions or concurrent task execution allowed by the platform.  
+   - Incomplete case data leading the system to skip optional/required steps.
+
+2. **Policy / control design gaps**  
+   - Credit-check and stock-validation steps are marked optional or can be bypassed for certain order types (priority/high-value).  
+   - No hard system block preventing shipment before credit approval or stock confirmation.  
+   - Invoice/payment sequence not enforced (e.g., pre-payments or deposits allowed without formal invoicing).
+
+3. **Human / training / organizational issues**  
+   - Staff (especially Logistics and Warehouse) performing activities out of sequence under time pressure.  
+   - Insufficient training on mandatory order of steps.  
+   - Workarounds used when upstream tasks are delayed (e.g., shipping first, confirming later).  
+   - Role confusion or lack of segregation of duties (same or related resources acting across control points).
+
+4. **Data-quality / logging problems**  
+   - Events logged with incorrect timestamps or out of chronological order.  
+   - Activities performed but not recorded (or recorded under the wrong case).  
+   - Manual data entry errors producing the observed sequence.
+
+5. **Business exceptions not modelled**  
+   - Priority orders, advance payments, or special customer agreements that legitimately alter the sequence but are not reflected in the “normal” process model.  
+   - Partial automation (some steps system-driven, others manual) creating inconsistent traces.
+
+**Proposed SQL queries to investigate the hypotheses**
+
+The queries below operate on the three given tables and are designed to surface frequency, patterns, resource involvement, and quantitative impact of the anomalies. They can be run as-is or adapted with date filters, additional joins, etc.
+
+```sql
+-- 1. Detect cases where Ship Goods occurs before Perform Credit Check
+SELECT oel1.case_id,
+       oel1.timestamp AS ship_ts,
+       oel2.timestamp AS credit_ts,
+       oel1.resource  AS ship_resource,
+       oel2.resource  AS credit_resource
+FROM   order_event_log oel1
+JOIN   order_event_log oel2
+       ON oel1.case_id = oel2.case_id
+WHERE  oel1.activity = 'Ship Goods'
+  AND  oel2.activity = 'Perform Credit Check'
+  AND  oel1.timestamp < oel2.timestamp
+ORDER  BY oel1.case_id;
+```
+
+```sql
+-- 2. Detect cases where Ship Goods occurs before Confirm Shipment
+SELECT oel1.case_id,
+       oel1.timestamp AS ship_ts,
+       oel2.timestamp AS confirm_ts,
+       oel1.additional_info AS ship_info,
+       oel2.additional_info AS confirm_info
+FROM   order_event_log oel1
+JOIN   order_event_log oel2
+       ON oel1.case_id = oel2.case_id
+WHERE  oel1.activity = 'Ship Goods'
+  AND  oel2.activity = 'Confirm Shipment'
+  AND  oel1.timestamp < oel2.timestamp
+ORDER  BY oel1.case_id;
+```
+
+```sql
+-- 3. Cases missing mandatory control activities (Credit Check or Validate Stock)
+SELECT o.case_id,
+       o.order_type,
+       o.order_value,
+       COUNT(CASE WHEN oel.activity = 'Perform Credit Check' THEN 1 END) AS credit_cnt,
+       COUNT(CASE WHEN oel.activity = 'Validate Stock' THEN 1 END) AS stock_cnt
+FROM   orders o
+LEFT JOIN order_event_log oel ON o.case_id = oel.case_id
+GROUP  BY o.case_id, o.order_type, o.order_value
+HAVING COUNT(CASE WHEN oel.activity = 'Perform Credit Check' THEN 1 END) = 0
+    OR COUNT(CASE WHEN oel.activity = 'Validate Stock' THEN 1 END) = 0
+ORDER  BY o.order_value DESC;
+```
+
+```sql
+-- 4. Payment received before Invoice issued
+SELECT oel1.case_id,
+       oel1.timestamp AS payment_ts,
+       oel2.timestamp AS invoice_ts,
+       oel1.additional_info AS payment_info,
+       o.order_value
+FROM   order_event_log oel1
+JOIN   order_event_log oel2 ON oel1.case_id = oel2.case_id
+JOIN   orders o ON oel1.case_id = o.case_id
+WHERE  oel1.activity = 'Receive Payment'
+  AND  oel2.activity = 'Issue Invoice'
+  AND  oel1.timestamp < oel2.timestamp
+ORDER  BY oel1.case_id;
+```
+
+```sql
+-- 5. Resource / role involvement in anomalous shipments (before credit check)
+SELECT r.role,
+       r.department,
+       oel.resource,
+       COUNT(*) AS anomaly_count
+FROM   order_event_log oel
+JOIN   resources r ON oel.resource = r.resource_id
+WHERE  oel.activity = 'Ship Goods'
+  AND  EXISTS (
+         SELECT 1
+         FROM   order_event_log oel2
+         WHERE  oel2.case_id = oel.case_id
+           AND  oel2.activity = 'Perform Credit Check'
+           AND  oel.timestamp < oel2.timestamp
+       )
+GROUP  BY r.role, r.department, oel.resource
+ORDER  BY anomaly_count DESC;
+```
+
+```sql
+-- 6. Overall activity sequence frequencies (to quantify deviation from the happy path)
+WITH ordered_events AS (
+  SELECT case_id,
+         activity,
+         ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS seq
+  FROM   order_event_log
+)
+SELECT STRING_AGG(activity, ' → ' ORDER BY seq) AS observed_path,
+       COUNT(*) AS case_count
+FROM   ordered_events
+GROUP  BY case_id
+ORDER  BY case_count DESC;
+```
+
+```sql
+-- 7. Cases with explicit deviation flags in additional_info
+SELECT case_id,
+       activity,
+       timestamp,
+       resource,
+       additional_info
+FROM   order_event_log
+WHERE  additional_info ILIKE '%early%'
+   OR  additional_info ILIKE '%late%'
+   OR  additional_info ILIKE '%scheduled=N%'
+ORDER  BY case_id, timestamp;
+```
+
+```sql
+-- 8. Average order value and customer impact of anomalous cases
+SELECT CASE
+         WHEN EXISTS (SELECT 1 FROM order_event_log e2
+                      WHERE e2.case_id = o.case_id
+                        AND e2.activity = 'Ship Goods'
+                        AND EXISTS (SELECT 1 FROM order_event_log e3
+                                    WHERE e3.case_id = o.case_id
+                                      AND e3.activity = 'Perform Credit Check'
+                                      AND e2.timestamp < e3.timestamp))
+         THEN 'Shipped before Credit Check'
+         ELSE 'Other / Compliant'
+       END AS anomaly_type,
+       COUNT(*) AS cases,
+       ROUND(AVG(o.order_value), 2) AS avg_order_value,
+       SUM(o.order_value) AS total_value
+FROM   orders o
+GROUP  BY 1
+ORDER  BY total_value DESC;
+```
+
+These queries provide concrete evidence for the frequency, financial exposure, responsible roles, and exact temporal violations, enabling prioritisation of root-cause analysis and corrective actions (process redesign, system constraints, training, or exception handling).
