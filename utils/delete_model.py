@@ -24,7 +24,7 @@ def do_deletion(base_path, original_name):
 if __name__ == "__main__":
     chdir_repo_root()
 
-    original_name = "qwen3.635b-a3b_"
+    original_name = "x-aigrok-4.5_"
 
     if not original_name.endswith("_"):
         raise Exception("original_name must terminate with _")
