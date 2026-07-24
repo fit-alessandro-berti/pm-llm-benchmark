@@ -1,0 +1,398 @@
+# Process Mining Analysis: Order-to-Cash Event Log Anomalies
+
+## Part 1: Anomaly Identification
+
+### Reference Model
+The normative sequence is:
+`Register Order  Perform Credit Check  Validate Stock  Confirm Shipment  Ship Goods  Issue Invoice  Receive Payment`
+
+This ordering encodes **control objectives**, not just convenience:
+- Credit Check *before* fulfillment protects against non-payment.
+- Validate Stock *before* Confirm Shipment prevents promising unavailable goods.
+- Invoice *before* Payment guarantees a documented, reconcilable receivable.
+
+### Case-by-Case Conformance
+
+| Case | Observed Trace | Verdict |
+|------|----------------|---------|
+| 1001 | Register  Credit  Stock  Confirm  Ship  Invoice  Payment | **Conformant** (happy path) |
+| 1002 | Register  **Confirm  Ship**  Credit  Stock  Invoice  Payment | Severe: fulfillment before financial/inventory control |
+| 1003 | Register  Credit  **Ship**  Invoice  **Confirm**  Payment | Severe: missing Validate Stock; shipment confirmed *after* goods left |
+| 1004 | Register  **Payment  Invoice**  Confirm  Ship | Severe: missing Credit Check **and** Validate Stock; payment before invoice; no Receive Payment closure after shipment |
+
+### Detailed Anomaly Catalogue
+
+**A1 — Fulfillment precedes credit assessment (Case 1002).**
+Goods shipped at 08:40; credit check completed 09:10 — 30 minutes *after* the truck left. The credit score returned was 650, the lowest in the log. This is the textbook definition of an ineffective control: the check occurred, but too late to influence the decision it was designed to govern. Note the order is `priority` type — suggesting expedite pressure may be the driver.
+
+**B1 — Skipped Validate Stock (Cases 1003, 1004).**
+Goods were shipped with no recorded stock verification. Either the activity happened outside the system (invisible work), or shipment proceeded on unverified availability — risking partial shipments, backorders, and downstream credit notes.
+
+**B2 — Skipped Perform Credit Check (Case 1004).**
+The **highest-value order in the log (3,000.00)** received no credit assessment. Value-based risk exposure is inversely correlated with control application here — the opposite of what a risk-based policy would produce.
+
+**C1 — "Confirm Shipment" degenerated into a rubber stamp (Cases 1003, 1004).**
+- Case 1003: Confirm Shipment logged at 09:45, 35 minutes *after* Ship Goods at 09:10. The `additional_info` literally records `late_confirmation=Y` — the system captured its own violation.
+- Case 1004: `shipment_scheduled=N`, yet Ship Goods executed 25 minutes later. A negative confirmation did not block fulfillment.
+
+This is the most diagnostically interesting pattern: the control activity is being executed *retroactively* to satisfy a completeness check, not *prospectively* to make a decision.
+
+**D1 — Payment before Invoice (Case 1004).**
+Payment recorded 09:05; invoice issued 09:20. Cash arrived against no receivable. Likely prepayment/deposit being mis-mapped to the `Receive Payment` activity, but if genuine it creates an unapplied-cash reconciliation problem.
+
+**D2 — Incomplete case (Case 1004).**
+Trace ends at Ship Goods. Whether the 3,000.00 at event 22 was full settlement or a deposit is unknowable from the log — an open exposure of up to 3,000.00 with no credit check behind it.
+
+**E1 — Compressed cycle times signal bypass, not efficiency.**
+Case 1004: Register Order 09:00  Receive Payment 09:05. Five minutes for order intake plus cash receipt. Case 1002: Register 08:20  Ship 08:40, twenty minutes to fulfillment. These durations are too short for genuine review; speed here is a *symptom* of control omission.
+
+**F1 — Segregation-of-duties concern (weak signal).**
+`FinanceTeam_02` (Cashier) performs Receive Payment across all four cases — a single point of dependency and, if the same individual can also issue invoices, a fraud-relevant combination. `LogisticsMgr_2` appears in both retroactive-confirmation cases (1002, 1003). Worth testing at scale.
+
+---
+
+## Part 2: Hypotheses
+
+### H1 — "Priority/expedite" orders systematically bypass gates
+*Mechanism:* An expedite path (or informal pressure) lets Sales/Logistics trigger fulfillment before Finance clears the order. Case 1002 (`priority`, shipped in 20 min) fits.
+*Prediction:* Violation rate correlates with `order_type = 'priority'`; violations cluster on specific sales resources.
+
+### H2 — Retroactive data entry ("backfilling") is normalized practice
+*Mechanism:* Staff perform work in the physical world in a different order than the system expects, then enter events later to close the case. The `late_confirmation=Y` annotation suggests staff are aware and documenting it.
+*Prediction:* Out-of-order events show unnaturally short inter-event gaps or batch-clustered timestamps (many events by one resource within seconds/minutes), and `additional_info` contains self-flagging keywords.
+*Note:* This makes the log's timestamps unreliable as a record of *when work occurred* — a data-quality problem that must be resolved before drawing process conclusions.
+
+### H3 — The system lacks hard blocking constraints (no enforced gating)
+*Mechanism:* Activities are recordable in any order; sequence is advisory, enforced only by training and habit.
+*Prediction:* Violations are diffuse across resources and time rather than concentrated — the signature of an absent control rather than a rogue actor. `shipment_scheduled=N` followed by Ship Goods is strong evidence: even an explicit negative did not stop the flow.
+
+### H4 — Activity labels are overloaded / process is mis-modeled
+*Mechanism:* `Receive Payment` may cover prepayments, deposits, and settlement. `Validate Stock` may be automated (ERP availability check) and simply not logged for some channels. If so, some "anomalies" are modelling artifacts, not misbehavior.
+*Prediction:* "Payment-before-invoice" cases share a channel or customer segment (e.g., prepay customers); missing `Validate Stock` correlates with a specific channel or resource group.
+
+### H5 — Role/authorization drift
+*Mechanism:* Activities executed by resources outside the owning department, indicating workarounds or shared credentials.
+*Prediction:* Joining `resources` reveals department mismatches (e.g., non-Finance performing Credit Check).
+
+### H6 — Capacity pressure and load-shedding
+*Mechanism:* When Finance queues are long, downstream teams skip the gate to protect delivery SLAs.
+*Prediction:* Violation rate rises with concurrent case volume and during specific hours/shifts; Credit Check waiting times spike on violation days.
+
+### H7 — Training/tenure gap
+*Mechanism:* Newer or occasional resources deviate more.
+*Prediction:* Violations concentrate in resources with low event volume.
+
+### H8 — Customer-specific side agreements
+*Mechanism:* Certain customers have negotiated credit-check waivers that exist informally rather than as a modelled variant.
+*Prediction:* Skipped-credit-check cases cluster on a small set of `customer_id`s.
+
+---
+
+## Part 3: Investigative SQL
+
+### 3.1 Foundation: build a reusable conformance view
+
+```sql
+CREATE OR REPLACE VIEW case_traces AS
+SELECT
+    e.case_id,
+    o.order_type,
+    o.order_value,
+    o.customer_id,
+    STRING_AGG(e.activity, ' -> ' ORDER BY e.timestamp, e.event_id) AS trace,
+    COUNT(*)                                          AS event_count,
+    COUNT(DISTINCT e.activity)                        AS distinct_activities,
+    MIN(e.timestamp)                                  AS case_start,
+    MAX(e.timestamp)                                  AS case_end,
+    MAX(e.timestamp) - MIN(e.timestamp)               AS cycle_time
+FROM order_event_log e
+JOIN orders o ON o.case_id = e.case_id
+GROUP BY e.case_id, o.order_type, o.order_value, o.customer_id;
+```
+
+**Variant frequency** — how much of the volume is actually conformant?
+
+```sql
+SELECT
+    trace,
+    COUNT(*)                                         AS cases,
+    ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 2) AS pct_of_cases,
+    ROUND(AVG(order_value), 2)                        AS avg_value,
+    ROUND(AVG(EXTRACT(EPOCH FROM cycle_time)/3600), 2) AS avg_cycle_hours
+FROM case_traces
+GROUP BY trace
+ORDER BY cases DESC;
+```
+
+### 3.2 Pivot each case to first-occurrence timestamps
+
+This single query powers most ordering tests.
+
+```sql
+CREATE OR REPLACE VIEW case_milestones AS
+SELECT
+    case_id,
+    MIN(CASE WHEN activity = 'Register Order'       THEN timestamp END) AS t_register,
+    MIN(CASE WHEN activity = 'Perform Credit Check' THEN timestamp END) AS t_credit,
+    MIN(CASE WHEN activity = 'Validate Stock'       THEN timestamp END) AS t_stock,
+    MIN(CASE WHEN activity = 'Confirm Shipment'     THEN timestamp END) AS t_confirm,
+    MIN(CASE WHEN activity = 'Ship Goods'           THEN timestamp END) AS t_ship,
+    MIN(CASE WHEN activity = 'Issue Invoice'        THEN timestamp END) AS t_invoice,
+    MIN(CASE WHEN activity = 'Receive Payment'      THEN timestamp END) AS t_payment
+FROM order_event_log
+GROUP BY case_id;
+```
+
+### 3.3 Violation scorecard (tests H1, H3, H8 simultaneously)
+
+```sql
+WITH flags AS (
+    SELECT
+        m.case_id, o.order_type, o.order_value, o.customer_id,
+        (m.t_credit  IS NULL)                                   AS no_credit_check,
+        (m.t_stock   IS NULL)                                   AS no_stock_check,
+        (m.t_ship    IS NOT NULL AND m.t_credit  > m.t_ship)    AS credit_after_ship,
+        (m.t_confirm IS NOT NULL AND m.t_ship    < m.t_confirm) AS ship_before_confirm,
+        (m.t_stock   IS NOT NULL AND m.t_confirm < m.t_stock)   AS confirm_before_stock,
+        (m.t_payment IS NOT NULL AND m.t_invoice IS NOT NULL
+                                 AND m.t_payment < m.t_invoice) AS payment_before_invoice,
+        (m.t_ship    IS NOT NULL AND m.t_payment IS NULL)       AS shipped_unpaid,
+        (m.t_invoice IS NULL AND m.t_ship IS NOT NULL)           AS shipped_uninvoiced
+    FROM case_milestones m
+    JOIN orders o ON o.case_id = m.case_id
+)
+SELECT *,
+       (no_credit_check::int + no_stock_check::int + credit_after_ship::int
+      + ship_before_confirm::int + confirm_before_stock::int
+      + payment_before_invoice::int + shipped_unpaid::int
+      + shipped_uninvoiced::int) AS violation_score
+FROM flags
+WHERE violation_score > 0
+ORDER BY violation_score DESC, order_value DESC;
+```
+
+**Risk exposure roll-up** — quantify the control gap in currency, which is what management will act on:
+
+```sql
+SELECT
+    order_type,
+    COUNT(*)                                                    AS cases,
+    SUM(CASE WHEN t_credit IS NULL THEN 1 ELSE 0 END)           AS unchecked_cases,
+    SUM(CASE WHEN t_credit IS NULL THEN o.order_value ELSE 0 END) AS unchecked_value,
+    SUM(CASE WHEN t_credit IS NULL OR t_credit > t_ship
+             THEN o.order_value ELSE 0 END)                     AS value_shipped_without_effective_check
+FROM case_milestones m
+JOIN orders o USING (case_id)
+GROUP BY order_type
+ORDER BY value_shipped_without_effective_check DESC;
+```
+
+### 3.4 Direct-succession matrix — discover the real process
+
+```sql
+WITH seq AS (
+    SELECT case_id, activity, timestamp,
+           LEAD(activity)  OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS next_activity,
+           LEAD(timestamp) OVER (PARTITION BY case_id ORDER BY timestamp, event_id) AS next_ts
+    FROM order_event_log
+)
+SELECT activity AS from_act, next_activity AS to_act,
+       COUNT(*) AS transitions,
+       ROUND(AVG(EXTRACT(EPOCH FROM (next_ts - timestamp))/60), 1) AS avg_gap_minutes,
+       MIN(EXTRACT(EPOCH FROM (next_ts - timestamp))/60)           AS min_gap_minutes
+FROM seq
+WHERE next_activity IS NOT NULL
+GROUP BY activity, next_activity
+ORDER BY transitions DESC;
+```
+
+Edges absent from the reference model are the deviation "hot paths." The `min_gap_minutes` column doubles as an H2 probe — near-zero gaps suggest batch backfilling rather than real work.
+
+### 3.5 Testing H2: retroactive entry and self-flagging
+
+```sql
+-- Explicit admissions in the free-text field
+SELECT activity, resource, additional_info, COUNT(*) AS occurrences
+FROM order_event_log
+WHERE additional_info ~* '(late|retro|backdat|manual|override|exception|attempted_early|scheduled=N|bypass|waiv)'
+GROUP BY activity, resource, additional_info
+ORDER BY occurrences DESC;
+```
+
+```sql
+-- Burst entry: one resource logging many events in a tight window
+WITH gaps AS (
+    SELECT resource, case_id, activity, timestamp,
+           timestamp - LAG(timestamp) OVER (PARTITION BY resource ORDER BY timestamp) AS gap
+    FROM order_event_log
+)
+SELECT resource, DATE(timestamp) AS day,
+       COUNT(*)                                    AS events_in_bursts,
+       COUNT(DISTINCT case_id)                      AS cases_touched
+FROM gaps
+WHERE gap < INTERVAL '2 minutes'
+GROUP BY resource, DATE(timestamp)
+HAVING COUNT(*) >= 3
+ORDER BY events_in_bursts DESC;
+```
+
+The strongest single test of H2: does event_id order diverge from timestamp order? `event_id` reflects insertion sequence; a mismatch is direct evidence of backdating.
+
+```sql
+WITH ranked AS (
+    SELECT case_id, activity, event_id, timestamp,
+           ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY event_id) AS insert_rank,
+           ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY timestamp) AS time_rank
+    FROM order_event_log
+)
+SELECT * FROM ranked
+WHERE insert_rank <> time_rank
+ORDER BY case_id, insert_rank;
+```
+
+### 3.6 Testing H5: role and department conformance
+
+```sql
+WITH expected(activity, expected_dept) AS (
+    VALUES ('Register Order','Sales'), ('Perform Credit Check','Finance'),
+           ('Validate Stock','Logistics'), ('Confirm Shipment','Logistics'),
+           ('Ship Goods','Logistics'), ('Issue Invoice','Finance'),
+           ('Receive Payment','Finance')
+)
+SELECT e.case_id, e.activity, e.resource, r.role,
+       r.department AS actual_dept, x.expected_dept
+FROM order_event_log e
+JOIN expected  x ON x.activity    = e.activity
+LEFT JOIN resources r ON r.resource_id = e.resource
+WHERE r.department IS DISTINCT FROM x.expected_dept
+ORDER BY e.case_id, e.timestamp;
+```
+
+**Segregation of duties** — same resource on both invoicing and cash receipt:
+
+```sql
+SELECT case_id, resource, STRING_AGG(DISTINCT activity, ', ') AS conflicting_activities
+FROM order_event_log
+WHERE activity IN ('Issue Invoice','Receive Payment')
+GROUP BY case_id, resource
+HAVING COUNT(DISTINCT activity) > 1;
+```
+
+### 3.7 Testing H7 and resource-level attribution
+
+```sql
+WITH viol AS (
+    SELECT case_id,
+           (t_credit IS NULL OR (t_ship IS NOT NULL AND t_credit > t_ship)) AS bad_credit,
+           (t_ship IS NOT NULL AND t_confirm IS NOT NULL AND t_ship < t_confirm) AS bad_confirm
+    FROM case_milestones
+)
+SELECT e.resource, r.role, r.department,
+       COUNT(DISTINCT e.case_id)                                          AS cases_touched,
+       COUNT(DISTINCT CASE WHEN v.bad_credit OR v.bad_confirm
+                           THEN e.case_id END)                            AS violating_cases,
+       ROUND(100.0 * COUNT(DISTINCT CASE WHEN v.bad_credit OR v.bad_confirm
+                                         THEN e.case_id END)
+                   / NULLIF(COUNT(DISTINCT e.case_id),0), 1)              AS pct_violating
+FROM order_event_log e
+JOIN viol v ON v.case_id = e.case_id
+LEFT JOIN resources r ON r.resource_id = e.resource
+GROUP BY e.resource, r.role, r.department
+HAVING COUNT(DISTINCT e.case_id) >= 5
+ORDER BY pct_violating DESC, violating_cases DESC;
+```
+
+Low `cases_touched` combined with high `pct_violating` supports H7 (training); high volume with high rate suggests entrenched local practice or authorization drift.
+
+### 3.8 Testing H6: load pressure
+
+```sql
+WITH hourly AS (
+    SELECT DATE_TRUNC('hour', e.timestamp) AS hr,
+           COUNT(*) AS events,
+           COUNT(DISTINCT e.case_id) AS active_cases
+    FROM order_event_log e
+    GROUP BY 1
+),
+case_hr AS (
+    SELECT m.case_id, DATE_TRUNC('hour', m.t_register) AS hr,
+           (m.t_credit IS NULL OR m.t_credit > m.t_ship) AS bad
+    FROM case_milestones m
+)
+SELECT h.hr, EXTRACT(DOW FROM h.hr) AS day_of_week, h.events, h.active_cases,
+       COUNT(c.case_id)                                            AS cases_started,
+       SUM(c.bad::int)                                             AS violations,
+       ROUND(100.0*SUM(c.bad::int)/NULLIF(COUNT(c.case_id),0),1)   AS pct_violating
+FROM hourly h
+LEFT JOIN case_hr c ON c.hr = h.hr
+GROUP BY h.hr, h.events, h.active_cases
+ORDER BY pct_violating DESC NULLS LAST, h.events DESC;
+```
+
+Also worth measuring: does Credit Check *waiting time* predict bypass?
+
+```sql
+SELECT
+    CASE WHEN t_credit IS NULL THEN 'skipped'
+         WHEN t_credit > t_ship THEN 'after_ship'
+         ELSE 'compliant' END AS credit_status,
+    COUNT(*) AS cases,
+    ROUND(AVG(EXTRACT(EPOCH FROM (t_credit - t_register))/60), 1) AS avg_wait_minutes
+FROM case_milestones
+WHERE t_register IS NOT NULL
+GROUP BY 1;
+```
+
+### 3.9 Testing H4 and H8: is the "anomaly" actually a legitimate variant?
+
+```sql
+-- Do payment-before-invoice cases cluster on specific customers/channels?
+SELECT o.customer_id, o.order_type,
+       COUNT(*) AS total_cases,
+       SUM(CASE WHEN m.t_payment < m.t_invoice THEN 1 ELSE 0 END) AS prepay_like,
+       SUM(CASE WHEN m.t_credit IS NULL THEN 1 ELSE 0 END)        AS no_credit_check,
+       STRING_AGG(DISTINCT SUBSTRING(e.additional_info FROM 'channel=([a-z_]+)'), ',') AS channels
+FROM case_milestones m
+JOIN orders o ON o.case_id = m.case_id
+LEFT JOIN order_event_log e
+       ON e.case_id = m.case_id AND e.activity = 'Register Order'
+GROUP BY o.customer_id, o.order_type
+HAVING SUM(CASE WHEN m.t_payment < m.t_invoice THEN 1 ELSE 0 END) > 0
+    OR SUM(CASE WHEN m.t_credit IS NULL THEN 1 ELSE 0 END) > 0
+ORDER BY no_credit_check DESC, prepay_like DESC;
+```
+
+Concentration on a handful of customers supports H8 (unmodelled side agreements) or H4 (prepay variant). Uniform spread supports H3 (no enforcement).
+
+### 3.10 Payment integrity check
+
+```sql
+SELECT o.case_id, o.order_value,
+       SUM(CAST(SUBSTRING(e.additional_info FROM 'amount=([0-9.]+)') AS NUMERIC)) AS paid,
+       o.order_value - SUM(CAST(SUBSTRING(e.additional_info FROM 'amount=([0-9.]+)') AS NUMERIC)) AS shortfall
+FROM orders o
+LEFT JOIN order_event_log e
+       ON e.case_id = o.case_id AND e.activity = 'Receive Payment'
+GROUP BY o.case_id, o.order_value
+HAVING COALESCE(SUM(CAST(SUBSTRING(e.additional_info FROM 'amount=([0-9.]+)') AS NUMERIC)),0)
+       <> o.order_value
+ORDER BY shortfall DESC NULLS FIRST;
+```
+
+This distinguishes Case 1004's deposit-vs-settlement ambiguity and surfaces partial payments masquerading as complete cases.
+
+---
+
+## Part 4: Interpretation and Recommended Actions
+
+**What the data most likely shows.** Three of four cases deviate, and the deviations are not random noise — they share a signature: **control activities are recorded but positioned so they cannot influence the outcome they govern.** `late_confirmation=Y` and `shipment_scheduled=N` followed by shipment are self-documenting evidence that the system permits, and staff routinely perform, retroactive or ineffective gating. This points primarily to **H3 (no enforced sequencing)** as the enabling condition, with **H1/H6 (expedite and load pressure)** as the motive and **H2 (backfilling)** as the coping mechanism.
+
+**Caveats before acting.** Four cases is far too small to support any conclusion — everything above is hypothesis generation, and the queries exist precisely because the sample cannot settle these questions. Two specific risks: (a) if H2 holds, timestamps record data entry rather than work, so ordering analysis is measuring the wrong thing and the log must be validated against source systems first; (b) if H4 holds, some "violations" are legitimate variants (prepayment, automated stock checks) that belong in an enriched process model rather than a remediation plan. Query 3.5's event_id-vs-timestamp test and query 3.9's clustering test should be run *before* any enforcement change.
+
+**Prioritized actions, contingent on findings:**
+
+1. **Immediate (risk containment).** Run 3.3's exposure roll-up to size the value shipped without effective credit assessment. If material, apply a hard block: `Ship Goods` cannot be recorded unless a completed `Perform Credit Check` with an approved outcome exists at an earlier timestamp.
+2. **Fix the degenerate control.** `Confirm Shipment` with `shipment_scheduled=N` must block fulfillment. Retroactive confirmation should be either rejected or captured as an explicit, approved exception with a reason code — making the exception visible rather than laundering it as conformance.
+3. **Resolve data quality.** If event_id/timestamp mismatches are widespread, introduce separate `work_completed_at` and `recorded_at` fields. Without this, no downstream conformance metric is trustworthy.
+4. **Model the real process.** Legitimate prepayment and automated stock-verification paths should be added as sanctioned variants so that genuine violations stand out instead of drowning in false positives.
+5. **Ongoing monitoring.** Promote 3.3 into a daily dashboard tracking conformance rate, value-at-risk from skipped credit checks, and retroactive-confirmation count — with attribution by resource and order type from 3.7.

@@ -1,0 +1,444 @@
+<think>
+I'm planning to structure the analysis by identifying anomalies in the data, developing hypotheses about what's causing them, and then writing PostgreSQL queries to verify those hypotheses. I need to be careful about how the claim_events and adjusters tables relate to each other—it looks like the connection might be through the resource field matching adjuster names, or possibly through additional_info, so I'll note that assumption as I work through this.
+
+For the verification queries, I'm building a series of CTEs that will extract the first occurrence of each activity per claim, compute transition deltas and z-scores against a baseline profile, then run checks for structural violations like missing intermediate activities, ordering problems, duplicate events, and timestamp anomalies. I'm also planning to look for batch patterns in notifications and correlate findings by claim type, resource, adjuster specialization, and amount bands.
+
+Writing the SQL queries... Now I'm thinking through several validation checks: computing z-scores to flag anomalies in the transition timings, examining the RP pattern for rigid scheduling by looking at the distribution of deltas and checking if events consistently occur at specific times of day, verifying EN transitions happen within seconds or minutes with system resources involved, identifying premature closures where C appears without preceding E or P events, analyzing batching patterns of N events by minute buckets per resource, and correlating claims across adjusters using resource names. I should also investigate missing adjuster links by parsing the additional_info field with regex patterns, and check for duplicate approvals, out-of-order events, and whether PN delays align with business hours or weekends.
+
+I'll structure the final answer with clear headings and include a note on ZETA parameterization. There's also a strong data quality hypothesis worth exploring: timestamps might be recorded at batch upload time (all claim events inserted simultaneously), or timezone misalignment could be causing issues. More importantly, since submission_date is a DATE field, R timestamps might be truncated to midnight, which would artificially create a rigid RP offset when P runs on a nightly batch schedule. I should write a query to verify this hypothesis about the midnight truncation effect.
+
+Now I'm checking the time-of-day distribution for both R and P events to see if there's a pattern that confirms the batch processing theory.
+</think>
+# Temporal Profile Audit — Insurance Claim Handling
+
+## 1. Anomalies Detected in the Temporal Profile
+
+Below, each activity pair is scored by its **coefficient of variation (CV = STDEV / AVG)** and by whether the magnitude of the interval is plausible for the work involved.
+
+| Pair | AVG | STDEV | CV | Observation |
+|---|---|---|---|---|
+| (R, A) | 1 h | 10 min | 0.17 | Plausible, but tight for a manual assignment step — smells like a scheduled/automatic dispatcher. |
+| (R, E) | 24 h | 8 h | 0.33 | Reasonable, used as the "healthy" baseline for comparison. |
+| **(R, P)** | **25 h** | **1 h** | **0.04** | **Anomaly: near-deterministic.** Approval lands at almost exactly the same offset from receipt for every claim, regardless of complexity, amount, or evaluation outcome. Real decision work is never this uniform. |
+| **(A, C)** | **2 h** | **1 h** | 0.50 | **Anomaly: ordering/scope violation.** AssignClose (2 h) is *shorter* than AssignEvaluate implied by RE (~23 h) and far shorter than RP (25 h). Closure cannot legitimately precede evaluation/approval, so this pair must be dominated by a sub-population of short-circuited claims. |
+| **(E, N)** | **5 min** | **1 min** | 0.20 | **Anomaly: too fast and too regular.** Notification is supposed to follow *approval*; here it follows evaluation almost instantly, implying P is skipped or is a no-op rubber stamp. |
+| (E, C) | 1 h | 50 min | 0.83 | High relative dispersion; also inconsistent with (E,N)=5 min + (N,C)=30 min  35 min, so a second, faster closure path exists alongside the modelled one. |
+| **(P, N)** | **7 d** | **2 d** | 0.29 | **Anomaly: extreme absolute delay.** Notification is a low-effort communication step, yet it dominates total cycle time (7 d vs. ~25 h for everything before it). Also internally contradictory with (E,N) = 5 min. |
+| (N, C) | 30 min | 5 min | 0.17 | Very tight — suggests automated closure triggered by the notification event. |
+
+**Cross-pair inconsistencies (arguably the strongest signal):**
+
+- **Additivity is violated.** (R,P)=25 h + (P,N)=7 d  RN  8 d, but (R,E)=24 h + (E,N)=5 min  RN  24 h. Two mutually exclusive populations of claims are being averaged into one model.
+- **Monotonicity is violated.** For the prescribed order RAEPNC, every interval from an earlier activity must be  intervals implied for downstream ones. (A,C)=2 h < (R,P)=25 h breaks this.
+- **Sub-second/single-digit-minute pairs next to multi-day pairs** indicate a mixture of automated and manual/batched execution inside a single "process".
+
+---
+
+## 2. Hypotheses
+
+**H1 — Derived or truncated timestamps create artificial determinism (explains RP, CV = 0.04).**
+The Receive timestamp may be reconstructed from `claims.submission_date` (a DATE, hence midnight), while Approve is written by a nightly batch job at a fixed hour. The near-constant 25 h offset is then an artefact of two clock-aligned events, not of business behaviour.
+
+**H2 — Approval is an automated/bulk rubber stamp.**
+A scheduled job approves everything queued in the last day (auto-approval rule, e.g., below an amount threshold, or a straight-through-processing rule), producing constant latency and near-zero variance.
+
+**H3 — Notification is batched, not event-driven (explains PN = 7 d ± 2 d).**
+A weekly correspondence/print/mail run releases notifications. A weekly cadence produces exactly a ~7-day mean with multi-day spread depending on where in the cycle approval landed. Alternatively: an outbound queue backlog, third-party mail vendor SLA, or a step that waits for a document/signature that is not modelled.
+
+**H4 — Two distinct process variants are pooled.**
+Variant 1 (fast/digital): RAENC within a day, P absent or instantaneous  drives (E,N)=5 min and (E,C)=1 h.
+Variant 2 (regulated/manual): RAEP…7 days…NC  drives (P,N). Averaging them yields a profile that describes neither.
+
+**H5 — Premature or administrative closure (explains AC = 2 h).**
+Some claims are withdrawn, rejected as ineligible, duplicated, or cancelled shortly after assignment, and are closed without E/P. If these are logged with the same `activity='C'` as normal completions, they contaminate the profile.
+
+**H6 — Skipped or missing control steps.**
+EN in 5 minutes suggests the Approve event is either never logged (logging gap in a system component) or is emitted by the same transaction as Evaluate — i.e. the four-eyes/approval control is not actually being exercised.
+
+**H7 — Resource / capacity effects.**
+A small number of adjusters (or a single specialization/region) may hold a queue, producing the long right tail in PN and the wide dispersion in EC. Weekend/holiday effects and shift patterns can also manufacture "7 days" from a 5-business-day cycle.
+
+**H8 — Data quality defects.**
+Backfilled or migrated events inserted with load-time timestamps, timezone mixing (fixed ±k-hour offsets), duplicate events, and out-of-order/negative durations would all distort both mean and STDEV.
+
+**H9 — Stale model.**
+The profile may have been trained on an old period; a process change (new rules engine, outsourcing of notifications) makes it no longer descriptive of current data.
+
+---
+
+## 3. SQL Verification Plan (PostgreSQL)
+
+### 3.0 Reusable foundation: materialise the profile and per-claim intervals
+
+```sql
+-- Reference profile as data, so every check can be parameterised by ZETA.
+CREATE TEMP VIEW temporal_profile AS
+SELECT * FROM (VALUES
+  ('R','A',   3600.0,    600.0),
+  ('R','E',  86400.0,  28800.0),
+  ('R','P',  90000.0,   3600.0),
+  ('A','C',   7200.0,   3600.0),
+  ('E','N',    300.0,     60.0),
+  ('E','C',   3600.0,   3000.0),
+  ('P','N', 604800.0, 172800.0),
+  ('N','C',   1800.0,    300.0)
+) AS t(a1, a2, avg_s, stdev_s);
+
+-- First occurrence of each activity per claim (use MIN for "eventually follows" semantics;
+-- swap to MAX to test sensitivity to rework loops).
+CREATE TEMP VIEW first_evt AS
+SELECT claim_id, activity, MIN(timestamp) AS ts, COUNT(*) AS occurrences
+FROM claim_events
+GROUP BY claim_id, activity;
+
+CREATE TEMP VIEW pair_intervals AS
+SELECT p.a1, p.a2,
+       f1.claim_id,
+       f1.ts AS ts1,
+       f2.ts AS ts2,
+       EXTRACT(EPOCH FROM (f2.ts - f1.ts))            AS delta_s,
+       p.avg_s, p.stdev_s,
+       (EXTRACT(EPOCH FROM (f2.ts - f1.ts)) - p.avg_s)
+         / NULLIF(p.stdev_s, 0)                       AS z
+FROM temporal_profile p
+JOIN first_evt f1 ON f1.activity = p.a1
+JOIN first_evt f2 ON f2.activity = p.a2 AND f2.claim_id = f1.claim_id;
+```
+
+### 3.1 Is the model even descriptive? (Re-derive it from the log)
+
+```sql
+SELECT a1, a2,
+       COUNT(*)                                                   AS n,
+       ROUND(AVG(delta_s))                                        AS emp_avg_s,
+       ROUND(STDDEV_SAMP(delta_s))                                AS emp_stdev_s,
+       ROUND(MIN(delta_s))                                        AS min_s,
+       ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY delta_s))::bigint AS p50,
+       ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY delta_s))::bigint AS p95,
+       ROUND(MAX(delta_s))                                        AS max_s,
+       MAX(avg_s)   AS model_avg_s,
+       MAX(stdev_s) AS model_stdev_s,
+       ROUND(STDDEV_SAMP(delta_s) / NULLIF(AVG(delta_s),0), 3)     AS emp_cv,
+       COUNT(*) FILTER (WHERE delta_s < 0)                         AS negative_durations
+FROM pair_intervals
+GROUP BY a1, a2
+ORDER BY a1, a2;
+```
+*Interpretation:* if `emp_avg_s` / `emp_stdev_s` diverge materially from the model, the profile is stale or mis-fitted (H9); `negative_durations > 0` proves ordering/data defects (H8).
+
+### 3.2 Generic outlier extraction (ZETA-based)
+
+```sql
+-- ZETA = 3 here; vary it (2, 4, 6) to see how outlier counts scale.
+SELECT a1, a2, claim_id, ts1, ts2,
+       ROUND(delta_s)  AS delta_s,
+       ROUND(z::numeric, 2) AS z_score,
+       CASE WHEN z > 0 THEN 'TOO_SLOW' ELSE 'TOO_FAST' END AS direction
+FROM pair_intervals
+WHERE ABS(z) > 3
+ORDER BY ABS(z) DESC
+LIMIT 200;
+
+-- Which claims are systemic offenders across many pairs?
+SELECT claim_id,
+       COUNT(*)                                    AS violating_pairs,
+       STRING_AGG(a1 || '->' || a2, ',' ORDER BY a1, a2) AS pairs,
+       ROUND(MAX(ABS(z))::numeric, 2)              AS worst_z
+FROM pair_intervals
+WHERE ABS(z) > 3
+GROUP BY claim_id
+HAVING COUNT(*) >= 2
+ORDER BY violating_pairs DESC, worst_z DESC;
+```
+
+### 3.3 H1/H2 — Is RP artificially deterministic?
+
+```sql
+-- (a) Dispersion, mode concentration, and rounding signature.
+WITH rp AS (SELECT * FROM pair_intervals WHERE a1='R' AND a2='P')
+SELECT COUNT(*)                                           AS n,
+       COUNT(DISTINCT ROUND(delta_s))                     AS distinct_second_values,
+       COUNT(DISTINCT ROUND(delta_s/60))                  AS distinct_minute_values,
+       ROUND(STDDEV_SAMP(delta_s)/NULLIF(AVG(delta_s),0),4) AS cv,
+       COUNT(*) FILTER (WHERE MOD(delta_s::bigint, 3600) = 0) AS exact_hour_multiples,
+       COUNT(*) FILTER (WHERE MOD(delta_s::bigint,   60) = 0) AS exact_minute_multiples
+FROM rp;
+
+-- (b) Clock alignment: are R and P pinned to fixed times of day?
+SELECT activity,
+       DATE_PART('hour', timestamp)                            AS hh,
+       COUNT(*)                                                AS n,
+       COUNT(*) FILTER (WHERE timestamp::time = TIME '00:00:00') AS midnight_exact,
+       COUNT(*) FILTER (WHERE DATE_PART('second', timestamp) = 0
+                         AND DATE_PART('minute', timestamp) = 0) AS top_of_hour
+FROM claim_events
+WHERE activity IN ('R','P')
+GROUP BY activity, hh
+ORDER BY activity, hh;
+```
+*Interpretation:* if R clusters at `00:00:00` (derived from `submission_date`) and P clusters in one or two hours, the low STDEV is an artefact (H1). A dominant `resource` on P plus tight clustering supports H2.
+
+```sql
+-- (c) Who/what performs P, and does auto-approval track claim_amount?
+SELECT ce.resource,
+       COUNT(*)                                      AS approvals,
+       ROUND(AVG(EXTRACT(EPOCH FROM (ce.timestamp - r.ts)))) AS avg_r_to_p_s,
+       ROUND(STDDEV_SAMP(EXTRACT(EPOCH FROM (ce.timestamp - r.ts)))) AS stdev_r_to_p_s,
+       ROUND(AVG(c.claim_amount), 2)                 AS avg_amount,
+       ROUND(MAX(c.claim_amount), 2)                 AS max_amount
+FROM claim_events ce
+JOIN first_evt r ON r.claim_id = ce.claim_id AND r.activity = 'R'
+JOIN claims   c  ON c.claim_id = ce.claim_id
+WHERE ce.activity = 'P'
+GROUP BY ce.resource
+ORDER BY approvals DESC;
+```
+*A resource with hundreds of approvals, ~0 STDEV and a hard `max_amount` ceiling is an auto-approval rule (H2).*
+
+### 3.4 H3/H7 — Is PN batched or backlogged?
+
+```sql
+-- (a) Distribution of the delay in days + day-of-week signature of N.
+SELECT FLOOR(delta_s/86400)::int                    AS delay_days,
+       COUNT(*)                                     AS n,
+       ROUND(100.0*COUNT(*)/SUM(COUNT(*)) OVER (), 1) AS pct
+FROM pair_intervals
+WHERE a1='P' AND a2='N'
+GROUP BY 1 ORDER BY 1;
+
+SELECT TO_CHAR(timestamp,'Dy') AS dow, DATE_PART('hour', timestamp) AS hh, COUNT(*)
+FROM claim_events WHERE activity='N'
+GROUP BY 1,2 ORDER BY COUNT(*) DESC LIMIT 20;
+
+-- (b) Batch fingerprint: many notifications inside the same minute by the same resource.
+SELECT DATE_TRUNC('minute', timestamp) AS batch_minute,
+       resource,
+       COUNT(*)                        AS notifications_in_minute,
+       COUNT(DISTINCT claim_id)        AS claims
+FROM claim_events
+WHERE activity = 'N'
+GROUP BY 1, 2
+HAVING COUNT(*) > 10
+ORDER BY notifications_in_minute DESC
+LIMIT 50;
+
+-- (c) Backlog view: open notification queue over time.
+SELECT DATE_TRUNC('week', p.ts) AS approval_week,
+       COUNT(*)                                                   AS approved,
+       COUNT(n.ts)                                                AS notified,
+       ROUND(AVG(EXTRACT(EPOCH FROM (n.ts - p.ts))/86400.0), 2)   AS avg_delay_days,
+       ROUND(MAX(EXTRACT(EPOCH FROM (n.ts - p.ts))/86400.0), 2)   AS max_delay_days
+FROM first_evt p
+LEFT JOIN first_evt n ON n.claim_id = p.claim_id AND n.activity = 'N'
+WHERE p.activity = 'P'
+GROUP BY 1 ORDER BY 1;
+```
+*A single dominant weekday/hour for N plus large per-minute batches confirms H3; a rising `avg_delay_days` trend indicates a growing backlog (H7).*
+
+### 3.5 H4/H6 — Two variants, and is Approve being skipped?
+
+```sql
+-- Variant discovery: the ordered activity signature of each claim.
+WITH trace AS (
+  SELECT claim_id,
+         STRING_AGG(activity, '->' ORDER BY timestamp, event_id) AS variant,
+         MIN(timestamp) AS t_start, MAX(timestamp) AS t_end
+  FROM claim_events
+  GROUP BY claim_id
+)
+SELECT variant,
+       COUNT(*)                                                     AS claims,
+       ROUND(100.0*COUNT(*)/SUM(COUNT(*)) OVER (), 2)               AS pct,
+       ROUND(AVG(EXTRACT(EPOCH FROM (t_end - t_start))/3600.0), 2)  AS avg_cycle_hours
+FROM trace
+GROUP BY variant
+ORDER BY claims DESC;
+
+-- Claims notified without an approval, or notified before approval.
+SELECT e.claim_id, e.ts AS evaluate_ts, p.ts AS approve_ts, n.ts AS notify_ts,
+       ROUND(EXTRACT(EPOCH FROM (n.ts - e.ts))) AS e_to_n_s,
+       CASE WHEN p.ts IS NULL          THEN 'APPROVE_MISSING'
+            WHEN n.ts < p.ts           THEN 'NOTIFY_BEFORE_APPROVE'
+            ELSE 'OK' END              AS control_status
+FROM first_evt e
+JOIN first_evt n  ON n.claim_id = e.claim_id AND n.activity = 'N'
+LEFT JOIN first_evt p ON p.claim_id = e.claim_id AND p.activity = 'P'
+WHERE e.activity = 'E'
+  AND (p.ts IS NULL OR n.ts < p.ts OR EXTRACT(EPOCH FROM (n.ts - e.ts)) < 600);
+
+-- Same-transaction fingerprint: E and P (or E and N) written within 1 second by one resource.
+SELECT a.claim_id, a.activity AS act1, b.activity AS act2,
+       a.resource, b.resource,
+       EXTRACT(EPOCH FROM (b.timestamp - a.timestamp)) AS gap_s
+FROM claim_events a
+JOIN claim_events b
+  ON b.claim_id = a.claim_id
+ AND b.timestamp >= a.timestamp
+ AND b.event_id <> a.event_id
+WHERE a.activity = 'E'
+  AND b.activity IN ('P','N')
+  AND b.timestamp - a.timestamp < INTERVAL '1 second'
+ORDER BY a.claim_id;
+```
+
+### 3.6 H5 — Premature / administrative closure (AC)
+
+```sql
+-- Claims closed with no Evaluate and/or no Approve before closure.
+WITH c AS (SELECT claim_id, MIN(timestamp) AS close_ts FROM claim_events WHERE activity='C' GROUP BY claim_id),
+     a AS (SELECT claim_id, MIN(timestamp) AS assign_ts FROM claim_events WHERE activity='A' GROUP BY claim_id)
+SELECT c.claim_id,
+       a.assign_ts, c.close_ts,
+       ROUND(EXTRACT(EPOCH FROM (c.close_ts - a.assign_ts))) AS a_to_c_s,
+       EXISTS (SELECT 1 FROM claim_events x WHERE x.claim_id=c.claim_id AND x.activity='E' AND x.timestamp < c.close_ts) AS had_evaluate,
+       EXISTS (SELECT 1 FROM claim_events x WHERE x.claim_id=c.claim_id AND x.activity='P' AND x.timestamp < c.close_ts) AS had_approve,
+       (SELECT STRING_AGG(DISTINCT x.additional_info, ' | ')
+          FROM claim_events x WHERE x.claim_id=c.claim_id AND x.activity='C') AS close_notes,
+       (SELECT x.resource FROM claim_events x
+          WHERE x.claim_id=c.claim_id AND x.activity='C' ORDER BY x.timestamp LIMIT 1) AS close_resource
+FROM c JOIN a ON a.claim_id = c.claim_id
+WHERE EXTRACT(EPOCH FROM (c.close_ts - a.assign_ts)) < 14400   -- < 4 hours
+ORDER BY a_to_c_s;
+
+-- How large is this sub-population, and does it explain the (A,C) profile?
+SELECT (had_e AND had_p) AS complete_path,
+       COUNT(*) AS claims,
+       ROUND(AVG(a_to_c_s)) AS avg_a_to_c_s,
+       ROUND(STDDEV_SAMP(a_to_c_s)) AS stdev_a_to_c_s
+FROM (
+  SELECT a.claim_id,
+         EXTRACT(EPOCH FROM (MIN(cl.timestamp) - MIN(a.timestamp))) AS a_to_c_s,
+         BOOL_OR(e.activity='E') AS had_e,
+         BOOL_OR(e.activity='P') AS had_p
+  FROM claim_events a
+  JOIN claim_events cl ON cl.claim_id = a.claim_id AND cl.activity='C'
+  LEFT JOIN claim_events e ON e.claim_id = a.claim_id AND e.activity IN ('E','P')
+  WHERE a.activity='A'
+  GROUP BY a.claim_id
+) s
+GROUP BY 1;
+```
+*If the "incomplete path" bucket has a mean near 2 h while the complete path is much longer, the (A,C) profile entry is describing cancellations, not closures (H5) — and the profile should be split by variant.*
+
+### 3.7 Correlating deviations with claim, resource, adjuster and customer dimensions
+
+```sql
+-- Deviation rate by claim type and amount band.
+WITH viol AS (
+  SELECT claim_id, a1, a2, z FROM pair_intervals WHERE ABS(z) > 3
+)
+SELECT c.claim_type,
+       WIDTH_BUCKET(c.claim_amount, 0, 100000, 5) AS amount_band,
+       COUNT(DISTINCT c.claim_id)                 AS claims,
+       COUNT(DISTINCT v.claim_id)                 AS claims_with_violation,
+       ROUND(100.0*COUNT(DISTINCT v.claim_id)/NULLIF(COUNT(DISTINCT c.claim_id),0), 1) AS pct_violating
+FROM claims c
+LEFT JOIN viol v ON v.claim_id = c.claim_id
+GROUP BY 1, 2
+ORDER BY pct_violating DESC NULLS LAST;
+
+-- Deviation rate by the resource that performed the *first* activity of the pair.
+SELECT pi.a1, pi.a2, ce.resource,
+       COUNT(*)                                              AS observations,
+       ROUND(AVG(pi.delta_s))                                AS avg_delta_s,
+       ROUND(STDDEV_SAMP(pi.delta_s))                        AS stdev_delta_s,
+       COUNT(*) FILTER (WHERE ABS(pi.z) > 3)                 AS violations,
+       ROUND(100.0*COUNT(*) FILTER (WHERE ABS(pi.z) > 3)/COUNT(*), 1) AS pct_violating
+FROM pair_intervals pi
+JOIN claim_events ce
+  ON ce.claim_id = pi.claim_id AND ce.activity = pi.a1 AND ce.timestamp = pi.ts1
+GROUP BY 1,2,3
+HAVING COUNT(*) >= 20
+ORDER BY pct_violating DESC, observations DESC;
+
+-- Link to the adjusters dimension. `claim_events` has no adjuster FK, so try both
+-- plausible linkages and check coverage before trusting either.
+WITH assign AS (
+  SELECT ce.claim_id, ce.resource, ce.additional_info,
+         NULLIF(REGEXP_REPLACE(ce.additional_info, '\D', '', 'g'), '')::int AS parsed_adjuster_id
+  FROM claim_events ce
+  WHERE ce.activity = 'A'
+),
+linked AS (
+  SELECT a.claim_id,
+         COALESCE(ad1.adjuster_id, ad2.adjuster_id)         AS adjuster_id,
+         COALESCE(ad1.specialization, ad2.specialization)   AS specialization,
+         COALESCE(ad1.region, ad2.region)                   AS region,
+         COALESCE(ad1.name, ad2.name)                       AS adjuster_name
+  FROM assign a
+  LEFT JOIN adjusters ad1 ON ad1.name = a.resource
+  LEFT JOIN adjusters ad2 ON ad2.adjuster_id = a.parsed_adjuster_id
+)
+SELECT l.region, l.specialization, l.adjuster_name, c.claim_type,
+       COUNT(*)                                                   AS claims,
+       ROUND(AVG(pi.delta_s)/86400.0, 2)                          AS avg_p_to_n_days,
+       ROUND(MAX(pi.delta_s)/86400.0, 2)                          AS max_p_to_n_days,
+       COUNT(*) FILTER (WHERE pi.z > 3)                           AS slow_outliers
+FROM linked l
+JOIN claims c        ON c.claim_id = l.claim_id
+JOIN pair_intervals pi ON pi.claim_id = l.claim_id AND pi.a1='P' AND pi.a2='N'
+GROUP BY 1,2,3,4
+HAVING COUNT(*) >= 10
+ORDER BY avg_p_to_n_days DESC;
+
+-- Specialization/claim-type mismatch as a driver of delay.
+SELECT c.claim_type, l.specialization,
+       COUNT(*) AS claims,
+       ROUND(AVG(EXTRACT(EPOCH FROM (e.ts - a.ts))/3600.0), 2) AS avg_a_to_e_hours
+FROM linked l
+JOIN claims c   ON c.claim_id = l.claim_id
+JOIN first_evt a ON a.claim_id = l.claim_id AND a.activity='A'
+JOIN first_evt e ON e.claim_id = l.claim_id AND e.activity='E'
+GROUP BY 1,2 ORDER BY avg_a_to_e_hours DESC;
+```
+
+### 3.8 Data-quality screens (must run before believing any of the above)
+
+```sql
+-- Ordering violations, duplicates, and zero-length gaps.
+SELECT 'out_of_order'  AS issue, COUNT(*) FROM pair_intervals WHERE delta_s < 0
+UNION ALL
+SELECT 'duplicate_activity', COUNT(*) FROM first_evt WHERE occurrences > 1
+UNION ALL
+SELECT 'zero_gap_events', COUNT(*) FROM (
+   SELECT claim_id, timestamp FROM claim_events
+   GROUP BY claim_id, timestamp HAVING COUNT(*) > 1) d
+UNION ALL
+SELECT 'all_events_same_ts', COUNT(*) FROM (
+   SELECT claim_id FROM claim_events
+   GROUP BY claim_id HAVING MIN(timestamp) = MAX(timestamp) AND COUNT(*) > 1) x
+UNION ALL
+SELECT 'receive_ts_ne_submission_date', COUNT(*)
+FROM claim_events ce JOIN claims c USING (claim_id)
+WHERE ce.activity='R' AND ce.timestamp::date <> c.submission_date;
+
+-- Suspicious constant offsets (timezone / batch signature): are gaps concentrated
+-- on exact hour boundaries?
+SELECT a1, a2,
+       ROUND(delta_s/3600.0) AS hours_bucket,
+       COUNT(*) AS n
+FROM pair_intervals
+GROUP BY 1,2,3
+HAVING COUNT(*) > 20
+ORDER BY a1, a2, n DESC;
+
+-- Regime change / stale-model check: month-over-month drift per pair.
+SELECT a1, a2, DATE_TRUNC('month', ts1) AS month,
+       COUNT(*) AS n,
+       ROUND(AVG(delta_s)) AS avg_s,
+       ROUND(STDDEV_SAMP(delta_s)) AS stdev_s
+FROM pair_intervals
+GROUP BY 1,2,3
+ORDER BY a1, a2, month;
+```
+
+---
+
+## 4. How to Read the Results
+
+- **RP stays deterministic after removing midnight-truncated R events and batch-resource P events**  genuine rigid SLA scheduling worth business review. **If it collapses**  the anomaly was a timestamp artefact, and the profile entry should be recomputed on corrected data (or RP dropped as non-informative).
+- **N events concentrate on one weekday/hour in large per-minute batches**  replace the single (P,N) Gaussian with a batch-aware model (or measure PN in "batch cycles"), and address the queue operationally rather than flagging every claim as anomalous.
+- **Variant analysis shows two dominant traces**  split the temporal profile per variant (and per claim_type / amount band); a single pooled model will keep producing contradictory pairs such as (E,N)=5 min alongside (P,N)=7 d.
+- **Short AC claims are overwhelmingly missing E and P**  separate "cancelled/withdrawn" closures from "completed" closures in the event log (distinct activity label or lifecycle attribute) before profiling.
+- **EP gaps under 1 second with the same resource**  a control weakness, not a timing curiosity; escalate as a compliance finding rather than a process-mining anomaly.
+- **Deviation rates concentrate on a handful of resources, one region, or one specialization**  capacity/skill-routing issue; validate against workload volumes before concluding misconduct.

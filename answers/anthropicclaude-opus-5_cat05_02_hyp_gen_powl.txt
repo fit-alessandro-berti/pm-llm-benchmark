@@ -1,0 +1,306 @@
+# Analysis of the POWL Insurance Claim Model
+
+## 1. Identification of Anomalies
+
+### Anomaly A — Loop over `E` and `P` (`OperatorPOWL(LOOP, [E, P])`)
+
+The PM4Py loop semantics here are: execute the **do** child (`E`), then either exit, or execute the **redo** child (`P`) and return to `E`. This produces traces such as:
+
+- `E` (approval **never happens**)
+- `E, P, E`
+- `E, P, E, P, E` … (unbounded repetition)
+
+Two distinct deviations from the ideal flow follow:
+
+1. **Approval is optional.** Since the loop can exit immediately after the first `E`, a claim can reach `C` (close) with no `P` (approve) event at all — a control failure with direct financial/compliance exposure.
+2. **Approval and evaluation can repeat indefinitely,** and every trace ends with `E`, meaning the last recorded act is always an *evaluation*, never an *approval*. In the ideal model, `P` is a single, terminal decision gate. Here it is a mid-loop step.
+
+### Anomaly B — XOR over `N` and `SilentTransition` (`xor = OperatorPOWL(XOR, [N, skip])`)
+
+Customer notification is entirely **optional**. Silently skipping `N` means a claim can be approved/denied and closed without the customer ever being informed. This typically violates regulatory notification duties (e.g., "insurer must communicate the decision within X days").
+
+### Anomaly C — Missing order edge `xor  C`, plus a shortcut edge `A  C`
+
+The partial order contains only:
+
+```
+R  A,   A  loop,   loop  xor,   A  C
+```
+
+`C` is ordered **only** with respect to `A`. Consequently, in a `StrictPartialOrder`, `C` is **concurrent** with `loop` and with `xor`. Valid interleavings include:
+
+- `R, A, C, E, N` — claim closed **before** any evaluation
+- `R, A, E, C` — closed before notification, no approval
+- `R, A, E, P, C, E, N` — closed in the *middle* of an evaluation/approval loop
+
+This breaks the fundamental invariant that **`C` is the terminal event of the case**. It also means "closed" no longer denotes a finished case, corrupting cycle-time KPIs and any downstream reporting that filters on `C`.
+
+### Anomaly D — Structural/semantic issues implied by the schema
+
+- There is no activity in the model that corresponds to **rejection/denial**; the only decision node is `P` (approve). Real data may contain a "Reject Claim" activity that the model cannot reproduce.
+- The model does not constrain `resource` to be the *assigned adjuster*, nor the adjuster's `specialization` to match `claims.claim_type`. This permits `E`/`P` performed by an unqualified or unassigned resource — a segregation-of-duties gap (e.g., the same resource performing both `E` and `P`).
+
+### Summary table
+
+| ID | Anomaly | Ideal behaviour | Model behaviour | Risk |
+|----|---------|-----------------|-----------------|------|
+| A1 | `P` optional (loop can exit after first `E`) | Exactly one `P` | Zero or many `P` | Payment without authorization |
+| A2 | `E`/`P` loop unbounded | One `E`, one `P` | Repeated rework | Cost, delay, "approval shopping" |
+| B | `N` skippable via silent transition | Mandatory `N` | Optional `N` | Regulatory/customer-service breach |
+| C | `C` concurrent with `loop`/`xor` | `C` strictly last | Premature/interleaved `C` | Data integrity, KPI distortion |
+| D | No reject path; no resource constraints | Qualified, segregated duties | Unconstrained | Compliance, fraud |
+
+---
+
+## 2. Hypotheses on Why These Anomalies Exist
+
+**H1 — Partially implemented business rule ("fast-track / auto-close for low-value claims").**
+A rule such as "claims under €500 may be closed without full evaluation" was introduced. The modeller implemented the *shortcut* (`A  C`, optional `P`, optional `N`) but never added the **guard condition** (amount threshold, claim type), because POWL/process-tree notation has no data conditions. *Prediction:* premature-close and skipped-`N` cases cluster at **low `claim_amount`** and/or specific `claim_type`.
+
+**H2 — Discovery artifact / over-generalization.**
+The model was mined from a log rather than hand-designed. A handful of noisy or incomplete cases (missing `E`, duplicated `P`, out-of-order `C`) forced the discovery algorithm to insert a loop, an XOR-skip, and to drop the `xor  C` edge to keep fitness at 1.0. *Prediction:* the anomalous paths are **rare** (< a few %) and scattered, not systematic.
+
+**H3 — Miscommunication between departments.**
+Claims Intake and Customer Communications each assumed the other owned notification, so `N` became optional. Similarly, the Closing team defines "closed" as *file archived* while Evaluation defines it as *decision made*, producing overlapping `C` and `E`. *Prediction:* skipped `N` correlates with specific `resource`/team or `region`.
+
+**H4 — Technical defect in the workflow engine.**
+A missing precondition check (or an asynchronous/queued "close" job, or a timer-based auto-close) let `C` fire while evaluation was still open. Retry logic or a double-click on "Approve" produced duplicate `P` events. *Prediction:* duplicate `P` events occur **seconds apart with identical `resource`**; premature `C` has `resource` = a system account (e.g., `SYSTEM`, `BATCH_JOB`) and clusters in time (around a release date).
+
+**H5 — Modelling-tool / methodology weakness.**
+The modeller built a `StrictPartialOrder` by hand and simply **forgot** the `xor  C` edge; the tool performed no soundness/terminality check and issued no warning that `C` was unordered w.r.t. `loop`. The comments in the code ("*Intentionally, do not order xor  C*") suggest a deliberate but unvalidated experiment that leaked into production. *Prediction:* the database shows **no** premature closes at all — i.e., the anomaly is model-only, and the fix is purely in the model.
+
+**H6 — Genuine rework loop from poor first-pass quality.**
+The `E`/`P` loop reflects reality: incomplete documentation forces re-evaluation. *Prediction:* repeat counts correlate with `claim_type`, high `claim_amount`, or particular adjusters; `additional_info` on repeated `E` events contains reasons like "missing documents".
+
+---
+
+## 3. Verification Using the Database
+
+### 3.0 Helper view (per-claim activity summary)
+
+```sql
+CREATE OR REPLACE VIEW claim_profile AS
+SELECT
+    c.claim_id,
+    c.customer_id,
+    c.claim_amount,
+    c.claim_type,
+    c.submission_date,
+    COUNT(*) FILTER (WHERE ce.activity = 'R') AS n_receive,
+    COUNT(*) FILTER (WHERE ce.activity = 'A') AS n_assign,
+    COUNT(*) FILTER (WHERE ce.activity = 'E') AS n_evaluate,
+    COUNT(*) FILTER (WHERE ce.activity = 'P') AS n_approve,
+    COUNT(*) FILTER (WHERE ce.activity = 'N') AS n_notify,
+    COUNT(*) FILTER (WHERE ce.activity = 'C') AS n_close,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'E') AS first_E,
+    MAX(ce.timestamp) FILTER (WHERE ce.activity = 'E') AS last_E,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'P') AS first_P,
+    MAX(ce.timestamp) FILTER (WHERE ce.activity = 'P') AS last_P,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'N') AS first_N,
+    MIN(ce.timestamp) FILTER (WHERE ce.activity = 'C') AS first_C,
+    MAX(ce.timestamp)                                  AS last_event,
+    string_agg(ce.activity, '' ORDER BY ce.timestamp, ce.event_id) AS trace
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id
+GROUP BY c.claim_id, c.customer_id, c.claim_amount, c.claim_type, c.submission_date;
+```
+
+### 3.1 Variant / trace frequency (baseline for H2)
+
+```sql
+SELECT trace, COUNT(*) AS cases,
+       ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 2) AS pct,
+       ROUND(AVG(claim_amount), 2) AS avg_amount
+FROM claim_profile
+GROUP BY trace
+ORDER BY cases DESC;
+```
+*Interpretation:* if `RAECN`-like conformant traces dominate and deviations are a long tail of singletons  **H2 (noise/over-fitting)**. If a deviating variant is a large, clean block  **H1/H3 (real, institutionalized shortcut)**.
+
+### 3.2 Anomaly A1 — Closed without evaluation or without approval
+
+```sql
+-- Closed with no approval at all
+SELECT claim_id, claim_type, claim_amount, trace
+FROM claim_profile
+WHERE n_close > 0 AND n_approve = 0
+ORDER BY claim_amount DESC;
+
+-- Closed with no evaluation at all
+SELECT claim_id, claim_type, claim_amount, trace
+FROM claim_profile
+WHERE n_close > 0 AND n_evaluate = 0;
+
+-- Aggregate: is the shortcut amount-driven? (tests H1)
+SELECT width_bucket(claim_amount, 0, 20000, 10) AS amount_bucket,
+       MIN(claim_amount) AS lo, MAX(claim_amount) AS hi,
+       COUNT(*) AS cases,
+       ROUND(100.0 * AVG((n_approve = 0)::int), 1) AS pct_no_approval,
+       ROUND(100.0 * AVG((n_evaluate = 0)::int), 1) AS pct_no_evaluation
+FROM claim_profile
+WHERE n_close > 0
+GROUP BY 1 ORDER BY 1;
+```
+A monotone decline of `pct_no_approval` as amount rises strongly supports **H1**.
+
+### 3.3 Anomaly A2 — Multiple approvals / rework loop
+
+```sql
+-- Claims approved more than once, with loop depth
+SELECT claim_id, claim_type, claim_amount, n_evaluate, n_approve, trace
+FROM claim_profile
+WHERE n_approve > 1
+ORDER BY n_approve DESC, claim_amount DESC;
+
+-- Distribution of loop iterations
+SELECT n_approve, COUNT(*) AS cases, ROUND(AVG(claim_amount),2) AS avg_amount
+FROM claim_profile GROUP BY n_approve ORDER BY n_approve;
+
+-- Duplicate P events close together by the same resource  system defect (H4)
+SELECT p.claim_id, p.resource, p.timestamp AS t1, q.timestamp AS t2,
+       q.timestamp - p.timestamp AS gap
+FROM claim_events p
+JOIN claim_events q
+  ON q.claim_id = p.claim_id AND q.activity = 'P' AND p.activity = 'P'
+ AND q.timestamp > p.timestamp
+WHERE q.timestamp - p.timestamp < INTERVAL '2 minutes'
+ORDER BY gap;
+```
+Sub-minute duplicates by one resource  **H4 (double submit / retry)**.
+Multi-day gaps with *different* resources and `additional_info` reasons  **H6 (genuine rework)**.
+
+```sql
+-- Rework reasons (H6)
+SELECT additional_info, COUNT(*)
+FROM claim_events
+WHERE activity = 'E'
+  AND claim_id IN (SELECT claim_id FROM claim_profile WHERE n_evaluate > 1)
+GROUP BY 1 ORDER BY 2 DESC;
+```
+
+### 3.4 Anomaly B — Notification skipped
+
+```sql
+-- Overall skip rate
+SELECT COUNT(*) AS closed_claims,
+       COUNT(*) FILTER (WHERE n_notify = 0) AS no_notification,
+       ROUND(100.0 * COUNT(*) FILTER (WHERE n_notify = 0) / COUNT(*), 2) AS pct_skipped
+FROM claim_profile
+WHERE n_close > 0;
+
+-- Skip rate by claim type and by region/adjuster team (tests H3)
+SELECT c.claim_type, a.region, a.specialization,
+       COUNT(*) AS cases,
+       ROUND(100.0 * AVG((cp.n_notify = 0)::int), 1) AS pct_skipped
+FROM claim_profile cp
+JOIN claims c   ON c.claim_id = cp.claim_id
+JOIN claim_events ce ON ce.claim_id = cp.claim_id AND ce.activity = 'A'
+LEFT JOIN adjusters a ON a.name = ce.resource
+GROUP BY 1,2,3
+HAVING COUNT(*) >= 20
+ORDER BY pct_skipped DESC;
+
+-- Notification AFTER closing (ordering violation of a different kind)
+SELECT claim_id, first_N, first_C FROM claim_profile
+WHERE first_N IS NOT NULL AND first_C IS NOT NULL AND first_N > first_C;
+```
+A skip rate concentrated in one `region` or one team  **H3**. Uniform ~50 % across all segments  the XOR is truly unguarded (**H5/H1**).
+
+### 3.5 Anomaly C — Premature / non-terminal close
+
+```sql
+-- C is not the last event of the case
+SELECT claim_id, trace, first_C, last_event, last_event - first_C AS overhang
+FROM claim_profile
+WHERE first_C IS NOT NULL AND first_C < last_event
+ORDER BY overhang DESC;
+
+-- C before evaluation / before approval / before notification
+SELECT
+  COUNT(*) FILTER (WHERE first_C < first_E)  AS close_before_first_eval,
+  COUNT(*) FILTER (WHERE first_C < last_E)   AS close_before_last_eval,
+  COUNT(*) FILTER (WHERE first_C < first_P)  AS close_before_approval,
+  COUNT(*) FILTER (WHERE first_C < first_N)  AS close_before_notify
+FROM claim_profile
+WHERE first_C IS NOT NULL;
+
+-- Who/what performs the premature closes? (tests H4)
+SELECT ce.resource, COUNT(*) AS premature_closes
+FROM claim_events ce
+JOIN claim_profile cp ON cp.claim_id = ce.claim_id
+WHERE ce.activity = 'C'
+  AND (cp.first_E IS NULL OR ce.timestamp < cp.first_E OR ce.timestamp < cp.last_E)
+GROUP BY 1 ORDER BY 2 DESC;
+
+-- Temporal clustering: did the defect start on a release date? (H4/H1)
+SELECT date_trunc('week', ce.timestamp) AS wk,
+       COUNT(*) FILTER (WHERE cp.first_C < cp.last_event) AS premature,
+       COUNT(*) AS total_closes
+FROM claim_events ce
+JOIN claim_profile cp ON cp.claim_id = ce.claim_id
+WHERE ce.activity = 'C'
+GROUP BY 1 ORDER BY 1;
+```
+A step-change at one week + `SYSTEM`/`BATCH` resource  **H4**. Zero rows anywhere  **H5 (model-only defect)**.
+
+### 3.6 Anomaly D — Resource / competence / segregation-of-duties checks
+
+```sql
+-- Evaluation or approval by someone who is not the assigned adjuster
+WITH assigned AS (
+  SELECT claim_id, resource AS assigned_res,
+         ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY timestamp) rn
+  FROM claim_events WHERE activity = 'A'
+)
+SELECT ce.claim_id, ce.activity, ce.resource, a.assigned_res
+FROM claim_events ce
+JOIN assigned a ON a.claim_id = ce.claim_id AND a.rn = 1
+WHERE ce.activity IN ('E','P') AND ce.resource <> a.assigned_res;
+
+-- Specialization mismatch (auto adjuster on a home claim, etc.)
+SELECT c.claim_id, c.claim_type, adj.name, adj.specialization, adj.region
+FROM claims c
+JOIN claim_events ce ON ce.claim_id = c.claim_id AND ce.activity = 'A'
+JOIN adjusters adj   ON adj.name = ce.resource
+WHERE split_part(c.claim_type, '_', 1) <> adj.specialization;
+
+-- Same person evaluates and approves (four-eyes violation)
+SELECT e.claim_id, e.resource
+FROM claim_events e
+JOIN claim_events p ON p.claim_id = e.claim_id AND p.activity='P' AND p.resource = e.resource
+WHERE e.activity = 'E'
+GROUP BY 1,2;
+
+-- Activities present in the log but absent from the model (e.g. rejection)
+SELECT activity, COUNT(*) FROM claim_events GROUP BY 1 ORDER BY 2 DESC;
+```
+
+### 3.7 Formal conformance cross-check
+
+```python
+log = pm4py.read_xes(...)  # or build from claim_events via pandas
+net, im, fm = pm4py.convert_to_petri_net(root)          # from the POWL model
+fitness   = pm4py.fitness_alignments(log, net, im, fm)
+precision = pm4py.precision_alignments(log, net, im, fm)
+```
+- **High fitness + low precision**  the model allows far more than reality does  anomalies are **modelling artifacts (H5)**; tighten the model.
+- **High fitness + high precision**  the anomalous paths are genuinely executed  **H1/H3/H4/H6**; fix the *process*, not just the model.
+
+---
+
+## 4. Recommended Corrected Model
+
+```python
+# 1) Exactly one approval, with bounded, explicit rework
+rework = OperatorPOWL(operator=Operator.LOOP, children=[E, SilentTransition()])  # optional re-eval
+# 2) Explicit decision: approve OR reject (no silent skip of the decision)
+decision = OperatorPOWL(operator=Operator.XOR, children=[P, Transition(label="Reject")])
+# 3) Notification mandatory
+root = StrictPartialOrder(nodes=[R, A, rework, decision, N, C])
+root.order.add_edge(R, A)
+root.order.add_edge(A, rework)
+root.order.add_edge(rework, decision)
+root.order.add_edge(decision, N)
+root.order.add_edge(N, C)          # <-- restores C as the terminal event
+```
+Plus, outside the control flow: a data guard for any fast-track path (`claim_amount < threshold`), a four-eyes rule on `E`/`P`, a `specialization = claim_type` assignment rule, and a workflow-engine precondition that blocks `C` unless a decision and notification exist.

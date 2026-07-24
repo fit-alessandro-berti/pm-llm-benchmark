@@ -1,0 +1,151 @@
+<think>
+I'm working on a DuckDB SQL query that uses a CTE to handle the data transformation, considering edge cases like ties and ensuring deterministic ordering. I'll use string aggregation with an ORDER BY clause to keep it straightforward.
+
+I should also note that DuckDB's `list()` function works for grouping, but I could use `string_agg()` with a separator as an alternative for better compatibility. For handling ties in the top K results, I can add a tiebreaker using a secondary column or rowid, and I could also mention using DENSE_RANK with QUALIFY to include all tied variants if needed.
+
+Now I'm showing a cleaner single-query approach using window functions instead of multiple joins — building the variant strings with `string_agg()`, then ranking them with ROW_NUMBER() to identify the top 5, and finally joining back to the event log to retrieve all matching events. I'll also mention parameterizing K using a macro or prepared statement for flexibility.
+</think>
+## Solution
+
+### Core idea
+
+1. **Per case**  aggregate activities ordered by `timestamp` into a sequence (a `LIST`, or a delimited string).
+2. **Per sequence**  count how many cases share it  that's the variant frequency.
+3. **Rank** variants by frequency, keep the top *K*.
+4. **Semi-join** the original `event_log` back to the cases whose variant survived, and return their raw events.
+
+---
+
+### Query (K = 5, change the `LIMIT` / `rn <= K`)
+
+```sql
+WITH
+-- 1) Ordered activity sequence per case (the "variant" fingerprint)
+case_variant AS (
+    SELECT
+        case_id,
+        list(activity ORDER BY timestamp, activity) AS variant          -- DuckDB LIST aggregate
+    FROM event_log
+    GROUP BY case_id
+),
+
+-- 2) Frequency of each distinct variant (= number of cases)
+variant_frequency AS (
+    SELECT
+        variant,
+        COUNT(*) AS case_count
+    FROM case_variant
+    GROUP BY variant
+),
+
+-- 3) Top-K variants by number of cases (deterministic tie-break on the sequence)
+top_k_variants AS (
+    SELECT
+        variant,
+        case_count,
+        ROW_NUMBER() OVER (ORDER BY case_count DESC, variant ASC) AS variant_rank
+    FROM variant_frequency
+    QUALIFY variant_rank <= 5                                            -- <<< K here
+)
+
+-- 4) All original events of the cases belonging to those variants
+SELECT
+    e.*,
+    t.variant_rank,
+    t.case_count           AS variant_case_count,
+    list_aggregate(t.variant, 'string_agg', ' -> ') AS variant_label
+FROM event_log      AS e
+JOIN case_variant   AS cv ON cv.case_id = e.case_id
+JOIN top_k_variants AS t  ON t.variant  = cv.variant
+ORDER BY t.variant_rank, e.case_id, e.timestamp;
+```
+
+If you only want the untouched columns of the log, replace the final `SELECT` list with `e.*` and drop the extra columns.
+
+---
+
+### Variant using a string fingerprint (equally valid, sometimes handier)
+
+```sql
+WITH case_variant AS (
+    SELECT case_id,
+           string_agg(activity, ' -> ' ORDER BY timestamp, activity) AS variant
+    FROM event_log
+    GROUP BY case_id
+),
+ranked AS (
+    SELECT variant, COUNT(*) AS case_count,
+           ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, variant) AS variant_rank
+    FROM case_variant
+    GROUP BY variant
+)
+SELECT e.*
+FROM event_log e
+WHERE e.case_id IN (
+    SELECT cv.case_id
+    FROM case_variant cv
+    JOIN ranked r USING (variant)
+    WHERE r.variant_rank <= 5
+)
+ORDER BY e.case_id, e.timestamp;
+```
+
+>  Use a separator that cannot occur inside an activity name (e.g. `' -> '`, `'|'`, or `char(31)`). The `LIST` version above avoids this problem entirely.
+
+---
+
+### Making K a parameter
+
+**Prepared statement:**
+
+```sql
+PREPARE top_k_variant_events AS
+WITH case_variant AS (
+    SELECT case_id, list(activity ORDER BY timestamp, activity) AS variant
+    FROM event_log GROUP BY case_id
+),
+ranked AS (
+    SELECT variant, COUNT(*) AS case_count,
+           ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, variant) AS variant_rank
+    FROM case_variant GROUP BY variant
+)
+SELECT e.*
+FROM event_log e
+JOIN case_variant cv USING (case_id)
+JOIN ranked r ON r.variant = cv.variant
+WHERE r.variant_rank <= $1
+ORDER BY e.case_id, e.timestamp;
+
+EXECUTE top_k_variant_events(3);
+```
+
+**Or a table macro:**
+
+```sql
+CREATE OR REPLACE MACRO top_k_variant_events(k) AS TABLE
+WITH case_variant AS (
+    SELECT case_id, list(activity ORDER BY timestamp, activity) AS variant
+    FROM event_log GROUP BY case_id
+),
+ranked AS (
+    SELECT variant, COUNT(*) AS case_count,
+           ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, variant) AS variant_rank
+    FROM case_variant GROUP BY variant
+)
+SELECT e.*
+FROM event_log e
+JOIN case_variant cv USING (case_id)
+JOIN ranked r ON r.variant = cv.variant
+WHERE r.variant_rank <= k;
+
+SELECT * FROM top_k_variant_events(5) ORDER BY case_id, timestamp;
+```
+
+---
+
+### Notes / edge cases
+
+- **Ordering within a case:** `list(activity ORDER BY timestamp, activity)` guarantees the sequence follows the timestamp order. If the log has a natural event order column (e.g. `event_index`, `lifecycle`, or an ingestion `rowid`), add it as the tie-breaker instead of `activity`: `ORDER BY timestamp, event_index`.
+- **Ties at the K-th position:** `ROW_NUMBER()` returns exactly K variants (arbitrary but deterministic tie-break). Swap it for `DENSE_RANK() OVER (ORDER BY COUNT(*) DESC)` if you want *all* variants sharing the K-th frequency.
+- **Complete cases only:** every event of a selected case is returned — no partial cases — because filtering happens on `case_id`, not on individual events.
+- **Performance:** the variant is computed once in `case_variant` and reused; DuckDB can hash-join on `LIST` values, so no string materialization is required.
