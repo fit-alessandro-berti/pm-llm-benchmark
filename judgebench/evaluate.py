@@ -2,6 +2,10 @@ import argparse
 import csv
 import logging
 import os
+import shlex
+import shutil
+import subprocess
+import sys
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -21,6 +25,8 @@ MAX_CONCURRENT_THREADS = 100
 
 # Edit this list to add judges. ("provider/model",) uses OpenRouter by default.
 # ("model", {"api_url": "...", "api_key": "...", "additional_payload": {...}}) overrides it.
+# ("model", {"manual": True}) copies each prompt to the clipboard and opens a text editor
+# for manual response entry instead of calling an API.
 JUDGE_LLMS: Sequence[Tuple[Any, ...]] = [
     (
         "gpt-5.4",
@@ -85,6 +91,9 @@ JUDGE_LLMS: Sequence[Tuple[Any, ...]] = [
     (
         "grok-4.5",
         {"api_url": "https://api.x.ai/v1/responses", "api_key": os.environ["GROK_API_KEY"]},
+    ),
+    (
+        "Grok-4.5-Heavy", {"manual": True}
     ),
     (
         "x-ai/grok-4.3",
@@ -286,6 +295,127 @@ def submit_prompt_to_chat_completions(
     )
 
 
+def _copy_prompt_to_clipboard(prompt: str) -> None:
+    try:
+        import pyperclip
+    except ImportError as exc:
+        raise RuntimeError("Manual JudgeBench requires pyperclip. Install it with: pip install pyperclip") from exc
+
+    try:
+        pyperclip.copy(prompt)
+    except pyperclip.PyperclipException as exc:
+        raise RuntimeError("Could not copy the JudgeBench prompt to the clipboard with pyperclip.") from exc
+
+
+def _to_windows_path(path: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["wslpath", "-w", str(path)],
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        windows_path = result.stdout.strip()
+        if windows_path:
+            return windows_path
+    except (FileNotFoundError, OSError, subprocess.CalledProcessError):
+        pass
+
+    return str(path)
+
+
+def _open_text_editor(path: Path) -> None:
+    configured_editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+    if configured_editor:
+        command = shlex.split(configured_editor) + [str(path)]
+    elif sys.platform.startswith("linux"):
+        command = _first_available_editor_command(["mousepad", "xdg-open"], path)
+        if command[0] == "mousepad":
+            # Prevent Mousepad from handing the file to an existing D-Bus
+            # instance and exiting immediately. The standalone process stays
+            # alive until its editor window is closed, so subprocess.run waits.
+            command.insert(1, "--disable-server")
+    elif os.name == "nt":
+        command = _first_available_editor_command(["notepad++.exe", "notepad.exe"], path)
+        command[-1] = _to_windows_path(path)
+    else:
+        command = _first_available_editor_command(["open"], path)
+
+    try:
+        subprocess.run(command, check=True)
+    except (FileNotFoundError, OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(f"Could not open {path} in a text editor.") from exc
+
+
+def _first_available_editor_command(editors: Sequence[str], path: Path) -> List[str]:
+    for editor in editors:
+        if shutil.which(editor):
+            return [editor, str(path)]
+
+    raise RuntimeError(
+        "No supported text editor found. Install mousepad on Linux, "
+        "Notepad++/Notepad on Windows, or set VISUAL/EDITOR."
+    )
+
+
+def _validate_manual_evaluation_file(path: Path) -> Tuple[Optional[str], str]:
+    if not path.exists():
+        return None, "evaluation file does not exist yet"
+
+    try:
+        content = read_file_with_fallback(path)
+    except Exception as exc:
+        return None, str(exc)
+
+    if not content.strip():
+        return None, "evaluation file is empty"
+
+    return content, ""
+
+
+def _submit_manual_evaluation(
+    prompt: str,
+    destination_path: Path,
+    judge_model: str,
+    copied_answer_file: str,
+    logger: logging.Logger,
+) -> None:
+    if not destination_path.exists():
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        destination_path.write_text("", encoding="utf-8")
+
+    attempt = 0
+    while True:
+        attempt += 1
+        _copy_prompt_to_clipboard(prompt)
+        logger.info(
+            "Manual JudgeBench prompt copied | judge=%s answer=%s attempt=%d destination=%s",
+            judge_model,
+            copied_answer_file,
+            attempt,
+            destination_path,
+        )
+        logger.info("Paste the model's response into the text editor, save the file, and close the editor.")
+        _open_text_editor(destination_path)
+
+        content, reason = _validate_manual_evaluation_file(destination_path)
+        if content is not None:
+            logger.info(
+                "Finished manual JudgeBench evaluation | judge=%s answer=%s",
+                judge_model,
+                copied_answer_file,
+            )
+            return
+
+        logger.warning(
+            "Manual JudgeBench response invalid; repeating prompt | judge=%s answer=%s attempt=%d reason=%s",
+            judge_model,
+            copied_answer_file,
+            attempt,
+            reason,
+        )
+
+
 def _parse_judge_entries(only: Optional[str]) -> Sequence[Tuple[Any, ...]]:
     if only is None:
         return JUDGE_LLMS
@@ -293,16 +423,23 @@ def _parse_judge_entries(only: Optional[str]) -> Sequence[Tuple[Any, ...]]:
     return tuple(entry for entry in JUDGE_LLMS if entry and str(entry[0]) in requested)
 
 
-def _parse_judge_options(judge_entry: Tuple[Any, ...]) -> Dict[str, object]:
+def _parse_judge_options(judge_entry: Tuple[Any, ...]) -> Tuple[Dict[str, object], bool]:
     kwargs: Dict[str, object] = {}
+    manual = False
+
     for option in judge_entry[1:]:
         if option is None:
+            continue
+        if isinstance(option, str) and option.lower() == "manual":
+            manual = True
             continue
         if isinstance(option, dict):
             kwargs.update(option)
             continue
         raise ValueError(f"Unsupported judge option for {judge_entry[0]}: {option!r}")
-    return kwargs
+
+    manual = bool(kwargs.pop("manual", False)) or manual
+    return kwargs, manual
 
 
 def main() -> None:
@@ -354,7 +491,7 @@ def main() -> None:
     for judge_entry in judge_entries:
         judge_model = str(judge_entry[0])
         judge_key = sanitize_name(judge_model)
-        kwargs = _parse_judge_options(judge_entry)
+        kwargs, is_manual = _parse_judge_options(judge_entry)
 
         for row in selected_rows:
             copied_answer_file = row["copied_answer_file"]
@@ -372,11 +509,34 @@ def main() -> None:
             output_path = args.evaluations_dir / f"{judge_key}_{copied_answer_file}"
             output_path = output_path.with_suffix(".txt")
             if output_path.exists():
-                continue
+                if not is_manual:
+                    continue
+
+                content, reason = _validate_manual_evaluation_file(output_path)
+                if content is not None:
+                    continue
+
+                logger.info(
+                    "Reopening existing manual JudgeBench output | judge=%s answer=%s destination=%s reason=%s",
+                    judge_model,
+                    copied_answer_file,
+                    output_path,
+                    reason,
+                )
 
             question_text = _read_text_resilient(question_path)
             answer_text = _read_text_resilient(answer_path)
             judge_prompt = _build_judge_prompt(question_text, answer_text)
+
+            if is_manual:
+                _submit_manual_evaluation(
+                    prompt=judge_prompt,
+                    destination_path=output_path,
+                    judge_model=judge_model,
+                    copied_answer_file=copied_answer_file,
+                    logger=logger,
+                )
+                continue
 
             logger.info(
                 "Submitting JudgeBench evaluation | judge=%s answer=%s destination=%s",
