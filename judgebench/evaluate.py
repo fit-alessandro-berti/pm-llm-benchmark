@@ -96,6 +96,9 @@ JUDGE_LLMS: Sequence[Tuple[Any, ...]] = [
         "Grok-4.5-Heavy", {"manual": True}
     ),
     (
+        "Claude-Opus-3", {"manual": True}
+    ),
+    (
         "x-ai/grok-4.3",
         {"api_url": "https://openrouter.ai/api/v1/chat/completions", "api_key": os.environ["OPENROUTER_API_KEY"],
          "additional_payload": {"reasoning": {"enabled": False}}}
