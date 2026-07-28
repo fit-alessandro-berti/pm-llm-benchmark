@@ -1,0 +1,211 @@
+Based on the temporal profile model for the claim handling process `R -> A -> E -> P -> N -> C` and the tables `claims`, `adjusters`, `claim_events`, the following observations can be made:
+
+### 1. Anomalies in the Temporal Profile
+
+**a) R -> P: Receive to Approve - 25 hours, STDEV 1 hour**
+Average of 90000 seconds with STDEV of only 3600 seconds. The standard deviation is extremely low - 4% of the mean - for a process that should include human tasks Assign and Evaluate.
+
+**b) P -> N: Approve to Notify - 7 days, STDEV 2 days**
+Average of 604800 seconds is excessively long for a notification that should be near-automated after approval. The high STDEV of 2 days indicates highly inconsistent behavior.
+
+**c) A -> C: Assign to Close - 2 hours, STDEV 1 hour**
+This indicates claims are closing on average 2 hours after assignment. In a normal flow `A -> E -> P -> N -> C`, this is too short and suggests the intermediate mandatory steps E, P, N are being bypassed.
+
+**d) E -> N: Evaluate to Notify - 5 minutes, STDEV 1 minute**
+Average of 300 seconds with STDEV of 60 seconds. This is unrealistically fast, implying auto-notification immediately after evaluation without approval.
+
+**e) E -> C: Evaluate to Close - 1 hour, STDEV 50 minutes**
+High variance where STDEV is 83% of the mean. This indicates two very different behaviors are being mixed into one average.
+
+### 2. Hypotheses for Root Causes
+
+**For R -> P low variance:**
+- Automated batch approval job running on a fixed daily schedule e.g., every 25 hours.
+- System-enforced artificial deadline that auto-approves claims regardless of evaluation status.
+- Manual data entry where approval timestamp is backfilled incorrectly.
+
+**For P -> N long delay:**
+- Bottleneck in notification resource - e.g., only one mail server / employee handles N.
+- Waiting for external customer communication batch, or manual accumulation of notifications to send weekly.
+- Resource unavailability on weekends / regional holidays.
+
+**For A -> C short closure:**
+- Claims assigned and then immediately withdrawn or rejected by system rule, skipping checks.
+- Premature closure due to data errors or duplicate claims.
+- Fraudulent or low-value claims being fast-tracked to close without proper evaluation.
+
+**For E -> N too fast:**
+- Workflow system skips mandatory Approval step P.
+- Auto-notification template triggered right after evaluation, violating segregation of duties.
+
+**For E -> C high variance:**
+- Two distinct claim types: e.g., simple auto claims close fast, complex home claims take very long, but they are aggregated together.
+
+### 3. Verification via SQL - PostgreSQL
+
+All verifications are based on calculating actual durations per `claim_id`.
+
+**Base Pattern - Calculate duration between two activities:**
+
+```sql
+-- General template to get duration between Activity X and Activity Y
+WITH x AS (
+  SELECT claim_id, timestamp AS t_x FROM claim_events WHERE activity = 'X'
+),
+y AS (
+  SELECT claim_id, timestamp AS t_y FROM claim_events WHERE activity = 'Y'
+)
+SELECT 
+  x.claim_id,
+  EXTRACT(EPOCH FROM (y.t_y - x.t_x)) AS duration_seconds,
+  (EXTRACT(EPOCH FROM (y.t_y - x.t_x)) - 90000) / 3600.0 AS z_score_for_R_P
+FROM x JOIN y USING (claim_id)
+WHERE y.t_y > x.t_x;
+```
+
+**Verification Queries:**
+
+**1. Investigate R -> P rigid timing:**
+```sql
+-- Find distribution of R->P and claims with near-identical timing
+SELECT
+  c.claim_id,
+  c.claim_type,
+  c.claim_amount,
+  ce_r.resource AS receiver,
+  ce_p.resource AS approver,
+  EXTRACT(EPOCH FROM (ce_p.timestamp - ce_r.timestamp)) AS r_to_p_seconds
+FROM claim_events ce_r
+JOIN claim_events ce_p ON ce_r.claim_id = ce_p.claim_id
+JOIN claims c ON c.claim_id = ce_r.claim_id
+WHERE ce_r.activity = 'R' AND ce_p.activity = 'P'
+  AND ce_p.timestamp > ce_r.timestamp
+ORDER BY r_to_p_seconds;
+
+-- Check if approvals happen at same hour of day - indicates batch job
+SELECT 
+  EXTRACT(HOUR FROM ce.timestamp) AS approval_hour,
+  COUNT(*) AS cnt
+FROM claim_events ce
+WHERE ce.activity = 'P'
+GROUP BY 1 ORDER BY cnt DESC;
+```
+
+**2. Investigate P -> N 7-day delay and resource correlation:**
+```sql
+-- Identify claims with extreme P->N delay
+WITH durations AS (
+  SELECT 
+    p.claim_id,
+    p.timestamp AS p_time,
+    n.timestamp AS n_time,
+    EXTRACT(EPOCH FROM (n.timestamp - p.timestamp)) AS p_to_n_seconds
+  FROM claim_events p
+  JOIN claim_events n ON p.claim_id = n.claim_id
+  WHERE p.activity = 'P' AND n.activity = 'N' AND n.timestamp > p.timestamp
+)
+SELECT 
+  d.*,
+  c.claim_type,
+  c.claim_amount,
+  n_event.resource
+FROM durations d
+JOIN claims c ON d.claim_id = c.claim_id
+JOIN claim_events n_event ON n_event.claim_id = d.claim_id AND n_event.activity = 'N'
+WHERE d.p_to_n_seconds > 604800 + 2*172800 -- > mean + 2*stdev
+   OR d.p_to_n_seconds < 604800 - 2*172800
+ORDER BY d.p_to_n_seconds DESC;
+
+-- Correlate delay with adjuster / region / resource
+SELECT
+  n.resource,
+  a.region,
+  a.specialization,
+  AVG(EXTRACT(EPOCH FROM (n.timestamp - p.timestamp))) AS avg_p_to_n,
+  COUNT(*) AS num_claims
+FROM claim_events p
+JOIN claim_events n ON p.claim_id = n.claim_id
+LEFT JOIN claims cl ON cl.claim_id = p.claim_id
+LEFT JOIN adjusters a ON a.adjuster_id::text = n.resource OR a.name = n.resource
+WHERE p.activity = 'P' AND n.activity = 'N'
+GROUP BY 1,2,3
+ORDER BY avg_p_to_n DESC;
+```
+
+**3. Investigate A -> C premature closure - missing steps:**
+```sql
+-- Find claims closed quickly after assignment and check for missing E,P,N
+SELECT
+  ac.claim_id,
+  ac.a_time,
+  ac.c_time,
+  EXTRACT(EPOCH FROM (ac.c_time - ac.a_time)) AS a_to_c_seconds,
+  EXISTS (SELECT 1 FROM claim_events e WHERE e.claim_id = ac.claim_id AND e.activity = 'E') AS has_evaluate,
+  EXISTS (SELECT 1 FROM claim_events p WHERE p.claim_id = ac.claim_id AND p.activity = 'P') AS has_approve,
+  EXISTS (SELECT 1 FROM claim_events n WHERE n.claim_id = ac.claim_id AND n.activity = 'N') AS has_notify,
+  c.claim_type,
+  c.claim_amount
+FROM (
+  SELECT a.claim_id, a.timestamp AS a_time, c.timestamp AS c_time
+  FROM claim_events a JOIN claim_events c ON a.claim_id = c.claim_id
+  WHERE a.activity = 'A' AND c.activity = 'C' AND c.timestamp > a.timestamp
+) ac
+JOIN claims c ON c.claim_id = ac.claim_id
+WHERE EXTRACT(EPOCH FROM (ac.c_time - ac.a_time)) < 7200 + 3600 -- faster than 3 hours
+ORDER BY a_to_c_seconds;
+```
+
+**4. Investigate E -> N too fast and skipping P:**
+```sql
+-- Find cases where N happens within minutes after E without P in between
+SELECT
+  e.claim_id,
+  e.timestamp AS e_time,
+  n.timestamp AS n_time,
+  EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) AS e_to_n_seconds,
+  p.timestamp AS p_time
+FROM claim_events e
+JOIN claim_events n ON e.claim_id = n.claim_id
+LEFT JOIN claim_events p ON e.claim_id = p.claim_id AND p.activity = 'P'
+WHERE e.activity = 'E' AND n.activity = 'N'
+  AND n.timestamp > e.timestamp
+  AND EXTRACT(EPOCH FROM (n.timestamp - e.timestamp)) < 600 -- < 10 min
+ORDER BY e_to_n_seconds;
+
+-- Count pattern violations where P is missing entirely between E and N
+SELECT
+  claim_id,
+  COUNT(*) FILTER (WHERE activity='E') AS e_cnt,
+  COUNT(*) FILTER (WHERE activity='P') AS p_cnt,
+  COUNT(*) FILTER (WHERE activity='N') AS n_cnt
+FROM claim_events
+GROUP BY claim_id
+HAVING COUNT(*) FILTER (WHERE activity='E') > 0
+   AND COUNT(*) FILTER (WHERE activity='N') > 0
+   AND COUNT(*) FILTER (WHERE activity='P') = 0;
+```
+
+**5. Overall process variant analysis for correlation:**
+```sql
+-- Reconstruct event order per claim to find dominant variants
+SELECT
+  claim_id,
+  STRING_AGG(activity, '->' ORDER BY timestamp) AS variant,
+  COUNT(*) AS steps
+FROM claim_events
+GROUP BY claim_id
+ORDER BY variant;
+
+-- Correlate anomalous variants with claim attributes
+SELECT
+  STRING_AGG(ce.activity, '->' ORDER BY ce.timestamp) AS variant,
+  c.claim_type,
+  AVG(c.claim_amount) AS avg_amount,
+  COUNT(DISTINCT c.claim_id) AS num_claims
+FROM claim_events ce
+JOIN claims c ON ce.claim_id = c.claim_id
+GROUP BY c.claim_id, c.claim_type
+HAVING STRING_AGG(ce.activity, '->' ORDER BY ce.timestamp) IN ('A->C', 'R->E->N->C', 'R->A->C');
+```
+
+These queries allow isolating claims whose inter-activity timing yields a high Z-score `|actual - avg| / stdev > 2 or 3`, and correlating those outliers with `claims.claim_type`, `claim_amount`, `claim_events.resource`, and `adjusters.region` to identify systemic vs. isolated causes.

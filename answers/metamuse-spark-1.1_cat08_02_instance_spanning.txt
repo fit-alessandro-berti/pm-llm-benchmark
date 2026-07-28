@@ -1,0 +1,151 @@
+This is a classic **Instance-Spanning Constraints - ISC** problem. Traditional process mining assumes cases are independent - here they are not. Resources, batches, priorities and WIP limits create strong inter-case dependencies. The analysis must move from case-centric to system-centric and resource-centric mining.
+
+### 1. Identifying Instance-Spanning Constraints and Their Impact
+
+The key is to separate **service time** from **waiting time** and then decompose waiting time into its causes using resource, batch and attribute data.
+
+We first transform the log to have both `START` and `COMPLETE` lifecycle. We calculate `enabled_time` for each activity = COMPLETE of previous activity in same case. Then: `Service Time = COMPLETE - START`, `Total Waiting Time = START - enabled_time`.
+
+#### A. Shared Cold-Packing Stations [Capacity Constraint: k=5]
+**How to identify:** Resource contention mining. Filter log to `Activity == Packing AND Requires Cold Packing == TRUE`. Reconstruct resource occupancy timeline for `Station C1-C5`.
+For each cold-packing case, find overlapping intervals:
+```python
+Queueing_time_cold = START_packing_case - enabled_packing_case 
+where at time enabled_packing_case, count(active cold-packings) == 5
+```
+**Process mining technique:** Dotted chart colored by resource, Performance spectrum, and Queue mining. Discover FIFO deviation - if ORD-5005 starts packing before ORD-5004 even though ORD-5004 was enabled earlier, we have queueing.
+**Metrics:**
+*   `Avg. Cold Queue Time (CQT)`, `P95 CQT`
+*   Utilization `U = busy_time / total_time` per station
+*   Queue Length over time, `Probability of Waiting P(wait >0)`
+*   Throughput loss: cases where Packing = bottleneck using bottleneck analysis [e.g. the activity with highest busyidle transition]
+
+#### B. Batching for Shipping [Synchronization Constraint]
+**How to identify:** Batch mining. The snippet shows `System (Batch B1)` in Resource. If not explicit, we discover batches by: same `Destination Region`, `Shipping Label Gen` COMPLETE timestamps clustered within < X minutes, and preceding activities completed long before.
+**Technique:** Batch discovery algorithm - group events by `Destination Region` where `Shipping Label Gen` timestamps co-occur. For each order, `Ready for Batch Time = COMPLETE Quality Check`.
+
+**Metrics:**
+*   `Batch Waiting Time = COMPLETE Shipping Label - Ready For Batch Time`
+*   `Batch Sojourn Time` = last ready - first ready inside batch
+*   Batch size distribution by Region, `Batch Fill Rate`
+*   Batching penalty for express orders vs standard.
+
+#### C. Priority Order Handling [Preemption Constraint]
+**How to identify:** Preemption / overtaking mining. Two patterns:
+1.  **Overtaking:** Express order STARTs Packing after Standard order became enabled but before Standard order STARTs.
+2.  **Pause/Preemption:** Same Resource shows pattern: Standard START, then Express START on same station without Standard COMPLETE, then Standard COMPLETE/RESUME later. Requires `SUSPEND/RESUME` lifecycle or detecting abnormally long service times split by express interval.
+
+**Metrics:**
+*   `Preemption Rate`: # standard packing interrupted / total standard packings
+*   `Priority Inversion Delay`: Additional waiting time of standard orders where an express arrived during their enabled period.
+*   `Express Speed-up vs Standard Slow-down` trade-off ratio.
+*   Distribution of `Service Time` vs `Interrupted Service Time`.
+
+#### D. Hazardous Material Limits [Dynamic WIP Constraint: WIP <=10]
+**How to identify:** Global WIP token analysis. This is an ISC that spans *two activities* - Packing + Quality Check.
+Reconstruct a global timeline: Sort all START/COMPLETE of Packing & QC where `Hazardous==TRUE`. Maintain a counter `WIP_haz[t]`. Violation = counter >10. More importantly, compliant behavior causes blocking.
+
+**Metrics:**
+*   `Hazardous WIP over time` chart, Compliance rate
+*   `Blocking Time Haz`: Waiting time incurred because `WIP_haz == 10` at enabled time. `START - enabled` where counter==10.
+*   `Throughput under limit`: orders/hour when WIP close to limit vs not.
+
+**Differentiating Within vs Between-Instance Waiting:**
+This is fundamental.
+
+*   **Within-instance:** `Service Time` long. Or waiting due to case attributes [e.g., Item Picking duration correlated with order size]. We check for correlation with own case attributes only.
+*   **Between-instance:** `Waiting Time` correlates with *system state* of *other cases*. Formal test:
+    1.  `START_case` delayed while required resource is BUSY by other case[s] -> resource contention.
+    2.  `START_case` delayed while `WIP_haz == limit` -> regulatory blocking.
+    3.  `COMPLETE Shipping` delayed while other cases of same batch not yet ready -> batch synchronization.
+    4.  If `START - enabled` correlates strongly with queue length / concurrent cases and NOT with own case attributes, it's between-instance.
+
+Implementation: Enrich log with system features at each `enabled_time`: `n_cold_busy, n_haz_wip, n_same_region_waiting, n_express_enabled`. Use root-cause analysis / decision tree to predict waiting time.
+
+### 2. Analyzing Constraint Interactions
+
+Constraints are not additive, they compound.
+
+**Interaction 1: Priority x Shared Resource = Priority Inversion Amplification.** An Express order needing cold-packing arrives. All 5 stations are occupied by Standard orders. To satisfy priority, we preempt one. That Standard order now stays in Packing longer (suspended), holding its hazardous WIP slot if it is hazardous, thus blocking *other* hazardous orders. So one express order can trigger a cascade: `Express -> Cold Queue -> Preemption -> Increased Haz WIP occupancy time -> Haz Blocking`.
+
+**Interaction 2: Batching x Hazardous x Geography.** If a region, say North, has many hazardous orders, batching logic that waits to form a large batch will keep those orders in `Ready for Batch` state longer. But does that state count as `Packing or Quality Check`? If not, it's beneficial - it releases Haz WIP slot earlier. If the process physically holds them in QC area until labeling, they *still* count toward WIP, so batching inflates WIP and throttles upstream. Need to check.
+
+**Interaction 3: Cold-Packing x Batching = Perishable Risk.** Orders requiring cold-packing are perishable. Waiting in a batch for shipping after being cold-packed degrades quality. So long batch wait specifically penalizes cold orders.
+
+**Why crucial:** Local optimization fails. Adding more cold-packing stations without changing the Haz limit will just shift bottleneck to QC and increase Haz violations. Reducing batch size to reduce waiting will increase shipping cost and may increase Haz WIP throughput but overload shipping resources. We need a global optimization model.
+
+### 3. Developing Constraint-Aware Optimization Strategies
+
+#### Strategy 1: Predictive, Priority-Aware Dynamic Scheduling for Cold-Packing - Addresses Cold-Packing + Priority + Hazardous
+
+**Change:** Replace FIFO with a weighted Shortest Processing Time with WIP awareness. Implement a central queue dispatcher for Packing.
+Rule: Every 5 minutes, score all enabled orders waiting for packing:
+`Score = w1*SLA_urgency[Express=2, Std=1] + w2*Haz_WIP_pressure - w3*Expected_Packing_Time`
+Where `Haz_WIP_pressure` is lower if adding this haz order would push WIP to 10. Hazardous orders get a malus when WIP>7. Cold orders get dedicated allocation: `Min 2 stations reserved for Express Cold` during peak hours.
+
+**Data leverage:** Use historical log to train model to predict `Expected Packing Time` from order attributes. Build a regression for demand forecast: predict arrival rate of cold orders in next 2h to proactively free stations.
+Avoid preemption by using non-preemptive priority: if express arrives, it goes to head of queue, but does not suspend - because suspend increases Haz WIP time. If suspension unavoidable, suspend only non-hazardous standard orders.
+
+**Expected Outcome:** 30-40% reduction in `Cold Queue Time` and 90% reduction in preemption-related rework. Express orders meet SLA without cascading haz block. Utilization balanced to ~85% avoiding thrashing.
+
+#### Strategy 2: SLA-Driven Dynamic Batching with Decoupling - Addresses Batching + Cold + Haz
+
+**Change:** Decouple physical flow from informational flow. Introduce two-stage batching:
+a)  **Logical release:** As soon as QC COMPLETE, order's Haz WIP token is released and physical box moves to shipping buffer lane, which does NOT count toward haz limit.
+b) **Dynamic batch trigger:** Instead of fixed batch size or fixed departure, define: `Batch closes when: size>=k OR max_waiting_time_of_oldest_ready >= T_region OR contains_express_and_wait>30min`. T_region learned from history.
+
+**Data leverage:** Mine historical data per Region: optimal batch size that balances shipping cost vs waiting. Use clustering of `Destination Region + Time of Day` to predict time-to-fill. For cold orders, set `T_cold = min(T_region, 60 min)` to limit perishable exposure.
+
+**Expected Outcome:** Reduces `Batch Waiting Time` by 50% for cold and express orders. Releases haz capacity 40 min earlier per order on average, increasing overall throughput by 15-20% without violating compliance. Shipping cost increase <5% due to optimized thresholds.
+
+#### Strategy 3: Global WIP Token System with Upstream Staging - Addresses Hazardous + Throughput
+
+**Change:** Introduce explicit CONWIP control. Create a pull system: token for `Hazardous Packing+QC`. Max 10 tokens. An order can only start Picking if a token is available or will be available within its picking time [look-ahead]. Non-hazardous orders are not limited. If no token, hazardous orders wait in a staging area *before* Item Picking, not in Packing/QC.
+
+Add dedicated Hazardous Packing lane: 2 of the 5 cold stations and 2 of the standard stations are Haz-capable but physically separated with ventilation, allowing faster QC.
+
+**Data leverage:** Use simulation on log to calculate token waiting time vs overall flow. Analyze Picking durations to implement look-ahead: `if token will be freed in < avg_picking_time, allow picking to start`.
+
+**Expected Outcome:** Guarantees zero regulatory violations by design. Eliminates blocking *inside* packing/QC [which is most expensive] and moves waiting upstream where labor is not idle. Reduces `Blocking Time Haz` from e.g., 25 min to ~5 min and increases standard order throughput because they no longer wait behind blocked haz orders.
+
+### 4. Simulation and Validation
+
+We cannot A/B test in live warehouse. Build a **Constraint-Aware Digital Twin**.
+
+**Model Type:** Discrete-Event Simulation infused with process mining models [e.g., using PM4Py + SimPy or Celonis Process Simulation]. Must be Object-Centric: Simulates orders, resources, tokens, batches as separate interacting objects.
+
+**Key Aspects to Capture Accurately:**
+1.  **Resource Contention Model:** Model each packing station as a resource with capacity 1. Model 5 cold stations as separate pool. Implement queue discipline we propose. Validate against historic utilization curve.
+2.  **Batching Model:** Implement Batch Accumulation resource. The simulation holds orders after QC until trigger logic fires. Validate batch size distribution vs historical.
+3.  **Preemption Logic:** Model interruptible resource. When express arrives and proposed logic says preempt, suspend current task, log suspension time.
+4.  **Regulatory WIP Limit:** Global counter variable in simulation, incremented on Packing START of haz, decremented on QC COMPLETE. Enforce blocking logic: activity cannot START if counter ==10.
+5.  **Arrival & Service Times:** Don't use averages. Sample from empirical distributions discovered via process mining: arrival process per hour/day, service time distributions conditional on Order Type, Haz flag, Resource. Include seasonality from 3-month log.
+6.  **Validation:** Re-run history: feed historic Order Received timestamps into simulator with *current* rules. Compare simulated KPIs to actual: end-to-end time distribution, waiting time distributions, queue lengths, batch waiting. If MAE <10-15%, model is trustworthy.
+
+**What-if Analysis:** Run 500 replications per strategy for peak week scenario.
+KPIs: Avg E2E, P95 E2E per Order Type, Throughput orders/day, % Express Late, Avg Cold Queue, Max Haz WIP, # Preemptions, Shipping cost per batch. Check for unintended consequence: e.g., does dynamic batching reduce Haz WIP but increase missed truck departures?
+
+### 5. Monitoring Post-Implementation
+
+Build two layers: operational real-time and tactical process mining.
+
+**Real-Time Control Tower Dashboard:**
+
+*   **Cold-Packing Panel:** Live queue length for cold stations, `CQT live` vs SLA, pie of stations occupied by Express vs Std. Alert if queue >3 or wait >20min.
+*   **Haz WIP Compliance Gauge:** Live `WIP_haz` counter, trend over last 8h, predicted time-to-limit based on picking pipeline. Alert at 8/10. Secondary metric: `Haz token waiting time` in staging.
+*   **Batch Health Panel:** For each Region, orders waiting for batch, oldest waiting time, predicted batch closure. Flag batches waiting > T_threshold. Special lane for Cold-batch waiting time.
+*   **Priority Performance:** % Express vs Std SLA adherence, # preemptions/day, average delay of interrupted standard orders.
+
+**Tactical Process Mining - Weekly Review:**
+
+*   **Enhanced Process Map:** Annotate Packing activity with two metrics: service time vs queue time split. Color coding by dominating cause.
+*   **Constraint Drift Detection:** Automatically detect if `Blocking Time Haz` or `Batch Waiting Time` is trending up using time series of waiting components. Root cause analysis: if CQT rises, is it due to arrival rate increase or resource down-time?
+*   **Conformity to Redesign:** Check that new rules are followed - e.g., Process conformance check that preemption only happens for non-haz standard. Discover if staff revert to old FIFO via deviation mining.
+*   **Outcome KPI Dashboard:** Before vs After: Overall E2E time distribution, throughput, compliance rate 100%, express on-time delivery, cost per order.
+
+Specifically for ISC effectiveness:
+*   Reduced queue lengths = `Avg enabled->start for cold-packing` down, `P(wait)` down.
+*   Faster batch formation = `Avg Ready->Label` down while `Avg batch size` stays within 85% of target.
+*   Compliance maintained while flow improved = `Max WIP_haz ==10` always, but `Avg WIP_haz` higher than before indicating better utilization, and `Blocking Time Haz` lower.
+
+This closes the loop: from discovery of inter-case dependencies to constraint-aware redesign, validated by simulation, and controlled by continuous monitoring.
