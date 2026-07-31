@@ -2,6 +2,7 @@
 
 | Model | Total | 1a_instruction_override | 1b_context_omission | 1c_prompt_contradiction | 2a_concept_fabrication | 2b_spurious_numeric | 2c_false_citation | 3a_unsupported_leap | 3b_self_contradiction | 3c_circular_reasoning | 4a_syntax_error | 4b_model_semantics_breach | 4c_visual_descr_mismatch |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| deepseekdeepseek-v4-flash-0731 | 101 | 4 | 34 | 0 | 5 | 7 | 0 | 45 | 2 | 0 | 2 | 2 | 0 |
 | moonshotaikimi-k2.7-code | 114 | 8 | 26 | 0 | 3 | 12 | 0 | 49 | 3 | 0 | 5 | 5 | 3 |
 | deepseekdeepseek-v3.2-speciale-thinking | 133 | 7 | 41 | 0 | 7 | 6 | 0 | 62 | 2 | 0 | 3 | 4 | 0 |
 | gpt-5.6-sol-XHIGH | 133 | 7 | 26 | 1 | 9 | 9 | 0 | 64 | 1 | 0 | 2 | 7 | 5 |
