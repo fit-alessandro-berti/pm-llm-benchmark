@@ -4,11 +4,12 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 
 | Model                            | Score    | OS                 | LRM                | PCo                  | CC                   | PMo                  | PQ                   | HG                   | FA                   | OPT                  | :nerd_face: VI       |
 | -------------------------------- | -------- | ------------------ | ------------------ | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- |
-| moonshotaikimi-k3                | **39.2** | :white_check_mark: | :white_check_mark: | **6.1**              | **7.4**              | :mage_woman: **6.1** | :mage_woman: **5.5** | :mage_woman: **5.4** | **5.0**              | :mage_woman: **3.7** | 0.0                  |
+| moonshotaikimi-k3                | **39.2** | :white_check_mark: | :white_check_mark: | **6.1**              | **7.3**              | :mage_woman: **6.1** | :mage_woman: **5.5** | :mage_woman: **5.4** | **5.0**              | :mage_woman: **3.7** | 0.0                  |
 | moonshotaikimi-k2.6              | **37.8** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.3** | **7.2**              | 5.3                  | 4.9                  | **5.3**              | **5.2**              | **3.6**              | 0.0                  |
 | deepseek-v4-flash-0731           | **37.7** | :white_check_mark: | :white_check_mark: | **6.2**              | 6.6                  | **6.0**              | 4.6                  | **5.2**              | :mage_woman: **5.3** | :mage_woman: **3.7** | 0.0                  |
 | deepseek-v3.2-speciale-thinking  | **37.5** | :white_check_mark: | :white_check_mark: | **6.2**              | **7.2**              | 5.7                  | 4.8                  | 5.1                  | 4.9                  | **3.6**              | 0.0                  |
-| thinkingmachinesinkling          | **36.7** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.3** | :mage_woman: **7.5** | 5.4                  | 4.0                  | 5.0                  | 4.8                  | :mage_woman: **3.7** | 0.0                  |
+| thinkingmachinesinkling-small    | **36.7** | :white_check_mark: | :white_check_mark: | **6.2**              | 7.1                  | 5.0                  | 4.5                  | **5.2**              | **5.0**              | :mage_woman: **3.7** | 0.0                  |
+| thinkingmachinesinkling          | **36.7** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.3** | :mage_woman: **7.4** | 5.4                  | 4.0                  | 5.0                  | 4.8                  | :mage_woman: **3.7** | 0.0                  |
 | deepseek-v4-pro                  | **36.4** | :white_check_mark: | :white_check_mark: | **6.0**              | 7.0                  | 5.3                  | 5.1                  | 5.0                  | 4.5                  | **3.6**              | 0.0                  |
 | moonshotaikimi-k2.7-code         | **35.6** | :white_check_mark: | :white_check_mark: | **6.2**              | 6.3                  | 4.7                  | 4.7                  | :mage_woman: **5.4** | 4.6                  | :mage_woman: **3.7** | 0.0                  |
 | qwen3.7-max                      | **35.1** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.4                  | 4.8                  | 5.1                  | **5.0**              | **3.5**              | 0.0                  |
@@ -19,18 +20,18 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | moonshotaikimi-k2.5              | **34.0** | :white_check_mark: | :white_check_mark: | 5.8                  | 6.1                  | 4.6                  | 4.2                  | 4.9                  | 4.8                  | **3.5**              | 0.0                  |
 | z-aiglm-5.2                      | **33.8** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.7                  | 4.3                  | 4.2                  | 5.0                  | 4.6                  | 3.3                  | 0.0                  |
 | deepseek-v4-flash                | **33.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.8                  | 4.6                  | 4.8                  | 4.7                  | 2.3                  | 0.0                  |
-| meituanlongcat-2.0               | **33.0** | :white_check_mark: | :x:                | 5.3                  | 6.0                  | 4.9                  | 4.2                  | 4.6                  | 4.6                  | 3.2                  | 0.0                  |
+| meituanlongcat-2.0               | **33.0** | :white_check_mark: | :x:                | 5.3                  | 6.1                  | 4.9                  | 4.2                  | 4.6                  | 4.6                  | 3.2                  | 0.0                  |
 | z-aiglm-5v-turbo                 | **32.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 5.8                  | 4.8                  | 3.9                  | 4.5                  | 4.4                  | **3.5**              | :mage_woman: **4.0** |
-| deepseek-v3.2-thinking           | **32.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.3                  | 4.1                  | 4.3                  | 4.3                  | 4.5                  | 3.3                  | 0.0                  |
-| qwen3.5-397b-a17b                | **32.5** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.3                  | 4.2                  | 3.8                  | 4.4                  | 4.6                  | 3.4                  | 0.0                  |
+| deepseek-v3.2-thinking           | **32.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.2                  | 4.1                  | 4.3                  | 4.3                  | 4.5                  | 3.3                  | 0.0                  |
+| qwen3.5-397b-a17b                | **32.5** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.3                  | 4.1                  | 3.8                  | 4.4                  | 4.6                  | 3.4                  | 0.0                  |
 | qwen3.5-27b                      | **32.2** | :white_check_mark: | :white_check_mark: | 5.8                  | 6.5                  | 3.5                  | 3.6                  | 4.7                  | 4.9                  | 3.1                  | 0.0                  |
-| minimaxminimax-m3                | **31.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 5.9                  | 3.4                  | 3.9                  | 4.7                  | 4.5                  | **3.5**              | 0.0                  |
-| qwen3.7-flash                    | **31.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 5.6                  | 3.2                  | 4.3                  | 4.5                  | 4.5                  | **3.6**              | 0.0                  |
+| minimaxminimax-m3                | **31.7** | :white_check_mark: | :white_check_mark: | 5.8                  | 5.9                  | 3.4                  | 3.9                  | 4.8                  | 4.5                  | **3.5**              | 0.0                  |
+| qwen3.7-flash                    | **31.5** | :white_check_mark: | :white_check_mark: | 5.9                  | 5.6                  | 3.2                  | 4.3                  | 4.5                  | 4.5                  | **3.6**              | 0.0                  |
 | nemotron-3-ultra-550b-a55b       | **31.4** | :white_check_mark: | :white_check_mark: | 5.7                  | 5.8                  | 4.3                  | 3.9                  | 4.1                  | 4.0                  | **3.5**              | 0.0                  |
 | inclusionailing-2.6-1t           | **31.3** | :white_check_mark: | :x:                | 5.3                  | 5.8                  | 3.2                  | 4.3                  | 4.8                  | 4.6                  | 3.2                  | 0.0                  |
-| qwen3.5-122b-a10b                | **30.7** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.9                  | 4.1                  | 4.3                  | 4.7                  | 3.4                  | 0.0                  |
-| minimaxminimax-m2.5              | **30.2** | :white_check_mark: | :white_check_mark: | 5.5                  | 5.8                  | 3.5                  | 3.4                  | 4.3                  | 4.7                  | 3.0                  | 0.0                  |
-| arcee-aitrinity-large-thinking   | **30.1** | :white_check_mark: | :white_check_mark: | 4.9                  | 6.6                  | 4.3                  | 3.9                  | 3.6                  | 4.0                  | 2.8                  | 0.0                  |
+| qwen3.5-122b-a10b                | **30.7** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.8                  | 4.1                  | 4.3                  | 4.8                  | 3.4                  | 0.0                  |
+| minimaxminimax-m2.5              | **30.2** | :white_check_mark: | :white_check_mark: | 5.5                  | 5.9                  | 3.5                  | 3.4                  | 4.3                  | 4.7                  | 3.0                  | 0.0                  |
+| arcee-aitrinity-large-thinking   | **30.2** | :white_check_mark: | :white_check_mark: | 4.9                  | 6.6                  | 4.3                  | 3.9                  | 3.6                  | 4.0                  | 2.8                  | 0.0                  |
 | gemma-4-31b-it                   | **29.8** | :white_check_mark: | :white_check_mark: | 5.2                  | 5.8                  | 3.6                  | 3.6                  | 4.3                  | 4.5                  | 2.9                  | 3.0                  |
 | gemma-4-26b-a4b-it               | **29.6** | :white_check_mark: | :white_check_mark: | 5.0                  | 5.7                  | 3.3                  | 4.1                  | 4.1                  | 4.4                  | 3.0                  | 2.5                  |
 | nousresearchhermes-4-70b         | **29.5** | :white_check_mark: | :white_check_mark: | 4.9                  | 6.0                  | 3.4                  | 4.1                  | 3.6                  | 4.3                  | 3.2                  | 0.0                  |
@@ -39,7 +40,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | prime-intellectintellect-3       | **29.0** | :white_check_mark: | :white_check_mark: | 5.5                  | 5.1                  | 2.8                  | 3.8                  | 4.3                  | 4.5                  | 3.0                  | 0.0                  |
 | phi4-reasoningplus               | **28.9** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.7                  | 3.7                  | 4.3                  | 4.2                  | 2.8                  | 0.0                  |
 | gpt-oss-120b                     | **28.8** | :white_check_mark: | :white_check_mark: | 5.1                  | 5.2                  | 3.1                  | 3.5                  | 4.7                  | 3.9                  | 3.4                  | 0.0                  |
-| nemotron-super-49b-v1.5-thinking | **28.7** | :white_check_mark: | :white_check_mark: | 5.1                  | 5.4                  | 3.0                  | 4.1                  | 4.1                  | 4.6                  | 2.4                  | 0.0                  |
+| nemotron-super-49b-v1.5-thinking | **28.7** | :white_check_mark: | :white_check_mark: | 5.1                  | 5.4                  | 3.0                  | 4.1                  | 4.1                  | 4.6                  | 2.5                  | 0.0                  |
 | writerpalmyra-x5                 | **28.5** | :white_check_mark: | :x:                | 4.8                  | 5.2                  | 2.1                  | 4.1                  | 4.5                  | 4.6                  | 3.1                  | 0.0                  |
 | phi4-reasoning                   | **28.4** | :white_check_mark: | :white_check_mark: | 5.6                  | 5.3                  | 2.6                  | 3.9                  | 4.1                  | 4.2                  | 2.7                  | 0.0                  |
 | openrouterowl-alpha              | **27.9** | :white_check_mark: | :x:                | 4.9                  | 5.3                  | 2.9                  | 3.2                  | 4.0                  | 4.5                  | 3.2                  | 0.0                  |
@@ -56,15 +57,15 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | poolsidelaguna-m.1               | **25.2** | :white_check_mark: | :x:                | 3.9                  | 5.1                  | 2.5                  | 3.3                  | 3.6                  | 4.1                  | 2.6                  | 0.0                  |
 | ministral-14b-2512               | **24.4** | :white_check_mark: | :x:                | 4.5                  | 3.7                  | 2.3                  | 3.6                  | 3.7                  | 3.9                  | 2.6                  | :mage_woman: **4.0** |
 | qwen3-30b-a3b-instruct-2507      | **24.0** | :white_check_mark: | :x:                | 3.4                  | 4.1                  | 2.4                  | 3.3                  | 3.8                  | 3.9                  | 3.0                  | 0.0                  |
-| gemma4e4b                        | **23.9** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.8                  | 2.1                  | 3.0                  | 3.6                  | 3.4                  | 2.7                  | 0.0                  |
+| gemma4e4b                        | **23.9** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.8                  | 2.0                  | 3.0                  | 3.6                  | 3.4                  | 2.7                  | 0.0                  |
 | mistral-small-2506               | **23.8** | :white_check_mark: | :x:                | 4.5                  | 4.0                  | 2.6                  | 3.5                  | 3.3                  | 3.6                  | 2.2                  | 3.5                  |
 | granite4.130b                    | **23.5** | :white_check_mark: | :x:                | 3.5                  | 3.6                  | 2.5                  | 3.2                  | 3.6                  | 4.1                  | 3.0                  | 0.0                  |
 | ministral-8b-2512                | **23.2** | :white_check_mark: | :x:                | 3.8                  | 4.2                  | 2.3                  | 3.0                  | 3.7                  | 3.6                  | 2.6                  | **3.7**              |
-| llama-4-maverick                 | **22.7** | :white_check_mark: | :x:                | 3.9                  | 4.0                  | 2.5                  | 3.4                  | 3.6                  | 3.4                  | 1.8                  | 3.0                  |
+| llama-4-maverick                 | **22.7** | :white_check_mark: | :x:                | 3.9                  | 4.0                  | 2.5                  | 3.4                  | 3.6                  | 3.4                  | 1.9                  | 3.0                  |
 | mistral-small-2603               | **22.6** | :white_check_mark: | :x:                | 3.4                  | 3.8                  | 1.9                  | 3.5                  | 3.5                  | 3.6                  | 3.0                  | **3.9**              |
 | nemotron-3-super-120b-a12b       | **22.1** | :white_check_mark: | :white_check_mark: | 4.4                  | 4.5                  | 1.7                  | 3.2                  | 2.9                  | 3.1                  | 2.2                  | 0.0                  |
+| phi-4                            | **21.7** | :white_check_mark: | :x:                | 4.2                  | 3.4                  | 2.2                  | 3.3                  | 3.2                  | 3.4                  | 2.0                  | 0.0                  |
 | gemma4e2b                        | **21.7** | :white_check_mark: | :white_check_mark: | 3.4                  | 4.0                  | 1.7                  | 3.0                  | 3.2                  | 3.7                  | 2.9                  | 0.0                  |
-| phi-4                            | **21.7** | :white_check_mark: | :x:                | 4.3                  | 3.4                  | 2.2                  | 3.3                  | 3.2                  | 3.4                  | 2.0                  | 0.0                  |
 | ibm-granitegranite-4.1-8b        | **21.1** | :white_check_mark: | :x:                | 3.8                  | 3.7                  | 2.1                  | 2.9                  | 3.5                  | 3.0                  | 2.1                  | 0.0                  |
 | ai21jamba-large-1.7              | **20.9** | :white_check_mark: | :x:                | 3.1                  | 3.5                  | 1.6                  | 3.4                  | 3.2                  | 3.9                  | 2.2                  | 0.0                  |
 | granite4small-h                  | **20.3** | :white_check_mark: | :x:                | 3.1                  | 3.6                  | 2.2                  | 2.6                  | 3.5                  | 3.0                  | 2.2                  | 0.0                  |
@@ -296,6 +297,62 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             | 7.2   |
 | cat08_04_resource_assign           | 7.1   |
 | cat08_05_task_schedul              | 6.9   |
+
+### thinkingmachinesinkling-small   => 36.7 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 8.4   |
+| cat01_02_activity_context          | 8.0   |
+| cat01_03_high_level_events         | 8.0   |
+| cat01_04_sensor_recordings         | 7.3   |
+| cat01_05_merge_two_logs            | 7.3   |
+| cat01_06_system_logs               | 7.3   |
+| cat01_07_interv_to_pseudo_bpmn     | 7.6   |
+| cat01_08_tables_to_log             | 8.0   |
+| cat02_01_conformance_textual       | 7.8   |
+| cat02_02_conf_desiderata           | 7.4   |
+| cat02_03_anomaly_event_log         | 7.4   |
+| cat02_04_powl_anomaly_detection    | 7.4   |
+| cat02_05_two_powls_anomalies       | 7.6   |
+| cat02_06_root_cause_1              | 7.6   |
+| cat02_07_root_cause_2              | 7.4   |
+| cat02_08_underfitting_process_tree | 9.1   |
+| cat02_09_fix_process_tree          | 9.1   |
+| cat03_01_process_tree_generation   | 6.3   |
+| cat03_02_powl_generation           | 6.8   |
+| cat03_03_log_skeleton_generation   | 5.8   |
+| cat03_04_declare_generation        | 1.7   |
+| cat03_05_temp_profile_generation   | 7.6   |
+| cat03_06_petri_net_generation      | 7.3   |
+| cat03_07_process_tree_discovery    | 7.6   |
+| cat03_08_powl_discovery            | 7.3   |
+| cat04_01_pseudo_bpmn_description   | 8.4   |
+| cat04_02_pseudo_bpmn_open_question | 7.4   |
+| cat04_03_declare_open_question     | 1.1   |
+| cat04_04_declare_description       | 2.2   |
+| cat04_05_sql_filt_num_events       | 9.6   |
+| cat04_06_sql_filt_three_df         | 8.2   |
+| cat04_07_sql_filt_top_k_vars       | 7.7   |
+| cat05_01_hyp_generation_log        | 7.1   |
+| cat05_02_hyp_gen_powl              | 7.3   |
+| cat05_03_hyp_gen_declare           | 5.9   |
+| cat05_04_hyp_gen_temp_profile      | 6.8   |
+| cat05_05_question_gen_nlp          | 9.3   |
+| cat05_06_question_pseudo_bpmn      | 7.7   |
+| cat05_07_question_interview        | 7.4   |
+| cat06_01_bias_text                 | 8.0   |
+| cat06_02_bias_event_log            | 7.0   |
+| cat06_03_bias_powl                 | 8.7   |
+| cat06_04_bias_two_logs             | 7.4   |
+| cat06_05_bias_two_logs_2           | 7.7   |
+| cat06_06_bias_mitigation_declare   | 4.1   |
+| cat06_07_fair_unfair_powl          | 7.3   |
+| cat08_01_queue_mining              | 7.4   |
+| cat08_02_instance_spanning         | 7.4   |
+| cat08_03_transport_opt             | 7.6   |
+| cat08_04_resource_assign           | 7.6   |
+| cat08_05_task_schedul              | 7.3   |
 
 ### thinkingmachinesinkling   => 36.7 points
 
@@ -1255,7 +1312,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 7.6   |
 | cat08_05_task_schedul              | 7.1   |
 
-### qwenqwen3.7-flash   => 31.6 points
+### qwenqwen3.7-flash   => 31.5 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |
@@ -1535,7 +1592,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 6.0   |
 | cat08_05_task_schedul              | 6.2   |
 
-### arcee-aitrinity-large-thinking   => 30.1 points
+### arcee-aitrinity-large-thinking   => 30.2 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |
@@ -3437,62 +3494,6 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 5.0   |
 | cat08_05_task_schedul              | 3.3   |
 
-### gemma4e2b   => 21.7 points
-
-| Question                           | Score |
-| ---------------------------------- | ----- |
-| cat01_01_case_id_inference         | 4.5   |
-| cat01_02_activity_context          | 5.1   |
-| cat01_03_high_level_events         | 5.8   |
-| cat01_04_sensor_recordings         | 5.7   |
-| cat01_05_merge_two_logs            | 2.8   |
-| cat01_06_system_logs               | 3.0   |
-| cat01_07_interv_to_pseudo_bpmn     | 4.8   |
-| cat01_08_tables_to_log             | 1.8   |
-| cat02_01_conformance_textual       | 7.0   |
-| cat02_02_conf_desiderata           | 4.0   |
-| cat02_03_anomaly_event_log         | 3.0   |
-| cat02_04_powl_anomaly_detection    | 7.0   |
-| cat02_05_two_powls_anomalies       | 2.5   |
-| cat02_06_root_cause_1              | 3.5   |
-| cat02_07_root_cause_2              | 3.0   |
-| cat02_08_underfitting_process_tree | 2.0   |
-| cat02_09_fix_process_tree          | 7.7   |
-| cat03_01_process_tree_generation   | 2.0   |
-| cat03_02_powl_generation           | 1.5   |
-| cat03_03_log_skeleton_generation   | 2.5   |
-| cat03_04_declare_generation        | 1.5   |
-| cat03_05_temp_profile_generation   | 4.3   |
-| cat03_06_petri_net_generation      | 1.5   |
-| cat03_07_process_tree_discovery    | 2.0   |
-| cat03_08_powl_discovery            | 2.0   |
-| cat04_01_pseudo_bpmn_description   | 3.5   |
-| cat04_02_pseudo_bpmn_open_question | 5.3   |
-| cat04_03_declare_open_question     | 2.0   |
-| cat04_04_declare_description       | 2.4   |
-| cat04_05_sql_filt_num_events       | 7.5   |
-| cat04_06_sql_filt_three_df         | 2.0   |
-| cat04_07_sql_filt_top_k_vars       | 6.8   |
-| cat05_01_hyp_generation_log        | 2.3   |
-| cat05_02_hyp_gen_powl              | 3.8   |
-| cat05_03_hyp_gen_declare           | 2.0   |
-| cat05_04_hyp_gen_temp_profile      | 2.3   |
-| cat05_05_question_gen_nlp          | 7.7   |
-| cat05_06_question_pseudo_bpmn      | 6.2   |
-| cat05_07_question_interview        | 7.7   |
-| cat06_01_bias_text                 | 6.1   |
-| cat06_02_bias_event_log            | 6.2   |
-| cat06_03_bias_powl                 | 7.0   |
-| cat06_04_bias_two_logs             | 5.6   |
-| cat06_05_bias_two_logs_2           | 6.8   |
-| cat06_06_bias_mitigation_declare   | 2.5   |
-| cat06_07_fair_unfair_powl          | 2.3   |
-| cat08_01_queue_mining              | 5.8   |
-| cat08_02_instance_spanning         | 5.4   |
-| cat08_03_transport_opt             | 5.4   |
-| cat08_04_resource_assign           | 6.3   |
-| cat08_05_task_schedul              | 5.8   |
-
 ### microsoftphi-4   => 21.7 points
 
 | Question                           | Score |
@@ -3548,6 +3549,62 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_03_transport_opt             | 4.2   |
 | cat08_04_resource_assign           | 4.2   |
 | cat08_05_task_schedul              | 3.4   |
+
+### gemma4e2b   => 21.7 points
+
+| Question                           | Score |
+| ---------------------------------- | ----- |
+| cat01_01_case_id_inference         | 4.5   |
+| cat01_02_activity_context          | 5.1   |
+| cat01_03_high_level_events         | 5.8   |
+| cat01_04_sensor_recordings         | 5.7   |
+| cat01_05_merge_two_logs            | 2.8   |
+| cat01_06_system_logs               | 3.0   |
+| cat01_07_interv_to_pseudo_bpmn     | 4.8   |
+| cat01_08_tables_to_log             | 1.8   |
+| cat02_01_conformance_textual       | 7.0   |
+| cat02_02_conf_desiderata           | 4.0   |
+| cat02_03_anomaly_event_log         | 3.0   |
+| cat02_04_powl_anomaly_detection    | 7.0   |
+| cat02_05_two_powls_anomalies       | 2.5   |
+| cat02_06_root_cause_1              | 3.5   |
+| cat02_07_root_cause_2              | 3.0   |
+| cat02_08_underfitting_process_tree | 2.0   |
+| cat02_09_fix_process_tree          | 7.7   |
+| cat03_01_process_tree_generation   | 2.0   |
+| cat03_02_powl_generation           | 1.5   |
+| cat03_03_log_skeleton_generation   | 2.5   |
+| cat03_04_declare_generation        | 1.5   |
+| cat03_05_temp_profile_generation   | 4.3   |
+| cat03_06_petri_net_generation      | 1.5   |
+| cat03_07_process_tree_discovery    | 2.0   |
+| cat03_08_powl_discovery            | 2.0   |
+| cat04_01_pseudo_bpmn_description   | 3.5   |
+| cat04_02_pseudo_bpmn_open_question | 5.3   |
+| cat04_03_declare_open_question     | 2.0   |
+| cat04_04_declare_description       | 2.4   |
+| cat04_05_sql_filt_num_events       | 7.5   |
+| cat04_06_sql_filt_three_df         | 2.0   |
+| cat04_07_sql_filt_top_k_vars       | 6.8   |
+| cat05_01_hyp_generation_log        | 2.3   |
+| cat05_02_hyp_gen_powl              | 3.8   |
+| cat05_03_hyp_gen_declare           | 2.0   |
+| cat05_04_hyp_gen_temp_profile      | 2.3   |
+| cat05_05_question_gen_nlp          | 7.7   |
+| cat05_06_question_pseudo_bpmn      | 6.2   |
+| cat05_07_question_interview        | 7.7   |
+| cat06_01_bias_text                 | 6.1   |
+| cat06_02_bias_event_log            | 6.2   |
+| cat06_03_bias_powl                 | 7.0   |
+| cat06_04_bias_two_logs             | 5.6   |
+| cat06_05_bias_two_logs_2           | 6.8   |
+| cat06_06_bias_mitigation_declare   | 2.5   |
+| cat06_07_fair_unfair_powl          | 2.3   |
+| cat08_01_queue_mining              | 5.8   |
+| cat08_02_instance_spanning         | 5.4   |
+| cat08_03_transport_opt             | 5.4   |
+| cat08_04_resource_assign           | 6.3   |
+| cat08_05_task_schedul              | 5.8   |
 
 ### ibm-granitegranite-4.1-8b   => 21.1 points
 
