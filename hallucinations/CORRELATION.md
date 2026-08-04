@@ -430,15 +430,15 @@
 - P-value: 0.3495
 - N samples: 139
 
-**Is Reasoning Model:**
-- Correlation: 0.065 
-- Linear fit: y = 0.021x + 0.0
-- P-value: 0.4135
-- N samples: 159
-
 **Is Open Source:**
 - Correlation: -0.065 
 - Linear fit: y = -0.021x + 0.0
+- P-value: 0.4135
+- N samples: 159
+
+**Is Reasoning Model:**
+- Correlation: 0.065 
+- Linear fit: y = 0.021x + 0.0
 - P-value: 0.4135
 - N samples: 159
 
