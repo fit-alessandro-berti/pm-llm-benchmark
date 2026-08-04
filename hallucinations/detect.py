@@ -239,7 +239,7 @@ def main(input_dir, output_dir, max_threads, cleanup_orphans=False):
     if cleanup_orphans:
         cleanup_orphaned_outputs(input_dir, output_dir)
 
-    model = "gpt-4.1-mini"
+    model = "gpt-5.6-luna"
     while True:
         # Gather files that need processing
         to_process = []
@@ -272,7 +272,7 @@ def main(input_dir, output_dir, max_threads, cleanup_orphans=False):
         for t in threads:
             t.join()
 
-        model = "gpt-4.1"
+        model = "gpt-5.6-terra"
 
     print("[INFO] All files processed.")
 
