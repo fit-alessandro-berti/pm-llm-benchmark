@@ -31,5 +31,7 @@ if __name__ == "__main__":
 
     do_deletion("answers", original_name)
     do_deletion(get_base_evaluation_path(EVALUATING_MODEL_NAME), original_name)
+    do_deletion(os.path.join("hallucinations", "output"), original_name)
+    do_deletion(os.path.join("embeddings", "output"), original_name)
 
     write_evaluation(".", extra=True)

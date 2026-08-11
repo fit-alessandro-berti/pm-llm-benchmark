@@ -37,5 +37,7 @@ if __name__ == "__main__":
 
     do_renaming("answers", original_name, novel_name)
     do_renaming(get_base_evaluation_path(EVALUATING_MODEL_NAME), original_name, novel_name)
+    do_renaming(os.path.join("hallucinations", "output"), original_name, novel_name)
+    do_renaming(os.path.join("embeddings", "output"), original_name, novel_name)
 
     write_evaluation(".", extra=True)
