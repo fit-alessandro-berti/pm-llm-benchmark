@@ -1,5 +1,7 @@
 # PM-LLM-Benchmark v 2.2
 
+> **⚠️ Deprecated:** This version of the benchmark is deprecated. Please use the new version: [PM-LLM-Benchmark3](https://github.com/fit-alessandro-berti/pm-llm-benchmark3).
+
 **The current repository shows PM-LLM-Benchmark v 2.2, which contains a different and more complex set of prompts than PM-LLM-Benchmark v 1.0**
 The paper describing PM-LLM-Benchmark v 1.0 is available [here](https://arxiv.org/pdf/2407.13244)
 
