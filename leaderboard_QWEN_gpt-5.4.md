@@ -9,11 +9,11 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | qwen3.7-plus                | **34.6** | :white_check_mark: | :white_check_mark: | **5.9**              | 6.3                  | **4.7**              | **4.5**              | **4.9**              | **4.7**              | **3.5**              | 0.0                  |
 | qwen3.6-max-preview         | **34.4** | :x:                | :white_check_mark: | **6.0**              | :mage_woman: **6.8** | 3.7                  | 4.3                  | **4.9**              | :mage_woman: **5.0** | :mage_woman: **3.6** | 0.0                  |
 | qwen3.6-27b                 | **32.7** | :x:                | :white_check_mark: | 5.7                  | **6.5**              | 3.3                  | 3.9                  | **5.0**              | **4.7**              | :mage_woman: **3.6** | 3.4                  |
-| qwen3.5-397b-a17b           | **32.5** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.3                  | 4.1                  | 3.8                  | 4.4                  | 4.6                  | **3.4**              | 0.0                  |
+| qwen3.5-397b-a17b           | **32.5** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.3                  | 4.2                  | 3.8                  | 4.4                  | 4.6                  | **3.4**              | 0.0                  |
 | qwen3.5-27b                 | **32.2** | :white_check_mark: | :white_check_mark: | **5.8**              | **6.5**              | 3.5                  | 3.6                  | 4.7                  | **4.9**              | 3.1                  | 0.0                  |
-| qwen3.7-flash               | **31.5** | :white_check_mark: | :white_check_mark: | **5.9**              | 5.6                  | 3.2                  | 4.3                  | 4.5                  | 4.5                  | :mage_woman: **3.6** | 0.0                  |
+| qwen3.7-flash               | **31.6** | :white_check_mark: | :white_check_mark: | **5.9**              | 5.6                  | 3.2                  | 4.3                  | 4.5                  | 4.5                  | :mage_woman: **3.6** | 0.0                  |
 | qwen3.6-flash               | **31.5** | :x:                | :white_check_mark: | 5.7                  | 6.0                  | 2.9                  | 4.3                  | 4.6                  | 4.5                  | **3.4**              | 3.9                  |
-| qwen3.5-122b-a10b           | **30.7** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.8                  | 4.1                  | 4.3                  | **4.8**              | **3.4**              | 0.0                  |
+| qwen3.5-122b-a10b           | **30.7** | :white_check_mark: | :white_check_mark: | 5.3                  | 6.0                  | 2.9                  | 4.1                  | 4.3                  | **4.7**              | **3.4**              | 0.0                  |
 | qwen3.6-35b-a3b             | **30.2** | :x:                | :white_check_mark: | 5.6                  | 6.0                  | 2.9                  | 3.8                  | 4.1                  | 4.5                  | **3.4**              | 3.9                  |
 | qwen3.5-35b-a3b             | **29.3** | :white_check_mark: | :white_check_mark: | 5.7                  | 5.7                  | 2.1                  | 3.9                  | 4.2                  | 4.5                  | 3.2                  | 0.0                  |
 | qwen3-next-80b-a3b-instruct | **26.6** | :white_check_mark: | :x:                | 4.7                  | 4.6                  | 2.5                  | 3.6                  | 4.1                  | 4.1                  | 3.0                  | 0.0                  |
@@ -425,7 +425,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 6.7   |
 | cat08_05_task_schedul              | 6.4   |
 
-### qwenqwen3.7-flash   => 31.5 points
+### qwenqwen3.7-flash   => 31.6 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |
