@@ -129,7 +129,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | poolsidelaguna-xs-2.1             | **27.9** | :white_check_mark: | :x:                | 4.9                  | 5.1                  | 3.2                  | 4.1                  | 3.9                  | 4.0                  | 2.7                  | 0.0                  |
 | gemini-3.5-flash-lite             | **27.8** | :x:                | :white_check_mark: | 4.9                  | 5.3                  | 2.4                  | 4.0                  | 3.9                  | 4.3                  | 3.1                  | 4.2                  |
 | gemini-3.1-flash-lite-preview     | **27.7** | :x:                | :x:                | 4.7                  | 5.3                  | 3.1                  | 4.0                  | 4.1                  | 4.3                  | 2.2                  | 4.5                  |
-| claude-haiku-4-5-20251001         | **27.7** | :x:                | :x:                | 5.2                  | 4.5                  | 2.9                  | 3.7                  | 4.5                  | 4.3                  | 2.6                  | 0.0                  |
+| claude-haiku-4-5                  | **27.7** | :x:                | :x:                | 5.2                  | 4.5                  | 2.9                  | 3.7                  | 4.5                  | 4.3                  | 2.6                  | 0.0                  |
 | mistral-medium-3.5                | **27.5** | :x:                | :x:                | 5.0                  | 4.6                  | 2.8                  | 3.8                  | 4.0                  | 4.2                  | 3.1                  | 4.0                  |
 | grok-3                            | **27.4** | :x:                | :x:                | 5.0                  | 5.0                  | 3.0                  | 3.0                  | 4.2                  | 4.4                  | 2.8                  | 0.0                  |
 | stepfunstep-3.7-flash             | **27.2** | :white_check_mark: | :white_check_mark: | 4.3                  | 5.9                  | 3.4                  | 3.3                  | 4.2                  | 4.1                  | 2.0                  | 0.0                  |
@@ -7656,7 +7656,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 4.6   |
 | cat08_05_task_schedul              | 4.1   |
 
-### claude-haiku-4-5-20251001   => 27.7 points
+### claude-haiku-4-5   => 27.7 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |

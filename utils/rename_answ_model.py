@@ -26,8 +26,8 @@ def do_renaming(base_path, original_name, novel_name):
 if __name__ == "__main__":
     chdir_repo_root()
 
-    original_name = "gpt-5.2-2025-12-11-NONE_"
-    novel_name = "gpt-5.2-NONE_"
+    original_name = "claude-haiku-4-5-20251001_"
+    novel_name = "claude-haiku-4-5_"
 
     if not original_name.endswith("_"):
         raise Exception("original_name must terminate with _")
