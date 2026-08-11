@@ -19,12 +19,12 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | gpt-5.4-HIGH                      | **37.0** | :x:                | :white_check_mark: | 5.9                  | 7.0                  | 5.1                  | 4.8                  | **5.4**              | **5.0**              | **3.7**              | **4.7**              |
 | gpt-5-pro-2025-10-06              | **36.9** | :x:                | :white_check_mark: | 5.6                  | 7.1                  | 5.1                  | 5.3                  | **5.3**              | 4.8                  | 3.6                  | **4.8**              |
 | gpt-5.5-XHIGH                     | **36.9** | :x:                | :white_check_mark: | **6.0**              | 6.9                  | 4.9                  | 5.0                  | **5.3**              | **5.0**              | **3.7**              | 4.1                  |
-| gpt-5.2-2025-12-11-XHIGH          | **36.7** | :x:                | :white_check_mark: | 5.8                  | 6.9                  | 5.4                  | 5.1                  | 4.9                  | **5.0**              | **3.7**              | 4.6                  |
+| gpt-5.2-XHIGH                     | **36.8** | :x:                | :white_check_mark: | 5.8                  | 6.9                  | 5.4                  | 5.1                  | 4.9                  | **5.0**              | **3.7**              | 4.6                  |
 | thinkingmachinesinkling-small     | **36.7** | :white_check_mark: | :white_check_mark: | **6.2**              | 7.1                  | 5.0                  | 4.5                  | 5.2                  | **5.0**              | **3.7**              | 0.0                  |
 | thinkingmachinesinkling           | **36.7** | :white_check_mark: | :white_check_mark: | :mage_woman: **6.3** | **7.5**              | 5.4                  | 4.0                  | 5.0                  | 4.8                  | **3.7**              | 0.0                  |
 | Grok-4.5-Heavy                    | **36.6** | :x:                | :white_check_mark: | 5.9                  | 7.0                  | 5.1                  | 4.9                  | **5.3**              | 4.6                  | **3.7**              | **4.8**              |
 | deepseek-v4-pro                   | **36.4** | :white_check_mark: | :white_check_mark: | **6.0**              | 7.0                  | 5.3                  | 5.1                  | 5.0                  | 4.5                  | 3.6                  | 0.0                  |
-| gpt-5.2-2025-12-11-HIGH           | **36.3** | :x:                | :white_check_mark: | **6.0**              | 6.5                  | 5.2                  | 4.7                  | **5.3**              | 4.8                  | **3.7**              | 4.0                  |
+| gpt-5.2-HIGH                      | **36.3** | :x:                | :white_check_mark: | **6.0**              | 6.5                  | 5.2                  | 4.7                  | **5.3**              | 4.8                  | **3.7**              | 4.0                  |
 | gpt-5.6-sol-NONE                  | **36.3** | :x:                | :x:                | 5.9                  | 7.0                  | 4.4                  | 5.1                  | 4.9                  | **5.0**              | **3.9**              | **4.7**              |
 | anthropicclaude-fable-5           | **35.6** | :x:                | :x:                | 5.7                  | 6.9                  | 4.7                  | 4.6                  | 5.1                  | 4.7                  | **3.8**              | 4.6                  |
 | moonshotaikimi-k2.7-code          | **35.6** | :white_check_mark: | :white_check_mark: | **6.2**              | 6.3                  | 4.7                  | 4.7                  | **5.4**              | 4.6                  | **3.7**              | 0.0                  |
@@ -48,7 +48,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | grok-4.20-multi-agent             | **33.9** | :x:                | :white_check_mark: | 5.5                  | 6.8                  | 4.3                  | 4.6                  | 4.4                  | 4.7                  | 3.6                  | 4.6                  |
 | z-aiglm-5.2                       | **33.8** | :white_check_mark: | :white_check_mark: | 5.7                  | 6.7                  | 4.3                  | 4.2                  | 5.0                  | 4.6                  | 3.3                  | 0.0                  |
 | gemini-3.5-flash                  | **33.7** | :x:                | :white_check_mark: | 5.4                  | 6.3                  | 5.0                  | 4.4                  | 4.9                  | 4.5                  | 3.2                  | 4.6                  |
-| gpt-5.2-2025-12-11-NONE           | **33.7** | :x:                | :x:                | 5.8                  | 6.3                  | 3.9                  | 4.7                  | 4.5                  | 4.7                  | **3.8**              | 4.1                  |
+| gpt-5.2-NONE                      | **33.7** | :x:                | :x:                | 5.8                  | 6.3                  | 3.9                  | 4.7                  | 4.5                  | 4.7                  | **3.8**              | 4.1                  |
 | claude-opus-4-7-thinking          | **33.6** | :x:                | :white_check_mark: | 5.8                  | 6.3                  | 4.3                  | 4.4                  | 4.8                  | 4.4                  | 3.6                  | **4.7**              |
 | deepseek-v4-flash                 | **33.6** | :white_check_mark: | :white_check_mark: | 5.9                  | 6.5                  | 4.8                  | 4.6                  | 4.8                  | 4.7                  | 2.3                  | 0.0                  |
 | gpt-5.6-luna-NONE                 | **33.6** | :x:                | :x:                | 5.8                  | 6.6                  | 2.8                  | 4.7                  | 5.2                  | 4.8                  | **3.8**              | 4.6                  |
@@ -1081,7 +1081,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 7.4   |
 | cat08_05_task_schedul              | 7.7   |
 
-### gpt-5.2-2025-12-11-XHIGH   => 36.7 points
+### gpt-5.2-XHIGH   => 36.8 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |
@@ -1373,7 +1373,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 7.1   |
 | cat08_05_task_schedul              | 7.2   |
 
-### gpt-5.2-2025-12-11-HIGH   => 36.3 points
+### gpt-5.2-HIGH   => 36.3 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |
@@ -2807,7 +2807,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 5.8   |
 | cat08_05_task_schedul              | 6.6   |
 
-### gpt-5.2-2025-12-11-NONE   => 33.7 points
+### gpt-5.2-NONE   => 33.7 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |
