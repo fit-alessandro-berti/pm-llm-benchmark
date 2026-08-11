@@ -8,8 +8,8 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | anthropicclaude-fable-5          | **35.6** | :x:                | :x: | **5.7**              | **6.9**              | **4.7**              | 4.6                  | 5.1                  | **4.7**              | **3.8**              | **4.6**              |
 | anthropicclaude-opus-5           | **35.2** | :x:                | :x: | **5.7**              | **6.7**              | **4.7**              | **5.0**              | 4.9                  | 4.5                  | **3.8**              | :mage_woman: **4.8** |
 | gpt-5.6-terra-NONE               | **34.9** | :x:                | :x: | :mage_woman: **6.0** | **6.8**              | 4.3                  | **4.9**              | 4.6                  | 4.6                  | **3.8**              | 4.3                  |
-| gpt-5.4-2026-03-05-NONE          | **34.9** | :x:                | :x: | **5.9**              | **6.8**              | 4.0                  | 4.6                  | :mage_woman: **5.5** | 4.6                  | **3.7**              | **4.6**              |
-| gpt-5.5-2026-04-23-NONE          | **34.5** | :x:                | :x: | :mage_woman: **6.0** | **6.8**              | 3.4                  | **4.8**              | **5.2**              | **4.7**              | **3.7**              | 4.2                  |
+| gpt-5.4-NONE                     | **34.9** | :x:                | :x: | **5.9**              | **6.8**              | 4.0                  | 4.6                  | :mage_woman: **5.5** | 4.6                  | **3.7**              | **4.6**              |
+| gpt-5.5-NONE                     | **34.5** | :x:                | :x: | :mage_woman: **6.0** | **6.8**              | 3.4                  | **4.8**              | **5.2**              | **4.7**              | **3.7**              | 4.2                  |
 | gpt-5.2-2025-12-11-NONE          | **33.7** | :x:                | :x: | **5.8**              | 6.3                  | 3.9                  | 4.7                  | 4.5                  | **4.7**              | **3.8**              | 4.1                  |
 | gpt-5.6-luna-NONE                | **33.6** | :x:                | :x: | **5.8**              | 6.6                  | 2.8                  | 4.7                  | **5.2**              | **4.8**              | **3.8**              | **4.6**              |
 | claude-opus-4-8                  | **33.4** | :x:                | :x: | 5.5                  | **6.7**              | 4.1                  | 4.2                  | 5.0                  | 4.5                  | 3.5                  | 4.1                  |
@@ -320,7 +320,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 7.6   |
 | cat08_05_task_schedul              | 7.5   |
 
-### gpt-5.4-2026-03-05-NONE   => 34.9 points
+### gpt-5.4-NONE   => 34.9 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |
@@ -382,7 +382,7 @@ A score in the range **20-25** is considered **sufficient**; a score in the rang
 | cat08_04_resource_assign           | 7.1   |
 | cat08_05_task_schedul              | 7.4   |
 
-### gpt-5.5-2026-04-23-NONE   => 34.5 points
+### gpt-5.5-NONE   => 34.5 points
 
 | Question                           | Score |
 | ---------------------------------- | ----- |
